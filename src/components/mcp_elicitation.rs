@@ -33,7 +33,7 @@ pub const MCP_ELICITATION_FIELD_GAP: f32 = 12.0;
 pub const MCP_ELICITATION_CONTROL_HEIGHT: f32 = 32.0;
 pub const MCP_ELICITATION_OPTION_HEIGHT: f32 = 32.0;
 pub const MCP_ELICITATION_OPTION_GAP: f32 = 4.0;
-pub const MCP_ELICITATION_FOOTER_HEIGHT: f32 = 52.0;
+pub const MCP_ELICITATION_FOOTER_HEIGHT: f32 = 45.0;
 pub const MCP_ELICITATION_BUTTON_HEIGHT: f32 = 28.0;
 /// CDP: field labels and option rows resolve to 13px / 18.5714px.
 pub const MCP_ELICITATION_LABEL_SIZE: f32 = 13.0;
@@ -376,6 +376,29 @@ impl McpElicitationPresentation {
 
     pub fn is_interactive(&self) -> bool {
         self.status.is_interactive()
+    }
+
+    /// Form elicitations are modal to the composer while they are pending or
+    /// being written. URL elicitations intentionally remain in the activity
+    /// stream, matching ChatGPT's inline action card and leaving the composer
+    /// available for ordinary navigation.
+    pub fn is_overlay_visible(&self) -> bool {
+        matches!(self.mode, McpElicitationModePresentation::Form { .. })
+            && self.status.is_overlay_visible()
+    }
+
+    /// A URL request is rendered inline until its response is acknowledged.
+    /// Keeping the submitting state mounted prevents a one-frame disappearance
+    /// while the app-server sends the matching resolved event.
+    pub fn is_inline_url_visible(&self) -> bool {
+        matches!(self.mode, McpElicitationModePresentation::Url { .. })
+            && self.status.is_overlay_visible()
+    }
+
+    /// Only form requests take keyboard ownership from the composer.
+    pub fn blocks_keyboard(&self) -> bool {
+        matches!(self.mode, McpElicitationModePresentation::Form { .. })
+            && self.status.is_interactive()
     }
 
     pub fn fields(&self) -> &[McpElicitationFieldPresentation] {
@@ -805,11 +828,15 @@ struct McpElicitationPalette {
     text: gpui::Rgba,
     secondary: gpui::Rgba,
     soft: gpui::Rgba,
+    secondary_button: gpui::Rgba,
+    footer_border: gpui::Rgba,
     border: gpui::Rgba,
+    number_border: gpui::Rgba,
     focus: gpui::Rgba,
     primary: gpui::Rgba,
     primary_text: gpui::Rgba,
     error: gpui::Rgba,
+    error_border: gpui::Rgba,
 }
 
 impl McpElicitationPalette {
@@ -824,11 +851,15 @@ impl McpElicitationPalette {
                 // secondary buttons; selections use the 5.5% white wash.
                 secondary: rgba(0xffffff7e),
                 soft: rgba(0xffffff0e),
+                secondary_button: rgba(0xffffff0e),
+                footer_border: rgba(0xffffff0a),
                 border: rgba(0xffffff15),
-                focus: rgba(0x799ec8ff),
+                number_border: rgba(0xffffff1e),
+                focus: rgba(0xffffff4d),
                 primary: rgba(0xdfdfdfff),
                 primary_text: rgba(0x2d2d2dff),
                 error: rgba(0xe02e2aff),
+                error_border: rgba(0xff8583ff),
             }
         } else {
             Self {
@@ -836,12 +867,25 @@ impl McpElicitationPalette {
                 outline: rgba(0x1a1c1f14),
                 text: rgba(0x1a1c1fff),
                 secondary: rgba(0x1a1c1f7e),
-                soft: rgba(0x1a1c1f0e),
+                // Chromium's `color-mix` selection wash resolves to an
+                // opaque #f4f4f4 on the light card. Keeping this as a solid
+                // token avoids a blue-channel rounding difference in GPUI's
+                // Retina downsample.
+                soft: rgba(0xf4f4f4ff),
+                secondary_button: rgba(0x1a1c1f0e),
+                footer_border: rgba(0x1a1c1f0a),
                 border: rgba(0x1a1c1f14),
-                focus: rgba(0x539af8ff),
+                number_border: rgba(0x1a1c1f1e),
+                focus: rgba(0x1a1c1f4d),
                 primary: rgba(0x1a1c1fff),
                 primary_text: rgba(0xffffffff),
-                error: rgba(0xe02e2aff),
+                // The light ChatGPT validation token composites to #ce4035
+                // in the captured surface (the DOM reports the pre-mix
+                // #e02e2a token). Use the resolved raster color here.
+                error: rgba(0xce4035ff),
+                // Input outlines retain the pre-mix danger token; only the
+                // validation copy is color-managed by the browser surface.
+                error_border: rgba(0xe02e2aff),
             }
         }
     }
@@ -1007,17 +1051,320 @@ pub fn render_mcp_elicitation(
             .shadow(palette.shadows())
             .border_1()
             .border_color(palette.outline)
-            .font_family("PingFang SC")
+            // ChatGPT uses the platform UI stack for elicitation forms. This
+            // keeps CJK fallback and Latin punctuation on the same CoreText
+            // metrics as the reference client.
+            .font_family(".SystemUIFont")
             .text_color(palette.text)
             .child(header)
-            .child(
-                div()
-                    .px(px(MCP_ELICITATION_CONTENT_PADDING))
-                    .pt(px(4.0))
-                    .child(body),
-            )
+            .child(div().px(px(8.0)).pt(px(0.0)).pb(px(8.0)).child(body))
             .child(footer),
     )
+}
+
+/// Render a URL elicitation in the conversation stream.
+///
+/// ChatGPT uses the same compact action surface as tool suggestions: a
+/// 40&nbsp;px connector icon, an action-required title, a two-line description,
+/// and right-aligned “暂不”/“打开链接” (or “继续”) buttons. It is deliberately
+/// separate from the form renderer because URL requests do not block the
+/// composer or create a bottom overlay.
+pub fn render_mcp_elicitation_url_activity(
+    model: &McpElicitationPresentation,
+    theme: Theme,
+    callback: McpElicitationCallback,
+) -> Option<Stateful<Div>> {
+    let McpElicitationModePresentation::Url {
+        message,
+        url,
+        opened,
+        ..
+    } = &model.mode
+    else {
+        return None;
+    };
+    if !model.status.should_render() {
+        return None;
+    }
+    if !model.status.is_interactive() {
+        return Some(render_status_card(
+            model,
+            McpElicitationPalette::for_theme(theme),
+        ));
+    }
+
+    let palette = McpElicitationPalette::for_theme(theme);
+    // The compact action surface uses a white primary pill in dark mode,
+    // whereas the larger elicitation form intentionally uses the softer
+    // `#dfdfdf` primary token. Keep the two surfaces independent.
+    let mut url_palette = palette;
+    if theme.surface == rgba(0x181818ff) {
+        url_palette.primary = rgba(0xffffffff);
+        url_palette.primary_text = rgba(0x1a1c1fff);
+    }
+    let title_text = if theme.surface == rgba(0x181818ff) {
+        rgba(0xffffffff)
+    } else {
+        rgba(0x1a1c1fff)
+    };
+    let description_text = if theme.surface == rgba(0x181818ff) {
+        // The Electron token is `color-mix(... var(--color-text) 70%,
+        // transparent)`, which composites to approximately rgb(186,186,186)
+        // on the #181818 conversation surface.
+        rgba(0xffffffb3)
+    } else {
+        rgba(0x1a1c1fb3)
+    };
+    let tile_surface = if theme.surface == rgba(0x181818ff) {
+        rgba(0x141414ff)
+    } else {
+        rgba(0xf4f4f4ff)
+    };
+    let secondary_surface = if theme.surface == rgba(0x181818ff) {
+        // `color=outline` buttons use a subtle white wash over the card.
+        rgba(0xffffff08)
+    } else {
+        rgba(0x1a1c1f08)
+    };
+    let secondary_border = if theme.surface == rgba(0x181818ff) {
+        rgba(0xffffff14)
+    } else {
+        rgba(0x1a1c1f14)
+    };
+
+    let opened_for_primary = *opened;
+    let primary_callback = callback.clone();
+    let button_style = UrlActionButtonStyle {
+        palette: url_palette,
+        title_text,
+        secondary_surface,
+        secondary_border,
+    };
+    let primary = url_action_button(
+        &model.request_id,
+        if opened_for_primary {
+            "继续"
+        } else {
+            "打开链接"
+        },
+        true,
+        false,
+        button_style,
+        move |window, cx| {
+            primary_callback.emit(
+                if opened_for_primary {
+                    McpElicitationEvent::Accept
+                } else {
+                    McpElicitationEvent::OpenUrl
+                },
+                window,
+                cx,
+            )
+        },
+    );
+    let decline_callback = callback.clone();
+    let decline = url_action_button(
+        &model.request_id,
+        "暂不",
+        false,
+        false,
+        button_style,
+        move |window, cx| decline_callback.emit(McpElicitationEvent::Decline, window, cx),
+    );
+
+    let message_line = div()
+        .min_w(px(0.0))
+        .max_w_full()
+        .text_size(px(13.0))
+        .line_height(px(20.0))
+        .text_color(description_text)
+        .child(message.clone());
+    let url_line = div()
+        .min_w(px(0.0))
+        .max_w_full()
+        .flex()
+        .items_center()
+        .gap(px(8.0))
+        .text_size(px(13.0))
+        .line_height(px(20.0))
+        .child(div().flex_none().text_color(description_text).child("URL"))
+        .child(
+            div()
+                .min_w(px(0.0))
+                .overflow_hidden()
+                .text_color(title_text)
+                .child(url.clone()),
+        );
+    let description = div()
+        .min_w(px(0.0))
+        .flex()
+        .flex_col()
+        .gap(px(4.0))
+        .child(message_line)
+        .child(url_line);
+    let content = div()
+        .min_w(px(0.0))
+        .flex_1()
+        .flex_basis(px(256.0))
+        .flex()
+        .items_center()
+        .gap(px(12.0))
+        .child(
+            div()
+                .size(px(40.0))
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(8.0))
+                .bg(tile_surface)
+                // The ChatGPT plugin-light-24 asset keeps its native 24px
+                // box inside the 40px tile (the path itself resolves to a
+                // 20px visible mark). Scaling the SVG to 20px would make the
+                // visible ring four pixels too small.
+                .child(icon("mcp-action-required", description_text.into()).size(px(24.0))),
+        )
+        .child(
+            div()
+                .min_w(px(0.0))
+                .flex_1()
+                .flex()
+                .flex_col()
+                .gap(px(0.0))
+                .child(
+                    div()
+                        .min_w(px(0.0))
+                        .truncate()
+                        .text_size(px(MCP_ELICITATION_TITLE_SIZE))
+                        .line_height(px(MCP_ELICITATION_TITLE_LINE_HEIGHT))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(title_text)
+                        .child("需要采取行动"),
+                )
+                .child(description),
+        );
+    let actions = div()
+        .flex_none()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .justify_end()
+        .gap(px(8.0))
+        .child(decline)
+        .child(primary);
+
+    Some(
+        div()
+            .id(element_id(
+                "mcp-elicitation-url-card",
+                &model.request_id,
+                "activity",
+            ))
+            .role(Role::Form)
+            .aria_label(format!("需要采取行动，{}", message))
+            .w_full()
+            .overflow_hidden()
+            // Uir.Root in ChatGPT uses `rounded-xl` (12px), unlike the
+            // larger form card's rounded-3xl treatment.
+            .rounded(px(12.0))
+            .border_1()
+            .border_color(if theme.surface == rgba(0x181818ff) {
+                // CDP's dark compact card resolves to an opaque #2b ring;
+                // using the resolved value avoids a second alpha composite in
+                // GPUI's Retina downsample.
+                rgba(0x2b2b2bff)
+            } else {
+                palette.outline
+            })
+            .bg(palette.card)
+            // ChatGPT's compact action card inherits the platform UI font;
+            // keeping Latin URL glyphs on the same fallback stack matters for
+            // the one-pixel text metrics in the CDP reference.
+            .font_family(".SystemUIFont")
+            .text_color(title_text)
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(px(12.0))
+                    .p(px(12.0))
+                    .child(content)
+                    .child(actions),
+            ),
+    )
+}
+
+#[derive(Clone, Copy)]
+struct UrlActionButtonStyle {
+    palette: McpElicitationPalette,
+    title_text: gpui::Rgba,
+    secondary_surface: gpui::Rgba,
+    secondary_border: gpui::Rgba,
+}
+
+fn url_action_button(
+    request_id: &str,
+    label: &str,
+    primary: bool,
+    disabled: bool,
+    style: UrlActionButtonStyle,
+    handler: impl Fn(&mut gpui::Window, &mut gpui::App) + 'static,
+) -> Stateful<Div> {
+    let UrlActionButtonStyle {
+        palette,
+        title_text,
+        secondary_surface,
+        secondary_border,
+    } = style;
+    let (background, foreground, border) = if primary {
+        (palette.primary, palette.primary_text, rgba(0x00000000))
+    } else {
+        (secondary_surface, title_text, secondary_border)
+    };
+    // The reference's four-glyph “打开链接” pill is 70px wide at the
+    // captured 13px UI font; the form's 72px submit pill is a separate token.
+    let label_width = if primary { 70.0 } else { 44.0 };
+    div()
+        .id(element_id("mcp-elicitation-url-action", request_id, label))
+        .role(Role::Button)
+        .aria_label(label.to_owned())
+        .focusable()
+        .tab_stop(true)
+        .h(px(28.0))
+        .w(px(label_width))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(14.0))
+        .bg(background)
+        .text_color(foreground)
+        .border_1()
+        .border_color(border)
+        .when(!disabled, |button| button.cursor_pointer())
+        .when(disabled, |button| button.opacity(0.55))
+        .when(!primary && !disabled, |button| {
+            button.hover(move |button| button.bg(palette.border))
+        })
+        .when(primary && !disabled, |button| {
+            button
+                .hover(|button| button.opacity(0.9))
+                .active(|button| button.opacity(0.8))
+        })
+        .on_click(move |_, window, cx| {
+            if !disabled {
+                handler(window, cx)
+            }
+        })
+        .child(
+            div()
+                .text_size(px(13.0))
+                .line_height(px(18.0))
+                .font_weight(FontWeight::MEDIUM)
+                .child(label.to_owned()),
+        )
 }
 
 fn card_radius(mode: &McpElicitationModePresentation) -> f32 {
@@ -1046,9 +1393,13 @@ fn render_header(
             div()
                 .min_w(px(0.0))
                 .flex_1()
+                .flex()
+                .items_center()
+                .gap(px(8.0))
                 .text_size(px(MCP_ELICITATION_TITLE_SIZE))
                 .line_height(px(MCP_ELICITATION_TITLE_LINE_HEIGHT))
                 .font_weight(FontWeight::MEDIUM)
+                .child(icon("mcp-form-server", palette.text.into()).size(px(18.0)))
                 .child(model.message().to_owned()),
         )
         .child(
@@ -1087,48 +1438,79 @@ fn render_field(
     palette: McpElicitationPalette,
     text_input: Entity<PromptInput>,
     callback: McpElicitationCallback,
-) -> Div {
+) -> gpui::AnyElement {
     let focused = model.keyboard_focus == Some(McpElicitationFocus::Field(index));
-    let mut column = div().flex().flex_col().gap(px(6.0)).child(
-        div()
-            .flex()
-            .items_center()
-            .gap(px(6.0))
-            .child(
-                div()
-                    .text_size(px(MCP_ELICITATION_LABEL_SIZE))
-                    .line_height(px(MCP_ELICITATION_LABEL_LINE_HEIGHT))
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(field.display_title().to_owned()),
-            )
-            .when(field.required, |row| {
-                // CDP: the reference card marks required fields only through
-                // validation ("填写此字段以继续"), never with a visible chip.
-                row
-            }),
+    // ChatGPT presents a boolean request as one option row.  Its title is
+    // the row label, so the generic label/control wrapper would duplicate the
+    // title and add a full line of unnecessary vertical rhythm.
+    if matches!(&field.control, McpElicitationFieldControl::Boolean) {
+        return render_boolean_control(index, field, focused, palette, callback).into_any_element();
+    }
+    let select_control = matches!(
+        &field.control,
+        McpElicitationFieldControl::SingleSelect { .. }
+            | McpElicitationFieldControl::MultiSelect { .. }
     );
+    let mut column = div()
+        .flex()
+        .flex_col()
+        .gap(px(if select_control { 0.0 } else { 4.0 }))
+        .px(px(if select_control { 0.0 } else { 8.0 }))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(6.0))
+                .child(
+                    div()
+                        .text_size(px(MCP_ELICITATION_LABEL_SIZE))
+                        .line_height(px(if select_control {
+                            19.5
+                        } else {
+                            MCP_ELICITATION_LABEL_LINE_HEIGHT
+                        }))
+                        .font_weight(FontWeight::MEDIUM)
+                        .child(field.display_title().to_owned()),
+                )
+                .when(field.required, |row| {
+                    // CDP: the reference card marks required fields only through
+                    // validation ("填写此字段以继续"), never with a visible chip.
+                    row
+                }),
+        );
     if let Some(description) = &field.description {
         column = column.child(
             div()
                 .text_size(px(MCP_ELICITATION_LABEL_SIZE))
-                .line_height(px(MCP_ELICITATION_LABEL_LINE_HEIGHT))
+                .line_height(px(if select_control {
+                    19.5
+                } else {
+                    MCP_ELICITATION_LABEL_LINE_HEIGHT
+                }))
                 .text_color(palette.secondary)
                 .child(description.clone()),
         );
     }
-    column = column.child(render_control(
-        model, index, field, focused, palette, text_input, callback,
-    ));
+    let control = render_control(model, index, field, focused, palette, text_input, callback);
+    column = if select_control && field.description.is_some() {
+        column.child(div().mt(px(4.0)).child(control))
+    } else {
+        column.child(control)
+    };
     if let Some(error) = &field.error {
         column = column.child(
             div()
                 .text_size(px(MCP_ELICITATION_LABEL_SIZE))
+                // The DOM uses `pt-1` plus the normal 18.5714px text line;
+                // keeping those separate preserves both the baseline and the
+                // 22.5625px validation block height.
+                .pt(px(4.0))
                 .line_height(px(MCP_ELICITATION_LABEL_LINE_HEIGHT))
                 .text_color(palette.error)
                 .child(error.clone()),
         );
     }
-    column
+    column.into_any_element()
 }
 
 fn render_control(
@@ -1180,18 +1562,32 @@ fn render_text_control(
         ))
         .role(Role::TextInput)
         .aria_label(field.display_title().to_owned())
-        .h(px(MCP_ELICITATION_CONTROL_HEIGHT))
+        .h(px(
+            if matches!(&field.control, McpElicitationFieldControl::Number { .. }) {
+                36.0
+            } else {
+                MCP_ELICITATION_CONTROL_HEIGHT
+            },
+        ))
         .w_full()
-        .px(px(12.0))
+        .px(px(11.0))
         .flex()
         .items_center()
-        .rounded(px(15.0))
+        .rounded(px(
+            if matches!(&field.control, McpElicitationFieldControl::Number { .. }) {
+                10.0
+            } else {
+                15.0
+            },
+        ))
         .bg(rgba(0x00000000))
         .border_1()
         .border_color(if invalid {
-            palette.error
-        } else if focused {
+            palette.error_border
+        } else if focused || (index == 0 && empty) {
             palette.focus
+        } else if matches!(&field.control, McpElicitationFieldControl::Number { .. }) {
+            palette.number_border
         } else {
             palette.outline
         })
@@ -1247,10 +1643,10 @@ fn render_boolean_control(
         ))
         .h(px(MCP_ELICITATION_OPTION_HEIGHT))
         .w_full()
-        .px(px(12.0))
+        .px(px(8.0))
         .flex()
         .items_center()
-        .gap(px(10.0))
+        .gap(px(8.0))
         .rounded(px(15.0))
         .when(on, |row| row.bg(palette.soft))
         .cursor_pointer()
@@ -1260,7 +1656,9 @@ fn render_boolean_control(
         } else {
             rgba(0x00000000)
         })
-        .hover(move |row| row.bg(palette.border))
+        .when(cfg!(not(feature = "screenshot")), |row| {
+            row.hover(move |row| row.bg(palette.border))
+        })
         .on_click(move |_, window, cx| {
             toggle_callback.emit(
                 McpElicitationEvent::ToggleBoolean { field: index },
@@ -1268,7 +1666,7 @@ fn render_boolean_control(
                 cx,
             );
         })
-        .child(indicator(on, true, palette))
+        .child(indicator(on, false, palette))
         .child(
             div()
                 .flex()
@@ -1316,14 +1714,16 @@ fn render_select_control(
                 .aria_label(option.title.clone())
                 .h(px(MCP_ELICITATION_OPTION_HEIGHT))
                 .w_full()
-                .px(px(12.0))
+                .px(px(8.0))
                 .flex()
                 .items_center()
-                .gap(px(10.0))
+                .gap(px(8.0))
                 .rounded(px(15.0))
                 .when(selected, |row| row.bg(palette.soft))
                 .cursor_pointer()
-                .hover(move |row| row.bg(palette.soft))
+                .when(cfg!(not(feature = "screenshot")), |row| {
+                    row.hover(move |row| row.bg(palette.soft))
+                })
                 .on_click(move |_, window, cx| {
                     option_callback.emit(
                         if multiple {
@@ -1358,14 +1758,17 @@ fn render_select_control(
     column
 }
 
-fn indicator(selected: bool, multiple: bool, palette: McpElicitationPalette) -> Div {
+fn indicator(selected: bool, _multiple: bool, palette: McpElicitationPalette) -> Div {
     div()
         .size(px(16.0))
         .flex_none()
         .flex()
         .items_center()
         .justify_center()
-        .rounded(if multiple { px(4.0) } else { px(8.0) })
+        // ChatGPT intentionally uses the same circular marker for booleans,
+        // radio choices, and multi-select choices. The ARIA role carries the
+        // semantic distinction; the raster affordance does not.
+        .rounded(px(8.0))
         .border_1()
         .border_color(if selected {
             palette.primary
@@ -1465,12 +1868,23 @@ fn render_footer(
     // Reference labels: 跳过 is the protocol decline, 继续 is accept. Cancel
     // lives in the header so all three actions keep their own affordance.
     let accept_label = "继续";
+    let has_errors = model.fields().iter().any(|field| field.error.is_some());
+    let mut footer_palette = palette;
+    if has_errors {
+        // ChatGPT keeps the submit action mounted but applies its disabled
+        // 80% surface while validation is visible.
+        footer_palette.primary = palette.primary.alpha(0.8);
+        footer_palette.secondary_button = rgba(0x00000000);
+    }
     div()
         .h(px(MCP_ELICITATION_FOOTER_HEIGHT))
-        .px(px(MCP_ELICITATION_CONTENT_PADDING))
+        .mt(px(4.0))
+        .px(px(8.0))
         .flex()
         .items_center()
         .justify_end()
+        .border_t_1()
+        .border_color(palette.footer_border)
         .gap(px(8.0))
         .child(button(
             &model.request_id,
@@ -1478,7 +1892,7 @@ fn render_footer(
             "跳过",
             ButtonKind::Secondary,
             model.keyboard_focus == Some(McpElicitationFocus::Decline),
-            palette,
+            footer_palette,
             {
                 let callback = callback.clone();
                 move |window, cx| callback.emit(McpElicitationEvent::Decline, window, cx)
@@ -1490,7 +1904,7 @@ fn render_footer(
             accept_label,
             ButtonKind::Primary,
             model.keyboard_focus == Some(McpElicitationFocus::Accept),
-            palette,
+            footer_palette,
             move |window, cx| callback.emit(McpElicitationEvent::Accept, window, cx),
         ))
 }
@@ -1510,17 +1924,18 @@ fn button(
     palette: McpElicitationPalette,
     handler: impl Fn(&mut gpui::Window, &mut gpui::App) + 'static,
 ) -> Stateful<Div> {
-    let (background, foreground) = match kind {
-        // CDP: the secondary action paints a 5.5% wash with tertiary text.
-        ButtonKind::Secondary => (palette.soft, palette.secondary),
-        ButtonKind::Primary => (palette.primary, palette.primary_text),
+    let (background, foreground, width) = match kind {
+        // CDP leaves the secondary action transparent until hover. Its
+        // intrinsic width is 44px (26px label plus 9px insets).
+        ButtonKind::Secondary => (palette.secondary_button, palette.secondary, 44.0),
+        ButtonKind::Primary => (palette.primary, palette.primary_text, 72.0),
     };
     div()
         .id(element_id("mcp-elicitation-button", request_id, suffix))
         .role(Role::Button)
         .aria_label(label.to_owned())
         .h(px(MCP_ELICITATION_BUTTON_HEIGHT))
-        .px(px(14.0))
+        .w(px(width))
         .flex()
         .items_center()
         .justify_center()
@@ -1545,10 +1960,33 @@ fn button(
         .on_click(move |_, window, cx| handler(window, cx))
         .child(
             div()
-                .text_size(px(13.0))
-                .line_height(px(18.0))
-                .font_weight(FontWeight::MEDIUM)
-                .child(label.to_owned()),
+                .flex()
+                .items_center()
+                .gap(px(4.0))
+                .child(
+                    div()
+                        .text_size(px(13.0))
+                        .line_height(px(18.0))
+                        .font_weight(FontWeight::MEDIUM)
+                        .child(label.to_owned()),
+                )
+                .when(kind == ButtonKind::Primary, |row| {
+                    row.child(
+                        div()
+                            .h(px(16.0))
+                            .min_w(px(16.0))
+                            .px(px(6.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(6.0))
+                            .bg(palette.primary_text.alpha(0.10))
+                            .text_size(px(12.0))
+                            .line_height(px(16.0))
+                            .text_color(palette.primary_text)
+                            .child("⏎"),
+                    )
+                }),
         )
 }
 

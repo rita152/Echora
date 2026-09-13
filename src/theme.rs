@@ -221,7 +221,9 @@ impl Theme {
                 // pane background so the two views cannot drift by theme.
                 settings_panel: rgba(0xffffffff),
                 settings_switch_off: rgba(0x1a1c1f1a),
-                settings_search: rgba(0xebebebff),
+                // ChatGPT settings search surface at the reference capture
+                // resolves to #f2f2f2 on the light shell.
+                settings_search: rgba(0xf2f2f2ff),
                 settings_accent: rgba(0x539af8ff),
                 settings_description: rgba(0x1a1c1fa6),
                 settings_control: rgba(0xf7f7f7ff),
@@ -296,11 +298,13 @@ impl Theme {
                 button: rgba(0xdfdfdfff),
                 button_text: rgba(0x2d2d2dff),
                 profile_menu_shadow: rgba(0x0000001f),
-                // Settings interaction surfaces intentionally reuse the main
-                // pane background so the two views cannot drift by theme.
-                settings_panel: rgba(0x181818ff),
+                // Settings cards sit on the #181818 page surface with a
+                // slightly raised #232323 fill in ChatGPT's dark shell.
+                settings_panel: rgba(0x232323ff),
                 settings_switch_off: rgba(0xffffff1a),
-                settings_search: rgba(0x232323ff),
+                // The sidebar search is a little brighter than the page;
+                // the management search has its own #2d2d2d fill.
+                settings_search: rgba(0x2e2e2eff),
                 settings_accent: rgba(0x539af8ff),
                 settings_description: rgba(0xdfdfdfa6),
                 settings_control: rgba(0x262626ff),
@@ -333,7 +337,7 @@ mod tests {
         assert_eq!(light.surface, gpui::rgba(0xffffffff));
         assert_eq!(dark.surface, gpui::rgba(0x181818ff));
         assert_eq!(light.settings_panel, light.surface);
-        assert_eq!(dark.settings_panel, dark.surface);
+        assert_eq!(dark.settings_panel, gpui::rgba(0x232323ff));
         for (theme, tint) in [(light, 255.0 / 255.0), (dark, 40.0 / 255.0)] {
             assert_eq!(theme.sidebar_surface.r, tint);
             assert_eq!(theme.sidebar_surface.g, tint);

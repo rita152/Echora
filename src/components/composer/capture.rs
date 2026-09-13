@@ -951,7 +951,10 @@ impl ComposerView {
                 None,
                 true,
                 McpElicitationFieldControl::Text {
-                    placeholder: "name@example.com".to_owned(),
+                    // The ChatGPT reference fixture leaves this first field
+                    // empty; a placeholder would be visible in the pixel
+                    // capture and is not part of the MCP schema itself.
+                    placeholder: String::new(),
                     secret: false,
                 },
                 McpElicitationFieldValueState::Text(String::new()),

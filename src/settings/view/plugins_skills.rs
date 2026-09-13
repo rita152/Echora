@@ -4,7 +4,10 @@
 
 use gpui::{Context, div, prelude::*, px};
 
-use std::hash::{Hash, Hasher};
+use std::{
+    hash::{Hash, Hasher},
+    path::PathBuf,
+};
 
 /// Stable numeric identity for stateful elements keyed by a server string.
 fn id_hash(value: &str) -> usize {
@@ -15,7 +18,10 @@ fn id_hash(value: &str) -> usize {
 
 use super::SettingsView;
 use crate::{
-    agent::{AgentSkill, AgentSkillScope, AgentSkillsError, AgentSkillsLoadRequest},
+    agent::{
+        AgentSkill, AgentSkillInterface, AgentSkillScope, AgentSkillsEntry, AgentSkillsError,
+        AgentSkillsLoadRequest, AgentSkillsSnapshot,
+    },
     skills::{SkillWritePhase, SkillsDirectory},
     theme::Theme,
 };
@@ -54,6 +60,73 @@ impl SkillsPanel {
 }
 
 impl SettingsView {
+    /// Stable capture data matching the two skills shown by the reference
+    /// client.  It is installed only for explicit screenshot fixtures; live
+    /// settings continue to use `skills/list` through `refresh_skills`.
+    pub(super) fn install_skills_capture_fixture(&mut self) {
+        // The management page uses the monochrome 20px cube glyph, not the
+        // colored profile-plugin artwork used by the account menu.
+        // GPUI's asset source is rooted at `assets/`, so view paths omit that
+        // directory prefix.
+        let cube = PathBuf::from("icons/skill-cube.svg");
+        let skills = vec![
+            AgentSkill {
+                name: "git-commit-message".to_owned(),
+                description: "Format git commit messages in the project style.".to_owned(),
+                path: PathBuf::from("/capture/skills/git-commit-message/SKILL.md"),
+                scope: AgentSkillScope::User,
+                enabled: true,
+                short_description: None,
+                plugin_id: None,
+                interface: Some(AgentSkillInterface {
+                    display_name: Some("Git Commit Message".to_owned()),
+                    short_description: Some(
+                        "Format git commit messages in the project style.".to_owned(),
+                    ),
+                    icon_small: Some(cube.clone()),
+                    ..Default::default()
+                }),
+                dependencies: None,
+                extra: Default::default(),
+            },
+            AgentSkill {
+                name: "ui-ux-pro-max".to_owned(),
+                description: "UI/UX design intelligence for web and mobile.".to_owned(),
+                path: PathBuf::from("/capture/skills/ui-ux-pro-max/SKILL.md"),
+                scope: AgentSkillScope::User,
+                enabled: true,
+                short_description: None,
+                plugin_id: None,
+                interface: Some(AgentSkillInterface {
+                    display_name: Some("UI Ux Pro Max".to_owned()),
+                    short_description: Some(
+                        "UI/UX design intelligence for web and mobile. Includes 50+ styles, 161 color palettes, 57 font pairings, and 25 chart types.".to_owned(),
+                    ),
+                    icon_small: Some(cube),
+                    ..Default::default()
+                }),
+                dependencies: None,
+                extra: Default::default(),
+            },
+        ];
+        self.skills_generation = 1;
+        self.skills.directory.cycle = self.skills.directory.cycle.max(1);
+        self.skills.directory.loading = false;
+        self.skills.directory.error = None;
+        self.skills.directory.stale = false;
+        self.skills.directory.snapshot = Some(AgentSkillsSnapshot {
+            generation: 1,
+            entries: vec![AgentSkillsEntry {
+                cwd: PathBuf::from("/capture"),
+                skills,
+                errors: Vec::new(),
+                extra: Default::default(),
+            }],
+            next_cursor: None,
+            extra: Default::default(),
+        });
+    }
+
     pub(super) fn refresh_skills(&mut self, force_reload: bool, cx: &mut Context<Self>) {
         let cycle = self.skills.directory.begin_refresh();
         cx.notify();
@@ -208,7 +281,9 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let skills = self.skills.visible_skills();
-        let mut list = div().mt(px(44.0)).flex().flex_col().gap(px(6.0));
+        // The reference leaves 40px below the segment strip and then spaces
+        // the two borderless rows by 8px.
+        let mut list = div().mt(px(40.0)).flex().flex_col().gap(px(8.0));
 
         let load_errors = self
             .skills
@@ -283,14 +358,6 @@ impl SettingsView {
             list = list.child(self.manage_state_card(message, theme));
         }
 
-        let mut rows = div()
-            .rounded(px(20.0))
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.settings_panel)
-            .overflow_hidden()
-            .flex()
-            .flex_col();
         for (index, skill) in skills.iter().enumerate() {
             let skill = (*skill).clone();
             let enabled = self.skills.directory.display_enabled(&skill);
@@ -307,48 +374,75 @@ impl SettingsView {
             });
             let row_skill = skill.clone();
             let hovered = self.skills.hover_row.as_deref() == Some(skill.name.as_str());
-            rows = rows.child(
+            list = list.child(
                 div()
                     .id(("skill-row", index))
+                    .role(gpui::Role::Button)
+                    // GPUI's content column resolves to x=447.5 while the
+                    // browser's fractional column starts at x=448.5.
+                    .relative()
+                    .left(px(1.0))
+                    .h(px(60.0))
+                    .p(px(8.0))
+                    .rounded(px(20.0))
                     .flex()
-                    .flex_col()
-                    .when(index > 0, |row| row.border_t_1().border_color(theme.border))
+                    .items_center()
+                    .gap(px(12.0))
+                    .when(hovered, |row| row.bg(theme.settings_control))
+                    // Keep screenshot fixtures deterministic even if the
+                    // native cursor is left over a list row.
+                    .when(!cfg!(feature = "screenshot"), |row| {
+                        row.hover(|row| row.bg(theme.settings_control))
+                    })
+                    .child(self.skill_icon(&skill, theme))
                     .child(
                         div()
-                            .h(px(60.0))
-                            .px(px(16.0))
+                            .relative()
+                            .left(px(-1.0))
+                            .flex_1()
+                            .min_w(px(0.0))
+                            .h_full()
                             .flex()
-                            .items_center()
-                            .gap(px(12.0))
-                            .when(hovered, |row| row.bg(theme.settings_control))
-                            .hover(|row| row.bg(theme.settings_control))
-                            .child(self.skill_icon(&skill, theme))
+                            .justify_center()
+                            .flex_col()
+                            .gap(px(2.0))
                             .child(
                                 div()
-                                    .flex_1()
-                                    .min_w(px(0.0))
-                                    .flex()
-                                    .flex_col()
-                                    .gap(px(1.0))
-                                    .child(
-                                        div()
-                                            .text_size(px(13.0))
-                                            .line_height(px(19.0))
-                                            .font_weight(gpui::FontWeight(500.0))
-                                            .text_color(theme.text)
-                                            .child(skill.display_name()),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(px(13.0))
-                                            .line_height(px(19.0))
-                                            .text_color(theme.settings_description)
-                                            .child(skill.summary()),
-                                    ),
+                                    .relative()
+                                    .top(px(-0.25))
+                                    .text_size(px(14.0))
+                                    .line_height(px(21.0))
+                                    .font_weight(gpui::FontWeight(500.0))
+                                    .text_color(if theme.surface == gpui::rgba(0x181818ff) {
+                                        gpui::rgba(0xffffffff)
+                                    } else {
+                                        theme.text
+                                    })
+                                    .truncate()
+                                    .child(skill.display_name()),
                             )
-                            .child(self.scope_tag(skill.scope, theme))
-                            .child(self.skill_switch(&row_skill, enabled, busy, failed, theme, cx)),
+                            .child(
+                                div()
+                                    .relative()
+                                    .top(px(0.25))
+                                    .text_size(px(13.0))
+                                    .line_height(px(21.125))
+                                    .text_color(if theme.surface == gpui::rgba(0x181818ff) {
+                                        gpui::rgba(0xffffffa6)
+                                    } else {
+                                        theme.settings_description
+                                    })
+                                    .truncate()
+                                    .child(skill.summary()),
+                            ),
                     )
+                    .child(self.skill_actions(
+                        &row_skill,
+                        skill.scope,
+                        (enabled, busy, failed),
+                        theme,
+                        cx,
+                    ))
                     .when_some(failure, |row, (message, outcome_unknown)| {
                         let row_skill = row_skill.clone();
                         row.child(
@@ -397,8 +491,6 @@ impl SettingsView {
                     }),
             );
         }
-        list = list.child(rows);
-
         for message in load_errors {
             list = list.child(self.manage_state_card(&message, theme));
         }
@@ -421,33 +513,72 @@ impl SettingsView {
 
     fn skill_icon(&self, skill: &AgentSkill, theme: &Theme) -> impl IntoElement {
         let icon = skill.icon_path().cloned();
+        let icon_color = if theme.surface == gpui::rgba(0x181818ff) {
+            gpui::rgba(0xffffffa6)
+        } else {
+            gpui::rgba(0x1a1c1fa6)
+        };
         div()
+            .relative()
+            .left(px(-1.0))
             .size(px(40.0))
             .flex_none()
-            .rounded(px(10.0))
+            .rounded_full()
             .border_1()
             .border_color(theme.border)
-            .bg(theme.settings_control)
             .flex()
             .items_center()
             .justify_center()
             .overflow_hidden()
-            .when_some(icon, |row, path| row.child(gpui::img(path).size(px(24.0))))
+            .text_color(icon_color)
+            .when_some(icon, |row, path| {
+                row.child(
+                    gpui::svg()
+                        .path(path.to_string_lossy().to_string())
+                        .size(px(18.0))
+                        .text_color(icon_color),
+                )
+            })
     }
 
     fn scope_tag(&self, scope: AgentSkillScope, theme: &Theme) -> impl IntoElement {
         div()
             .flex_none()
-            .h(px(20.0))
-            .px(px(8.0))
-            .rounded(px(10.0))
-            .bg(theme.settings_control)
-            .text_size(px(12.0))
-            .line_height(px(18.0))
-            .text_color(theme.text_tertiary)
+            .text_size(px(13.0))
+            .line_height(px(18.5714))
+            .text_color(if theme.surface == gpui::rgba(0x181818ff) {
+                gpui::rgba(0xffffffa6)
+            } else {
+                gpui::rgba(0x1a1c1fa6)
+            })
             .flex()
             .items_center()
             .child(scope.label())
+    }
+
+    fn skill_actions(
+        &self,
+        skill: &AgentSkill,
+        scope: AgentSkillScope,
+        state: (bool, bool, bool),
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let (enabled, busy, failed) = state;
+        // The web client reserves 28px for its hidden overflow menu. Keep
+        // that slot so the scope label and switch land on the same x-grid.
+        div()
+            .relative()
+            .left(px(-1.0))
+            .w(px(102.0))
+            .h(px(28.0))
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .child(self.scope_tag(scope, theme))
+            .child(div().w(px(28.0)).h(px(28.0)).flex_none())
+            .child(self.skill_switch(skill, enabled, busy, failed, theme, cx))
     }
 
     fn skill_switch(
@@ -470,7 +601,7 @@ impl SettingsView {
             .flex()
             .items_center()
             .when(enabled, |track| {
-                track.justify_end().bg(theme.settings_accent)
+                track.justify_end().bg(gpui::rgba(0x4e82efff))
             })
             .when(!enabled, |track| {
                 track.justify_start().bg(theme.settings_switch_off)

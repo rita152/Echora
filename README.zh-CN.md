@@ -218,10 +218,11 @@ export CHATGPT_CDP_HTTP="http://127.0.0.1:${CAPTURE_CDP_PORT:?Set a dedicated de
 | 审查 / 侧边聊天 | `node scripts/cdp_capture_review.mjs artifacts/review-reference`；`node scripts/cdp_capture_side_chat.mjs artifacts/side-chat reference` |
 | 账户菜单、退出登录、计费页 | `node scripts/cdp_capture_account.mjs --output artifacts/account-phase/chatgpt-reference --theme=light`；`scripts/capture_account_gpui.sh`；`python3 scripts/compare_account_phase.py` |
 | 设置矩阵 | `./node_modules/.bin/electron scripts/verify_chatgpt_settings.cjs`；`REFRESH_SETTINGS_REFERENCES=1 scripts/capture_settings_matrix.sh`；`python3 scripts/verify_settings_matrix.py` |
+| 已合并 Phase 1–4 局部组件门禁 | `python3 scripts/stage4/compare_merge_gate.py`（需要 `artifacts/merge-four-worktrees/` 下的专用 ChatGPT/GPUI 截图；每个局部组件阈值为 99%） |
 | 图像生成 | `python3 scripts/compare_image_generation_component.py --help`，传入实测等尺寸裁切范围和 DPR。 |
 | 历史诊断 | `python3 scripts/audit_resume_rendering.py --help`；rollout 仅用于离线诊断。 |
 
-线程 manifest 是包含 `id`、`title`、`slug` 的 JSON 数组。线程 / 设置对照在 1× 显示器使用 1440×900、DPR 1；设置矩阵覆盖 21 页的两种主题。Git 写操作验收使用临时仓库与本机 bare remote，PR 命令链使用 `gh` 测试替身。
+线程 manifest 是包含 `id`、`title`、`slug` 的 JSON 数组。线程 / 设置对照在 1× 显示器使用 1440×900、DPR 1；设置矩阵覆盖 22 页的两种主题。已合并的 Phase 1–4 门禁在固定局部组件范围内，先执行一次有记录的 2×→1× BOX 归一化，再输出裁切图、差异图和分数到 `artifacts/merge-four-worktrees/visual/final-report/`。Git 写操作验收使用临时仓库与本机 bare remote，PR 命令链使用 `gh` 测试替身。
 
 ```bash
 GPUI_MARKDOWN_BENCH_FILE=docs/APP_SERVER_INTEGRATION.md \

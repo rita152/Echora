@@ -10,6 +10,7 @@ use crate::{
         mcp_elicitation::{
             McpElicitationCallback, McpElicitationEvent, McpElicitationFocus,
             McpElicitationPresentation, render_mcp_elicitation,
+            render_mcp_elicitation_url_activity,
         },
         permissions_approval::{
             PermissionApprovalCallback, PermissionApprovalPresentation, render_permissions_approval,
@@ -165,5 +166,33 @@ pub(super) fn mcp_elicitation_card(
         }
     });
     render_mcp_elicitation(&model, theme, text_input, callback)
+        .map(|card| div().id(scope).w_full().child(card))
+}
+
+/// Inline URL elicitation card used by the activity stream. URL requests do
+/// not own the composer focus; their callbacks only open the link, decline,
+/// or send the explicit continue response through the connection-scoped
+/// responder.
+pub(super) fn mcp_elicitation_url_activity_card(
+    home_entity: Entity<HomeView>,
+    owner: RequestOwner,
+    model: McpElicitationPresentation,
+    theme: Theme,
+) -> Option<gpui::Stateful<Div>> {
+    let scope = owner.scope();
+    let request_id = model.request_id.clone();
+    let target = home_entity;
+    let callback = McpElicitationCallback::new(move |event, _window, cx| {
+        if !owner.matches(target.read(cx), cx) {
+            return;
+        }
+        target.update(cx, |home, cx| {
+            if !owner.matches(home, cx) {
+                return;
+            }
+            home.handle_mcp_elicitation_event(&request_id, event, cx);
+        });
+    });
+    render_mcp_elicitation_url_activity(&model, theme, callback)
         .map(|card| div().id(scope).w_full().child(card))
 }

@@ -111,7 +111,7 @@ impl ConversationActivity {
             Self::FileApproval(model) => model.should_render(),
             Self::PermissionsApproval(model) => model.should_render(),
             Self::UserInput(model) => model.should_render(),
-            Self::McpElicitation(model) => model.status.is_overlay_visible(),
+            Self::McpElicitation(model) => model.is_overlay_visible(),
             _ => false,
         }
     }

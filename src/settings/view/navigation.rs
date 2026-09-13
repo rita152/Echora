@@ -17,25 +17,61 @@ impl SettingsView {
             .top(px(1.0))
             .text_color(theme.text)
     }
-    pub(super) fn sidebar_edge_shade(theme: Theme) -> gpui::AnyElement {
-        let is_dark = theme.surface == gpui::rgba(0x181818ff);
-        let alphas = [0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 5, 5, 7, 7, 9];
-        let mut shade = div()
-            .absolute()
-            .right_0()
-            .top_0()
-            .w(px(20.0))
-            .h_full()
-            .flex();
-        for alpha in alphas {
-            shade = shade.child(div().w(px(1.0)).h_full().flex_none().bg(gpui::rgba(alpha)));
+    pub(super) fn sidebar_edge_shade(
+        theme: Theme,
+        nav_scroll: &gpui::ScrollHandle,
+    ) -> gpui::AnyElement {
+        // GPUI's scrollbar is intentionally hidden on the scroll container so
+        // it cannot reserve layout width. Recreate ChatGPT's slim native rail
+        // as a real, scroll-aware thumb: 8px wide, 3px inset from the track,
+        // with a 11px right gutter. Reading the handle here keeps the thumb
+        // moving when the user scrolls instead of baking the capture position
+        // into the settings shell.
+        let bounds = nav_scroll.bounds();
+        let viewport_top = f32::from(bounds.origin.y);
+        let viewport_height = f32::from(bounds.size.height);
+        if viewport_height <= 1.0 {
+            return div()
+                .absolute()
+                .right(px(11.0))
+                .top(px(133.0))
+                .w(px(8.0))
+                .h(px(680.0))
+                .rounded_full()
+                .bg(if theme.surface == gpui::rgba(0x181818ff) {
+                    gpui::rgba(0x343434ff)
+                } else {
+                    gpui::rgba(0xebebebff)
+                })
+                .into_any_element();
         }
-        shade
-            .child(div().w(px(1.0)).h_full().flex_none().bg(if is_dark {
-                gpui::rgba(0x282828ff)
-            } else {
-                gpui::rgba(0xe0e0e0ff)
-            }))
+        let max_offset = f32::from(nav_scroll.max_offset().y).max(0.0);
+        let track_inset = 3.0;
+        let track_height = (viewport_height - track_inset * 2.0).max(1.0);
+        let thumb_height = (track_height * viewport_height
+            / (viewport_height + max_offset).max(1.0))
+        .max(24.0)
+        .min(track_height);
+        let travel = (track_height - thumb_height).max(0.0);
+        let progress = if max_offset > 0.0 {
+            (-f32::from(nav_scroll.offset().y) / max_offset).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let thumb_top = viewport_top + track_inset + travel * progress;
+        let thumb_color = if theme.surface == gpui::rgba(0x181818ff) {
+            gpui::rgba(0x343434ff)
+        } else {
+            gpui::rgba(0xebebebff)
+        };
+        div()
+            .absolute()
+            .right(px(11.0))
+            .top(px(thumb_top))
+            .w(px(8.0))
+            .h(px(thumb_height))
+            .rounded_full()
+            .bg(thumb_color)
             .into_any_element()
     }
     pub(super) fn nav_row(
@@ -77,7 +113,7 @@ impl SettingsView {
                     }
                 }),
             )
-            .h(px(29.0))
+            .h(px(30.0))
             .flex_none()
             .px(px(8.0))
             .rounded(px(12.5))
@@ -108,9 +144,14 @@ impl SettingsView {
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        // ChatGPT uses a 4px gap only between the section heading and its
+        // first row; consecutive rows are separated by a 1px rhythm. Keep
+        // that distinction explicit so the long settings nav does not drift
+        // vertically as more entries are added.
         let mut group = div().flex_none().flex().flex_col().gap(px(1.0)).child(
             div()
-                .h(px(29.0))
+                .h(px(21.0))
+                .mb(px(3.0))
                 .px(px(8.0))
                 .relative()
                 .top(px(1.0))
@@ -134,7 +175,7 @@ impl SettingsView {
                 group = group.child(
                     div()
                         .id("settings-account")
-                        .h(px(29.0))
+                        .h(px(30.0))
                         .flex_none()
                         .px(px(8.0))
                         .rounded(px(12.5))

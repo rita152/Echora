@@ -386,9 +386,21 @@ impl Render for SettingsView {
                     .h_full()
                     .flex_none()
                     .relative()
-                    .bg(theme.sidebar_surface)
+                    // ChatGPT's settings shell resolves its translucent
+                    // material to these opaque surfaces in the reference
+                    // capture. Keep the conversation sidebar theme separate.
+                    .bg(match self.mode {
+                        ThemeMode::Light => gpui::rgba(0xfdfdfdff),
+                        ThemeMode::Dark => gpui::rgba(0x222222ff),
+                    })
                     .border_r_1()
-                    .border_color(theme.border)
+                    // The reference shell has no contrasting divider at the
+                    // settings rail edge; keep the box but paint it with the
+                    // same opaque rail surface.
+                    .border_color(match self.mode {
+                        ThemeMode::Light => gpui::rgba(0xfdfdfdff),
+                        ThemeMode::Dark => gpui::rgba(0x222222ff),
+                    })
                     .flex()
                     .flex_col()
                     .child(div().h(px(46.0)).flex_none())
@@ -438,7 +450,9 @@ impl Render for SettingsView {
                     .child(
                         div()
                             .mx(px(8.0))
-                            .mb(px(10.0))
+                            // The reference leaves 16px between the search
+                            // field and the first navigation group.
+                            .mb(px(16.0))
                             .h(px(29.0))
                             .px(px(8.0))
                             .rounded(px(12.5))
@@ -466,12 +480,16 @@ impl Render for SettingsView {
                             .scrollbar_width(px(0.0))
                             .track_scroll(&nav_scroll)
                             .pl(px(8.0))
-                            .pr(px(8.0))
+                            // Reserve the 15px rail occupied by ChatGPT's
+                            // slim native scrollbar. It is mostly hidden in
+                            // the screenshot, but it reduces each row's hit
+                            // rectangle from 224px to 209px.
+                            .pr(px(23.0))
                             .pt(px(1.0))
                             .pb(px(8.0))
                             .flex()
                             .flex_col()
-                            .gap(px(11.0))
+                            .gap(px(16.0))
                             .child(self.nav_group(
                                 "个人",
                                 &[
@@ -485,6 +503,7 @@ impl Render for SettingsView {
                                     "pets",
                                     "keyboard-shortcuts",
                                     "usage",
+                                    "analysis",
                                     "account",
                                 ],
                                 theme,
@@ -516,7 +535,7 @@ impl Render for SettingsView {
                             ))
                             .child(self.nav_group("已归档", &["data-controls"], theme, cx)),
                     )
-                    .child(Self::sidebar_edge_shade(theme)),
+                    .child(Self::sidebar_edge_shade(theme, &nav_scroll)),
             )
             .child(
                 div()

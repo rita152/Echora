@@ -661,7 +661,7 @@ impl ComposerView {
             .activities
             .iter()
             .find_map(|activity| match activity {
-                ConversationActivity::McpElicitation(model) if model.is_interactive() => {
+                ConversationActivity::McpElicitation(model) if model.blocks_keyboard() => {
                     Some(model.as_ref())
                 }
                 _ => None,

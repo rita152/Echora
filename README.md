@@ -220,10 +220,11 @@ export CHATGPT_CDP_HTTP="http://127.0.0.1:${CAPTURE_CDP_PORT:?Set a dedicated de
 | Review / side chat | `node scripts/cdp_capture_review.mjs artifacts/review-reference`; `node scripts/cdp_capture_side_chat.mjs artifacts/side-chat reference` |
 | Account menu, logout, billing | `node scripts/cdp_capture_account.mjs --output artifacts/account-phase/chatgpt-reference --theme=light`; `scripts/capture_account_gpui.sh`; `python3 scripts/compare_account_phase.py` |
 | Settings matrix | `./node_modules/.bin/electron scripts/verify_chatgpt_settings.cjs`; `REFRESH_SETTINGS_REFERENCES=1 scripts/capture_settings_matrix.sh`; `python3 scripts/verify_settings_matrix.py` |
+| Merged Phase 1–4 local-component gate | `python3 scripts/stage4/compare_merge_gate.py` (expects the dedicated ChatGPT/GPUI captures under `artifacts/merge-four-worktrees/`; threshold is 99% per local component) |
 | Image generation | `python3 scripts/compare_image_generation_component.py --help`; supply measured equal-size crops and DPR. |
 | History diagnostics | `python3 scripts/audit_resume_rendering.py --help`; rollout files are for offline diagnostics only. |
 
-Thread manifests are JSON arrays with `id`, `title`, and `slug`. Thread/settings comparisons use 1440×900 at DPR 1 on a 1× display; the settings matrix covers 21 pages in both themes. Git-write verification uses temporary repositories and a local bare remote; PR command-chain checks use a `gh` test double.
+Thread manifests are JSON arrays with `id`, `title`, and `slug`. Thread/settings comparisons use 1440×900 at DPR 1 on a 1× display; the settings matrix covers 22 pages in both themes. The merged Phase 1–4 gate compares fixed local component regions after one documented 2×→1× BOX normalization and records crops, diffs, and scores in `artifacts/merge-four-worktrees/visual/final-report/`. Git-write verification uses temporary repositories and a local bare remote; PR command-chain checks use a `gh` test double.
 
 ```bash
 GPUI_MARKDOWN_BENCH_FILE=docs/APP_SERVER_INTEGRATION.md \

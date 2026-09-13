@@ -1469,9 +1469,7 @@ impl Render for HomeView {
                 ConversationActivity::UserInput(model) if model.should_render() => {
                     Some(model.request_id.clone())
                 }
-                ConversationActivity::McpElicitation(model)
-                    if model.status.is_overlay_visible() =>
-                {
+                ConversationActivity::McpElicitation(model) if model.is_overlay_visible() => {
                     Some(model.request_id.clone())
                 }
                 _ => None,
@@ -1482,7 +1480,7 @@ impl Render for HomeView {
                     || matches!(activity, ConversationActivity::FileApproval(model) if model.should_render())
                     || matches!(activity, ConversationActivity::PermissionsApproval(model) if model.should_render())
                     || matches!(activity, ConversationActivity::UserInput(model) if model.should_render())
-                    || matches!(activity, ConversationActivity::McpElicitation(model) if model.status.is_interactive())
+                    || matches!(activity, ConversationActivity::McpElicitation(model) if model.blocks_keyboard())
             });
         if blocking_keyboard_request_pending
             && self.focused_approval_request != pending_request_id

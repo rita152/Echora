@@ -373,7 +373,17 @@ pub(super) fn render_activity_stream_unit(
             | ConversationActivity::PermissionsApproval(_)
             | ConversationActivity::UserInput(_)
             | ConversationActivity::AssistantMessage { .. } => div().into_any_element(),
-            ConversationActivity::McpElicitation(model) if !model.status.is_overlay_visible() => {
+            ConversationActivity::McpElicitation(model) if model.is_inline_url_visible() => {
+                super::requests::mcp_elicitation_url_activity_card(
+                    home_entity,
+                    render.request_owner.clone(),
+                    model.as_ref().clone(),
+                    theme,
+                )
+                .map(|card| card.into_any_element())
+                .unwrap_or_else(|| div().into_any_element())
+            }
+            ConversationActivity::McpElicitation(model) if !model.is_overlay_visible() => {
                 crate::components::mcp_elicitation::render_mcp_elicitation_status(
                     model.as_ref(),
                     theme,

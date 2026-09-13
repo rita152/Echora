@@ -544,7 +544,7 @@ const PLUGINS: &[SectionSpec] = &[
 ];
 
 pub const PAGES: &[PageSpec] = &[
-    PageSpec::new("pets", "智能伙伴", "", PageKind::Pets, PETS),
+    PageSpec::new("pets", "宠物", "", PageKind::Pets, PETS),
     PageSpec::new(
         "keyboard-shortcuts",
         "键盘快捷键",
@@ -558,6 +558,16 @@ pub const PAGES: &[PageSpec] = &[
         "如需查看发票、更改付款方式或进行其他操作，请前往网页版设置",
         PageKind::Usage,
         USAGE,
+    ),
+    // ChatGPT exposes this navigation entry even though the app-server does
+    // not currently provide an analytics payload. Keep a real, inert page so
+    // keyboard and pointer navigation have the same target as the client.
+    PageSpec::new(
+        "analysis",
+        "分析",
+        "",
+        PageKind::Standard,
+        &[SectionSpec::new("", "", &[]), SectionSpec::new("", "", &[])],
     ),
     PageSpec::new(
         "computer-use",

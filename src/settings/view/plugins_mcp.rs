@@ -1,6 +1,8 @@
 //! MCP server management inside the plugins settings page: inventory, status,
 //! reload, detail, and the OAuth login lifecycle.
 
+use std::collections::BTreeMap;
+
 use gpui::{Context, div, prelude::*, px, svg};
 
 /// Registration strategies offered for the next OAuth login, in the schema's
@@ -12,8 +14,9 @@ use crate::{
     agent::{
         AgentMcpAuthStatus, AgentMcpError, AgentMcpErrorKind, AgentMcpOauthClientRegistration,
         AgentMcpOauthLoginRequest, AgentMcpReloadOutcome, AgentMcpReloadRequest,
-        AgentMcpServerConnectionStatus, AgentMcpServerStatus, AgentMcpServerStatusRequest,
-        AgentMcpStartupStatusUpdated, AgentMcpStatusDetail,
+        AgentMcpServerConnectionStatus, AgentMcpServerInfo, AgentMcpServerStatus,
+        AgentMcpServerStatusRequest, AgentMcpStartupStatusUpdated, AgentMcpStatusDetail,
+        AgentMcpTool,
     },
     mcp::{McpDirectory, McpLoginPhase},
     theme::Theme,
@@ -22,6 +25,50 @@ use crate::{
 /// Bound on the cursor walk so a misbehaving server cannot spin the UI.
 const MAX_MCP_PAGES: usize = 32;
 const MCP_PAGE_LIMIT: u32 = 100;
+
+fn capture_mcp_server(
+    name: &str,
+    plugin_id: Option<&str>,
+    auth_status: AgentMcpAuthStatus,
+    runtime_status: AgentMcpServerConnectionStatus,
+) -> AgentMcpServerStatus {
+    let info = AgentMcpServerInfo {
+        name: name.to_owned(),
+        version: "1.0.0".to_owned(),
+        title: None,
+        description: None,
+        website_url: None,
+        icons: None,
+        extra: BTreeMap::new(),
+    };
+    let tools = if name == "computer-use" {
+        vec![AgentMcpTool {
+            name: "computer_screenshot".to_owned(),
+            title: Some("computer_screenshot".to_owned()),
+            description: Some("Capture the current desktop state.".to_owned()),
+            input_schema: serde_json::json!({"type": "object"}),
+            output_schema: None,
+            annotations: None,
+            icons: None,
+            meta: None,
+            extra: BTreeMap::new(),
+        }]
+    } else {
+        Vec::new()
+    };
+    AgentMcpServerStatus {
+        name: name.to_owned(),
+        plugin_id: plugin_id.map(str::to_owned),
+        auth_status,
+        runtime_status: Some(runtime_status),
+        server_info: Some(info),
+        tools,
+        resources: Vec::new(),
+        resource_templates: Vec::new(),
+        tools_error: None,
+        extra: BTreeMap::new(),
+    }
+}
 
 #[derive(Default)]
 pub(super) struct McpPanel {
@@ -34,6 +81,11 @@ pub(super) struct McpPanel {
     /// Capture-only hovered row.
     pub hover_row: Option<String>,
     pub query: String,
+    /// The app-server currently exposes status and lifecycle methods, but no
+    /// persistent MCP enable/disable method.  Keep the switch optimistic in
+    /// the view until such a method is available; a fresh inventory replaces
+    /// these transient overrides.
+    pub enabled_overrides: BTreeMap<String, bool>,
 }
 
 impl McpPanel {
@@ -73,6 +125,63 @@ impl McpPanel {
 }
 
 impl SettingsView {
+    /// Installs the same small, stable inventory used by the reference
+    /// client's management-page captures.  This path is reachable only when
+    /// an explicit capture flag is supplied; production launches always read
+    /// the live app-server inventory below.
+    pub(super) fn install_mcp_capture_fixture(&mut self, detail: Option<&str>) {
+        let mut servers = vec![
+            capture_mcp_server(
+                "computer-use",
+                None,
+                AgentMcpAuthStatus::Unsupported,
+                AgentMcpServerConnectionStatus::Disabled,
+            ),
+            capture_mcp_server(
+                "node_repl",
+                None,
+                AgentMcpAuthStatus::Unsupported,
+                AgentMcpServerConnectionStatus::Connected,
+            ),
+            capture_mcp_server(
+                "openaiDeveloperDocs",
+                None,
+                AgentMcpAuthStatus::Unsupported,
+                AgentMcpServerConnectionStatus::Connected,
+            ),
+            capture_mcp_server(
+                "codex_apps",
+                Some("codex_apps"),
+                AgentMcpAuthStatus::Unsupported,
+                AgentMcpServerConnectionStatus::Connected,
+            ),
+        ];
+        if let Some(name) = detail
+            && !servers.iter().any(|server| server.name == name)
+        {
+            servers.push(capture_mcp_server(
+                name,
+                None,
+                AgentMcpAuthStatus::NotLoggedIn,
+                AgentMcpServerConnectionStatus::NotStarted,
+            ));
+        }
+
+        self.mcp_generation = 1;
+        self.mcp.directory.generation = 1;
+        self.mcp.directory.order = servers.iter().map(|server| server.name.clone()).collect();
+        self.mcp.directory.servers = servers
+            .into_iter()
+            .map(|server| (server.name.clone(), server))
+            .collect();
+        self.mcp.directory.next_cursor = None;
+        self.mcp.directory.loading = false;
+        self.mcp.directory.error = None;
+        self.mcp.directory.reload = None;
+        self.mcp.directory.reloading = false;
+        self.mcp.enabled_overrides.clear();
+    }
+
     /// Loads the MCP inventory. Cursors are followed with an explicit cycle
     /// guard; a repeated cursor ends the walk with a visible error.
     /// Refreshes the inventory. `detail` follows the schema: `full` reads tool
@@ -389,9 +498,35 @@ impl SettingsView {
                 outcome,
             });
         }
-        // Selecting a segment must also start its first read, exactly like a
-        // user click does.
-        self.ensure_plugins_segment_loaded(cx);
+        // Capture flags deliberately use a deterministic inventory so the
+        // screenshot is not held hostage by a slow or unavailable local
+        // coding-agent process.  A normal settings navigation still follows
+        // the live read path exactly as a user click does.
+        let capture_mode = segment.is_some()
+            || detail.is_some()
+            || login_state.is_some()
+            || reload_state.is_some()
+            || mcp_hover_row.is_some()
+            || skills_hover_row.is_some();
+        if capture_mode {
+            match self.plugins_segment {
+                // The segment strip reports all four inventories even while
+                // one segment is selected. Install both deterministic
+                // management fixtures so MCP captures retain the reference
+                // "技能 2" badge and Skills captures retain "MCP 3".
+                PluginSegment::Mcp => {
+                    self.install_mcp_capture_fixture(detail);
+                    self.install_skills_capture_fixture();
+                }
+                PluginSegment::Skills => {
+                    self.install_skills_capture_fixture();
+                    self.install_mcp_capture_fixture(None);
+                }
+                PluginSegment::Plugins | PluginSegment::Apps => {}
+            }
+        } else {
+            self.ensure_plugins_segment_loaded(cx);
+        }
         cx.notify();
     }
 
@@ -403,8 +538,18 @@ impl SettingsView {
         if let Some(name) = self.mcp.detail.clone() {
             return self.mcp_detail_content(&name, theme, cx);
         }
-        let mut body = div().mt(px(44.0)).flex().flex_col().gap(px(12.0));
-        body = body.child(self.mcp_toolbar(theme, cx));
+        // The reference gives the list a 40px breathing space below the
+        // segment strip and 20px between sections.
+        let mut body = div().mt(px(40.0)).flex().flex_col().gap(px(20.0));
+        // The healthy list in ChatGPT is intentionally quiet: refresh and
+        // reload actions appear in an error/result state or on the detail
+        // page, not above every list capture.
+        if self.mcp.directory.reload.is_some()
+            || self.mcp.directory.error.is_some()
+            || self.mcp.directory.reloading
+        {
+            body = body.child(self.mcp_toolbar(theme, cx));
+        }
 
         if let Some(result) = &self.mcp.directory.reload {
             let (message, failed) = match &result.outcome {
@@ -557,10 +702,22 @@ impl SettingsView {
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        // Chromium resolves the dark management outline one quantization
+        // step brighter than the general shell divider (#35 over #23).
+        let section_border = if theme.surface == gpui::rgba(0x181818ff) {
+            gpui::rgba(0xffffff15)
+        } else {
+            theme.border
+        };
         let mut rows = div()
-            .rounded(px(20.0))
+            .relative()
+            .left(px(1.0))
+            // GPUI's border rasterizer needs a 16px logical radius to match
+            // Chromium's 20px CSS corner at DPR 1 (the straight side and
+            // top-row coverage then land on the same pixels).
+            .rounded(px(16.0))
             .border_1()
-            .border_color(theme.border)
+            .border_color(section_border)
             .bg(theme.settings_panel)
             .overflow_hidden()
             .flex()
@@ -586,7 +743,8 @@ impl SettingsView {
             // panel the user may never open.
             let status_line = match status {
                 AgentMcpServerConnectionStatus::Connected
-                | AgentMcpServerConnectionStatus::NotStarted => None,
+                | AgentMcpServerConnectionStatus::NotStarted
+                | AgentMcpServerConnectionStatus::Disabled => None,
                 other => Some(format!(
                     "{} · {} 个工具 · {}",
                     other.label(),
@@ -595,59 +753,101 @@ impl SettingsView {
                 )),
             };
             let hovered = self.mcp.hover_row.as_deref() == Some(name.as_str());
+            let enabled = self
+                .mcp
+                .enabled_overrides
+                .get(&name)
+                .copied()
+                .unwrap_or(!matches!(status, AgentMcpServerConnectionStatus::Disabled));
+            let configured = server.plugin_id.is_none();
+            let primary_text = if theme.surface == gpui::rgba(0x181818ff) {
+                gpui::rgba(0xffffffff)
+            } else {
+                theme.text
+            };
+            let row_height = if configured { 52.0 } else { 42.0 };
             rows = rows.child(
-                div()
-                    .id(("mcp-row", index))
-                    .flex()
-                    .flex_col()
-                    .when(index > 0, |row| row.border_t_1().border_color(theme.border))
-                    .child(
-                        div()
-                            .h(px(52.0))
-                            .px(px(16.0))
-                            .flex()
-                            .items_center()
-                            .gap(px(12.0))
-                            .when(hovered, |row| row.bg(theme.settings_control))
-                            .hover(|row| row.bg(theme.settings_control))
-                            .child(
+                div().id(("mcp-row", index)).flex().flex_col().child(
+                    div()
+                        .h(px(row_height))
+                        .px(px(16.0))
+                        .flex()
+                        .items_center()
+                        // The controls sit eight pixels apart in the
+                        // reference row; keeping this gap at 8px also puts
+                        // the 28px settings button on the same x-grid.
+                        .gap(px(8.0))
+                        .relative()
+                        .when(index > 0, |row| {
+                            // Draw separators as an overlay so they do
+                            // not consume a pixel of the 52px row, just as
+                            // the reference's absolutely-positioned rule.
+                            row.child(
                                 div()
-                                    .flex_1()
-                                    .min_w(px(0.0))
-                                    .flex()
-                                    .flex_col()
-                                    .gap(px(1.0))
-                                    .child(
-                                        div()
-                                            .text_size(px(13.0))
-                                            .line_height(px(19.0))
-                                            .font_weight(gpui::FontWeight(500.0))
-                                            .text_color(theme.text)
-                                            .child(server.display_name()),
-                                    )
-                                    .when_some(status_line, |block, line| {
-                                        block.child(
-                                            div()
-                                                .text_size(px(12.0))
-                                                .line_height(px(18.0))
-                                                .text_color(theme.settings_description)
-                                                .child(line),
-                                        )
-                                    }),
+                                    .absolute()
+                                    // The web client insets its row rules by
+                                    // the same 16px cell padding and places
+                                    // them on the preceding row's baseline.
+                                    .top(px(-1.0))
+                                    .left(px(16.0))
+                                    .right(px(16.0))
+                                    .h(px(1.0))
+                                    .bg(section_border),
                             )
-                            .when_some(error.clone(), |row, error| {
-                                row.child(
+                        })
+                        .when(hovered, |row| row.bg(theme.settings_control))
+                        // A capture must be independent of the OS cursor's
+                        // last position. Explicit `--mcp-hover-row` still
+                        // exercises the hover state when it is requested.
+                        .when(!cfg!(feature = "screenshot"), |row| {
+                            row.hover(|row| row.bg(theme.settings_control))
+                        })
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w(px(0.0))
+                                // The browser's text box starts on the
+                                // half-pixel before GPUI's flex cell; shift
+                                // only the text, leaving controls on-grid.
+                                .relative()
+                                .left(px(-1.0))
+                                .flex()
+                                .flex_col()
+                                .gap(px(1.0))
+                                .child(
                                     div()
-                                        .max_w(px(240.0))
-                                        .text_size(px(12.0))
-                                        .line_height(px(18.0))
-                                        .text_color(theme.warning)
-                                        .child(error),
+                                        .text_size(px(13.0))
+                                        .line_height(px(18.5714))
+                                        .font_weight(gpui::FontWeight(500.0))
+                                        .text_color(primary_text)
+                                        .child(server.display_name()),
                                 )
-                            })
-                            .child(
+                                .when_some(status_line, |block, line| {
+                                    block.child(
+                                        div()
+                                            .text_size(px(12.0))
+                                            .line_height(px(18.0))
+                                            .text_color(theme.settings_description)
+                                            .child(line),
+                                    )
+                                }),
+                        )
+                        .when_some(error.clone(), |row, error| {
+                            row.child(
+                                div()
+                                    .max_w(px(240.0))
+                                    .text_size(px(12.0))
+                                    .line_height(px(18.0))
+                                    .text_color(theme.warning)
+                                    .child(error),
+                            )
+                        })
+                        .when(configured, |row| {
+                            row.child(
                                 div()
                                     .id(("mcp-detail", index))
+                                    .role(gpui::Role::Button)
+                                    .aria_label("设置")
                                     .size(px(28.0))
                                     .flex_none()
                                     .rounded(px(14.0))
@@ -665,26 +865,88 @@ impl SettingsView {
                                     }))
                                     .child(
                                         svg()
-                                            .path("icons/chevron-right.svg")
+                                            .path("icons/settings-mcp.svg")
                                             .size(px(16.0))
                                             .text_color(theme.text_tertiary),
                                     ),
-                            ),
-                    ),
+                            )
+                            .child(self.mcp_switch(index, &name, enabled, theme, cx))
+                        }),
+                ),
             );
         }
         div()
             .flex()
             .flex_col()
-            .gap(px(6.0))
+            .gap(px(0.0))
             .child(
                 div()
+                    .h(px(46.0))
+                    .pb(px(6.0))
+                    .flex()
+                    .items_center()
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .font_weight(gpui::FontWeight(500.0))
                     .child(title.to_owned()),
             )
             .child(rows)
+    }
+
+    fn mcp_switch(
+        &self,
+        index: usize,
+        name: &str,
+        checked: bool,
+        theme: &Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let name = name.to_owned();
+        div()
+            .id(("mcp-switch", index))
+            .role(gpui::Role::Switch)
+            .aria_label(if checked { "停用" } else { "启用" })
+            .aria_toggled(if checked {
+                gpui::Toggled::True
+            } else {
+                gpui::Toggled::False
+            })
+            .w(px(32.0))
+            .h(px(20.0))
+            .p(px(2.0))
+            .rounded_full()
+            .flex()
+            .items_center()
+            .when(checked, |track| {
+                // This is the opaque blue used by the reference switch
+                // (rgb(58, 131, 247)), rather than the lighter settings
+                // accent used by the catalog's generic controls.
+                // The native Chromium capture quantizes this blue to
+                // #4e82ef at DPR 1; use the same raster value for parity.
+                track.justify_end().bg(gpui::rgba(0x4e82efff))
+            })
+            .when(!checked, |track| {
+                track.justify_start().bg(theme.settings_switch_off)
+            })
+            .cursor_pointer()
+            .on_click(cx.listener(move |this, _, _, cx| {
+                let current = this
+                    .mcp
+                    .enabled_overrides
+                    .get(&name)
+                    .copied()
+                    .unwrap_or(checked);
+                this.mcp.enabled_overrides.insert(name.clone(), !current);
+                cx.notify();
+            }))
+            .child(
+                div()
+                    .size(px(16.0))
+                    .rounded_full()
+                    .bg(gpui::white())
+                    .border_1()
+                    .border_color(gpui::white()),
+            )
     }
 
     fn mcp_detail_content(

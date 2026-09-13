@@ -764,6 +764,11 @@ fn main() {
                             || collaboration_ui_state.is_some()
                             || mcp_tool_call_ui_state.is_some()
                             || dynamic_tool_call_ui_state.is_some()
+                            || mcp_elicitation_ui_state.is_some()
+                            || plugins_segment.is_some()
+                            || mcp_detail.is_some()
+                            || mcp_login_state.is_some()
+                            || mcp_reload_state.is_some()
                             || image_generation_ui_state.is_some()
                             || permission_mode.is_some()
                             || permission_menu_open

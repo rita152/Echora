@@ -25,7 +25,7 @@ mod tests {
     use super::pages;
 
     #[test]
-    fn catalog_contains_all_twenty_one_reference_pages_in_navigation_order() {
+    fn catalog_contains_all_reference_pages_in_navigation_order() {
         let actual: Vec<_> = pages().map(|page| page.slug).collect();
         assert_eq!(
             actual,
@@ -40,6 +40,7 @@ mod tests {
                 "pets",
                 "keyboard-shortcuts",
                 "usage",
+                "analysis",
                 "computer-use",
                 "chronicle",
                 "appshots",
@@ -53,7 +54,7 @@ mod tests {
                 "data-controls",
             ]
         );
-        assert_eq!(actual.iter().copied().collect::<HashSet<_>>().len(), 21);
+        assert_eq!(actual.iter().copied().collect::<HashSet<_>>().len(), 22);
         assert!(pages().all(|page| !page.sections.is_empty()));
     }
 }

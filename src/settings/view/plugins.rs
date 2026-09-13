@@ -13,8 +13,11 @@ use crate::{
 
 /// Reference catalog sizes for the two segments this client does not read from
 /// a backend (plugins and apps). MCP and skills counts are live values.
-const PLUGIN_CATALOG_COUNT: usize = 14;
-const APP_CATALOG_COUNT: usize = 8;
+// Keep the catalog badges in step with the current ChatGPT desktop reference
+// (the management surfaces are compared at the same viewport in capture
+// runs).  MCP and skills remain live counts from their respective directories.
+const PLUGIN_CATALOG_COUNT: usize = 16;
+const APP_CATALOG_COUNT: usize = 9;
 
 impl SettingsView {
     pub(super) fn plugins_content(
@@ -25,17 +28,19 @@ impl SettingsView {
     ) -> gpui::AnyElement {
         let rows = page.sections[1].rows;
         let plugin_hover = match self.mode {
-            ThemeMode::Dark => gpui::rgba(0x222222ff),
-            ThemeMode::Light => gpui::rgba(0xf3f3f4ff),
+            ThemeMode::Dark => gpui::rgba(0x242424ff),
+            ThemeMode::Light => gpui::rgba(0xe8e8e9ff),
         };
         let search_border = match self.mode {
             ThemeMode::Dark => gpui::rgba(0xffffff29),
-            ThemeMode::Light => gpui::rgba(0x1a1c1f29),
+            ThemeMode::Light => gpui::rgba(0x1a1c1f1a),
         };
         let subtitle_weight = crate::theme::UI_BODY_FONT_WEIGHT;
+        // ChatGPT uses a 65%-alpha secondary foreground for the subtitle in
+        // both themes, rather than a precomposited gray.
         let subtitle_color = match self.mode {
-            ThemeMode::Light => gpui::rgba(0xb0b1b2ff),
-            ThemeMode::Dark => gpui::rgba(0x5a5a5aff),
+            ThemeMode::Light => gpui::rgba(0x1a1c1fa6),
+            ThemeMode::Dark => gpui::rgba(0xffffffa6),
         };
         let icon_paths = match self.mode {
             ThemeMode::Light => [
@@ -216,7 +221,12 @@ impl SettingsView {
                                     .line_height(px(18.0))
                                     .text_color(theme.surface)
                                     .child("添加")
-                                    .child(svg().path("icons/chevron-down.svg").size(px(12.0))),
+                                    .child(
+                                        svg()
+                                            .path("icons/chevron-down.svg")
+                                            .size(px(12.0))
+                                            .text_color(theme.surface),
+                                    ),
                             ),
                     ),
             )
@@ -265,13 +275,21 @@ impl SettingsView {
                             .rounded_full()
                             .border_1()
                             .border_color(search_border)
+                            .when(self.mode == ThemeMode::Dark, |search| {
+                                search.bg(gpui::rgba(0x2d2d2dff))
+                            })
                             .flex()
                             .items_center()
                             .gap(px(8.0))
                             .text_size(px(14.0))
                             .line_height(px(18.0))
                             .text_color(theme.text_tertiary)
-                            .child(svg().path("icons/search.svg").size(px(15.0)))
+                            .child(
+                                svg()
+                                    .path("icons/search.svg")
+                                    .size(px(15.0))
+                                    .text_color(theme.text_tertiary),
+                            )
                             .child(self.plugins_segment_search_label()),
                     ),
             )
@@ -286,7 +304,19 @@ impl SettingsView {
         [
             ("插件", PLUGIN_CATALOG_COUNT, PluginSegment::Plugins),
             ("应用", APP_CATALOG_COUNT, PluginSegment::Apps),
-            ("MCP", self.mcp.directory.server_count(), PluginSegment::Mcp),
+            // Plugin-provided servers are shown in their own section and are
+            // not included in ChatGPT's MCP badge.  The live directory keeps
+            // both kinds of entries so the UI can preserve that grouping.
+            (
+                "MCP",
+                self.mcp
+                    .directory
+                    .servers
+                    .values()
+                    .filter(|server| server.plugin_id.is_none())
+                    .count(),
+                PluginSegment::Mcp,
+            ),
             ("技能", self.skills.skill_count(), PluginSegment::Skills),
         ]
     }

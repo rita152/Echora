@@ -231,10 +231,6 @@ impl McpDirectory {
             }
         }
     }
-
-    pub fn server_count(&self) -> usize {
-        self.servers.len()
-    }
 }
 
 #[cfg(test)]
