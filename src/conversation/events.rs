@@ -547,6 +547,20 @@ impl ConversationState {
                         self.phase = ConversationPhase::Streaming;
                     }
                 }
+                AgentEvent::DynamicToolCallUpdated(tool_call) => {
+                    super::activity::upsert_dynamic_tool_call_activity(
+                        &mut self.activities,
+                        tool_call,
+                    );
+                    if self.phase != ConversationPhase::Stopping {
+                        self.phase = ConversationPhase::Streaming;
+                    }
+                }
+                // The reference client folds a plain function call output and
+                // both review-mode items into turn activity rather than giving
+                // them a row of their own, so keep them out of the stream while
+                // retaining the decoded protocol item in history.
+                AgentEvent::FunctionCallOutputUpdated(_) | AgentEvent::ReviewModeUpdated(_) => {}
                 AgentEvent::McpToolCallProgress { item_id, message } => {
                     if let Some(tool_call) =
                         find_mcp_tool_call_activity_mut(&mut self.activities, &item_id)

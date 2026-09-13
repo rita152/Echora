@@ -172,6 +172,9 @@ pub enum AgentEvent {
     CommandCompleted(CommandExecution),
     FileChangeUpdated(AgentFileChange),
     ImageViewed(AgentImageView),
+    FunctionCallOutputUpdated(super::activity::AgentFunctionCallOutput),
+    DynamicToolCallUpdated(super::activity::AgentDynamicToolCall),
+    ReviewModeUpdated(super::activity::AgentReviewMode),
     ImageGenerationUpdated(AgentImageGeneration),
     PlanUpdated(super::activity::AgentPlan),
     PlanDelta {

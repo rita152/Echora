@@ -10,11 +10,14 @@ use super::methods::summarize_json;
 use crate::{
     agent::{
         AgentCollaboration, AgentCollaborationStatus, AgentCollaborationTool,
-        AgentCollaboratorState, AgentCollaboratorStatus, AgentFileChange, AgentFileChangeEntry,
-        AgentFileChangeKind, AgentFileChangeStatus, AgentImageGeneration,
-        AgentImageGenerationFailure, AgentImageGenerationStatus, AgentImageView, AgentMcpToolCall,
-        AgentMcpToolCallStatus, AgentReasoning, CommandExecution, CommandExecutionAction,
-        CommandExecutionStatus, LegacySubAgentActivityKind,
+        AgentCollaboratorState, AgentCollaboratorStatus, AgentDynamicToolCall,
+        AgentDynamicToolCallContentItem, AgentDynamicToolCallStatus, AgentFileChange,
+        AgentFileChangeEntry, AgentFileChangeKind, AgentFileChangeStatus, AgentFunctionCallOutput,
+        AgentFunctionCallOutputBody, AgentFunctionCallOutputContentItem, AgentImageDetail,
+        AgentImageGeneration, AgentImageGenerationFailure, AgentImageGenerationStatus,
+        AgentImageView, AgentMcpToolCall, AgentMcpToolCallStatus, AgentReasoning, AgentReviewMode,
+        CommandExecution, CommandExecutionAction, CommandExecutionStatus,
+        LegacySubAgentActivityKind,
     },
     media::read_image_dimensions,
 };
@@ -423,6 +426,182 @@ pub(super) fn parse_context_compaction(
     }
     Ok(crate::agent::AgentContextCompaction {
         id: required_item_string(item, "contextCompaction", "id")?,
+        completed,
+    })
+}
+
+pub(super) fn parse_image_detail(value: &str, context: &str) -> Result<AgentImageDetail> {
+    Ok(match value {
+        "auto" => AgentImageDetail::Auto,
+        "low" => AgentImageDetail::Low,
+        "high" => AgentImageDetail::High,
+        "original" => AgentImageDetail::Original,
+        other => bail!("{context}.detail 包含未知值 `{other}`"),
+    })
+}
+
+/// Every `FunctionCallOutputContentItem` variant is a responses API content
+/// item, so each carries its required payload plus the optional image detail.
+pub(super) fn parse_function_call_output_content_item(
+    value: &Value,
+    index: usize,
+) -> Result<AgentFunctionCallOutputContentItem> {
+    let context = format!("functionCallOutput item.output[{index}]");
+    let content = value
+        .as_object()
+        .with_context(|| format!("{context} 必须是对象"))?;
+    let content_type = required_item_string(content, &context, "type")?;
+    Ok(match content_type.as_str() {
+        "input_text" => AgentFunctionCallOutputContentItem::Text {
+            text: required_item_string(content, &context, "text")?,
+        },
+        "input_image" => {
+            let detail = match content.get("detail") {
+                None | Some(Value::Null) => None,
+                Some(Value::String(detail)) => Some(parse_image_detail(detail, &context)?),
+                Some(_) => bail!("{context}.detail 必须是字符串或 null"),
+            };
+            AgentFunctionCallOutputContentItem::Image {
+                image_url: required_item_string(content, &context, "image_url")?,
+                detail,
+            }
+        }
+        "input_audio" => AgentFunctionCallOutputContentItem::Audio {
+            audio_url: required_item_string(content, &context, "audio_url")?,
+        },
+        "encrypted_content" => AgentFunctionCallOutputContentItem::Encrypted {
+            encrypted_content: required_item_string(content, &context, "encrypted_content")?,
+        },
+        other => bail!("{context}.type 包含未知值 `{other}`"),
+    })
+}
+
+pub(crate) fn parse_function_call_output(
+    item: &serde_json::Map<String, Value>,
+    completed: bool,
+) -> Result<AgentFunctionCallOutput> {
+    let item_type = required_item_string(item, "functionCallOutput", "type")?;
+    if item_type != "functionCallOutput" {
+        bail!("functionCallOutput item.type 必须是 `functionCallOutput`，实际为 `{item_type}`");
+    }
+    let output = match item.get("output") {
+        None => bail!("functionCallOutput item.output 缺失"),
+        Some(Value::String(text)) => AgentFunctionCallOutputBody::Text(text.clone()),
+        Some(Value::Array(items)) => AgentFunctionCallOutputBody::Items(
+            items
+                .iter()
+                .enumerate()
+                .map(|(index, item)| parse_function_call_output_content_item(item, index))
+                .collect::<Result<Vec<_>>>()?,
+        ),
+        Some(_) => bail!("functionCallOutput item.output 必须是字符串或内容项数组"),
+    };
+    Ok(AgentFunctionCallOutput {
+        id: required_item_string(item, "functionCallOutput", "id")?,
+        name: required_item_string(item, "functionCallOutput", "name")?,
+        namespace: optional_nullable_item_string(item, "functionCallOutput", "namespace")?,
+        output,
+        completed,
+    })
+}
+
+pub(super) fn parse_dynamic_tool_call_content_item(
+    value: &Value,
+    index: usize,
+) -> Result<AgentDynamicToolCallContentItem> {
+    let context = format!("dynamicToolCall item.contentItems[{index}]");
+    let content = value
+        .as_object()
+        .with_context(|| format!("{context} 必须是对象"))?;
+    let content_type = required_item_string(content, &context, "type")?;
+    Ok(match content_type.as_str() {
+        "inputText" => AgentDynamicToolCallContentItem::Text {
+            text: required_item_string(content, &context, "text")?,
+        },
+        "inputImage" => AgentDynamicToolCallContentItem::Image {
+            image_url: required_item_string(content, &context, "imageUrl")?,
+        },
+        "inputAudio" => AgentDynamicToolCallContentItem::Audio {
+            audio_url: required_item_string(content, &context, "audioUrl")?,
+        },
+        other => bail!("{context}.type 包含未知值 `{other}`"),
+    })
+}
+
+pub(crate) fn parse_dynamic_tool_call(
+    item: &serde_json::Map<String, Value>,
+    completed: bool,
+) -> Result<AgentDynamicToolCall> {
+    let item_type = required_item_string(item, "dynamicToolCall", "type")?;
+    if item_type != "dynamicToolCall" {
+        bail!("dynamicToolCall item.type 必须是 `dynamicToolCall`，实际为 `{item_type}`");
+    }
+    let status = match required_item_string(item, "dynamicToolCall", "status")?.as_str() {
+        "inProgress" => AgentDynamicToolCallStatus::InProgress,
+        "completed" => AgentDynamicToolCallStatus::Completed,
+        "failed" => AgentDynamicToolCallStatus::Failed,
+        other => bail!("dynamicToolCall item.status 包含未知值 `{other}`"),
+    };
+    // `arguments` is `true` in the schema, so any JSON value is legal and a
+    // missing key is the only representable violation.
+    let arguments = item
+        .get("arguments")
+        .cloned()
+        .context("dynamicToolCall item.arguments 缺失")?;
+    let success = match item.get("success") {
+        None | Some(Value::Null) => None,
+        Some(Value::Bool(value)) => Some(*value),
+        Some(_) => bail!("dynamicToolCall item.success 必须是布尔值或 null"),
+    };
+    let content_items = match item.get("contentItems") {
+        None | Some(Value::Null) => None,
+        Some(Value::Array(items)) => Some(
+            items
+                .iter()
+                .enumerate()
+                .map(|(index, item)| parse_dynamic_tool_call_content_item(item, index))
+                .collect::<Result<Vec<_>>>()?,
+        ),
+        Some(_) => bail!("dynamicToolCall item.contentItems 必须是数组或 null"),
+    };
+    let duration_ms = optional_image_generation_i64(
+        item,
+        "durationMs",
+        "durationMs",
+        false,
+        "dynamicToolCall item",
+    )?;
+    Ok(AgentDynamicToolCall {
+        id: required_item_string(item, "dynamicToolCall", "id")?,
+        tool: required_item_string(item, "dynamicToolCall", "tool")?,
+        namespace: optional_nullable_item_string(item, "dynamicToolCall", "namespace")?,
+        arguments,
+        status,
+        success,
+        content_items,
+        duration_ms,
+        completed,
+    })
+}
+
+pub(crate) fn parse_review_mode(
+    item: &serde_json::Map<String, Value>,
+    entered: bool,
+    completed: bool,
+) -> Result<AgentReviewMode> {
+    let (item_kind, item_type) = if entered {
+        ("enteredReviewMode", "enteredReviewMode")
+    } else {
+        ("exitedReviewMode", "exitedReviewMode")
+    };
+    let actual = required_item_string(item, item_kind, "type")?;
+    if actual != item_type {
+        bail!("{item_kind} item.type 必须是 `{item_type}`，实际为 `{actual}`");
+    }
+    Ok(AgentReviewMode {
+        id: required_item_string(item, item_kind, "id")?,
+        review: required_item_string(item, item_kind, "review")?,
+        entered,
         completed,
     })
 }

@@ -44,6 +44,7 @@ use super::{
         collaboration_display_name, collaboration_status_label, collaboration_ui_identity,
         toggle_collaboration_item,
     },
+    dynamic_tool::{dynamic_tool_call_label, is_dynamic_tool_call_visible},
     mcp::{humanize_mcp_tool_name, mcp_tool_call_label},
     media::image_generation_preview_size,
     messages::user_message_paragraphs,
@@ -687,6 +688,73 @@ fn mcp_tool_call_label_matches_the_captured_chatgpt_row() {
         ActivityStreamUnit::Standalone(ConversationActivity::McpToolCall(call))
             if call.id == "mcp_1"
     ));
+}
+
+#[test]
+fn dynamic_tool_call_row_reuses_the_measured_tool_row_metrics() {
+    // The reference tool row measures a 21 px box, a 16 px glyph, a 22 px
+    // icon-to-label advance, and 14 px text; the dynamic tool row must not
+    // introduce its own metrics.
+    assert_eq!(MCP_TOOL_CALL_ROW_HEIGHT, 21.0);
+    assert_eq!(MCP_TOOL_CALL_ICON_SIZE, 16.0);
+    assert_eq!(MCP_TOOL_CALL_ICON_TEXT_GAP, 6.0);
+    assert_eq!(MCP_TOOL_CALL_TEXT_SIZE, 14.0);
+    assert_eq!(dynamic_tool_call_label(&tool_call("exec")), "Exec");
+    assert_eq!(
+        dynamic_tool_call_label(&tool_call("get_usage_limits")),
+        "Get usage limits"
+    );
+
+    let units = activity_stream_units(&[ConversationActivity::DynamicToolCall(Box::from(
+        tool_call("exec"),
+    ))]);
+    assert!(
+        matches!(
+            &units[0],
+            ActivityStreamUnit::Standalone(ConversationActivity::DynamicToolCall(call))
+                if call.id == "dtc_1"
+        ),
+        "the dynamic tool call must stay a standalone row"
+    );
+}
+
+#[test]
+fn dynamic_tool_call_visibility_matches_the_reference_client() {
+    // A namespaced call is always shown; only an unnamespaced call whose tool
+    // the reference renders elsewhere is suppressed.
+    assert!(is_dynamic_tool_call_visible(&tool_call("exec")));
+    assert!(is_dynamic_tool_call_visible(&tool_call(
+        "automation_update"
+    )));
+    assert!(!is_dynamic_tool_call_visible(&unnamespaced_tool_call(
+        "automation_update"
+    )));
+    assert!(!is_dynamic_tool_call_visible(&unnamespaced_tool_call(
+        "load_workspace_dependencies"
+    )));
+    assert!(is_dynamic_tool_call_visible(&unnamespaced_tool_call(
+        "exec"
+    )));
+}
+
+fn tool_call(tool: &str) -> crate::agent::AgentDynamicToolCall {
+    crate::agent::AgentDynamicToolCall {
+        id: "dtc_1".into(),
+        tool: tool.into(),
+        namespace: Some("functions".into()),
+        arguments: serde_json::json!({"cmd": "pwd"}),
+        status: crate::agent::AgentDynamicToolCallStatus::Completed,
+        success: Some(true),
+        content_items: None,
+        duration_ms: Some(1535),
+        completed: true,
+    }
+}
+
+fn unnamespaced_tool_call(tool: &str) -> crate::agent::AgentDynamicToolCall {
+    let mut call = tool_call(tool);
+    call.namespace = None;
+    call
 }
 
 #[test]

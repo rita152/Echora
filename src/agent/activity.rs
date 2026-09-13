@@ -83,6 +83,96 @@ pub struct AgentImageView {
     pub path: PathBuf,
 }
 
+/// Agent-neutral representation of the app-server `functionCallOutput` thread
+/// item, whose `output` field is either a plain string or a list of responses
+/// API compatible content items.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AgentFunctionCallOutputBody {
+    Text(String),
+    Items(Vec<AgentFunctionCallOutputContentItem>),
+}
+
+/// The subset of `ContentItem` the protocol accepts as a function call output.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AgentFunctionCallOutputContentItem {
+    Text {
+        text: String,
+    },
+    Image {
+        image_url: String,
+        detail: Option<AgentImageDetail>,
+    },
+    Audio {
+        audio_url: String,
+    },
+    Encrypted {
+        encrypted_content: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AgentImageDetail {
+    Auto,
+    Low,
+    High,
+    Original,
+}
+
+/// Agent-neutral representation of the app-server `functionCallOutput` thread
+/// item. `completed` reflects the item lifecycle rather than a protocol field.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentFunctionCallOutput {
+    pub id: String,
+    pub name: String,
+    pub namespace: Option<String>,
+    pub output: AgentFunctionCallOutputBody,
+    pub completed: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AgentDynamicToolCallStatus {
+    InProgress,
+    Completed,
+    Failed,
+}
+
+/// The subset of dynamic tool call output content the protocol defines, one
+/// variant per `DynamicToolCallOutputContentItem` type (`inputText`,
+/// `inputImage`, and `inputAudio` on the wire).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AgentDynamicToolCallContentItem {
+    Text { text: String },
+    Image { image_url: String },
+    Audio { audio_url: String },
+}
+
+/// Agent-neutral representation of the app-server `dynamicToolCall` thread
+/// item. `completed` reflects the item lifecycle, matching how the reference
+/// client keeps an item row settled once either lifecycle event arrives.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentDynamicToolCall {
+    pub id: String,
+    pub tool: String,
+    pub namespace: Option<String>,
+    pub arguments: Value,
+    pub status: AgentDynamicToolCallStatus,
+    pub success: Option<bool>,
+    pub content_items: Option<Vec<AgentDynamicToolCallContentItem>>,
+    pub duration_ms: Option<i64>,
+    pub completed: bool,
+}
+
+/// Agent-neutral representation of the app-server `enteredReviewMode` and
+/// `exitedReviewMode` thread items. The schema carries no fields beyond the
+/// item id and the review label.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentReviewMode {
+    pub id: String,
+    pub review: String,
+    pub entered: bool,
+    pub completed: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AgentMcpToolCallStatus {
     InProgress,

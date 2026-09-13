@@ -9,7 +9,10 @@ use std::{
 use anyhow::{Context as _, Result, bail};
 use serde_json::{Value, json};
 
-use super::{parse_collaboration, parse_image_generation, parse_mcp_tool_call};
+use super::{
+    parse_collaboration, parse_dynamic_tool_call, parse_function_call_output,
+    parse_image_generation, parse_mcp_tool_call, parse_review_mode,
+};
 use crate::agent::{
     AgentFileChange, AgentFileChangeEntry, AgentFileChangeKind, AgentFileChangeStatus,
     AgentImageView, AgentThreadActiveFlag, FilterValue, HistoryItemDetail, HistoryTurnStatus,
@@ -369,6 +372,31 @@ pub(super) fn parse_history_item(value: &Value) -> Result<ThreadHistoryItem> {
         "mcpToolCall" => Ok(ThreadHistoryItem::McpToolCall(Box::from(
             parse_mcp_tool_call(value.as_object().context("mcpToolCall item 必须是对象")?)?,
         ))),
+        // Every persisted item is settled, so history carries the completed
+        // lifecycle the live path reports through `item/completed`.
+        "functionCallOutput" => Ok(ThreadHistoryItem::FunctionCallOutput(Box::from(
+            parse_function_call_output(
+                value
+                    .as_object()
+                    .context("functionCallOutput item 必须是对象")?,
+                true,
+            )?,
+        ))),
+        "dynamicToolCall" => Ok(ThreadHistoryItem::DynamicToolCall(Box::from(
+            parse_dynamic_tool_call(
+                value
+                    .as_object()
+                    .context("dynamicToolCall item 必须是对象")?,
+                true,
+            )?,
+        ))),
+        "enteredReviewMode" | "exitedReviewMode" => {
+            Ok(ThreadHistoryItem::ReviewMode(parse_review_mode(
+                value.as_object().context("reviewMode item 必须是对象")?,
+                kind == "enteredReviewMode",
+                true,
+            )?))
+        }
         "plan" | "webSearch" | "sleep" => super::progress::parse_progress_history(value),
         _ => Ok(ThreadHistoryItem::Unsupported { item_id, kind }),
     }
@@ -522,4 +550,121 @@ mod resumed_rendering_metadata_tests {
         assert_eq!(action, value["action"]);
         assert_eq!(results, value["results"]);
     }
+}
+
+#[test]
+fn restored_items_are_settled_even_when_the_payload_carries_less_than_live() {
+    use crate::agent::{
+        AgentDynamicToolCallContentItem, AgentDynamicToolCallStatus, AgentFunctionCallOutputBody,
+    };
+
+    // A plain string body is the whole ``output`` payload the schema uses
+    // for text-only results, so history must decode it without a warning.
+    let value = json!({
+        "type": "functionCallOutput",
+        "id": "fco_1",
+        "name": "shell",
+        "namespace": null,
+        "output": "total 0\n"
+    });
+    let ThreadHistoryItem::FunctionCallOutput(output) = parse_history_item(&value).unwrap() else {
+        panic!("functionCallOutput must not become an unsupported warning");
+    };
+    assert_eq!(output.id, "fco_1");
+    assert_eq!(output.name, "shell");
+    assert_eq!(output.namespace, None);
+    assert_eq!(
+        output.output,
+        AgentFunctionCallOutputBody::Text("total 0\n".into())
+    );
+    assert!(output.completed, "every persisted item is settled");
+
+    // Older persisted payloads can omit the optional nullable fields.
+    let value = json!({
+        "type": "dynamicToolCall",
+        "id": "dtc_1",
+        "tool": "exec",
+        "status": "completed",
+        "arguments": {"cmd": "pwd"}
+    });
+    let ThreadHistoryItem::DynamicToolCall(call) = parse_history_item(&value).unwrap() else {
+        panic!("dynamicToolCall must not become an unsupported warning");
+    };
+    assert_eq!(call.id, "dtc_1");
+    assert_eq!(call.tool, "exec");
+    assert_eq!(call.namespace, None);
+    assert_eq!(call.status, AgentDynamicToolCallStatus::Completed);
+    assert_eq!(call.success, None);
+    assert_eq!(call.content_items, None);
+    assert_eq!(call.duration_ms, None);
+    assert!(call.completed);
+
+    // Optional content items survive restoration verbatim.
+    let value = json!({
+        "type": "dynamicToolCall",
+        "id": "dtc_2",
+        "tool": "create_thread",
+        "namespace": "codex_app",
+        "status": "failed",
+        "success": false,
+        "arguments": null,
+        "contentItems": [{"type": "inputText", "text": ""}],
+        "durationMs": 12
+    });
+    let ThreadHistoryItem::DynamicToolCall(call) = parse_history_item(&value).unwrap() else {
+        panic!("dynamicToolCall must not become an unsupported warning");
+    };
+    assert_eq!(call.namespace.as_deref(), Some("codex_app"));
+    assert_eq!(call.status, AgentDynamicToolCallStatus::Failed);
+    assert_eq!(call.success, Some(false));
+    assert_eq!(call.arguments, Value::Null);
+    assert_eq!(call.duration_ms, Some(12));
+    assert_eq!(
+        call.content_items,
+        Some(vec![AgentDynamicToolCallContentItem::Text {
+            text: String::new()
+        }])
+    );
+
+    for (value, entered) in [
+        (
+            json!({"type": "enteredReviewMode", "id": "r1", "review": "code"}),
+            true,
+        ),
+        (
+            json!({"type": "exitedReviewMode", "id": "r2", "review": "code"}),
+            false,
+        ),
+    ] {
+        let ThreadHistoryItem::ReviewMode(review) = parse_history_item(&value).unwrap() else {
+            panic!("review mode items must not become an unsupported warning");
+        };
+        assert_eq!(review.entered, entered);
+        assert_eq!(review.review, "code");
+        assert!(review.completed);
+    }
+}
+
+#[test]
+fn malformed_restored_items_still_fail_fast() {
+    use crate::agent::ThreadHistoryItem as Item;
+    for value in [
+        json!({"type": "functionCallOutput", "id": "fco_1", "name": "shell"}),
+        json!({"type": "functionCallOutput", "id": "fco_1", "name": "shell", "output": [{"type": "input_video"}]}),
+        json!({"type": "dynamicToolCall", "id": "dtc_1", "tool": "exec", "status": "declined", "arguments": {}}),
+        json!({"type": "dynamicToolCall", "id": "dtc_1", "tool": "exec", "status": "completed"}),
+        json!({"type": "enteredReviewMode", "id": "r1"}),
+        json!({"type": "exitedReviewMode", "review": "code"}),
+    ] {
+        assert!(
+            parse_history_item(&value).is_err(),
+            "malformed history must not decode silently: {value}"
+        );
+    }
+    // Unknown future item types keep degrading to an explicit placeholder
+    // rather than failing the whole restore.
+    assert!(matches!(
+        parse_history_item(&json!({"type": "futureItem", "id": "f1"})).unwrap(),
+        Item::Unsupported { .. }
+    ));
 }

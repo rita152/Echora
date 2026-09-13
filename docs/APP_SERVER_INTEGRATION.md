@@ -132,7 +132,7 @@ Composer 在运行中有草稿时显示“追加输入”，无草稿时显示�
 
 ## Item 与历史兼容
 
-实时 `item/started`／`item/completed` 与历史恢复支持下表类型。未知实时类型报错，未知历史类型保留为 `ThreadHistoryItem::Unsupported`。本机 schema 共 19 个 ThreadItem 变体，其中 15 个已有实时／历史编解码与领域状态支持，4 个仍未接入；相邻版本的 collabToolCall 别名不计入这 19 项。两个实时 item 方法仍因其余未接入类型标为“部分接入”。
+实时 `item/started`／`item/completed` 与历史恢复支持下表类型。未知实时类型报错，未知历史类型保留为 `ThreadHistoryItem::Unsupported`。本机 schema 共 19 个 ThreadItem 变体，全部已有实时／历史编解码与领域状态支持；相邻版本的两个别名（collabToolCall、image_generation）不计入这 19 项。
 
 | 类型 | 数据与兼容处理 | 展示行为 |
 |---|---|---|
@@ -150,8 +150,13 @@ Composer 在运行中有草稿时显示“追加输入”，无草稿时显示�
 | `plan` | `item/plan/delta` 按所属 turn 内的 item.id 累加；completed item.text 权威覆盖增量，迟到 started/delta 不撤销终态 | Markdown 计划卡；整卡及键盘打开只读文件标签，支持复制和显式导出，沿用本地评价 UI |
 | `webSearch` | 共享实时／历史解析，保留 query、action、results 和额外 JSON 字段；校验 search/openPage/findInPage/other 及 nullable 字段，results 为数组或 null | 单条显示查询／页面／查找目标及状态，多项沿用活动分组 |
 | `sleep` | durationMs 为 uint64；实时按 started/completed 更新，中断／失败只结束仍在运行的活动 | 等待时长及状态；中断明确标记“原定”时长，不把请求时长称为实际耗时 |
+| `functionCallOutput` | 保留 name、nullable namespace 与 required output；output 为字符串或 responses API 内容项数组，逐项校验 input_text/input_image（含 nullable detail：auto/low/high/original）/input_audio/encrypted_content。历史项一律标记 completed，缺失的可选字段保持 null，不从 rollout 或磁盘补全 | 参考客户端把它并入 turn 活动而不给独立行，GPUI 保持一致；字段留在领域数据中 |
+| `dynamicToolCall` | 保留 tool、nullable namespace、required arguments（schema 为 `true`，任意 JSON 合法，含显式 null）、status（inProgress/completed/failed）、nullable success、nullable contentItems（inputText/inputImage/inputAudio）与 nullable durationMs。历史项一律标记 completed | 按稳定 item.id 原位更新并只保留一行；namespace 为空且工具为 automation_update／load_workspace_dependencies 时不渲染，与参考客户端一致；行样式沿用 MCP 工具行，hover／focus 显示 chevron，Enter／Space 展开 arguments、耗时与内容项 |
+| `enteredReviewMode`、`exitedReviewMode` | 保留 item.id 与 review；entered 由 item.type 推断，历史项一律标记 completed | 参考客户端把两种审查模式并入 turn 活动而不给独立行，GPUI 保持一致；字段留在领域数据中 |
 
-当前 schema 中的 functionCallOutput、dynamicToolCall、enteredReviewMode、exitedReviewMode 尚未接入实时 item 路径。协作枚举、字段校验与历史别名见 `items.rs`；历史解码见 `workspace_protocol.rs`。计划、搜索和等待共享 `progress.rs` 解码；样式、尺寸和交互入口见 README 与组件实现。
+协作枚举、字段校验与历史别名见 `items.rs`；历史解码见 `workspace_protocol.rs`。计划、搜索和等待共享 `progress.rs` 解码；样式、尺寸和交互入口见 README 与组件实现。
+
+已完成的 item 一律保持终态：`item/completed` 之后的迟到或重复 `item/started` 不重新激活该活动，重复 completed 幂等；不同 item.id 与不同 turn 各自独立。item 完成不结束 turn，turn 终态仍只由 `turn/completed` 决定。
 
 `turn/plan/updated` 的 explanation／步骤状态单独建模为 turn 进度，替换当前 turn 的上一份步骤快照，不覆盖 plan 文本，也不自动推断所有步骤完成。活动结束不替代 `turn/completed`；turn 终止时仅收束仍活动的 item，并把仍进行中的计划步骤恢复为 pending。相同生命周期事件只更新已有活动；跨 thread/turn 由 manager 路由隔离，已结束 turn 的迟到计划／搜索／等待通知及重复 turn 完成通知不会重新绑定新 turn。增量没有序号或偏移，合法重复字符必须保留，不能按字符串去重；最终 plan item 负责文本收敛。
 
@@ -379,7 +384,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `item/autoApprovalReview/started` | 默认 | 已接入 | 支持 command/execve/writeStdin/applyPatch/networkAccess/mcpToolCall/requestPermissions 七类动作及共享的五种状态；targetItemId 可缺失或为 null。开始通知不得覆盖已完成结果。 | `auto_approval`、`notifications`、`manager/dispatch` |
 | `item/commandExecution/outputDelta` | 默认 | 已接入 | 按 itemId 追加命令输出 delta。 | `dispatch` |
 | `item/commandExecution/terminalInteraction` | 默认 | 已接入 | 保留 itemId、processId；stdin 仅转为“是否写入”的布尔值，正文不进入领域或 UI 状态；复用命令活动。 | `dispatch` |
-| `item/completed` | 默认 | 部分接入 | 接入类型见“Item 与历史兼容”；以 item 载荷状态更新，不以通知名称推定成功。未知实时类型使连接失败。 | `dispatch`、`items` |
+| `item/completed` | 默认 | 已接入 | 全部 19 个 ThreadItem 类型见“Item 与历史兼容”；以 item 载荷状态更新，不以通知名称推定成功。已完成的 item 保持终态，重复完成幂等，不结束 turn。未知实时类型使连接失败。 | `dispatch`、`items` |
 | `item/fileChange/outputDelta` | 默认 | 已接入 | deprecated；校验 thread/turn/item/delta，不再产生内容事件。 | `dispatch` |
 | `item/fileChange/patchUpdated` | 默认 | 已接入 | 按 itemId 替换 changes[path/diff/kind]，刷新文件卡与差异统计。 | `dispatch`、`items` |
 | `item/mcpToolCall/progress` | 默认 | 已接入 | 按 itemId 追加 message，完成快照保留进度；孤立 progress 不创建工具项。 | `dispatch` |
@@ -387,7 +392,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `item/reasoning/summaryPartAdded` | 默认 | 已接入 | 按 itemId 和非负 summaryIndex 建立槽位；孤立增量不创建 reasoning 项。 | `dispatch` |
 | `item/reasoning/summaryTextDelta` | 默认 | 已接入 | 按 itemId/summaryIndex 追加 delta；仅合并相邻且同 item/index 的事件。 | `dispatch` |
 | `item/reasoning/textDelta` | 默认 | 已接入 | 按 itemId/contentIndex 追加 delta；summary 为空时以 content 展示正文。 | `dispatch` |
-| `item/started` | 默认 | 部分接入 | 接入类型见“Item 与历史兼容”；创建或原位更新活动。userMessage 按 item.id/clientId 关联提交并原位去重；未知实时类型使连接失败。 | `dispatch`、`items` |
+| `item/started` | 默认 | 已接入 | 全部 19 个 ThreadItem 类型见“Item 与历史兼容”；创建或原位更新活动，已完成 item 的迟到 started 不重新激活。userMessage 按 item.id/clientId 关联提交并原位去重；未知实时类型使连接失败。 | `dispatch`、`items` |
 | `mcpServer/event/stream/notification` | 默认 | 未接入 | — | — |
 | `mcpServer/oauthLogin/completed` | 默认 | 已接入 | 按 name/threadId 关联本客户端启动的 loginId；迟到、已取消或本客户端未启动的完成通知解码后不再影响状态；成功后只做轻量状态读。 | `manager/mcp`、`mcp` |
 | `mcpServer/startupStatus/updated` | 默认 | 已接入 | 按 app 或 thread/server 保存 starting/ready/failed/cancelled；threadId/error/failureReason 可省略或 null，仅接受 reauthenticationRequired 原因；不结束 turn。 | `manager/dispatch`、`notifications` |

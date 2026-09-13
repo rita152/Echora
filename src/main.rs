@@ -504,6 +504,10 @@ fn main() {
         arg.strip_prefix("--mcp-tool-call-ui-state=")
             .map(ToOwned::to_owned)
     });
+    let dynamic_tool_call_ui_state = args.iter().find_map(|arg| {
+        arg.strip_prefix("--dynamic-tool-call-ui-state=")
+            .map(ToOwned::to_owned)
+    });
     #[cfg(feature = "screenshot")]
     let progress_ui_state = args.iter().find_map(|arg| {
         arg.strip_prefix("--progress-ui-state=")
@@ -759,6 +763,7 @@ fn main() {
                             || context_compaction_ui_state.is_some()
                             || collaboration_ui_state.is_some()
                             || mcp_tool_call_ui_state.is_some()
+                            || dynamic_tool_call_ui_state.is_some()
                             || image_generation_ui_state.is_some()
                             || permission_mode.is_some()
                             || permission_menu_open
@@ -879,6 +884,9 @@ fn main() {
                         }
                         if let Some(state) = mcp_tool_call_ui_state.as_deref() {
                             app.set_mcp_tool_call_for_capture(state, cx);
+                        }
+                        if let Some(state) = dynamic_tool_call_ui_state.as_deref() {
+                            app.set_dynamic_tool_call_for_capture(state, cx);
                         }
                         #[cfg(feature = "screenshot")]
                         if let Some(state) = progress_ui_state.as_deref() {

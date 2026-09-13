@@ -8,6 +8,7 @@ mod auto_approval_tests;
 mod collaboration;
 mod context;
 mod conversation;
+mod dynamic_tool;
 mod landing;
 mod mcp;
 mod media;
@@ -816,6 +817,15 @@ impl HomeView {
     pub fn set_mcp_tool_call_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
         self.composer.update(cx, |composer, cx| {
             composer.set_mcp_tool_call_for_capture(state, cx)
+        });
+        cx.notify();
+    }
+
+    pub fn set_dynamic_tool_call_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
+        self.expanded_tool_groups.clear();
+        self.collapsed_active_tool_groups.clear();
+        self.composer.update(cx, |composer, cx| {
+            composer.set_dynamic_tool_call_for_capture(state, cx)
         });
         cx.notify();
     }

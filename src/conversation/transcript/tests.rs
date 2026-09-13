@@ -249,3 +249,115 @@ fn steer_history_preserves_interleaved_messages_and_attachments() {
     assert_eq!(state.assistant_message, "answer");
     assert_eq!(state.phase, ConversationPhase::Complete);
 }
+
+#[test]
+fn history_dynamic_tool_call_matches_the_live_reducer_state() {
+    use crate::agent::{
+        AgentDynamicToolCall, AgentDynamicToolCallContentItem, AgentDynamicToolCallStatus,
+        AgentEvent,
+    };
+
+    let persisted = |completed: bool| AgentDynamicToolCall {
+        id: "dtc_1".into(),
+        tool: "exec".into(),
+        namespace: Some("functions".into()),
+        arguments: serde_json::json!({"cmd": "pwd"}),
+        status: AgentDynamicToolCallStatus::Completed,
+        success: Some(true),
+        content_items: Some(vec![AgentDynamicToolCallContentItem::Text {
+            text: "ok".into(),
+        }]),
+        duration_ms: Some(1535),
+        completed,
+    };
+
+    let mut restored = ConversationState::default();
+    restored.hydrate_history(progress_history(
+        HistoryTurnStatus::Completed,
+        vec![ThreadHistoryItem::DynamicToolCall(Box::from(persisted(
+            true,
+        )))],
+    ));
+
+    let mut live = ConversationState {
+        phase: ConversationPhase::Starting,
+        ..Default::default()
+    };
+    live.apply_agent_event_batch(vec![AgentEvent::DynamicToolCallUpdated(persisted(false))]);
+    live.apply_agent_event_batch(vec![AgentEvent::DynamicToolCallUpdated(persisted(true))]);
+
+    assert_eq!(
+        live.activities, restored.activities,
+        "the live and restored paths must produce the same domain state"
+    );
+    assert_eq!(restored.activities.len(), 1);
+}
+
+#[test]
+fn history_function_call_output_and_review_mode_keep_no_row_like_live() {
+    use crate::agent::{
+        AgentEvent, AgentFunctionCallOutput, AgentFunctionCallOutputBody, AgentReviewMode,
+    };
+
+    let mut restored = ConversationState::default();
+    restored.hydrate_history(progress_history(
+        HistoryTurnStatus::Completed,
+        vec![
+            ThreadHistoryItem::FunctionCallOutput(Box::from(AgentFunctionCallOutput {
+                id: "fco_1".into(),
+                name: "shell".into(),
+                namespace: None,
+                output: AgentFunctionCallOutputBody::Text("total 0\n".into()),
+                completed: true,
+            })),
+            ThreadHistoryItem::ReviewMode(AgentReviewMode {
+                id: "review_1".into(),
+                review: "code".into(),
+                entered: true,
+                completed: true,
+            }),
+            ThreadHistoryItem::ReviewMode(AgentReviewMode {
+                id: "review_2".into(),
+                review: "code".into(),
+                entered: false,
+                completed: true,
+            }),
+        ],
+    ));
+
+    let mut live = ConversationState {
+        phase: ConversationPhase::Starting,
+        ..Default::default()
+    };
+    live.apply_agent_event_batch(vec![
+        AgentEvent::FunctionCallOutputUpdated(AgentFunctionCallOutput {
+            id: "fco_1".into(),
+            name: "shell".into(),
+            namespace: None,
+            output: AgentFunctionCallOutputBody::Text("total 0\n".into()),
+            completed: true,
+        }),
+        AgentEvent::ReviewModeUpdated(AgentReviewMode {
+            id: "review_1".into(),
+            review: "code".into(),
+            entered: true,
+            completed: true,
+        }),
+        AgentEvent::ReviewModeUpdated(AgentReviewMode {
+            id: "review_2".into(),
+            review: "code".into(),
+            entered: false,
+            completed: true,
+        }),
+    ]);
+
+    assert!(restored.activities.is_empty());
+    assert_eq!(restored.activities, live.activities);
+    assert!(
+        !restored
+            .activities
+            .iter()
+            .any(|activity| matches!(activity, ConversationActivity::Warning { .. })),
+        "these items must not degrade into an unsupported warning"
+    );
+}

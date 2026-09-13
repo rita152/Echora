@@ -262,6 +262,26 @@ pub(super) fn render_activity_stream_unit(
             ConversationActivity::McpToolCall(tool_call) => {
                 mcp_tool_call_activity(*tool_call, theme).into_any_element()
             }
+            ConversationActivity::DynamicToolCall(tool_call) => {
+                if super::dynamic_tool::is_dynamic_tool_call_visible(tool_call.as_ref()) {
+                    let target = home_entity.clone();
+                    let expanded = expanded_commands.contains(&tool_call.id);
+                    let scroll_handle = command_scroll_handles
+                        .get(&tool_call.id)
+                        .cloned()
+                        .unwrap_or_else(gpui::ScrollHandle::new);
+                    super::dynamic_tool::dynamic_tool_call_activity(
+                        target,
+                        tool_call.as_ref(),
+                        expanded,
+                        scroll_handle,
+                        theme,
+                    )
+                    .into_any_element()
+                } else {
+                    div().into_any_element()
+                }
+            }
             ConversationActivity::Command(command) => command_execution_activity(
                 home_entity,
                 command,

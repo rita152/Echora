@@ -399,6 +399,20 @@ impl ConversationState {
                                 message: format!("历史包含当前 UI 尚未呈现的 {kind} 项"),
                             });
                         }
+                        // A restored dynamic tool call keeps the same row the
+                        // live path produces, so history and live agree.
+                        ThreadHistoryItem::DynamicToolCall(tool_call) => {
+                            super::activity::upsert_dynamic_tool_call_activity(
+                                &mut activities,
+                                tool_call.as_ref().clone(),
+                            );
+                        }
+                        // The reference client folds plain function call output
+                        // and both review-mode items into turn activity instead
+                        // of giving them a row, for live and restored turns
+                        // alike.
+                        ThreadHistoryItem::FunctionCallOutput(_)
+                        | ThreadHistoryItem::ReviewMode(_) => {}
                     }
                 }
                 if let Some(error) = &turn.error {

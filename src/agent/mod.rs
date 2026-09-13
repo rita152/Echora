@@ -29,12 +29,14 @@ pub use account::{
 };
 pub use activity::{
     AgentActivityStatus, AgentCollaboration, AgentCollaborationStatus, AgentCollaborationTool,
-    AgentCollaboratorState, AgentCollaboratorStatus, AgentContextCompaction, AgentFileChange,
-    AgentFileChangeEntry, AgentFileChangeKind, AgentFileChangeStatus, AgentImageGeneration,
-    AgentImageGenerationFailure, AgentImageGenerationStatus, AgentImageView, AgentMcpToolCall,
-    AgentMcpToolCallStatus, AgentPlan, AgentPlanStep, AgentPlanStepStatus, AgentReasoning,
-    AgentSleep, AgentTurnPlan, AgentWebSearch, CommandExecution, CommandExecutionAction,
-    CommandExecutionStatus, LegacySubAgentActivityKind,
+    AgentCollaboratorState, AgentCollaboratorStatus, AgentContextCompaction, AgentDynamicToolCall,
+    AgentDynamicToolCallContentItem, AgentDynamicToolCallStatus, AgentFileChange,
+    AgentFileChangeEntry, AgentFileChangeKind, AgentFileChangeStatus, AgentFunctionCallOutput,
+    AgentFunctionCallOutputBody, AgentFunctionCallOutputContentItem, AgentImageDetail,
+    AgentImageGeneration, AgentImageGenerationFailure, AgentImageGenerationStatus, AgentImageView,
+    AgentMcpToolCall, AgentMcpToolCallStatus, AgentPlan, AgentPlanStep, AgentPlanStepStatus,
+    AgentReasoning, AgentReviewMode, AgentSleep, AgentTurnPlan, AgentWebSearch, CommandExecution,
+    CommandExecutionAction, CommandExecutionStatus, LegacySubAgentActivityKind,
 };
 pub use auto_approval::{
     AgentAutoApprovalReview, AgentAutoApprovalReviewAction, AgentAutoApprovalReviewKey,

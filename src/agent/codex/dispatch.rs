@@ -9,8 +9,9 @@ use serde_json::Value;
 use super::{
     items::{
         parse_agent_message, parse_collaboration, parse_command_execution,
-        parse_context_compaction, parse_file_change, parse_file_change_entries,
-        parse_image_generation, parse_image_view, parse_mcp_tool_call, parse_reasoning,
+        parse_context_compaction, parse_dynamic_tool_call, parse_file_change,
+        parse_file_change_entries, parse_function_call_output, parse_image_generation,
+        parse_image_view, parse_mcp_tool_call, parse_reasoning, parse_review_mode,
         required_turn_item, required_turn_item_type, turn_item_protocol_error,
         validate_user_message,
     },
@@ -197,6 +198,42 @@ pub(super) fn process_turn_message<W: Write + Send + 'static>(
                         events,
                         AgentEvent::McpToolCallUpdated(tool_call),
                         "item/started mcpToolCall",
+                    )
+                    .map_err(|error| turn_item_protocol_error(message, error))?;
+                }
+                "functionCallOutput" => {
+                    required_notification_i64(message, "startedAtMs")
+                        .map_err(|error| turn_item_protocol_error(message, error))?;
+                    let output = parse_function_call_output(item, false)
+                        .map_err(|error| turn_item_protocol_error(message, error))?;
+                    send_turn_event(
+                        events,
+                        AgentEvent::FunctionCallOutputUpdated(output),
+                        "item/started functionCallOutput",
+                    )
+                    .map_err(|error| turn_item_protocol_error(message, error))?;
+                }
+                "dynamicToolCall" => {
+                    required_notification_i64(message, "startedAtMs")
+                        .map_err(|error| turn_item_protocol_error(message, error))?;
+                    let tool_call = parse_dynamic_tool_call(item, false)
+                        .map_err(|error| turn_item_protocol_error(message, error))?;
+                    send_turn_event(
+                        events,
+                        AgentEvent::DynamicToolCallUpdated(tool_call),
+                        "item/started dynamicToolCall",
+                    )
+                    .map_err(|error| turn_item_protocol_error(message, error))?;
+                }
+                "enteredReviewMode" | "exitedReviewMode" => {
+                    required_notification_i64(message, "startedAtMs")
+                        .map_err(|error| turn_item_protocol_error(message, error))?;
+                    let review = parse_review_mode(item, item_type == "enteredReviewMode", false)
+                        .map_err(|error| turn_item_protocol_error(message, error))?;
+                    send_turn_event(
+                        events,
+                        AgentEvent::ReviewModeUpdated(review),
+                        "item/started reviewMode",
                     )
                     .map_err(|error| turn_item_protocol_error(message, error))?;
                 }
@@ -472,6 +509,42 @@ pub(super) fn process_turn_message<W: Write + Send + 'static>(
                         events,
                         AgentEvent::McpToolCallUpdated(tool_call),
                         "item/completed mcpToolCall",
+                    )
+                    .map_err(|error| turn_item_protocol_error(message, error))?;
+                }
+                "functionCallOutput" => {
+                    required_notification_i64(message, "completedAtMs")
+                        .map_err(|error| turn_item_protocol_error(message, error))?;
+                    let output = parse_function_call_output(item, true)
+                        .map_err(|error| turn_item_protocol_error(message, error))?;
+                    send_turn_event(
+                        events,
+                        AgentEvent::FunctionCallOutputUpdated(output),
+                        "item/completed functionCallOutput",
+                    )
+                    .map_err(|error| turn_item_protocol_error(message, error))?;
+                }
+                "dynamicToolCall" => {
+                    required_notification_i64(message, "completedAtMs")
+                        .map_err(|error| turn_item_protocol_error(message, error))?;
+                    let tool_call = parse_dynamic_tool_call(item, true)
+                        .map_err(|error| turn_item_protocol_error(message, error))?;
+                    send_turn_event(
+                        events,
+                        AgentEvent::DynamicToolCallUpdated(tool_call),
+                        "item/completed dynamicToolCall",
+                    )
+                    .map_err(|error| turn_item_protocol_error(message, error))?;
+                }
+                "enteredReviewMode" | "exitedReviewMode" => {
+                    required_notification_i64(message, "completedAtMs")
+                        .map_err(|error| turn_item_protocol_error(message, error))?;
+                    let review = parse_review_mode(item, item_type == "enteredReviewMode", true)
+                        .map_err(|error| turn_item_protocol_error(message, error))?;
+                    send_turn_event(
+                        events,
+                        AgentEvent::ReviewModeUpdated(review),
+                        "item/completed reviewMode",
                     )
                     .map_err(|error| turn_item_protocol_error(message, error))?;
                 }

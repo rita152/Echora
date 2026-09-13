@@ -12,6 +12,7 @@ use crate::{
     agent::{
         AgentCollaboration, AgentCollaborationStatus, AgentCollaborationTool,
         AgentCollaboratorState, AgentCollaboratorStatus, AgentContextCompaction,
+        AgentDynamicToolCall, AgentDynamicToolCallContentItem, AgentDynamicToolCallStatus,
         AgentImageGeneration, AgentImageGenerationFailure, AgentImageGenerationStatus,
         AgentMcpToolCall, AgentMcpToolCallStatus, CommandExecution, CommandExecutionAction,
         CommandExecutionStatus, LegacySubAgentActivityKind,
@@ -270,6 +271,64 @@ impl ComposerView {
         cx.emit(ConversationChanged);
         cx.notify();
     }
+    /// Deterministic fixture for the app-server `dynamicToolCall` item. The
+    /// reference client suppresses `exec` when its namespace is absent, so the
+    /// fixture supplies the namespace the protocol actually sends.
+    pub fn set_dynamic_tool_call_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
+        let status = match state {
+            "running" => AgentDynamicToolCallStatus::InProgress,
+            "failed" => AgentDynamicToolCallStatus::Failed,
+            _ => AgentDynamicToolCallStatus::Completed,
+        };
+        self.conversation.user_message =
+            Some("用一个动态工具读取当前工作目录；不要根据记忆回答。".to_owned());
+        self.conversation.user_message_time = Some("16:15".to_owned());
+        self.conversation.assistant_message = if status == AgentDynamicToolCallStatus::Completed {
+            "我先执行一次动态工具调用。\n\n当前工作目录是 worktrees/f71d/GPUI。".to_owned()
+        } else {
+            "我先执行一次动态工具调用。".to_owned()
+        };
+        self.conversation.assistant_message_time =
+            (status != AgentDynamicToolCallStatus::InProgress).then(|| "16:15".to_owned());
+        self.conversation.phase = if status == AgentDynamicToolCallStatus::InProgress {
+            ConversationPhase::Streaming
+        } else {
+            ConversationPhase::Complete
+        };
+        self.conversation.activities = vec![
+            ConversationActivity::AssistantMessage {
+                item_id: "msg-dynamic-tool-preamble".to_owned(),
+                text: "我先执行一次动态工具调用。".to_owned(),
+            },
+            ConversationActivity::DynamicToolCall(Box::from(AgentDynamicToolCall {
+                id: "exec-dynamic-tool-ui-capture".to_owned(),
+                tool: "exec".to_owned(),
+                namespace: Some("functions".to_owned()),
+                arguments: serde_json::json!({"cmd": "pwd"}),
+                status,
+                success: (status != AgentDynamicToolCallStatus::InProgress)
+                    .then_some(status == AgentDynamicToolCallStatus::Completed),
+                content_items: (status == AgentDynamicToolCallStatus::Completed).then(|| {
+                    vec![AgentDynamicToolCallContentItem::Text {
+                        text: "/Volumes/ExternalSSD/Codex/worktrees/f71d/GPUI\n".to_owned(),
+                    }]
+                }),
+                duration_ms: (status != AgentDynamicToolCallStatus::InProgress).then_some(1535),
+                completed: status != AgentDynamicToolCallStatus::InProgress,
+            })),
+        ];
+        if status == AgentDynamicToolCallStatus::Completed {
+            self.conversation
+                .activities
+                .push(ConversationActivity::AssistantMessage {
+                    item_id: "msg-dynamic-tool-final".to_owned(),
+                    text: "当前工作目录是 worktrees/f71d/GPUI。".to_owned(),
+                });
+        }
+        cx.emit(ConversationChanged);
+        cx.notify();
+    }
+
     pub fn set_mcp_tool_call_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
         let status = match state {
             "running" => AgentMcpToolCallStatus::InProgress,

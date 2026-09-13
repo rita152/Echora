@@ -76,6 +76,7 @@ pub(crate) enum ConversationActivity {
     ContextCompaction(AgentContextCompaction),
     Collaboration(AgentCollaboration),
     McpToolCall(Box<AgentMcpToolCall>),
+    DynamicToolCall(Box<crate::agent::AgentDynamicToolCall>),
     TurnPlan(crate::agent::AgentTurnPlan),
     Plan(crate::agent::AgentPlan),
     Sleep(crate::agent::AgentSleep),
@@ -308,6 +309,37 @@ pub(crate) fn upsert_mcp_tool_call_activity(
     }
 }
 
+pub(crate) fn find_dynamic_tool_call_activity_mut<'a>(
+    activities: &'a mut [ConversationActivity],
+    item_id: &str,
+) -> Option<&'a mut crate::agent::AgentDynamicToolCall> {
+    activities.iter_mut().find_map(|activity| match activity {
+        ConversationActivity::DynamicToolCall(tool_call) if tool_call.id == item_id => {
+            Some(tool_call.as_mut())
+        }
+        _ => None,
+    })
+}
+
+/// A dynamic tool call is a single item whose latest payload wins, so repeated,
+/// late, or interleaved lifecycle events converge on the same activity. The
+/// settled flag never travels back to unsettled once a lifecycle end arrived.
+pub(crate) fn upsert_dynamic_tool_call_activity(
+    activities: &mut Vec<ConversationActivity>,
+    incoming: crate::agent::AgentDynamicToolCall,
+) {
+    if let Some(existing) = find_dynamic_tool_call_activity_mut(activities, &incoming.id) {
+        if existing.completed {
+            // A completed item stays settled, so a late or replayed start can
+            // neither reopen it nor blank the payload the completion carried.
+            return;
+        }
+        *existing = incoming;
+    } else {
+        activities.push(ConversationActivity::DynamicToolCall(Box::from(incoming)));
+    }
+}
+
 pub(crate) fn upsert_context_compaction_activity(
     activities: &mut Vec<ConversationActivity>,
     incoming: AgentContextCompaction,
@@ -469,3 +501,6 @@ pub(crate) fn finish_progress_activities(
 
 #[cfg(test)]
 mod progress_tests;
+
+#[cfg(test)]
+mod dynamic_tool_tests;

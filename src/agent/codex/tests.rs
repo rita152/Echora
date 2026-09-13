@@ -28,7 +28,10 @@ use super::{
     handle_server_request_resolved, parse_agent_notification, respond_to_server_request_on_session,
     run_model_catalog_process, thread_settings_update_request, wait_for_response,
 };
-use crate::agent::AgentUserInputAnswer;
+use crate::agent::{
+    AgentDynamicToolCallContentItem, AgentDynamicToolCallStatus, AgentFunctionCallOutputBody,
+    AgentFunctionCallOutputContentItem, AgentImageDetail, AgentUserInputAnswer,
+};
 
 struct FailingWriter;
 
@@ -4304,13 +4307,8 @@ fn mcp_tool_call_failure_and_legacy_missing_metadata_are_valid() {
 }
 
 #[test]
-fn every_unsupported_thread_item_type_fails_for_started_and_completed() {
-    for item_type in [
-        "functionCallOutput",
-        "dynamicToolCall",
-        "enteredReviewMode",
-        "exitedReviewMode",
-    ] {
+fn every_still_unsupported_thread_item_type_fails_for_started_and_completed() {
+    for item_type in ["hookPromptProbeUnknown", "todoList", "planImplementation"] {
         for method in ["item/started", "item/completed"] {
             let item_id = format!("{item_type}_1");
             let message = turn_item_message(
@@ -4318,6 +4316,491 @@ fn every_unsupported_thread_item_type_fails_for_started_and_completed() {
                 json!({"type": item_type, "id": item_id, "probe": true}),
             );
             assert_turn_message_fails(&message, &[method, item_type, &item_id, "thr_1", "turn_1"]);
+        }
+    }
+}
+
+fn item_lifecycle_events(methods: &[&str], item: Value) -> Vec<AgentEvent> {
+    let session = Arc::new(CodexTurnSession::new(Vec::new(), None));
+    let (tx, rx) = async_channel::unbounded();
+    let mut streamed_text = false;
+    for method in methods {
+        let message = turn_item_message(method, item.clone());
+        assert_eq!(
+            super::process_turn_message(
+                &session,
+                &message,
+                "thr_1",
+                "turn_1",
+                &tx,
+                &mut streamed_text,
+            )
+            .unwrap(),
+            None
+        );
+    }
+    drop(tx);
+    let mut events = Vec::new();
+    while let Ok(event) = rx.try_recv() {
+        events.push(event);
+    }
+    events
+}
+
+fn assert_item_lifecycle_events(methods: &[&str], item: Value) -> Vec<AgentEvent> {
+    let events = item_lifecycle_events(methods, item);
+    assert_eq!(events.len(), methods.len(), "unexpected events: {events:?}");
+    events
+}
+
+#[test]
+fn function_call_output_decodes_string_and_content_item_bodies() {
+    let string_body = json!({
+        "type": "functionCallOutput",
+        "id": "fco_1",
+        "name": "shell",
+        "namespace": null,
+        "output": "total 0\n"
+    });
+    let parsed =
+        super::parse_function_call_output(string_body.as_object().unwrap(), false).unwrap();
+    assert_eq!(parsed.id, "fco_1");
+    assert_eq!(parsed.name, "shell");
+    assert_eq!(parsed.namespace, None);
+    assert_eq!(
+        parsed.output,
+        AgentFunctionCallOutputBody::Text("total 0\n".into())
+    );
+    assert!(!parsed.completed);
+    assert!(
+        super::parse_function_call_output(string_body.as_object().unwrap(), true)
+            .unwrap()
+            .completed
+    );
+
+    // Every ``FunctionCallOutputContentItem`` variant is legal output, including
+    // the optional image detail and an omitted namespace.
+    let items_body = json!({
+        "type": "functionCallOutput",
+        "id": "fco_2",
+        "name": "view_image",
+        "output": [
+            {"type": "input_text", "text": ""},
+            {"type": "input_image", "image_url": "https://example.com/a.png", "detail": "original"},
+            {"type": "input_image", "image_url": "https://example.com/b.png", "detail": null},
+            {"type": "input_image", "image_url": "https://example.com/c.png"},
+            {"type": "input_audio", "audio_url": "data:audio/wav;base64,AA=="},
+            {"type": "encrypted_content", "encrypted_content": "blob"}
+        ]
+    });
+    let parsed = super::parse_function_call_output(items_body.as_object().unwrap(), false).unwrap();
+    assert_eq!(parsed.namespace, None);
+    assert_eq!(
+        parsed.output,
+        AgentFunctionCallOutputBody::Items(vec![
+            AgentFunctionCallOutputContentItem::Text {
+                text: String::new()
+            },
+            AgentFunctionCallOutputContentItem::Image {
+                image_url: "https://example.com/a.png".into(),
+                detail: Some(AgentImageDetail::Original),
+            },
+            AgentFunctionCallOutputContentItem::Image {
+                image_url: "https://example.com/b.png".into(),
+                detail: None,
+            },
+            AgentFunctionCallOutputContentItem::Image {
+                image_url: "https://example.com/c.png".into(),
+                detail: None,
+            },
+            AgentFunctionCallOutputContentItem::Audio {
+                audio_url: "data:audio/wav;base64,AA==".into(),
+            },
+            AgentFunctionCallOutputContentItem::Encrypted {
+                encrypted_content: "blob".into(),
+            },
+        ])
+    );
+
+    // An explicit namespace string is preserved verbatim.
+    let mut named = string_body.clone();
+    named["namespace"] = json!("codex_app");
+    assert_eq!(
+        super::parse_function_call_output(named.as_object().unwrap(), false)
+            .unwrap()
+            .namespace
+            .as_deref(),
+        Some("codex_app")
+    );
+
+    for (label, item, expected) in [
+        (
+            "missing name",
+            json!({"type":"functionCallOutput","id":"fco_1","output":"x"}),
+            "item.name",
+        ),
+        (
+            "missing id",
+            json!({"type":"functionCallOutput","name":"shell","output":"x"}),
+            "item.id",
+        ),
+        (
+            "missing output",
+            json!({"type":"functionCallOutput","id":"fco_1","name":"shell"}),
+            "item.output",
+        ),
+        (
+            "null output",
+            json!({"type":"functionCallOutput","id":"fco_1","name":"shell","output":null}),
+            "item.output",
+        ),
+        (
+            "numeric output",
+            json!({"type":"functionCallOutput","id":"fco_1","name":"shell","output":7}),
+            "item.output",
+        ),
+        (
+            "non-string name",
+            json!({"type":"functionCallOutput","id":"fco_1","name":7,"output":"x"}),
+            "item.name",
+        ),
+        (
+            "non-string namespace",
+            json!({"type":"functionCallOutput","id":"fco_1","name":"shell","namespace":7,"output":"x"}),
+            "item.namespace",
+        ),
+        (
+            "unknown content type",
+            json!({"type":"functionCallOutput","id":"fco_1","name":"shell","output":[{"type":"input_video","url":"x"}]}),
+            "output[0].type",
+        ),
+        (
+            "unknown image detail",
+            json!({"type":"functionCallOutput","id":"fco_1","name":"shell","output":[{"type":"input_image","image_url":"x","detail":"ultra"}]}),
+            "detail",
+        ),
+        (
+            "missing content payload",
+            json!({"type":"functionCallOutput","id":"fco_1","name":"shell","output":[{"type":"input_text"}]}),
+            "item.text",
+        ),
+        (
+            "non-object content",
+            json!({"type":"functionCallOutput","id":"fco_1","name":"shell","output":["text"]}),
+            "output[0]",
+        ),
+        (
+            "wrong type",
+            json!({"type":"dynamicToolCall","id":"fco_1","name":"shell","output":"x"}),
+            "item.type",
+        ),
+    ] {
+        let error = super::parse_function_call_output(item.as_object().unwrap(), false)
+            .expect_err(label)
+            .to_string();
+        assert!(error.contains(expected), "{label}: {error}");
+    }
+}
+
+#[test]
+fn function_call_output_missing_started_and_completed_timestamps_fail() {
+    let item = json!({
+        "type": "functionCallOutput",
+        "id": "fco_1",
+        "name": "shell",
+        "output": "x"
+    });
+    for method in ["item/started", "item/completed"] {
+        let message = json!({
+            "method": method,
+            "params": {"threadId": "thr_1", "turnId": "turn_1", "item": item}
+        });
+        assert_turn_message_fails(&message, &[method, "functionCallOutput", "fco_1"]);
+    }
+}
+
+#[test]
+fn dynamic_tool_call_decodes_every_optional_and_nullable_field() {
+    let minimal = json!({
+        "type": "dynamicToolCall",
+        "id": "dtc_1",
+        "tool": "exec",
+        "status": "inProgress",
+        "arguments": {"cmd": "pwd"}
+    });
+    let parsed = super::parse_dynamic_tool_call(minimal.as_object().unwrap(), false).unwrap();
+    assert_eq!(parsed.id, "dtc_1");
+    assert_eq!(parsed.tool, "exec");
+    assert_eq!(parsed.status, AgentDynamicToolCallStatus::InProgress);
+    assert_eq!(parsed.arguments, json!({"cmd": "pwd"}));
+    assert_eq!(parsed.namespace, None);
+    assert_eq!(parsed.success, None);
+    assert_eq!(parsed.content_items, None);
+    assert_eq!(parsed.duration_ms, None);
+    assert!(!parsed.completed);
+
+    // ``arguments`` accepts any JSON value because the schema declares it as
+    // ``true``, including explicit null and an empty string tool name.
+    let maximal = json!({
+        "type": "dynamicToolCall",
+        "id": "dtc_2",
+        "tool": "",
+        "namespace": "codex_app",
+        "status": "failed",
+        "success": false,
+        "arguments": null,
+        "contentItems": [
+            {"type": "inputText", "text": ""},
+            {"type": "inputImage", "imageUrl": "https://example.com/a.png"},
+            {"type": "inputAudio", "audioUrl": "data:audio/wav;base64,AA=="}
+        ],
+        "durationMs": 1535
+    });
+    let parsed = super::parse_dynamic_tool_call(maximal.as_object().unwrap(), true).unwrap();
+    assert_eq!(parsed.tool, "");
+    assert_eq!(parsed.namespace.as_deref(), Some("codex_app"));
+    assert_eq!(parsed.status, AgentDynamicToolCallStatus::Failed);
+    assert_eq!(parsed.success, Some(false));
+    assert_eq!(parsed.arguments, Value::Null);
+    assert_eq!(parsed.duration_ms, Some(1535));
+    assert!(parsed.completed);
+    assert_eq!(
+        parsed.content_items,
+        Some(vec![
+            AgentDynamicToolCallContentItem::Text {
+                text: String::new()
+            },
+            AgentDynamicToolCallContentItem::Image {
+                image_url: "https://example.com/a.png".into(),
+            },
+            AgentDynamicToolCallContentItem::Audio {
+                audio_url: "data:audio/wav;base64,AA==".into(),
+            },
+        ])
+    );
+
+    for (label, item, expected) in [
+        (
+            "missing tool",
+            json!({"type":"dynamicToolCall","id":"dtc_1","status":"inProgress","arguments":{}}),
+            "item.tool",
+        ),
+        (
+            "missing status",
+            json!({"type":"dynamicToolCall","id":"dtc_1","tool":"exec","arguments":{}}),
+            "item.status",
+        ),
+        (
+            "missing arguments",
+            json!({"type":"dynamicToolCall","id":"dtc_1","tool":"exec","status":"inProgress"}),
+            "item.arguments",
+        ),
+        (
+            "missing id",
+            json!({"type":"dynamicToolCall","tool":"exec","status":"inProgress","arguments":{}}),
+            "item.id",
+        ),
+        (
+            "unknown status",
+            json!({"type":"dynamicToolCall","id":"dtc_1","tool":"exec","status":"declined","arguments":{}}),
+            "item.status",
+        ),
+        (
+            "non-string tool",
+            json!({"type":"dynamicToolCall","id":"dtc_1","tool":7,"status":"inProgress","arguments":{}}),
+            "item.tool",
+        ),
+        (
+            "numeric success",
+            json!({"type":"dynamicToolCall","id":"dtc_1","tool":"exec","status":"completed","success":1,"arguments":{}}),
+            "item.success",
+        ),
+        (
+            "string duration",
+            json!({"type":"dynamicToolCall","id":"dtc_1","tool":"exec","status":"completed","durationMs":"7","arguments":{}}),
+            "item.durationMs",
+        ),
+        (
+            "float duration",
+            json!({"type":"dynamicToolCall","id":"dtc_1","tool":"exec","status":"completed","durationMs":1.5,"arguments":{}}),
+            "item.durationMs",
+        ),
+        (
+            "object contentItems",
+            json!({"type":"dynamicToolCall","id":"dtc_1","tool":"exec","status":"completed","contentItems":{},"arguments":{}}),
+            "item.contentItems",
+        ),
+        (
+            "unknown content type",
+            json!({"type":"dynamicToolCall","id":"dtc_1","tool":"exec","status":"completed","contentItems":[{"type":"input_video"}],"arguments":{}}),
+            "contentItems[0].type",
+        ),
+        (
+            "non-string namespace",
+            json!({"type":"dynamicToolCall","id":"dtc_1","tool":"exec","namespace":7,"status":"inProgress","arguments":{}}),
+            "item.namespace",
+        ),
+        (
+            "wrong type",
+            json!({"type":"mcpToolCall","id":"dtc_1","tool":"exec","status":"inProgress","arguments":{}}),
+            "item.type",
+        ),
+    ] {
+        let error = super::parse_dynamic_tool_call(item.as_object().unwrap(), false)
+            .expect_err(label)
+            .to_string();
+        assert!(error.contains(expected), "{label}: {error}");
+    }
+}
+
+#[test]
+fn review_mode_items_decode_and_reject_unknown_modes() {
+    let entered = json!({"type": "enteredReviewMode", "id": "review_enter", "review": "code"});
+    let parsed = super::parse_review_mode(entered.as_object().unwrap(), true, false).unwrap();
+    assert_eq!(parsed.id, "review_enter");
+    assert_eq!(parsed.review, "code");
+    assert!(parsed.entered);
+    assert!(!parsed.completed);
+
+    let exited = json!({"type": "exitedReviewMode", "id": "review_exit", "review": ""});
+    let parsed = super::parse_review_mode(exited.as_object().unwrap(), false, true).unwrap();
+    assert_eq!(parsed.review, "");
+    assert!(!parsed.entered);
+    assert!(parsed.completed);
+
+    for (label, item, entered, expected) in [
+        (
+            "entered missing review",
+            json!({"type":"enteredReviewMode","id":"r"}),
+            true,
+            "item.review",
+        ),
+        (
+            "entered missing id",
+            json!({"type":"enteredReviewMode","review":"code"}),
+            true,
+            "item.id",
+        ),
+        (
+            "entered numeric review",
+            json!({"type":"enteredReviewMode","id":"r","review":1}),
+            true,
+            "item.review",
+        ),
+        (
+            "entered null review",
+            json!({"type":"enteredReviewMode","id":"r","review":null}),
+            true,
+            "item.review",
+        ),
+        (
+            "exited missing review",
+            json!({"type":"exitedReviewMode","id":"r"}),
+            false,
+            "item.review",
+        ),
+        (
+            "crossed type",
+            json!({"type":"exitedReviewMode","id":"r","review":"code"}),
+            true,
+            "item.type",
+        ),
+    ] {
+        let error = super::parse_review_mode(item.as_object().unwrap(), entered, false)
+            .expect_err(label)
+            .to_string();
+        assert!(error.contains(expected), "{label}: {error}");
+    }
+}
+
+#[test]
+fn new_item_types_route_started_and_completed_events() {
+    let events = assert_item_lifecycle_events(
+        &["item/started", "item/completed"],
+        json!({
+            "type": "dynamicToolCall",
+            "id": "dtc_1",
+            "tool": "exec",
+            "namespace": "functions",
+            "status": "inProgress",
+            "arguments": {"cmd": "pwd"}
+        }),
+    );
+    let AgentEvent::DynamicToolCallUpdated(started) = &events[0] else {
+        panic!("expected a dynamic tool call event, got {:?}", events[0]);
+    };
+    assert!(!started.completed);
+    assert_eq!(started.status, AgentDynamicToolCallStatus::InProgress);
+    let AgentEvent::DynamicToolCallUpdated(completed) = &events[1] else {
+        panic!("expected a dynamic tool call event, got {:?}", events[1]);
+    };
+    assert!(completed.completed);
+
+    let events = assert_item_lifecycle_events(
+        &["item/started", "item/completed"],
+        json!({"type": "functionCallOutput", "id": "fco_1", "name": "shell", "output": "ok"}),
+    );
+    for (index, event) in events.iter().enumerate() {
+        let AgentEvent::FunctionCallOutputUpdated(output) = event else {
+            panic!("expected a function call output event, got {event:?}");
+        };
+        assert_eq!(output.completed, index == 1);
+    }
+
+    for (item, entered) in [
+        (
+            json!({"type": "enteredReviewMode", "id": "r1", "review": "code"}),
+            true,
+        ),
+        (
+            json!({"type": "exitedReviewMode", "id": "r2", "review": "code"}),
+            false,
+        ),
+    ] {
+        let events = assert_item_lifecycle_events(&["item/started", "item/completed"], item);
+        for (index, event) in events.iter().enumerate() {
+            let AgentEvent::ReviewModeUpdated(review) = event else {
+                panic!("expected a review mode event, got {event:?}");
+            };
+            assert_eq!(review.entered, entered);
+            assert_eq!(review.completed, index == 1);
+        }
+    }
+}
+
+#[test]
+fn new_item_types_report_wrong_thread_and_turn_with_full_context() {
+    let cases = [
+        (
+            "item/started",
+            json!({"type": "functionCallOutput", "id": "fco_1", "name": "shell", "output": "x"}),
+        ),
+        (
+            "item/completed",
+            json!({"type": "dynamicToolCall", "id": "dtc_1", "tool": "exec", "status": "completed", "arguments": {}}),
+        ),
+        (
+            "item/started",
+            json!({"type": "enteredReviewMode", "id": "r1", "review": "code"}),
+        ),
+        (
+            "item/completed",
+            json!({"type": "exitedReviewMode", "id": "r2", "review": "code"}),
+        ),
+    ];
+    for (method, item) in cases {
+        let item_type = item["type"].as_str().unwrap().to_owned();
+        let item_id = item["id"].as_str().unwrap().to_owned();
+        for (thread_id, turn_id) in [("thr_other", "turn_1"), ("thr_1", "turn_other")] {
+            let mut message = turn_item_message(method, item.clone());
+            message["params"]["threadId"] = json!(thread_id);
+            message["params"]["turnId"] = json!(turn_id);
+            assert_turn_message_fails(
+                &message,
+                &[
+                    method, &item_type, &item_id, "thr_1", "turn_1", thread_id, turn_id,
+                ],
+            );
         }
     }
 }
