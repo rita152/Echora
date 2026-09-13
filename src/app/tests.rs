@@ -1407,3 +1407,175 @@ fn full_access_confirmation_traps_keyboard_and_cancels_without_an_update() {
     assert!(!window.read(|chat, _| chat.permission_confirmation_open));
     assert!(window.read(|chat, _| chat.permission_confirmation_target.is_none()));
 }
+
+#[test]
+fn account_dialogs_follow_explicit_requests_and_keyboard_intents() {
+    use crate::agent::{
+        AgentAccount, AgentAccountAuthMode, AgentAccountPlanType, AgentAccountPresence,
+        AgentAccountSnapshot,
+    };
+    use crate::components::account::{AccountDialog, AccountLoadStatus};
+    use crate::components::sidebar::AccountIntent;
+
+    let mut app = TestApp::new();
+    let mut window = app.open_window_with_options(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                point(px(0.), px(0.)),
+                size(px(1440.), px(900.)),
+            ))),
+            ..Default::default()
+        },
+        |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
+    );
+
+    window.update(|chat, _window, cx| {
+        chat.account.state.account = AgentAccountSnapshot {
+            requires_openai_auth: true,
+            account: AgentAccountPresence::Account(AgentAccount::Chatgpt {
+                email: Some("rita@example.com".into()),
+                plan_type: AgentAccountPlanType::Pro,
+            }),
+            auth_mode: Some(AgentAccountAuthMode::Chatgpt),
+            plan_type: Some(AgentAccountPlanType::Pro),
+        };
+        chat.account.status = AccountLoadStatus::Loaded;
+        // Opening the usage page is a view change, not an RPC.
+        chat.handle_account_intent(AccountIntent::OpenUsageSettings, cx);
+        assert!(chat.showing_settings);
+    });
+
+    // The logout confirmation opens on request and only then offers the
+    // destructive action; nothing is sent before it is accepted.
+    window.update(|chat, _, cx| {
+        chat.handle_account_intent(AccountIntent::RequestLogout, cx);
+        assert_eq!(chat.account.dialog, Some(AccountDialog::Logout));
+        assert_eq!(chat.account_choice, 0);
+    });
+
+    // Escape dismisses the confirmation without logging out.
+    window.update(|chat, window, cx| {
+        chat.account_dialog_key(
+            &gpui::KeyDownEvent {
+                keystroke: gpui::Keystroke {
+                    modifiers: Default::default(),
+                    key: "escape".into(),
+                    key_char: None,
+                },
+                is_held: false,
+                prefer_character_input: false,
+            },
+            window,
+            cx,
+        );
+        assert_eq!(chat.account.dialog, None);
+    });
+
+    // Tab moves focus inside the dialog and selects the confirm action.
+    window.update(|chat, window, cx| {
+        chat.handle_account_intent(AccountIntent::RequestLogout, cx);
+        chat.account_dialog_key(
+            &gpui::KeyDownEvent {
+                keystroke: gpui::Keystroke {
+                    modifiers: Default::default(),
+                    key: "tab".into(),
+                    key_char: None,
+                },
+                is_held: false,
+                prefer_character_input: false,
+            },
+            window,
+            cx,
+        );
+        assert_eq!(chat.account_choice, 1);
+        assert_eq!(chat.account.dialog, Some(AccountDialog::Logout));
+    });
+}
+
+#[test]
+fn account_events_drive_the_account_surface_without_touching_conversations() {
+    use crate::agent::{
+        AgentAccount, AgentAccountLoginPhase, AgentAccountLoginState, AgentAccountPlanType,
+        AgentAccountPresence, AgentAccountRateLimitsState, AgentAccountSnapshot,
+        AgentConnectionEvent, AgentRateLimitBucket, AgentRateLimitWindow,
+    };
+    use crate::components::account::AccountLoadStatus;
+    use std::collections::BTreeMap;
+
+    let mut app = TestApp::new();
+    let mut window = app.open_window_with_options(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                point(px(0.), px(0.)),
+                size(px(1440.), px(900.)),
+            ))),
+            ..Default::default()
+        },
+        |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
+    );
+
+    window.update(|chat, _, cx| {
+        assert!(chat.account.account_unknown());
+        chat.apply_account_event(
+            AgentConnectionEvent::AccountUpdated(AgentAccountSnapshot {
+                requires_openai_auth: true,
+                account: AgentAccountPresence::Account(AgentAccount::Chatgpt {
+                    email: Some("rita@example.com".into()),
+                    plan_type: AgentAccountPlanType::Pro,
+                }),
+                auth_mode: None,
+                plan_type: None,
+            }),
+            cx,
+        );
+        chat.account.status = AccountLoadStatus::Loaded;
+        chat.apply_account_event(
+            AgentConnectionEvent::AccountRateLimitsUpdated(AgentAccountRateLimitsState {
+                account_id: Some("acct_1".into()),
+                ordinary_usage_allowed: Some(true),
+                reset_credits: None,
+                upsell: None,
+                buckets: BTreeMap::from([(
+                    "codex".to_owned(),
+                    AgentRateLimitBucket {
+                        limit_id: Some("codex".into()),
+                        primary: Some(AgentRateLimitWindow {
+                            used_percent: 27,
+                            window_duration_mins: Some(10_080),
+                            resets_at: Some(1_789_805_584),
+                        }),
+                        plan_type: Some(AgentAccountPlanType::Pro),
+                        ..AgentRateLimitBucket::default()
+                    },
+                )]),
+            }),
+            cx,
+        );
+        chat.apply_account_event(
+            AgentConnectionEvent::AccountLoginUpdated(AgentAccountLoginState {
+                phase: AgentAccountLoginPhase::SignedIn,
+                login_id: Some("login_1".into()),
+                challenge: None,
+                error: None,
+            }),
+            cx,
+        );
+
+        assert!(chat.account.is_signed_in());
+        assert!(!chat.account.account_unknown());
+        assert_eq!(chat.account.account_label().as_deref(), Some("rita"));
+        assert_eq!(chat.account.plan_label(), Some("Pro"));
+        assert_eq!(chat.account.remaining_percent(), Some(73));
+        assert_eq!(chat.account.usage_summary(), "剩余 73%");
+        // The account surfaces never carry turn activity: the conversation
+        // state is untouched by these connection events.
+        let host = chat
+            .conversation_hosts
+            .get(&chat.active_conversation)
+            .expect("conversation host");
+        assert_eq!(
+            host.composer.read(cx).conversation_phase(),
+            crate::conversation::ConversationPhase::Empty
+        );
+    });
+}

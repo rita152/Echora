@@ -1,6 +1,7 @@
 //! Stable application boundary for coding-agent backends.
 //! Domain modules depend on each other explicitly; concrete protocols stay in adapters.
 
+mod account;
 mod activity;
 mod auto_approval;
 mod backend;
@@ -14,6 +15,16 @@ mod runtime;
 mod status;
 mod thread;
 
+pub use account::{
+    ACCOUNT_WIDE_LIMIT_ID, AGENT_DEFAULT_RATE_LIMIT_ID, AgentAccount, AgentAccountAuthMode,
+    AgentAccountLoginPhase, AgentAccountLoginState, AgentAccountPlanType, AgentAccountPresence,
+    AgentAccountRateLimitsState, AgentAccountSnapshot, AgentAccountState, AgentAccountUpdate,
+    AgentCreditsSnapshot, AgentLoginCancelOutcome, AgentLoginChallenge, AgentLoginCompletion,
+    AgentLoginStart, AgentLogoutOutcome, AgentRateLimitBucket, AgentRateLimitPatch,
+    AgentRateLimitReachedType, AgentRateLimitResetCredit, AgentRateLimitResetCreditStatus,
+    AgentRateLimitResetCredits, AgentRateLimitResetType, AgentRateLimitWindow, AgentRateLimitsRead,
+    AgentSpendControlLimit,
+};
 pub use activity::{
     AgentActivityStatus, AgentCollaboration, AgentCollaborationStatus, AgentCollaborationTool,
     AgentCollaboratorState, AgentCollaboratorStatus, AgentContextCompaction, AgentFileChange,
@@ -70,10 +81,9 @@ pub use runtime::{
     AgentRuntimeObservation, AgentRuntimeState, AgentScopedHookPrompt,
 };
 pub use status::{
-    AgentAccountRateLimits, AgentConfigWarning, AgentCreditsSnapshot,
-    AgentMcpServerStartupFailureReason, AgentMcpServerStartupState, AgentMcpServerStartupStatus,
-    AgentRateLimitWindow, AgentSpendControlLimit, AgentThreadActiveFlag, AgentThreadStatus,
-    AgentThreadStatusState, AgentThreadTokenUsage, AgentTokenUsageBreakdown,
+    AgentConfigWarning, AgentMcpServerStartupFailureReason, AgentMcpServerStartupState,
+    AgentMcpServerStartupStatus, AgentThreadActiveFlag, AgentThreadStatus, AgentThreadStatusState,
+    AgentThreadTokenUsage, AgentTokenUsageBreakdown,
 };
 pub use thread::{
     CreateProject, FilterValue, HistoryItemDetail, HistoryTurnStatus, Page, PageRequest, Project,

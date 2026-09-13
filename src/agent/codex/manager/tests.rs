@@ -29,6 +29,7 @@ use crate::agent::{
 
 const WAIT: Duration = Duration::from_secs(3);
 
+mod account;
 mod auto_approval;
 mod config;
 mod runtime;

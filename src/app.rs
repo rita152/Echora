@@ -38,8 +38,12 @@ gpui::actions!(
 );
 
 use crate::{
-    agent::{AgentBackend, CodexAppServerBackend, CodexAppServerManager, ProjectId, ThreadId},
+    agent::{
+        AgentAccountLoginPhase, AgentBackend, AgentConnectionEvent, CodexAppServerBackend,
+        CodexAppServerManager, ProjectId, ThreadId,
+    },
     components::{
+        account::{AccountDialog, AccountLoadStatus, AccountView},
         composer::{
             ComposerView, ConversationThreadCreated, ModelCatalogLoadFinished,
             RequestFullAccessConfirmation,
@@ -50,7 +54,10 @@ use crate::{
         },
         review_panel::ReviewPanel,
         side_chat::SideChatPanel,
-        sidebar::{NewConversation, OpenProjectCreation, OpenSettings, SelectThread, SidebarView},
+        sidebar::{
+            AccountAction, AccountIntent, NewConversation, OpenProjectCreation, OpenSettings,
+            SelectThread, SidebarView,
+        },
         terminal::TerminalPanel,
     },
     media::read_image_dimensions,
@@ -93,6 +100,11 @@ pub struct ChatApp {
     permission_confirmation_keyboard: bool,
     permission_confirmation_target: Option<Entity<ComposerView>>,
     project_creation: ProjectCreationState,
+    account: AccountView,
+    account_focus: gpui::FocusHandle,
+    account_focus_pending: bool,
+    /// Keyboard focus inside the account dialog.
+    account_choice: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -184,6 +196,24 @@ impl ChatApp {
             this.open_settings(cx);
         })
         .detach();
+        cx.subscribe(&sidebar, |this, _, event: &AccountAction, cx| {
+            this.handle_account_intent(event.0.clone(), cx);
+        })
+        .detach();
+        // Account surfaces are connection-scoped: they follow the manager's
+        // snapshot instead of any single conversation.
+        let account_events = agent_backend.subscribe_connection_events();
+        cx.spawn(async move |this, cx| {
+            while let Ok(event) = account_events.recv().await {
+                if this
+                    .update(cx, |this, cx| this.apply_account_event(event, cx))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
         cx.subscribe(
             &home,
             |this, _, _: &crate::components::home::OpenHookSettings, cx| {
@@ -205,6 +235,13 @@ impl ChatApp {
         cx.subscribe(&sidebar, |this, _, event: &NewConversation, cx| {
             this.start_draft(event.project_id.clone(), event.cwd.clone(), cx);
         })
+        .detach();
+        cx.subscribe(
+            &settings,
+            |this, _, _: &crate::settings::RefreshAccount, cx| {
+                this.refresh_account(cx);
+            },
+        )
         .detach();
         cx.subscribe(&settings, |this, _, _: &CloseSettings, cx| {
             this.showing_settings = false;
@@ -321,6 +358,11 @@ impl ChatApp {
         .detach();
         #[cfg(not(test))]
         cx.spawn(async move |this, cx| {
+            let _ = this.update(cx, |this, cx| this.refresh_account(cx));
+        })
+        .detach();
+        #[cfg(not(test))]
+        cx.spawn(async move |this, cx| {
             while let Ok(snapshot) = workspace_receiver.recv().await {
                 if startup_sidebar_resolved(&snapshot) {
                     let _ = this.update(cx, |this, cx| {
@@ -368,7 +410,197 @@ impl ChatApp {
             permission_confirmation_keyboard: false,
             permission_confirmation_target: None,
             project_creation: ProjectCreationState::new(cx),
+            account: AccountView::default(),
+            account_focus: cx.focus_handle(),
+            account_focus_pending: false,
+            account_choice: 0,
         }
+    }
+
+    /// Reduces the account parts of a connection event. These events never
+    /// touch a conversation or a turn.
+    fn apply_account_event(&mut self, event: AgentConnectionEvent, cx: &mut Context<Self>) {
+        let changed = match event {
+            AgentConnectionEvent::AccountUpdated(snapshot) => {
+                if self.account.state.account == snapshot {
+                    false
+                } else {
+                    self.account.state.account = snapshot;
+                    true
+                }
+            }
+            AgentConnectionEvent::AccountLoginUpdated(login) => {
+                if self.account.state.login == login {
+                    false
+                } else {
+                    self.account.state.login = login;
+                    true
+                }
+            }
+            AgentConnectionEvent::AccountRateLimitsUpdated(rate_limits) => {
+                if self.account.state.rate_limits == rate_limits {
+                    false
+                } else {
+                    self.account.state.rate_limits = rate_limits;
+                    true
+                }
+            }
+            _ => false,
+        };
+        if !changed {
+            return;
+        }
+        // A confirmed login ends the login dialog; a new one keeps it open.
+        if self.account.state.login.phase == AgentAccountLoginPhase::SignedIn {
+            self.account.dialog = None;
+            self.account.action_error = None;
+        }
+        self.sync_account_view(cx);
+    }
+
+    fn sync_account_view(&mut self, cx: &mut Context<Self>) {
+        let view = self.account.clone();
+        self.sidebar
+            .update(cx, |sidebar, cx| sidebar.set_account_view(view.clone(), cx));
+        self.settings
+            .update(cx, |settings, cx| settings.set_account_view(view, cx));
+        cx.notify();
+    }
+
+    /// account/read followed by account/rateLimits/read. Both answers are also
+    /// reduced into the connection snapshot other views observe.
+    pub fn refresh_account(&mut self, cx: &mut Context<Self>) {
+        if self.account.is_loading() {
+            return;
+        }
+        self.account.status = AccountLoadStatus::Loading;
+        self.sync_account_view(cx);
+        let backend = self.agent_backend.clone();
+        let account_reader = backend.read_account();
+        cx.spawn(async move |this, cx| {
+            let account_result = account_reader.recv().await;
+            let limits_reader = backend.read_rate_limits();
+            let limits_result = limits_reader.recv().await;
+            let status = match (&account_result, &limits_result) {
+                (Ok(Ok(_)), Ok(Ok(_))) => AccountLoadStatus::Loaded,
+                (Ok(Err(error)), _) => AccountLoadStatus::Failed(error.clone()),
+                (Err(_), _) => AccountLoadStatus::Failed("账户连接在返回结果前关闭".to_owned()),
+                (_, Err(_)) => AccountLoadStatus::Failed("配额连接在返回结果前关闭".to_owned()),
+                (_, Ok(Err(error))) => AccountLoadStatus::Failed(error.clone()),
+            };
+            let _ = this.update(cx, |this, cx| {
+                this.account.status = status;
+                this.sync_account_view(cx);
+            });
+        })
+        .detach();
+    }
+
+    fn handle_account_intent(&mut self, intent: AccountIntent, cx: &mut Context<Self>) {
+        match intent {
+            AccountIntent::Refresh => self.refresh_account(cx),
+            AccountIntent::StartLogin => self.start_login(cx),
+            AccountIntent::CancelLogin(login_id) => self.cancel_login(login_id, cx),
+            AccountIntent::RequestLogout => {
+                self.account.dialog = Some(AccountDialog::Logout);
+                self.account.action_error = None;
+                self.account_choice = 0;
+                self.account_focus_pending = true;
+                self.sync_account_view(cx);
+            }
+            AccountIntent::OpenUsageSettings => {
+                self.open_settings_page("usage", cx);
+                self.refresh_account(cx);
+            }
+            AccountIntent::OpenExternalUrl(url) => cx.open_url(&url),
+        }
+    }
+
+    fn start_login(&mut self, cx: &mut Context<Self>) {
+        self.account.action_error = None;
+        let receiver = self.agent_backend.start_chatgpt_login();
+        cx.spawn(async move |this, cx| {
+            let result = receiver.recv().await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(Ok(_)) => {
+                        // The login id and challenge arrive through the
+                        // connection snapshot; nothing is assumed here.
+                        this.account.dialog = Some(AccountDialog::Login);
+                        this.account_focus_pending = true;
+                    }
+                    Ok(Err(error)) => {
+                        // The login state carries the failure so the dialog can
+                        // offer a retry, and the menu keeps the same error.
+                        this.account.state.apply_login_failed(None, error.clone());
+                        this.account.action_error = Some(error);
+                        this.account.dialog = Some(AccountDialog::Login);
+                    }
+                    Err(_) => {
+                        let error = "登录连接在返回结果前关闭".to_owned();
+                        this.account.state.apply_login_failed(None, error.clone());
+                        this.account.action_error = Some(error);
+                        this.account.dialog = Some(AccountDialog::Login);
+                    }
+                }
+                this.sync_account_view(cx);
+            });
+        })
+        .detach();
+    }
+
+    fn cancel_login(&mut self, login_id: String, cx: &mut Context<Self>) {
+        let receiver = self.agent_backend.cancel_login(login_id);
+        cx.spawn(async move |this, cx| {
+            let result = receiver.recv().await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(Ok(_)) => this.account.action_error = None,
+                    Ok(Err(error)) => this.account.action_error = Some(error),
+                    Err(_) => {
+                        this.account.action_error = Some("取消登录连接在返回结果前关闭".to_owned())
+                    }
+                }
+                this.sync_account_view(cx);
+            });
+        })
+        .detach();
+    }
+
+    /// Logout runs only after the confirmation is accepted. The answer is the
+    /// backend's response plus the account/quote reads that follow it.
+    fn confirm_logout(&mut self, cx: &mut Context<Self>) {
+        self.account.dialog = None;
+        self.account.status = AccountLoadStatus::Loading;
+        self.sync_account_view(cx);
+        let receiver = self.agent_backend.logout_account();
+        cx.spawn(async move |this, cx| {
+            let result = receiver.recv().await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(Ok(outcome)) => {
+                        this.account.status = AccountLoadStatus::Loaded;
+                        this.account.action_error = outcome.confirmation_error;
+                    }
+                    Ok(Err(error)) => {
+                        this.account.status = AccountLoadStatus::Failed(error.clone());
+                        this.account.action_error = Some(error);
+                    }
+                    Err(_) => {
+                        let error = "退出登录连接在返回结果前关闭".to_owned();
+                        this.account.status = AccountLoadStatus::Failed(error.clone());
+                        this.account.action_error = Some(error);
+                    }
+                }
+                this.sync_account_view(cx);
+            });
+        })
+        .detach();
+    }
+
+    fn dismiss_account_dialog(&mut self, cx: &mut Context<Self>) {
+        self.account.dialog = None;
+        self.sync_account_view(cx);
     }
 
     pub fn open_settings(&mut self, cx: &mut Context<Self>) {

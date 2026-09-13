@@ -13,11 +13,11 @@ use super::{
 };
 use crate::{
     agent::{
-        AgentAccountRateLimits, AgentConnectionEvent, AgentCreditsSnapshot, AgentEvent,
-        AgentFileChange, AgentFileChangeStatus, AgentMcpServerStartupFailureReason,
-        AgentMcpServerStartupState, AgentPermissionsApprovalChoice, AgentRateLimitWindow,
-        AgentServerRequestFailureKind, AgentServerRequestKind, AgentServerRequestMetadata,
-        AgentUserInputResponse, CommandExecution, CommandExecutionStatus,
+        AgentConnectionEvent, AgentEvent, AgentFileChange, AgentFileChangeStatus,
+        AgentMcpServerStartupFailureReason, AgentMcpServerStartupState,
+        AgentPermissionsApprovalChoice, AgentServerRequestFailureKind, AgentServerRequestKind,
+        AgentServerRequestMetadata, AgentUserInputResponse, CommandExecution,
+        CommandExecutionStatus,
     },
     components::{
         approval::ApprovalCardStatus,
@@ -29,69 +29,6 @@ use crate::{
         },
     },
 };
-
-pub(crate) fn merge_available<T>(current: &mut Option<T>, update: Option<T>) {
-    if let Some(update) = update {
-        *current = Some(update);
-    }
-}
-
-pub(crate) fn merge_rate_limit_window(
-    current: &mut Option<AgentRateLimitWindow>,
-    update: Option<AgentRateLimitWindow>,
-) {
-    let Some(update) = update else {
-        return;
-    };
-    if let Some(current) = current {
-        current.used_percent = update.used_percent;
-        merge_available(
-            &mut current.window_duration_mins,
-            update.window_duration_mins,
-        );
-        merge_available(&mut current.resets_at, update.resets_at);
-    } else {
-        *current = Some(update);
-    }
-}
-
-pub(crate) fn merge_credits_snapshot(
-    current: &mut Option<AgentCreditsSnapshot>,
-    update: Option<AgentCreditsSnapshot>,
-) {
-    let Some(update) = update else {
-        return;
-    };
-    if let Some(current) = current {
-        current.has_credits = update.has_credits;
-        current.unlimited = update.unlimited;
-        merge_available(&mut current.balance, update.balance);
-    } else {
-        *current = Some(update);
-    }
-}
-
-pub(crate) fn merge_account_rate_limits(
-    current: &mut Option<AgentAccountRateLimits>,
-    update: AgentAccountRateLimits,
-) {
-    let current = current.get_or_insert_with(AgentAccountRateLimits::default);
-    merge_available(&mut current.limit_id, update.limit_id);
-    merge_available(&mut current.limit_name, update.limit_name);
-    merge_rate_limit_window(&mut current.primary, update.primary);
-    merge_rate_limit_window(&mut current.secondary, update.secondary);
-    merge_credits_snapshot(&mut current.credits, update.credits);
-    merge_available(&mut current.individual_limit, update.individual_limit);
-    merge_available(
-        &mut current.spend_control_reached,
-        update.spend_control_reached,
-    );
-    merge_available(&mut current.plan_type, update.plan_type);
-    merge_available(
-        &mut current.rate_limit_reached_type,
-        update.rate_limit_reached_type,
-    );
-}
 
 impl ConversationState {
     pub(crate) fn apply_connection_event(&mut self, event: AgentConnectionEvent) -> bool {
@@ -129,8 +66,12 @@ impl ConversationState {
             AgentConnectionEvent::ThreadSettingsUpdated { thread_id, .. } => {
                 Some(thread_id.as_str())
             }
-            AgentConnectionEvent::ConfigWarning(_)
-            | AgentConnectionEvent::AccountRateLimitsUpdated(_) => None,
+            AgentConnectionEvent::ConfigWarning(_) => None,
+            // Account surfaces are connection-scoped: they never belong to a
+            // conversation, so they are not routed into one.
+            AgentConnectionEvent::AccountUpdated(_)
+            | AgentConnectionEvent::AccountLoginUpdated(_)
+            | AgentConnectionEvent::AccountRateLimitsUpdated(_) => return false,
             AgentConnectionEvent::ProjectChanged { .. }
             | AgentConnectionEvent::ThreadArchived { .. }
             | AgentConnectionEvent::ThreadUnarchived { .. }
@@ -172,10 +113,12 @@ impl ConversationState {
             AgentConnectionEvent::ThreadSettingsUpdated { settings, .. } => {
                 AgentEvent::ThreadSettingsUpdated(settings)
             }
-            AgentConnectionEvent::AccountRateLimitsUpdated(rate_limits) => {
-                AgentEvent::AccountRateLimitsUpdated(rate_limits)
-            }
-            AgentConnectionEvent::ProjectChanged { .. }
+            // Account surfaces belong to the connection, never to a thread or
+            // turn, so they are not mapped into a conversation event.
+            AgentConnectionEvent::AccountUpdated(_)
+            | AgentConnectionEvent::AccountLoginUpdated(_)
+            | AgentConnectionEvent::AccountRateLimitsUpdated(_)
+            | AgentConnectionEvent::ProjectChanged { .. }
             | AgentConnectionEvent::ThreadArchived { .. }
             | AgentConnectionEvent::ThreadUnarchived { .. }
             | AgentConnectionEvent::ThreadDeleted { .. }
@@ -349,9 +292,6 @@ impl ConversationState {
                 AgentEvent::ThreadTokenUsageUpdated(usage) => {
                     self.thread_token_usages
                         .insert(usage.thread_id.clone(), usage);
-                }
-                AgentEvent::AccountRateLimitsUpdated(rate_limits) => {
-                    merge_account_rate_limits(&mut self.account_rate_limits, rate_limits);
                 }
                 AgentEvent::AssistantMessageStarted { item_id } => {
                     if !self.activities.iter().any(|activity| {

@@ -11,13 +11,14 @@ use base64::Engine as _;
 use serde_json::{Value, json};
 
 use super::{
-    AgentAccountRateLimits, AgentBackend, AgentCommandApprovalChoice, AgentConfigWarning,
-    AgentCreditsSnapshot, AgentEvent, AgentFileChangeStatus, AgentImageGenerationFailure,
-    AgentImageGenerationStatus, AgentImageView, AgentInterruptControl, AgentInterruptHandle,
-    AgentInterruptOutcome, AgentMcpServerStartupFailureReason, AgentMcpServerStartupState,
-    AgentMcpServerStartupStatus, AgentMcpToolCall, AgentMcpToolCallStatus, AgentOptionalField,
-    AgentPermissionMode, AgentPermissionsApprovalChoice, AgentRateLimitWindow, AgentReasoning,
-    AgentRequest, AgentServerRequestFailureKind, AgentServerRequestId, AgentServerRequestKind,
+    AGENT_DEFAULT_RATE_LIMIT_ID, AgentAccountPlanType, AgentBackend, AgentCommandApprovalChoice,
+    AgentConfigWarning, AgentCreditsSnapshot, AgentEvent, AgentFileChangeStatus,
+    AgentImageGenerationFailure, AgentImageGenerationStatus, AgentImageView, AgentInterruptControl,
+    AgentInterruptHandle, AgentInterruptOutcome, AgentMcpServerStartupFailureReason,
+    AgentMcpServerStartupState, AgentMcpServerStartupStatus, AgentMcpToolCall,
+    AgentMcpToolCallStatus, AgentOptionalField, AgentPermissionMode,
+    AgentPermissionsApprovalChoice, AgentRateLimitWindow, AgentReasoning, AgentRequest,
+    AgentServerRequestFailureKind, AgentServerRequestId, AgentServerRequestKind,
     AgentServerRequestMetadata, AgentThreadActiveFlag, AgentThreadSettings, AgentThreadStatus,
     AgentThreadStatusState, AgentThreadTokenUsage, AgentTokenUsageBreakdown,
     AgentUserInputResponse, AppServerProcess, CodexAppServerBackend, CodexTurnSession,
@@ -646,25 +647,8 @@ fn drives_one_complete_prompt_and_normalizes_stream_events() {
                 },
                 model_context_window: Some(258_400),
             }),
-            AgentEvent::AccountRateLimitsUpdated(AgentAccountRateLimits {
-                limit_id: Some("codex".into()),
-                limit_name: None,
-                primary: Some(AgentRateLimitWindow {
-                    used_percent: 15,
-                    window_duration_mins: Some(10_080),
-                    resets_at: Some(1_788_752_152),
-                }),
-                secondary: None,
-                credits: Some(AgentCreditsSnapshot {
-                    has_credits: false,
-                    unlimited: false,
-                    balance: Some("0".into()),
-                }),
-                individual_limit: None,
-                spend_control_reached: None,
-                plan_type: Some("pro".into()),
-                rate_limit_reached_type: None,
-            }),
+            // The account/rateLimits/updated notification in this stream is
+            // connection-scoped: it is never reduced into a turn's events.
             AgentEvent::Completed,
         ]
     );
@@ -2010,44 +1994,58 @@ fn thread_token_usage_update_must_match_the_active_turn() {
 }
 
 #[test]
-fn account_rate_limits_updated_is_validated_and_normalized() {
+fn account_rate_limits_updated_decodes_a_sparse_single_bucket_patch() {
     let update = account_rate_limits_message();
     ensure_server_method_is_defined(&update).unwrap();
+    let patch = super::account::parse_account_rate_limits_updated(&update).unwrap();
+    assert_eq!(patch.key(), "codex");
+    assert_eq!(patch.limit_id, Some(Some("codex".into())));
+    assert_eq!(patch.limit_name, Some(None));
     assert_eq!(
-        parse_agent_notification(&update).unwrap(),
-        Some(AgentEvent::AccountRateLimitsUpdated(
-            AgentAccountRateLimits {
-                limit_id: Some("codex".into()),
-                limit_name: None,
-                primary: Some(AgentRateLimitWindow {
-                    used_percent: 15,
-                    window_duration_mins: Some(10_080),
-                    resets_at: Some(1_788_752_152),
-                }),
-                secondary: None,
-                credits: Some(AgentCreditsSnapshot {
-                    has_credits: false,
-                    unlimited: false,
-                    balance: Some("0".into()),
-                }),
-                individual_limit: None,
-                spend_control_reached: None,
-                plan_type: Some("pro".into()),
-                rate_limit_reached_type: None,
-            }
-        ))
+        patch.primary,
+        Some(Some(AgentRateLimitWindow {
+            used_percent: 15,
+            window_duration_mins: Some(10_080),
+            resets_at: Some(1_788_752_152),
+        }))
+    );
+    assert_eq!(patch.secondary, Some(None));
+    assert_eq!(
+        patch.credits,
+        Some(Some(AgentCreditsSnapshot {
+            has_credits: false,
+            unlimited: false,
+            balance: Some("0".into()),
+        }))
+    );
+    assert_eq!(patch.plan_type, Some(Some(AgentAccountPlanType::Pro)));
+
+    // A rolling update may omit everything except the value that changed.
+    let sparse = super::account::parse_account_rate_limits_updated(&json!({
+        "method": "account/rateLimits/updated",
+        "params": {"rateLimits": {"limitId": "codex", "primary": {"usedPercent": 42}}}
+    }))
+    .unwrap();
+    assert_eq!(sparse.limit_name, None);
+    assert_eq!(sparse.credits, None);
+    assert_eq!(sparse.plan_type, None);
+    assert_eq!(
+        sparse.primary,
+        Some(Some(AgentRateLimitWindow {
+            used_percent: 42,
+            window_duration_mins: None,
+            resets_at: None,
+        }))
     );
 
-    assert_eq!(
-        parse_agent_notification(&json!({
-            "method": "account/rateLimits/updated",
-            "params": {"rateLimits": {}}
-        }))
-        .unwrap(),
-        Some(AgentEvent::AccountRateLimitsUpdated(
-            AgentAccountRateLimits::default()
-        ))
-    );
+    // Nullable account metadata reports unavailability instead of clearing.
+    let nullable = super::account::parse_account_rate_limits_updated(&json!({
+        "method": "account/rateLimits/updated",
+        "params": {"rateLimits": {"planType": null, "limitName": null}}
+    }))
+    .unwrap();
+    assert_eq!(nullable.plan_type, Some(None));
+    assert_eq!(nullable.key(), AGENT_DEFAULT_RATE_LIMIT_ID);
 
     for plan_type in [
         "free",
@@ -2087,43 +2085,13 @@ fn account_rate_limits_updated_is_validated_and_normalized() {
         }))
         .unwrap();
     }
-
-    for params in [
-        json!({}),
-        json!({"rateLimits": null}),
-        json!({"rateLimits": {"primary": {}}}),
-        json!({"rateLimits": {"primary": {"usedPercent": 2_147_483_648_i64}}}),
-        json!({"rateLimits": {"primary": {"usedPercent": 15, "resetsAt": "soon"}}}),
-        json!({"rateLimits": {"credits": {"hasCredits": false}}}),
-        json!({"rateLimits": {"individualLimit": {
-            "limit": "100", "remainingPercent": 75, "resetsAt": 1_788_752_152_i64
-        }}}),
-        json!({"rateLimits": {"spendControlReached": "false"}}),
-    ] {
-        let error = ensure_server_method_is_defined(&json!({
-            "method": "account/rateLimits/updated",
-            "params": params
-        }))
-        .unwrap_err()
-        .to_string();
-        assert!(error.contains("account/rateLimits/updated"), "{error}");
-        assert!(error.contains("schema"), "{error}");
-    }
-
-    for (field, value) in [
-        ("planType", "future-plan"),
-        ("rateLimitReachedType", "future-limit"),
-    ] {
-        let error = ensure_server_method_is_defined(&json!({
-            "method": "account/rateLimits/updated",
-            "params": {"rateLimits": {(field): value}}
-        }))
-        .unwrap_err()
-        .to_string();
-        assert!(error.contains("account/rateLimits/updated"), "{error}");
-        assert!(error.contains(field), "{error}");
-        assert!(error.contains(value), "{error}");
-    }
+    let unknown = ensure_server_method_is_defined(&json!({
+        "method": "account/rateLimits/updated",
+        "params": {"rateLimits": {"planType": "platinum"}}
+    }))
+    .unwrap_err()
+    .to_string();
+    assert!(unknown.contains("platinum"));
 }
 
 #[test]

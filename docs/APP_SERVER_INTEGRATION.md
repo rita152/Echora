@@ -2,7 +2,7 @@
 
 ## 基线与口径
 
-核对基线：`codex-cli 0.153.0`（2026-09-10）。方法与字段来自该 CLI 生成的 schema，接入状态来自仓库实现。schema 随 CLI 版本生成，见[官方协议说明](https://learn.chatgpt.com/docs/app-server#message-schema)；升级时重新导出并核对：
+核对基线：`codex-cli 0.153.0`（2026-09-10）；本机复核版本为 `codex-cli 0.154.0`，账号相关方法以本机 0.154.0 生成的 default/experimental schema 为准。方法与字段来自该 CLI 生成的 schema，接入状态来自仓库实现。schema 随 CLI 版本生成，见[官方协议说明](https://learn.chatgpt.com/docs/app-server#message-schema)；升级时重新导出并核对：
 
 ```bash
 codex --version
@@ -63,6 +63,27 @@ codex app-server generate-json-schema --experimental --out artifacts/app-server-
 本机通知没有 operationId 或服务端版本，无法从协议区分“与本次期望完全相同的外部修改”和本次操作回执；串行队列与字段匹配提供当前可实现的关联边界。通知等待超时关闭旧 generation，禁止其迟到回执满足新连接；连接 generation 更新同时清理尚未绑定线程的旧设置快照和待确认权限操作，旧读取回调不能覆盖新状态；切换会话、关闭侧边标签和线程关闭使旧视图操作失效。临时线程只使用原 generation，关闭取消 waiter 并 unsubscribe，不能自动 resume。权限更新只影响后续轮次，进行中的轮次保留原权限。原生菜单、主／侧边选择、等待反馈、失败恢复及完整访问确认均经过这条路径。
 
 配置领域位于 `src/agent/config.rs`，编解码位于 `config.rs`，连接操作位于 `manager/config.rs`、`manager/settings.rs`，草稿与回读判定位于 `src/configuration.rs`，交互位于设置和 Composer 视图。真实独立配置验证入口为 `python3 scripts/verify_config_permissions.py --output artifacts/config-permissions-smoke`。
+
+### 账户、登录与配额
+
+账户、登录与配额是**连接级**状态，不依附任何 thread 或 turn。领域模型位于 [src/agent/account.rs](../src/agent/account.rs)：账户快照保留 `account`（字段缺失、显式 null、已知账户三态）与 nullable 的 `authMode`/`planType`；登录状态含未登录、登录中、已登录、失败、已取消以及当前 `loginId`；配额按 `accountId` + `limitId` 建立桶，并保留 primary/secondary、credits、individualLimit、spendControlReached、normalModelSlug、重置额度与后端 upsell。编解码位于 [src/agent/codex/account.rs](../src/agent/codex/account.rs)，连接操作与归约位于 `manager/account`。
+
+| 行为 | 规则 |
+|---|---|
+| account/read | 保留 `account=null` 与字段缺失的区别；缺失套餐、余额或额度不转为 0 或空串；无活动 thread/turn 时照常处理并把结果写入连接快照。 |
+| account/rateLimits/read | 同时消费 `rateLimits` 与 `rateLimitsByLimitId`；同一账户的多个 `limitId` 各自成桶，B 桶的稀疏更新不会覆盖 A 桶；读取到不同 `accountId` 时丢弃上一账户的桶，避免跨账户混合。 |
+| account/rateLimits/updated | 单桶稀疏补丁，只应用存在且非 null 的字段：nullable 表示该字段当前不可用，不清除已经确认的值；不结束任何活动轮次，也不进入会话状态。 |
+| account/updated | 应用级通知：nullable `authMode`/`planType` 只表示当前不可用；写入连接事件快照，新订阅者会收到回放。 |
+| account/login/start | 只发送 `type=chatgpt`；解码 `chatgpt`（authUrl+loginId）与 `chatgptDeviceCode`（loginId+userCode+verificationUrl）。第一版登录只承诺 Codex 管理的 ChatGPT 登录，`chatgptAuthTokens`、Bedrock、外部 token 刷新与 API key 登录不提供可见入口，遇到这些变体返回明确错误且不记录凭据。 |
+| account/login/completed | 按 `loginId` 关联当前登录；支持 success/error 与 nullable `loginId`（仅在单个登录进行中时归属）；取消后的迟到完成、重复完成通知都不会把状态改回成功；成功后重新读取账户与配额。 |
+| account/login/cancel | 只取消匹配的当前登录，不影响已完成的登录；RPC 失败、断连保留 pending 供重试，`notFound` 同样结束本地等待。 |
+| account/logout | 确认后调用；成功即清理本机账户、登录与配额快照，随后以 account/read 与 account/rateLimits/read 确认服务端状态；确认失败单独报告，不把登出回执当成服务端最终状态。 |
+
+generation 变化、账户切换与登出都会清理旧快照；`fail_generation` 会移除该 generation 的账户快照并向订阅者发布空状态，旧回调不能污染新连接。新订阅者收到的连接快照包含当前账户、登录状态与完整配额桶。
+
+UI 由真实后端状态驱动：侧边栏账户菜单显示账户标签、套餐、当前剩余额度（打开菜单即 `account/read → account/rateLimits/read`），退出登录先显示确认对话框，登录入口、登录中、device code/授权 URL、失败重试都在同一套状态上渲染；设置页"使用情况和计费"显示套餐、余额、按 `limitId` 拆分的额度卡片（含参考实现的剩余额度进度条）、重置额度与后端 upsell 文本。未知、加载中与失败状态分别渲染，不显示硬编码的账户、套餐、Token、余额或连续天数；账户显示名取自后端返回的邮箱本地部分，协议不提供昵称时不会杜撰。
+
+本阶段不接入 `account/usage/read`、`account/rateLimitResetCredit/consume`、`account/chatgptAuthTokens/refresh`、Amazon Bedrock 登录、`mcpServer/elicitation/request`、Skills/MCP 管理以及 realtime/queue/remoteControl/environment 方法；这些入口不显示或明确标注不可用。参考采集脚本为 `scripts/cdp_capture_account.mjs`，GPUI 采集脚本为 `scripts/capture_account_gpui.sh`，像素比较脚本为 `scripts/compare_account_phase.py`；原始截图、动作日志、CDP 脚本与相似度报告保存在 `artifacts/account-phase/`。当前对比分数见该目录的报告：账户菜单、退出确认与额度卡片在两种主题下为 90.7%–97.3%（相对 ChatGPT 参考；差异主要来自字形栅格化、半透明表面的底层内容不同，以及协议不提供的账户显示名）。Computer Use 在本机无法附加到 `GPUI Capture.app`（多次 `timeoutReached`），因此交互验收改用应用自身的采集入口与真实事件驱动的 UI 测试，细节见 `artifacts/account-phase/ui-validation/computer-use-report.json`。
 
 ### 运行中追加输入
 
@@ -134,12 +155,12 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 |---|---|---|---|---|
 | `account/bedrock/discover` | 实验 | 未接入 | — | — |
 | `account/bedrock/setup` | 实验 | 未接入 | — | — |
-| `account/login/cancel` | 默认 | 未接入 | — | — |
-| `account/login/start` | 默认 | 未接入 | — | — |
-| `account/logout` | 默认 | 未接入 | — | — |
+| `account/login/cancel` | 默认 | 已接入 | 只取消当前 loginId 对应的登录；canceled 与 notFound 都结束本地等待，RPC 失败保留 pending 以便重试或继续等待完成通知。 | `manager/account` |
+| `account/login/start` | 默认 | 已接入 | 只发送 type=chatgpt，解码 chatgpt（authUrl+loginId）与 chatgptDeviceCode（loginId+userCode+verificationUrl）；其他变体返回明确错误，不作为成功状态。 | `manager/account` |
+| `account/logout` | 默认 | 已接入 | 确认后调用；成功后清理账户、登录与配额快照，再以 account/read 与 account/rateLimits/read 确认服务端状态，回执缺失时报告未确认。 | `manager/account` |
 | `account/rateLimitResetCredit/consume` | 默认 | 未接入 | — | — |
-| `account/rateLimits/read` | 默认 | 未接入 | — | — |
-| `account/read` | 默认 | 未接入 | — | — |
+| `account/rateLimits/read` | 默认 | 已接入 | 同时消费 rateLimits 与 rateLimitsByLimitId，按 accountId + limitId 隔离；保留 primary/secondary/credits/individualLimit/spendControl/normalModelSlug、reset credit 与 upsell，缺失值不补 0。 | `manager/account` |
+| `account/read` | 默认 | 已接入 | 读取初始账户状态；保留 account=null 与字段缺失的差别；支持 chatgpt/apiKey/amazonBedrock 变体与 nullable email；无活动 thread/turn 时照常处理并进入连接快照。 | `manager/account` |
 | `account/sendAddCreditsNudgeEmail` | 默认 | 未接入 | — | — |
 | `account/usage/read` | 默认 | 未接入 | — | — |
 | `account/workspaceMessages/read` | 默认 | 未接入 | — | — |
@@ -314,9 +335,9 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 
 | 方法 | API | 状态 | 已实现行为与限制 | 入口 |
 |---|---|---|---|---|
-| `account/login/completed` | 默认 | 未接入 | — | — |
-| `account/rateLimits/updated` | 默认 | 已接入 | 应用级稀疏快照：合并窗口、credits、spend control 等可用字段；nullable 字段不清除已知值，不依附活动轮次。 | `manager/dispatch`、`notifications` |
-| `account/updated` | 默认 | 未接入 | — | — |
+| `account/login/completed` | 默认 | 已接入 | 按 loginId 关联当前登录；支持 nullable loginId（仅在单个登录进行中时归属）与 onboardingEntrypoint 校验；取消后的迟到完成、重复通知均被忽略；成功后重读账户与配额。 | `manager/dispatch`、`manager/account` |
+| `account/rateLimits/updated` | 默认 | 已接入 | 应用级稀疏补丁：按 accountId + limitId 合并单桶，nullable/缺省字段不清除已确认值，不影响其他桶或其他会话，也不结束活动轮次；账户切换、登出与 generation 变化会清理旧快照。 | `manager/dispatch`、`manager/account` |
+| `account/updated` | 默认 | 已接入 | 应用级通知，不绑定 thread/turn；nullable authMode/planType 只表示当前不可用；进入连接事件快照并支持新订阅者回放。 | `manager/dispatch`、`manager/account` |
 | `app/list/updated` | 默认 | 兼容退订 | 完整方法名退订；当前没有 app/list 目录、缓存或刷新入口，静态设置页不消费此通知。 | `runtime::OPT_OUT_NOTIFICATION_METHODS` |
 | `autoApprovalReview/strictReviewRequired` | 默认 | 已接入 | 按 thread/turn/startedAtMs 保存独立复核提示，同一时间去重；只展示额外安全检查状态，无 request id 或人工审批 responder，不改变 turn 终态。 | `auto_approval`、`manager/dispatch` |
 | `command/exec/outputDelta` | 默认 | 未接入 | — | — |

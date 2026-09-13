@@ -19,27 +19,30 @@ use super::{
 };
 use crate::{
     agent::{
-        AgentAccountRateLimits, AgentActivePermissionProfile, AgentAdditionalNetworkPermissions,
+        AgentAccount, AgentAccountAuthMode, AgentAccountLoginPhase, AgentAccountLoginState,
+        AgentAccountPlanType, AgentAccountPresence, AgentAccountRateLimitsState,
+        AgentAccountSnapshot, AgentActivePermissionProfile, AgentAdditionalNetworkPermissions,
         AgentApprovalControl, AgentApprovalHandle, AgentBackend, AgentCollaboration,
         AgentCollaborationStatus, AgentCollaborationTool, AgentCollaboratorState,
         AgentCollaboratorStatus, AgentCommandApprovalChoice, AgentCommandApprovalRequest,
-        AgentConfigWarning, AgentConnectionEvent, AgentCreditsSnapshot, AgentEffectivePermissions,
-        AgentEvent, AgentImageGeneration, AgentImageGenerationStatus, AgentInterruptControl,
-        AgentInterruptHandle, AgentInterruptOutcome, AgentMcpServerStartupFailureReason,
-        AgentMcpServerStartupState, AgentMcpServerStartupStatus, AgentMcpToolCall,
-        AgentMcpToolCallStatus, AgentModel, AgentModelCatalog, AgentOptionalField,
-        AgentPermissionMode, AgentPermissionProfile, AgentPermissionRequestProfile,
-        AgentPermissionsApprovalChoice, AgentPermissionsApprovalControl,
-        AgentPermissionsApprovalHandle, AgentPermissionsApprovalRequest, AgentRateLimitWindow,
+        AgentConfigWarning, AgentConnectionEvent, AgentEffectivePermissions, AgentEvent,
+        AgentImageGeneration, AgentImageGenerationStatus, AgentInterruptControl,
+        AgentInterruptHandle, AgentInterruptOutcome, AgentLoginChallenge,
+        AgentMcpServerStartupFailureReason, AgentMcpServerStartupState,
+        AgentMcpServerStartupStatus, AgentMcpToolCall, AgentMcpToolCallStatus, AgentModel,
+        AgentModelCatalog, AgentOptionalField, AgentPermissionMode, AgentPermissionProfile,
+        AgentPermissionRequestProfile, AgentPermissionsApprovalChoice,
+        AgentPermissionsApprovalControl, AgentPermissionsApprovalHandle,
+        AgentPermissionsApprovalRequest, AgentRateLimitBucket, AgentRateLimitWindow,
         AgentReasoning, AgentReasoningEffort, AgentRequest, AgentRun,
         AgentServerRequestFailureKind, AgentServerRequestId, AgentServerRequestKind,
-        AgentServerRequestMetadata, AgentServiceTier, AgentSpendControlLimit,
-        AgentThreadActiveFlag, AgentThreadSettings, AgentThreadStatus, AgentThreadStatusState,
-        AgentThreadTokenUsage, AgentTokenUsageBreakdown, AgentUserInputAnswer,
-        AgentUserInputControl, AgentUserInputHandle, AgentUserInputOption, AgentUserInputQuestion,
-        AgentUserInputRequest, AgentUserInputResponse, CommandExecution, CommandExecutionAction,
-        CommandExecutionStatus, HistoryItemDetail, HistoryTurnStatus, LegacySubAgentActivityKind,
-        ThreadActivity, ThreadHistory, ThreadHistoryItem, ThreadSummary, ThreadTurn,
+        AgentServerRequestMetadata, AgentServiceTier, AgentThreadActiveFlag, AgentThreadSettings,
+        AgentThreadStatus, AgentThreadStatusState, AgentThreadTokenUsage, AgentTokenUsageBreakdown,
+        AgentUserInputAnswer, AgentUserInputControl, AgentUserInputHandle, AgentUserInputOption,
+        AgentUserInputQuestion, AgentUserInputRequest, AgentUserInputResponse, CommandExecution,
+        CommandExecutionAction, CommandExecutionStatus, HistoryItemDetail, HistoryTurnStatus,
+        LegacySubAgentActivityKind, ThreadActivity, ThreadHistory, ThreadHistoryItem,
+        ThreadSummary, ThreadTurn,
     },
     components::{
         approval::{ApprovalCardEvent, ApprovalDecision, ApprovalScope},
@@ -2442,88 +2445,57 @@ fn thread_token_usage_updates_gpui_state_without_ending_the_turn() {
 }
 
 #[test]
-fn account_rate_limits_sparse_updates_merge_without_ending_the_turn() {
+fn account_connection_events_stay_out_of_a_running_conversation() {
     let mut app = TestApp::new();
     let composer = app.new_entity(|cx| ComposerView::new(ThemeMode::Dark, cx));
-    let initial = AgentAccountRateLimits {
-        limit_id: Some("codex".into()),
-        limit_name: None,
-        primary: Some(AgentRateLimitWindow {
-            used_percent: 15,
-            window_duration_mins: Some(10_080),
-            resets_at: Some(1_788_752_152),
+    // Account surfaces are connection-scoped. A running turn must neither
+    // consume them nor change phase or activity because of them.
+    let events = vec![
+        AgentConnectionEvent::AccountUpdated(AgentAccountSnapshot {
+            requires_openai_auth: true,
+            account: AgentAccountPresence::Account(AgentAccount::Chatgpt {
+                email: Some("rita@example.com".into()),
+                plan_type: AgentAccountPlanType::Pro,
+            }),
+            auth_mode: Some(AgentAccountAuthMode::Chatgpt),
+            plan_type: Some(AgentAccountPlanType::Pro),
         }),
-        secondary: None,
-        credits: Some(AgentCreditsSnapshot {
-            has_credits: false,
-            unlimited: false,
-            balance: Some("0".into()),
+        AgentConnectionEvent::AccountLoginUpdated(AgentAccountLoginState {
+            phase: AgentAccountLoginPhase::InProgress,
+            login_id: Some("login_1".into()),
+            challenge: Some(AgentLoginChallenge::AuthUrl {
+                auth_url: "https://example.com/auth".into(),
+            }),
+            error: None,
         }),
-        individual_limit: None,
-        spend_control_reached: None,
-        plan_type: Some("pro".into()),
-        rate_limit_reached_type: None,
-    };
-
+        AgentConnectionEvent::AccountRateLimitsUpdated(AgentAccountRateLimitsState {
+            account_id: Some("acct_1".into()),
+            ordinary_usage_allowed: Some(true),
+            reset_credits: None,
+            upsell: None,
+            buckets: BTreeMap::from([(
+                "codex".to_owned(),
+                AgentRateLimitBucket {
+                    limit_id: Some("codex".into()),
+                    primary: Some(AgentRateLimitWindow {
+                        used_percent: 27,
+                        window_duration_mins: Some(10_080),
+                        resets_at: Some(1_788_752_152),
+                    }),
+                    plan_type: Some(AgentAccountPlanType::Pro),
+                    ..AgentRateLimitBucket::default()
+                },
+            )]),
+        }),
+    ];
     app.update_entity(&composer, |composer, _| {
         composer.conversation.phase = ConversationPhase::Thinking;
-        assert!(
-            !composer.apply_agent_event_batch(vec![AgentEvent::AccountRateLimitsUpdated(
-                initial.clone()
-            )])
-        );
+        for event in events {
+            assert!(!composer.apply_connection_event(event));
+        }
     });
     assert!(app.read_entity(&composer, |composer, _| {
         composer.conversation.phase == ConversationPhase::Thinking
-            && composer.conversation.activities.is_empty()
-            && composer.conversation.account_rate_limits.as_ref() == Some(&initial)
-    }));
-
-    let sparse_update = AgentAccountRateLimits {
-        primary: Some(AgentRateLimitWindow {
-            used_percent: 23,
-            window_duration_mins: None,
-            resets_at: None,
-        }),
-        credits: Some(AgentCreditsSnapshot {
-            has_credits: true,
-            unlimited: false,
-            balance: None,
-        }),
-        individual_limit: Some(AgentSpendControlLimit {
-            limit: "100".into(),
-            used: "25".into(),
-            remaining_percent: 75,
-            resets_at: 1_788_752_152,
-        }),
-        spend_control_reached: Some(false),
-        ..AgentAccountRateLimits::default()
-    };
-    app.update_entity(&composer, |composer, _| {
-        assert!(
-            !composer
-                .apply_agent_event_batch(vec![AgentEvent::AccountRateLimitsUpdated(sparse_update)])
-        );
-    });
-    assert!(app.read_entity(&composer, |composer, _| {
-        let Some(rate_limits) = composer.conversation.account_rate_limits.as_ref() else {
-            return false;
-        };
-        rate_limits.limit_id.as_deref() == Some("codex")
-            && rate_limits.plan_type.as_deref() == Some("pro")
-            && rate_limits.primary.as_ref().is_some_and(|primary| {
-                primary.used_percent == 23
-                    && primary.window_duration_mins == Some(10_080)
-                    && primary.resets_at == Some(1_788_752_152)
-            })
-            && rate_limits.credits.as_ref().is_some_and(|credits| {
-                credits.has_credits && !credits.unlimited && credits.balance.as_deref() == Some("0")
-            })
-            && rate_limits.individual_limit.as_ref().is_some_and(|limit| {
-                limit.limit == "100" && limit.used == "25" && limit.remaining_percent == 75
-            })
-            && rate_limits.spend_control_reached == Some(false)
-            && composer.conversation.phase == ConversationPhase::Thinking
             && composer.conversation.activities.is_empty()
     }));
 }

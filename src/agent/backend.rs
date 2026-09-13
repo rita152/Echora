@@ -5,6 +5,10 @@ use std::{collections::BTreeSet, fmt, path::PathBuf, sync::Arc};
 use async_channel::Receiver;
 
 use super::{
+    account::{
+        AgentAccountSnapshot, AgentLoginCancelOutcome, AgentLoginStart, AgentLogoutOutcome,
+        AgentRateLimitsRead,
+    },
     catalog::{AgentModelCatalog, AgentPermissionMode, AgentPermissionProfile},
     events::{AgentConnectionEvent, AgentEvent},
     thread::{
@@ -17,6 +21,10 @@ use super::{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AgentCapability {
+    AccountRead,
+    AccountRateLimits,
+    AccountLogin,
+    AccountLogout,
     ProjectList,
     ProjectCreate,
     ProjectUpdate,
@@ -247,6 +255,34 @@ pub trait AgentBackend: Send + Sync {
     fn config_choices(&self) -> Vec<super::AgentConfigChoiceSet> {
         Vec::new()
     }
+
+    /// Reads the account answer for the current connection. A missing or null
+    /// account stays distinguishable, and the answer is also reduced into the
+    /// connection snapshot other views observe.
+    fn read_account(&self) -> Receiver<Result<AgentAccountSnapshot, String>> {
+        unsupported_account_receiver("读取账户状态")
+    }
+
+    /// Reads the current quota snapshot for the connected account.
+    fn read_rate_limits(&self) -> Receiver<Result<AgentRateLimitsRead, String>> {
+        unsupported_account_receiver("读取配额")
+    }
+
+    /// Starts the Codex-managed ChatGPT login and returns the login id with the
+    /// challenge the user must complete in a browser.
+    fn start_chatgpt_login(&self) -> Receiver<Result<AgentLoginStart, String>> {
+        unsupported_account_receiver("登录 ChatGPT 账户")
+    }
+
+    /// Cancels exactly the login named by this identifier.
+    fn cancel_login(&self, _login_id: String) -> Receiver<Result<AgentLoginCancelOutcome, String>> {
+        unsupported_account_receiver("取消登录")
+    }
+
+    /// Signs out and confirms the resulting account state.
+    fn logout_account(&self) -> Receiver<Result<AgentLogoutOutcome, String>> {
+        unsupported_account_receiver("退出登录")
+    }
     fn read_config(
         &self,
         _cwd: PathBuf,
@@ -394,5 +430,11 @@ fn unsupported_receiver<T: Send + 'static>(
 ) -> Receiver<WorkspaceResult<T>> {
     let (sender, receiver) = async_channel::bounded(1);
     let _ = sender.send_blocking(Err(WorkspaceError::unsupported(capability)));
+    receiver
+}
+
+fn unsupported_account_receiver<T: Send + 'static>(action: &str) -> Receiver<Result<T, String>> {
+    let (sender, receiver) = async_channel::bounded(1);
+    let _ = sender.send_blocking(Err(format!("当前 coding agent 不支持{action}")));
     receiver
 }

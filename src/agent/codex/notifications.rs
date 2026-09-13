@@ -7,11 +7,10 @@ use serde_json::Value;
 
 use super::methods::summarize_json;
 use crate::agent::{
-    AgentAccountRateLimits, AgentActivePermissionProfile, AgentConfigWarning, AgentCreditsSnapshot,
-    AgentEffectivePermissions, AgentEvent, AgentMcpServerStartupFailureReason,
-    AgentMcpServerStartupState, AgentMcpServerStartupStatus, AgentRateLimitWindow,
-    AgentSpendControlLimit, AgentThreadActiveFlag, AgentThreadSettings, AgentThreadStatus,
-    AgentThreadStatusState, AgentThreadTokenUsage, AgentTokenUsageBreakdown,
+    AgentActivePermissionProfile, AgentConfigWarning, AgentEffectivePermissions, AgentEvent,
+    AgentMcpServerStartupFailureReason, AgentMcpServerStartupState, AgentMcpServerStartupStatus,
+    AgentThreadActiveFlag, AgentThreadSettings, AgentThreadStatus, AgentThreadStatusState,
+    AgentThreadTokenUsage, AgentTokenUsageBreakdown,
 };
 
 #[derive(Debug, Deserialize)]
@@ -40,63 +39,6 @@ pub(super) struct TokenUsageBreakdown {
     pub(super) cache_write_input_tokens: i64,
     pub(super) output_tokens: i64,
     pub(super) reasoning_output_tokens: i64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct AccountRateLimitsUpdatedNotification {
-    pub(super) rate_limits: RateLimitSnapshot,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct RateLimitSnapshot {
-    #[serde(default)]
-    pub(super) limit_id: Option<String>,
-    #[serde(default)]
-    pub(super) limit_name: Option<String>,
-    #[serde(default)]
-    pub(super) primary: Option<RateLimitWindow>,
-    #[serde(default)]
-    pub(super) secondary: Option<RateLimitWindow>,
-    #[serde(default)]
-    pub(super) credits: Option<CreditsSnapshot>,
-    #[serde(default)]
-    pub(super) individual_limit: Option<SpendControlLimitSnapshot>,
-    #[serde(default)]
-    pub(super) spend_control_reached: Option<bool>,
-    #[serde(default)]
-    pub(super) plan_type: Option<String>,
-    #[serde(default)]
-    pub(super) rate_limit_reached_type: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct RateLimitWindow {
-    pub(super) used_percent: i32,
-    #[serde(default)]
-    pub(super) window_duration_mins: Option<i64>,
-    #[serde(default)]
-    pub(super) resets_at: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct CreditsSnapshot {
-    pub(super) has_credits: bool,
-    pub(super) unlimited: bool,
-    #[serde(default)]
-    pub(super) balance: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct SpendControlLimitSnapshot {
-    pub(super) limit: String,
-    pub(super) used: String,
-    pub(super) remaining_percent: i32,
-    pub(super) resets_at: i64,
 }
 
 pub(super) fn validate_remote_control_status_changed(message: &Value) -> Result<()> {
@@ -213,84 +155,6 @@ pub(super) fn parse_thread_token_usage_updated(message: &Value) -> Result<AgentT
         total: map_breakdown(notification.token_usage.total),
         last: map_breakdown(notification.token_usage.last),
         model_context_window: notification.token_usage.model_context_window,
-    })
-}
-
-pub(super) fn parse_account_rate_limits_updated(message: &Value) -> Result<AgentAccountRateLimits> {
-    let params = message
-        .get("params")
-        .context("account/rateLimits/updated 通知缺少 params")?;
-    let notification: AccountRateLimitsUpdatedNotification = serde_json::from_value(params.clone())
-        .context("account/rateLimits/updated 通知 params 不符合协议 schema")?;
-    let rate_limits = notification.rate_limits;
-
-    if let Some(plan_type) = rate_limits.plan_type.as_deref()
-        && !matches!(
-            plan_type,
-            "free"
-                | "go"
-                | "plus"
-                | "pro"
-                | "prolite"
-                | "team"
-                | "self_serve_business_prolite"
-                | "self_serve_business_usage_based"
-                | "business"
-                | "ent26"
-                | "enterprise_cbp_automation"
-                | "enterprise_cbp_usage_based"
-                | "enterprise"
-                | "edu"
-                | "edu_plus"
-                | "edu_pro"
-                | "unknown"
-        )
-    {
-        bail!(
-            "account/rateLimits/updated 通知字段 params.rateLimits.planType 为未知值 `{plan_type}`"
-        );
-    }
-    if let Some(reached_type) = rate_limits.rate_limit_reached_type.as_deref()
-        && !matches!(
-            reached_type,
-            "rate_limit_reached"
-                | "workspace_owner_credits_depleted"
-                | "workspace_member_credits_depleted"
-                | "workspace_owner_usage_limit_reached"
-                | "workspace_member_usage_limit_reached"
-        )
-    {
-        bail!(
-            "account/rateLimits/updated 通知字段 params.rateLimits.rateLimitReachedType 为未知值 `{reached_type}`"
-        );
-    }
-
-    let map_window = |window: RateLimitWindow| AgentRateLimitWindow {
-        used_percent: window.used_percent,
-        window_duration_mins: window.window_duration_mins,
-        resets_at: window.resets_at,
-    };
-    Ok(AgentAccountRateLimits {
-        limit_id: rate_limits.limit_id,
-        limit_name: rate_limits.limit_name,
-        primary: rate_limits.primary.map(map_window),
-        secondary: rate_limits.secondary.map(map_window),
-        credits: rate_limits.credits.map(|credits| AgentCreditsSnapshot {
-            has_credits: credits.has_credits,
-            unlimited: credits.unlimited,
-            balance: credits.balance,
-        }),
-        individual_limit: rate_limits
-            .individual_limit
-            .map(|limit| AgentSpendControlLimit {
-                limit: limit.limit,
-                used: limit.used,
-                remaining_percent: limit.remaining_percent,
-                resets_at: limit.resets_at,
-            }),
-        spend_control_reached: rate_limits.spend_control_reached,
-        plan_type: rate_limits.plan_type,
-        rate_limit_reached_type: rate_limits.rate_limit_reached_type,
     })
 }
 
@@ -542,9 +406,6 @@ pub(super) fn parse_agent_notification(message: &Value) -> Result<Option<AgentEv
         }
         Some("thread/tokenUsage/updated") => {
             AgentEvent::ThreadTokenUsageUpdated(parse_thread_token_usage_updated(message)?)
-        }
-        Some("account/rateLimits/updated") => {
-            AgentEvent::AccountRateLimitsUpdated(parse_account_rate_limits_updated(message)?)
         }
         Some("warning") => {
             let _ = optional_string_at(message, "/params/threadId", "params.threadId")?;

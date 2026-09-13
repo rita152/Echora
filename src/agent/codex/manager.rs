@@ -1,5 +1,6 @@
 //! Application-owned connection generations, startup, and shutdown.
 
+mod account;
 mod catalog;
 mod config;
 mod connection;
@@ -26,6 +27,7 @@ use async_channel::Receiver;
 use serde_json::json;
 
 use crate::agent::{AgentCapabilities, AgentCapability, AgentConnectionEvent};
+pub(in crate::agent::codex) use account::CHATGPT_LOGIN_TYPE;
 use connection::{Connection, ConnectionState};
 use events::ConnectionEventHub;
 use transport::{AppServerSpawner, RealAppServerSpawner, SharedJsonWriter};
@@ -223,7 +225,11 @@ impl ManagerInner {
         connection.fail_all(&message);
         if let Ok(mut hub) = self.connection_events.lock() {
             hub.snapshots.retain(|_,event| !matches!(event,AgentConnectionEvent::ThreadSettingsUpdated {generation:old,..} if *old==generation));
+            // The account snapshots belonged to the generation that just
+            // failed; a new subscriber must not replay them.
+            hub.account = Default::default();
         }
+        self.clear_account_state();
         let _ = self.publish_runtime(
             generation,
             crate::agent::AgentRuntimeObservation::Disconnected,
@@ -354,6 +360,10 @@ impl CodexAppServerManager {
 
     pub(super) fn capabilities(&self) -> AgentCapabilities {
         AgentCapabilities::new([
+            AgentCapability::AccountRead,
+            AgentCapability::AccountRateLimits,
+            AgentCapability::AccountLogin,
+            AgentCapability::AccountLogout,
             AgentCapability::ProjectList,
             AgentCapability::ProjectCreate,
             AgentCapability::ProjectUpdate,

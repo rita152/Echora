@@ -164,6 +164,49 @@ fn schedule_screenshot(window: &mut gpui::Window, path: String, frames: usize) {
     });
 }
 
+/// Account surfaces wait for the real account read before capturing, so the
+/// image shows the backend's account and quota rather than a pending state.
+#[cfg(feature = "screenshot")]
+fn schedule_account_screenshot(
+    window: &mut gpui::Window,
+    app: gpui::Entity<ChatApp>,
+    path: String,
+    deadline: Instant,
+    stable: usize,
+) {
+    window.on_next_frame(
+        move |window, cx| match app.read(cx).account_capture_ready() {
+            true if stable == 0 => {
+                match save_screenshot(window, &path) {
+                    Ok(()) => println!("{path}"),
+                    Err(error) => {
+                        eprintln!("failed to save screenshot: {error:#}");
+                        std::process::exit(1);
+                    }
+                }
+                cx.quit();
+            }
+            ready if Instant::now() < deadline => {
+                if ready {
+                    window.refresh();
+                }
+                window.refresh();
+                schedule_account_screenshot(
+                    window,
+                    app.clone(),
+                    path.clone(),
+                    deadline,
+                    if ready { stable - 1 } else { stable },
+                );
+            }
+            _ => {
+                eprintln!("account surface did not resolve before the capture deadline");
+                std::process::exit(1);
+            }
+        },
+    );
+}
+
 #[cfg(feature = "screenshot")]
 fn schedule_review_screenshot(
     window: &mut gpui::Window,
@@ -450,6 +493,10 @@ fn main() {
         .unwrap_or(900.0);
     let sidebar_bottom = args.iter().any(|arg| arg == "--sidebar-bottom");
     let profile_menu_open = args.iter().any(|arg| arg == "--profile-menu-open");
+    let account_dialog = args.iter().find_map(|arg| {
+        arg.strip_prefix("--account-dialog=")
+            .map(|value| value == "login")
+    });
     let bottom_panel_open = args.iter().any(|arg| arg == "--bottom-panel-open");
     let bottom_panel_menu_open = args.iter().any(|arg| arg == "--bottom-panel-menu-open");
     let bottom_panel_append = args.iter().find_map(|arg| {
@@ -511,6 +558,7 @@ fn main() {
         || permission_menu_state.is_some()
         || permission_confirmation_open;
     let settings_open = args.iter().any(|arg| arg == "--settings-open");
+    let mut account_ready_capture = false;
     let settings_page = args.iter().find_map(|arg| {
         arg.strip_prefix("--settings-page=")
             .map(|slug| Box::leak(slug.to_owned().into_boxed_str()) as &'static str)
@@ -637,7 +685,23 @@ fn main() {
                             app.complete_startup_for_capture(cx);
                         }
                         if profile_menu_open {
+                            // The account surfaces are a capture state too: the
+                            // window must not still be showing the startup gate.
+                            app.complete_startup_for_capture(cx);
                             app.open_profile_menu(cx);
+                        }
+                        if let Some(login) = account_dialog {
+                            eprintln!("DEBUG account-dialog capture: login={login}");
+                            app.complete_startup_for_capture(cx);
+                            account_ready_capture = true;
+                            app.open_account_dialog_for_capture(
+                                if login {
+                                    crate::components::account::AccountDialog::Login
+                                } else {
+                                    crate::components::account::AccountDialog::Logout
+                                },
+                                cx,
+                            );
                         }
                         if bottom_panel_open {
                             app.open_bottom_panel(cx);
@@ -787,7 +851,16 @@ fn main() {
                             app.set_turn_diff_for_capture(state, cx);
                         }
                         if let Some(slug) = settings_page {
+                            // The billing page renders live account and quota
+                            // data, so its capture waits for that read instead
+                            // of photographing the startup gate.
+                            if slug == "usage" {
+                                app.complete_startup_for_capture(cx);
+                            }
                             app.open_settings_page(slug, cx);
+                            if slug == "usage" {
+                                account_ready_capture = true;
+                            }
                         } else if settings_open {
                             app.open_settings(cx);
                         }
@@ -822,6 +895,14 @@ fn main() {
                                 app.clone(),
                                 path,
                                 Instant::now() + Duration::from_secs(60),
+                                3,
+                            );
+                        } else if profile_menu_open || account_ready_capture {
+                            schedule_account_screenshot(
+                                window,
+                                app.clone(),
+                                path,
+                                Instant::now() + Duration::from_secs(45),
                                 3,
                             );
                         } else if let Some(thread_id) = resume_thread.clone() {

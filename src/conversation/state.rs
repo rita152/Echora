@@ -7,7 +7,7 @@ use super::{
     transcript::{ConversationPhase, ConversationTranscriptTurn, ResumedTurnPresentation},
 };
 use crate::agent::{
-    AgentAccountRateLimits, AgentApprovalHandle, AgentCommandApprovalRequest, AgentConnectionEvent,
+    AgentApprovalHandle, AgentCommandApprovalRequest, AgentConnectionEvent,
     AgentEffectivePermissions, AgentFileApprovalHandle, AgentFileChange, AgentInterruptHandle,
     AgentMcpServerStartupStatus, AgentModel, AgentPermissionsApprovalHandle,
     AgentServerRequestMetadata, AgentThreadStatus, AgentThreadTokenUsage, AgentUserInputHandle,
@@ -51,7 +51,6 @@ pub(crate) struct ConversationState {
         HashMap<(Option<String>, String), AgentMcpServerStartupStatus>,
     pub(crate) thread_statuses: HashMap<String, AgentThreadStatus>,
     pub(crate) thread_token_usages: HashMap<String, AgentThreadTokenUsage>,
-    pub(crate) account_rate_limits: Option<AgentAccountRateLimits>,
     pub(crate) models: Vec<AgentModel>,
     pub(crate) model_catalog_error: Option<String>,
     pub(crate) model_user_selected: bool,
@@ -106,7 +105,6 @@ impl Default for ConversationState {
             mcp_server_startup_statuses: HashMap::new(),
             thread_statuses: HashMap::new(),
             thread_token_usages: HashMap::new(),
-            account_rate_limits: None,
             models: Vec::new(),
             model_catalog_error: None,
             model_user_selected: false,

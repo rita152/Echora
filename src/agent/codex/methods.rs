@@ -4,9 +4,8 @@ use anyhow::{Result, anyhow, bail};
 use serde_json::Value;
 
 use super::notifications::{
-    parse_account_rate_limits_updated, parse_mcp_server_startup_status_updated,
-    parse_thread_status_changed, parse_thread_token_usage_updated, thread_started_id,
-    validate_remote_control_status_changed,
+    parse_mcp_server_startup_status_updated, parse_thread_status_changed,
+    parse_thread_token_usage_updated, thread_started_id, validate_remote_control_status_changed,
 };
 
 pub(super) const UNDEFINED_METHOD_PARAMS_LIMIT: usize = 2_000;
@@ -84,6 +83,8 @@ pub(super) fn is_defined_server_method(method: &str) -> bool {
             | "thread/settings/updated"
             | "warning"
             | "configWarning"
+            | "account/updated"
+            | "account/login/completed"
             | "model/rerouted"
             | "model/verification"
             | "model/safetyBuffering/updated"
@@ -126,7 +127,14 @@ pub(super) fn ensure_server_method_is_defined(message: &Value) -> Result<()> {
         }
         "thread/status/changed" => parse_thread_status_changed(message).map(|_| ()),
         "thread/tokenUsage/updated" => parse_thread_token_usage_updated(message).map(|_| ()),
-        "account/rateLimits/updated" => parse_account_rate_limits_updated(message).map(|_| ()),
+        // Account notifications are connection-scoped: the manager reduces them
+        // into the generation's account snapshot, so validation here keeps the
+        // same strictness as every other decoded payload.
+        "account/rateLimits/updated" => {
+            super::account::parse_account_rate_limits_updated(message).map(|_| ())
+        }
+        "account/updated" => super::account::parse_account_updated(message).map(|_| ()),
+        "account/login/completed" => super::account::parse_login_completed(message).map(|_| ()),
         method if is_defined_server_method(method) => Ok(()),
         method => Err(undefined_server_method_error(method, message)),
     }

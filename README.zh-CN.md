@@ -53,6 +53,8 @@
 | **审查与交付** | 查看 Git diff、逐行评论、暂存、还原、提交、创建分支、推送，并通过本机 `gh` 创建 PR。 |
 | **侧边探索** | 从主会话派生临时对话，分别控制输入、模型、权限与停止操作。 |
 | **配置 Codex** | 读取有效配置与来源，查看受管限制，编辑已支持的用户层设置，并通过后端回读核验保存结果。 |
+| **账户与额度** | 账户菜单、登录流程与计费页都由连接级账户快照驱动：缺失的套餐、余额或额度显示为未知而不是 0；登录保留服务端返回的 `loginId` 直到完成通知到达；退出登录先确认再发请求。只提供 Codex 管理的 ChatGPT 登录，API key、外部 token 与 Bedrock 变体返回明确错误。 |
+| **管理账户** | 在账户菜单查看当前 ChatGPT 账户、套餐与剩余额度；通过 Codex 管理的 ChatGPT 登录、取消进行中的登录，并在确认后退出登录。计费页读取账户真实配额桶，不再显示示例数值。 |
 
 具体协议覆盖与兼容规则以 [app-server 接入总表](docs/APP_SERVER_INTEGRATION.md) 为准。可见的界面入口不代表对应厂商能力已经完整接入。
 
@@ -212,6 +214,7 @@ export CHATGPT_CDP_HTTP="http://127.0.0.1:${CAPTURE_CDP_PORT:?Set a dedicated de
 | 真实线程双主题 | `python3 scripts/capture_resume_reference.py --endpoint "$CHATGPT_CDP_HTTP" --manifest /path/to/manifest.json`；`python3 scripts/capture_resume_gpui.py --manifest /path/to/manifest.json --output artifacts/resume-alignment/actual` |
 | 终端 / 文件 | `node scripts/cdp_capture_terminal.mjs artifacts/terminal`；`node scripts/cdp_capture_file_panel.mjs artifacts/file-panel` |
 | 审查 / 侧边聊天 | `node scripts/cdp_capture_review.mjs artifacts/review-reference`；`node scripts/cdp_capture_side_chat.mjs artifacts/side-chat reference` |
+| 账户菜单、退出登录、计费页 | `node scripts/cdp_capture_account.mjs --output artifacts/account-phase/chatgpt-reference --theme=light`；`scripts/capture_account_gpui.sh`；`python3 scripts/compare_account_phase.py` |
 | 设置矩阵 | `./node_modules/.bin/electron scripts/verify_chatgpt_settings.cjs`；`REFRESH_SETTINGS_REFERENCES=1 scripts/capture_settings_matrix.sh`；`python3 scripts/verify_settings_matrix.py` |
 | 图像生成 | `python3 scripts/compare_image_generation_component.py --help`，传入实测等尺寸裁切范围和 DPR。 |
 | 历史诊断 | `python3 scripts/audit_resume_rendering.py --help`；rollout 仅用于离线诊断。 |

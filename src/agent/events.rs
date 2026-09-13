@@ -14,8 +14,7 @@ use super::{
         AgentUserInputRequest,
     },
     status::{
-        AgentAccountRateLimits, AgentConfigWarning, AgentMcpServerStartupStatus, AgentThreadStatus,
-        AgentThreadTokenUsage,
+        AgentConfigWarning, AgentMcpServerStartupStatus, AgentThreadStatus, AgentThreadTokenUsage,
     },
     thread::{ProjectChange, ProjectId, ThreadId},
 };
@@ -65,7 +64,14 @@ pub enum AgentConnectionEvent {
         thread_id: ThreadId,
         project_id: Option<ProjectId>,
     },
-    AccountRateLimitsUpdated(AgentAccountRateLimits),
+    /// Account answer for this connection generation. Nullable fields and a
+    /// missing account stay distinguishable, and the event replays to new
+    /// subscribers.
+    AccountUpdated(super::account::AgentAccountSnapshot),
+    /// Login request, cancellation, and completion state for this generation.
+    AccountLoginUpdated(super::account::AgentAccountLoginState),
+    /// Complete quota snapshot keyed by accountId + limitId.
+    AccountRateLimitsUpdated(super::account::AgentAccountRateLimitsState),
 }
 
 /// Agent-neutral output consumed by the UI.
@@ -99,7 +105,6 @@ pub enum AgentEvent {
     McpServerStartupStatusUpdated(AgentMcpServerStartupStatus),
     ThreadStatusChanged(AgentThreadStatus),
     ThreadTokenUsageUpdated(AgentThreadTokenUsage),
-    AccountRateLimitsUpdated(AgentAccountRateLimits),
     AssistantMessageStarted {
         item_id: String,
     },

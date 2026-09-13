@@ -18,7 +18,7 @@ use super::{
     transport::{ManagedProcess, SharedJsonWriter},
     turn::ManagedTurn,
 };
-use crate::agent::{AgentServerRequestId, AgentThreadSettings};
+use crate::agent::{AgentAccountState, AgentServerRequestId, AgentThreadSettings};
 
 pub(super) struct PendingRpc {
     pub(super) method: String,
@@ -60,6 +60,8 @@ pub(super) struct ConnectionState {
     pub(super) thread_settings: HashMap<String, AgentThreadSettings>,
     pub(super) confirmed_settings: HashMap<String, VecDeque<AgentThreadSettings>>,
     pub(super) remote_control_status: Option<Value>,
+    /// Connection-scoped account, login, and quota state for this generation.
+    pub(super) account: AgentAccountState,
 }
 
 impl ConnectionState {

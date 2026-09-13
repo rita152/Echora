@@ -53,6 +53,7 @@ Both images are captured from the current native application using the dedicated
 | **Review & ship changes** | Inspect Git diffs, comment on lines, stage, restore, commit, create branches, push, and open pull requests through the local `gh` CLI. |
 | **Explore in side chats** | Fork temporary conversations from the main thread, with their own input, model, permissions, and stop controls. |
 | **Configure Codex** | Read effective configuration and its sources, inspect managed restrictions, edit supported user settings, and verify saves against the backend. |
+| **Manage the account** | See the connected ChatGPT account, plan, and remaining quota in the account menu; sign in through Codex-managed ChatGPT auth, cancel a pending login, and sign out behind a confirmation. The billing page reads the account's real quota buckets instead of sample values. |
 
 The exact protocol coverage and compatibility rules live in [the app-server integration table](docs/APP_SERVER_INTEGRATION.md). A visible control does not imply full support for the corresponding provider feature.
 
@@ -85,6 +86,8 @@ The Cargo package and executable are still named `gpui-chat-clone`, so the exist
 | Open Git review | Right panel → Review; `Ctrl+Shift+G` |
 | Open a side chat | Right/bottom panel menu; `Option+Cmd+S` |
 | Open settings | Account menu → Settings; `Cmd+,` |
+| Sign in / sign out | Account menu → the sign-in row, or `Log out` with the in-app confirmation |
+| Read usage and quota | Account menu → Usage, or Settings → Usage & billing |
 | Send / add input to an active turn | `Enter`; `Shift+Enter` inserts a newline |
 | Save a file immediately | `Cmd+S` |
 | Clear the terminal | `Cmd+K` |
@@ -97,6 +100,7 @@ The Cargo package and executable are still named `gpui-chat-clone`, so the exist
 - **History:** completed turns collapse intermediate messages before the final answer. Added user messages retain their position and attachments. File changes are grouped by path while retaining the original patch. History comes from app-server; missing timing, plan snapshots, and automatic-review history are not invented.
 - **Approvals:** concurrent requests appear in order, and a submitted card waits for server resolution. A failed response is visible and cannot be submitted twice. Inspect the original requested patch or expand and copy long commands. Keyboard navigation uses Tab/arrows, Enter, and Esc; `Shift+Esc` rejects a file request and stops the turn.
 - **Permissions:** profiles are read across all backend pages and show unavailable choices with reasons. Existing-thread changes become effective only after RPC success and a matching settings notification, and affect subsequent turns. Full access requires an in-app confirmation; side chats maintain independent settings.
+- **Account and quota:** the account menu, the sign-in flow, and the billing page are driven by the connection's account snapshot. A missing plan, balance, or quota is reported as unknown rather than zero, a pending login keeps its server-issued id until the completion notification arrives, and signing out is confirmed before the request is sent. Only the Codex-managed ChatGPT login is exposed; API-key, external-token, and Bedrock variants report an explicit error. See the integration table for the exact protocol coverage.
 - **Configuration:** supported edits use versioned `config/batchWrite` followed by readback. Project and managed layers are read-only. Conflicts retain the draft; unknown outcomes are not retried automatically. Saved model, reasoning, service-tier, and personality defaults apply to future threads, without hot-updating open ones.
 - **Activity:** plans support streaming, progress, copying, explicit download, and read-only file tabs. Search preserves queries and results; waits retain duration and status. Hook feedback is read-only. Automatic-review details support keyboard navigation and text selection, and follow reduced-motion preferences. Authentication recovery and deprecation-display boundaries are documented in the integration table.
 - **File editing:** autosave runs about 400 ms after typing stops; undo and redo also write to disk. UTF-8 BOM, CRLF, and permissions are retained, and external edits are checked before saving. Text files are limited to 2 MiB and individual lines to 64 KiB; files are local only.
@@ -212,6 +216,7 @@ export CHATGPT_CDP_HTTP="http://127.0.0.1:${CAPTURE_CDP_PORT:?Set a dedicated de
 | Saved threads, both themes | `python3 scripts/capture_resume_reference.py --endpoint "$CHATGPT_CDP_HTTP" --manifest /path/to/manifest.json`; `python3 scripts/capture_resume_gpui.py --manifest /path/to/manifest.json --output artifacts/resume-alignment/actual` |
 | Terminal / files | `node scripts/cdp_capture_terminal.mjs artifacts/terminal`; `node scripts/cdp_capture_file_panel.mjs artifacts/file-panel` |
 | Review / side chat | `node scripts/cdp_capture_review.mjs artifacts/review-reference`; `node scripts/cdp_capture_side_chat.mjs artifacts/side-chat reference` |
+| Account menu, logout, billing | `node scripts/cdp_capture_account.mjs --output artifacts/account-phase/chatgpt-reference --theme=light`; `scripts/capture_account_gpui.sh`; `python3 scripts/compare_account_phase.py` |
 | Settings matrix | `./node_modules/.bin/electron scripts/verify_chatgpt_settings.cjs`; `REFRESH_SETTINGS_REFERENCES=1 scripts/capture_settings_matrix.sh`; `python3 scripts/verify_settings_matrix.py` |
 | Image generation | `python3 scripts/compare_image_generation_component.py --help`; supply measured equal-size crops and DPR. |
 | History diagnostics | `python3 scripts/audit_resume_rendering.py --help`; rollout files are for offline diagnostics only. |

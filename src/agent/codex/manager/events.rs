@@ -11,6 +11,28 @@ pub(super) struct ConnectionEventHub {
     pub(super) runtime: crate::agent::AgentRuntimeState,
     pub(super) subscribers: Vec<Sender<AgentConnectionEvent>>,
     pub(super) snapshots: HashMap<String, AgentConnectionEvent>,
+    /// Account surfaces replayed to new subscribers. Cleared with the
+    /// generation that produced them.
+    pub(super) account: AccountSnapshots,
+}
+
+#[derive(Clone, Default)]
+pub(super) struct AccountSnapshots {
+    pub(super) account: Option<AgentConnectionEvent>,
+    pub(super) login: Option<AgentConnectionEvent>,
+    pub(super) rate_limits: Option<AgentConnectionEvent>,
+}
+
+impl AccountSnapshots {
+    pub(super) fn events(&self) -> impl Iterator<Item = AgentConnectionEvent> {
+        [
+            self.account.clone(),
+            self.login.clone(),
+            self.rate_limits.clone(),
+        ]
+        .into_iter()
+        .flatten()
+    }
 }
 
 impl ConnectionEventHub {
@@ -22,12 +44,42 @@ impl ConnectionEventHub {
         for event in self.snapshots.values().cloned() {
             let _ = sender.send_blocking(event);
         }
+        // Account surfaces are connection-scoped and replay in full, so a new
+        // subscriber immediately observes the current account and quotas.
+        for event in self.account.events() {
+            let _ = sender.send_blocking(event);
+        }
         self.subscribers.push(sender);
         receiver
     }
 
     pub(super) fn publish(&mut self, mut event: AgentConnectionEvent) {
-        let key = connection_event_key(&event);
+        let key = match &mut event {
+            AgentConnectionEvent::AccountUpdated(snapshot) => {
+                self.account.account = Some(AgentConnectionEvent::AccountUpdated(snapshot.clone()));
+                None
+            }
+            AgentConnectionEvent::AccountLoginUpdated(login) => {
+                self.account.login = Some(AgentConnectionEvent::AccountLoginUpdated(login.clone()));
+                None
+            }
+            AgentConnectionEvent::AccountRateLimitsUpdated(rate_limits) => {
+                self.account.rate_limits = Some(AgentConnectionEvent::AccountRateLimitsUpdated(
+                    rate_limits.clone(),
+                ));
+                None
+            }
+            _ => Some(connection_event_key(&event)),
+        };
+        if let Some(key) = key {
+            self.publish_snapshot(key, event);
+        } else {
+            self.subscribers
+                .retain(|subscriber| subscriber.send_blocking(event.clone()).is_ok());
+        }
+    }
+
+    fn publish_snapshot(&mut self, key: String, mut event: AgentConnectionEvent) {
         if let AgentConnectionEvent::AutoApprovalReviewUpdated(update) = &mut event
             && let Some(AgentConnectionEvent::AutoApprovalReviewUpdated(existing)) =
                 self.snapshots.get(&key)
@@ -123,6 +175,8 @@ pub(super) fn connection_event_key(event: &AgentConnectionEvent) -> String {
         AgentConnectionEvent::ThreadProjectUpdated { thread_id, .. } => {
             format!("thread-project:{thread_id}")
         }
+        AgentConnectionEvent::AccountUpdated(_) => "account".to_owned(),
+        AgentConnectionEvent::AccountLoginUpdated(_) => "account-login".to_owned(),
         AgentConnectionEvent::AccountRateLimitsUpdated(_) => "rate-limits".to_owned(),
     }
 }

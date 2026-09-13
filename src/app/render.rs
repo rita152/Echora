@@ -12,7 +12,8 @@ use super::{right_panel::clamp_right_panel_width, state::RightPanelMode};
 #[cfg(not(test))]
 use crate::workspace::WorkspaceSnapshot;
 use crate::{
-    components::{file_panel::OpenWorkspaceFile, icons::icon},
+    agent::{AgentAccountLoginPhase, AgentLoginChallenge},
+    components::{account::AccountDialog, file_panel::OpenWorkspaceFile, icons::icon},
     theme::{CHAT_CONTENT_HORIZONTAL_GUTTER, Theme, ui_font},
 };
 
@@ -177,6 +178,12 @@ pub(super) fn permission_risk_row(
 
 impl Render for ChatApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.account_focus_pending {
+            if self.account.dialog.is_some() {
+                self.account_focus.focus(window, cx);
+            }
+            self.account_focus_pending = false;
+        }
         if self.permission_confirmation_focus_pending {
             if self.permission_confirmation_open {
                 self.permission_confirmation_focus.focus(window, cx);
@@ -606,6 +613,16 @@ impl Render for ChatApp {
                         ),
                 )
             })
+            .when(self.account.dialog == Some(AccountDialog::Logout), |shell| {
+                shell.child(account_dialog_overlay(
+                    self.account_logout_overlay(theme, cx),
+                ))
+            })
+            .when(self.account.dialog == Some(AccountDialog::Login), |shell| {
+                shell.child(account_dialog_overlay(
+                    self.account_login_overlay(theme, cx),
+                ))
+            })
             .when_some(resumed_title.filter(|_| !review_fullscreen), |shell, (title, in_project)| {
                 // The resumed thread has its own opaque sticky header. Paint
                 // it over the virtual list's overdraw band, just as Electron
@@ -926,5 +943,359 @@ impl Render for ChatApp {
             })
             .when_some(self.plan_export_error.clone(), |root, error| root.child(div().id("plan-export-error").role(Role::Alert).absolute().bottom(px(24.0)).right(px(24.0)).max_w(px(400.0)).p(px(12.0)).rounded(px(12.0)).bg(theme.surface).border_1().border_color(theme.border).text_color(theme.text).child(error)))
             .into_any_element()
+    }
+}
+
+/// Dimmed surface that centers an account dialog. Clicking the scrim is not a
+/// dismissal: a destructive confirmation still requires an explicit answer.
+fn account_dialog_overlay(dialog: impl IntoElement) -> impl IntoElement {
+    let mut overlay = div()
+        .id("account-dialog-overlay")
+        .absolute()
+        .inset_0()
+        .bg(rgba(0x00000022))
+        .flex()
+        .items_center()
+        .justify_center()
+        .on_click(|_, _, cx: &mut gpui::App| cx.stop_propagation())
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
+    overlay = overlay.child(dialog);
+    overlay
+}
+
+impl ChatApp {
+    /// Logout confirmation measured from the live ChatGPT desktop app: a
+    /// centered 380x170 dialog with a 20px inset, a 20px title, and two 32px
+    /// buttons. The destructive action only runs after this confirmation.
+    pub(super) fn account_logout_overlay(
+        &self,
+        theme: Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let email = self.account.account_email().map(str::to_owned);
+        div()
+            .id("account-logout-dialog")
+            .role(gpui::Role::Dialog)
+            .aria_label("要退出登录？")
+            .track_focus(&self.account_focus)
+            .on_key_down(cx.listener(Self::account_dialog_key))
+            .w(px(380.0))
+            .h(px(170.0))
+            .relative()
+            .rounded(px(25.0))
+            .border(px(0.5))
+            .border_color(theme.border)
+            .bg(theme.model_picker_surface)
+            .shadow(vec![
+                BoxShadow::new(px(0.0), px(8.0), theme.profile_menu_shadow.into())
+                    .blur_radius(px(16.0))
+                    .spread_radius(px(-4.0)),
+            ])
+            .p(px(20.0))
+            .flex()
+            .flex_col()
+            .text_color(theme.markdown_text)
+            .child(
+                div()
+                    .h(px(28.0))
+                    .flex()
+                    .items_center()
+                    .text_size(px(20.0))
+                    .line_height(px(28.0))
+                    .font_weight(gpui::FontWeight(600.0))
+                    .child("要退出登录？"),
+            )
+            .child(
+                div()
+                    .mt(px(4.0))
+                    .text_size(px(14.0))
+                    .line_height(px(21.0))
+                    .text_color(theme.text_tertiary)
+                    .child(match &email {
+                        Some(email) => format!("已以 {email} 身份登录"),
+                        None => "已登录 ChatGPT 账户".to_owned(),
+                    }),
+            )
+            .child(
+                div()
+                    .mt(px(11.0))
+                    .text_size(px(14.0))
+                    .line_height(px(21.0))
+                    .child("你需要重新登录才能继续使用 ChatGPT"),
+            )
+            .child(
+                div()
+                    .id("account-dialog-close")
+                    .role(gpui::Role::Button)
+                    .aria_label("关闭对话框")
+                    .absolute()
+                    .top(px(16.0))
+                    .right(px(16.0))
+                    .size(px(24.0))
+                    .rounded(px(4.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .cursor_pointer()
+                    .hover(move |style| style.bg(theme.text.alpha(0.06)))
+                    .on_click(cx.listener(|this, _, _, cx| this.dismiss_account_dialog(cx)))
+                    .child(icon("close-dialog", theme.markdown_text.into()).size(px(16.0))),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .bottom(px(20.0))
+                    .left(px(20.0))
+                    .right(px(20.0))
+                    .flex()
+                    .justify_end()
+                    .gap(px(12.0))
+                    .child(
+                        div()
+                            .id("account-logout-cancel")
+                            .role(gpui::Role::Button)
+                            .aria_label("取消")
+                            .when(self.account_choice == 0, |button| {
+                                button.aria_active_descendant().shadow(vec![
+                                    BoxShadow::new(px(0.0), px(0.0), theme.accent.into())
+                                        .spread_radius(px(2.0)),
+                                ])
+                            })
+                            .h(px(32.0))
+                            .px(px(16.0))
+                            .py(px(6.0))
+                            .rounded(px(12.5))
+                            .flex()
+                            .items_center()
+                            .text_size(px(14.0))
+                            .line_height(px(18.0))
+                            .text_color(theme.text_tertiary)
+                            .cursor_pointer()
+                            .hover(move |style| style.bg(theme.text.alpha(0.05)))
+                            .on_click(cx.listener(|this, _, _, cx| this.dismiss_account_dialog(cx)))
+                            .child("取消"),
+                    )
+                    .child(
+                        div()
+                            .id("account-logout-confirm")
+                            .role(gpui::Role::Button)
+                            .aria_label("退出登录")
+                            .when(self.account_choice == 1, |button| {
+                                button.aria_active_descendant().shadow(vec![
+                                    BoxShadow::new(px(0.0), px(0.0), theme.accent.into())
+                                        .spread_radius(px(2.0)),
+                                ])
+                            })
+                            .h(px(32.0))
+                            .px(px(16.0))
+                            .py(px(6.0))
+                            .rounded(px(12.5))
+                            .bg(rgba(0xe02e2a1a))
+                            .flex()
+                            .items_center()
+                            .text_size(px(14.0))
+                            .line_height(px(18.0))
+                            .text_color(rgba(0xe02e2aff))
+                            .cursor_pointer()
+                            .hover(|style| style.bg(rgba(0xe02e2a33)))
+                            .on_click(cx.listener(|this, _, _, cx| this.confirm_logout(cx)))
+                            .child("退出登录"),
+                    ),
+            )
+    }
+
+    /// Login progress. The challenge is exactly what the backend returned: an
+    /// authorization URL, a device code, or a pending state until either shows
+    /// up. Nothing here reports success before the completion notification.
+    pub(super) fn account_login_overlay(
+        &self,
+        theme: Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let challenge = self.account.challenge().cloned();
+        let url = challenge.as_ref().map(|challenge| match challenge {
+            AgentLoginChallenge::AuthUrl { auth_url } => auth_url.clone(),
+            AgentLoginChallenge::DeviceCode {
+                verification_url, ..
+            } => verification_url.clone(),
+        });
+        let user_code = match &challenge {
+            Some(AgentLoginChallenge::DeviceCode { user_code, .. }) => Some(user_code.clone()),
+            _ => None,
+        };
+        let phase = self.account.state.login.phase;
+        let mut dialog = div()
+            .id("account-login-dialog")
+            .role(gpui::Role::Dialog)
+            .aria_label("登录 ChatGPT")
+            .track_focus(&self.account_focus)
+            .on_key_down(cx.listener(Self::account_dialog_key))
+            .w(px(420.0))
+            .relative()
+            .rounded(px(25.0))
+            .border(px(0.5))
+            .border_color(theme.border)
+            .bg(theme.model_picker_surface)
+            .shadow(vec![
+                BoxShadow::new(px(0.0), px(8.0), theme.profile_menu_shadow.into())
+                    .blur_radius(px(16.0))
+                    .spread_radius(px(-4.0)),
+            ])
+            .p(px(20.0))
+            .flex()
+            .flex_col()
+            .gap(px(8.0))
+            .text_color(theme.markdown_text)
+            .child(
+                div()
+                    .text_size(px(20.0))
+                    .line_height(px(28.0))
+                    .font_weight(gpui::FontWeight(600.0))
+                    .child("登录 ChatGPT"),
+            );
+        let mut actions = div().mt(px(8.0)).flex().justify_end().gap(px(12.0));
+        if let Some(error) = self.account.login_error().map(str::to_owned) {
+            dialog = dialog.child(div().text_size(px(14.0)).line_height(px(21.0)).child(error));
+        } else if let Some(challenge) = &challenge {
+            dialog = dialog.child(
+                div()
+                    .text_size(px(14.0))
+                    .line_height(px(21.0))
+                    .text_color(theme.text_tertiary)
+                    .child(match challenge {
+                        AgentLoginChallenge::AuthUrl { .. } => {
+                            "请在浏览器中完成授权。完成后此窗口会自动更新。"
+                        }
+                        AgentLoginChallenge::DeviceCode { .. } => {
+                            "请打开下面的地址，并输入一次性代码。完成后此窗口会自动更新。"
+                        }
+                    }),
+            );
+            if let Some(code) = &user_code {
+                dialog = dialog.child(
+                    div()
+                        .h(px(40.0))
+                        .rounded(px(12.5))
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.elevated)
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .font_family(crate::theme::UI_MONOSPACE_FONT_FAMILY)
+                        .text_size(px(18.0))
+                        .child(code.clone()),
+                );
+            }
+            if let Some(url) = &url {
+                dialog = dialog.child(
+                    div()
+                        .text_size(px(13.0))
+                        .line_height(px(18.0))
+                        .text_color(theme.accent)
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .child(url.clone()),
+                );
+            }
+        } else {
+            dialog = dialog.child(
+                div()
+                    .text_size(px(14.0))
+                    .line_height(px(21.0))
+                    .text_color(theme.text_tertiary)
+                    .child("已请求登录，正在等待服务端返回授权信息。"),
+            );
+        }
+        if let Some(url) = url {
+            actions = actions.child(
+                div()
+                    .id("account-login-open")
+                    .role(gpui::Role::Button)
+                    .aria_label("打开浏览器")
+                    .h(px(32.0))
+                    .px(px(16.0))
+                    .py(px(6.0))
+                    .rounded(px(12.5))
+                    .bg(theme.text.alpha(0.05))
+                    .flex()
+                    .items_center()
+                    .text_size(px(14.0))
+                    .line_height(px(18.0))
+                    .cursor_pointer()
+                    .hover(move |style| style.bg(theme.text.alpha(0.10)))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.handle_account_intent(
+                            crate::components::sidebar::AccountIntent::OpenExternalUrl(url.clone()),
+                            cx,
+                        );
+                    }))
+                    .child("打开浏览器"),
+            );
+        }
+        let retry = phase == AgentAccountLoginPhase::Failed;
+        actions = actions.child(
+            div()
+                .id("account-login-cancel")
+                .role(gpui::Role::Button)
+                .aria_label(if retry { "重试" } else { "取消登录" })
+                .h(px(32.0))
+                .px(px(16.0))
+                .py(px(6.0))
+                .rounded(px(12.5))
+                .flex()
+                .items_center()
+                .text_size(px(14.0))
+                .line_height(px(18.0))
+                .cursor_pointer()
+                .hover(move |style| style.bg(theme.text.alpha(0.05)))
+                .on_click(cx.listener(|this, _, _, cx| {
+                    if this.account.state.login.phase == AgentAccountLoginPhase::Failed {
+                        this.start_login(cx);
+                    } else if let Some(login_id) = this.account.state.login.login_id.clone() {
+                        this.cancel_login(login_id, cx);
+                    } else {
+                        this.dismiss_account_dialog(cx);
+                    }
+                }))
+                .child(if retry { "重试" } else { "取消登录" }),
+        );
+        dialog.child(actions)
+    }
+
+    pub(super) fn account_dialog_key(
+        &mut self,
+        event: &KeyDownEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.account.dialog.is_none() {
+            return;
+        }
+        match event.keystroke.key.as_str() {
+            "escape" => self.dismiss_account_dialog(cx),
+            "tab" | "up" | "down" | "left" | "right" => {
+                self.account_choice = if self.account_choice == 0 { 1 } else { 0 };
+                cx.notify();
+            }
+            "enter" => match self.account.dialog {
+                Some(AccountDialog::Logout) => {
+                    if self.account_choice == 1 {
+                        self.confirm_logout(cx);
+                    } else {
+                        self.dismiss_account_dialog(cx);
+                    }
+                }
+                Some(AccountDialog::Login) => {
+                    if self.account.state.login.phase == AgentAccountLoginPhase::Failed {
+                        self.start_login(cx);
+                    } else if let Some(login_id) = self.account.state.login.login_id.clone() {
+                        self.cancel_login(login_id, cx);
+                    }
+                }
+                None => {}
+            },
+            _ => {}
+        }
     }
 }

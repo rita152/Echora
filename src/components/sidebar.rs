@@ -18,6 +18,7 @@ use crate::{
         AgentCapability, Project, ProjectId, ThreadActivity, ThreadId, ThreadSummary, UpdateProject,
     },
     components::{
+        account::AccountView,
         icons::{chevron, icon},
         prompt_input::{PromptChanged, PromptInput, PromptSubmitted},
     },
@@ -27,6 +28,25 @@ use crate::{
 
 pub struct OpenSettings;
 pub struct OpenProjectCreation;
+
+/// Actions the account surfaces ask the application to perform. Requests that
+/// need a manager RPC are never issued from a view.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AccountIntent {
+    /// account/read followed by account/rateLimits/read.
+    Refresh,
+    StartLogin,
+    CancelLogin(String),
+    /// Opens the logout confirmation.
+    RequestLogout,
+    /// Opens the usage and billing settings page.
+    OpenUsageSettings,
+    /// Opens a backend-provided URL in the system browser.
+    OpenExternalUrl(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AccountAction(pub AccountIntent);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SelectThread {
@@ -40,6 +60,7 @@ pub struct NewConversation {
 }
 
 impl gpui::EventEmitter<OpenSettings> for SidebarView {}
+impl gpui::EventEmitter<AccountAction> for SidebarView {}
 impl gpui::EventEmitter<OpenProjectCreation> for SidebarView {}
 impl gpui::EventEmitter<SelectThread> for SidebarView {}
 impl gpui::EventEmitter<NewConversation> for SidebarView {}
@@ -63,8 +84,99 @@ const MARQUEE_SPEED: f32 = 28.0;
 const PROJECT_THREAD_TITLE_INSETS: f32 = 120.0;
 const RECENT_THREAD_TITLE_INSETS: f32 = 96.0;
 const THREAD_ACTION_RAIL_INSETS: f32 = 51.0;
+/// Account surfaces measured from the live ChatGPT desktop app at 1440x900:
+/// the sidebar row is 184x30 with an 18px avatar, the menu is 224 wide with 4px
+/// padding, a 42.5625px account header, and 28.5625px rows.
+const ACCOUNT_ROW_HEIGHT: f32 = 30.0;
+const ACCOUNT_MENU_WIDTH: f32 = 224.0;
+const ACCOUNT_MENU_ITEM_HEIGHT: f32 = 28.5625;
+const ACCOUNT_HEADER_HEIGHT: f32 = 42.5625;
+const ACCOUNT_HEADER_LINE: f32 = 18.5714;
+const ACCOUNT_AVATAR_SIZE: f32 = 18.0;
+const ACCOUNT_MENU_BOTTOM: f32 = 44.625;
 const TITLE_FADE_IN: f32 = 8.0;
 const TITLE_FADE_OUT: f32 = 16.0;
+
+fn account_avatar(initials: Option<&str>, theme: Theme) -> Div {
+    div()
+        .size(px(ACCOUNT_AVATAR_SIZE))
+        .flex_none()
+        .rounded_full()
+        .bg(theme.control)
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_size(px(8.0))
+        .text_color(theme.sidebar_text)
+        .child(initials.unwrap_or("").to_owned())
+}
+
+/// One account menu row. Actions live on the caller so a row without a
+/// supported backend action stays inert instead of faking success.
+fn account_menu_row(
+    id: &'static str,
+    label: &'static str,
+    glyph: &'static str,
+    trailing: Option<String>,
+    theme: Theme,
+    enabled: bool,
+) -> gpui::Stateful<Div> {
+    div()
+        .id(id)
+        .h(px(ACCOUNT_MENU_ITEM_HEIGHT))
+        .px(px(8.0))
+        .rounded(px(12.0))
+        .flex()
+        .items_center()
+        .gap(px(6.0))
+        .text_size(px(13.0))
+        .line_height(px(18.5714))
+        .text_color(theme.sidebar_text)
+        .when(enabled, |row| {
+            row.cursor_pointer()
+                .hover(move |style| style.bg(theme.sidebar_hover))
+        })
+        .child(icon(glyph, theme.sidebar_text.into()).size(px(16.0)))
+        .child(
+            div()
+                .min_w(px(0.0))
+                .flex_1()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .child(label),
+        )
+        .when_some(trailing, |row, trailing| {
+            row.child(
+                div()
+                    .flex_none()
+                    .text_size(px(13.0))
+                    .text_color(theme.sidebar_text_muted)
+                    .child(trailing),
+            )
+        })
+}
+
+fn account_menu_separator(theme: Theme) -> Div {
+    div()
+        .h(px(9.0))
+        .px(px(4.0))
+        .flex()
+        .items_center()
+        .child(div().h(px(1.0)).w_full().bg(theme.border))
+}
+
+/// Account action failures stay visible on the surfaces that can retry them.
+fn account_menu_notice(message: String, theme: Theme) -> gpui::Stateful<Div> {
+    div()
+        .id("account-menu-notice")
+        .w_full()
+        .px(px(8.0))
+        .py(px(4.0))
+        .text_size(px(12.0))
+        .line_height(px(16.0))
+        .text_color(theme.sidebar_text_muted)
+        .child(message)
+}
 
 fn sidebar_thread_title_viewport_width(width: f32, flat: bool, show_actions: bool) -> f32 {
     let action_insets = if flat {
@@ -254,6 +366,7 @@ pub struct SidebarView {
     projects_section_menu_open: bool,
     pinned_menu_open: bool,
     profile_menu_open: bool,
+    account: AccountView,
     activity_open: bool,
     archived_open: bool,
     local_error: Option<String>,
@@ -323,6 +436,7 @@ impl SidebarView {
             projects_section_menu_open: false,
             pinned_menu_open: false,
             profile_menu_open: false,
+            account: AccountView::default(),
             activity_open: false,
             archived_open: false,
             local_error: None,
@@ -345,6 +459,14 @@ impl SidebarView {
     pub fn set_width(&mut self, width: f32, cx: &mut Context<Self>) {
         if (self.width - width).abs() > f32::EPSILON {
             self.width = width;
+            cx.notify();
+        }
+    }
+
+    /// Account surfaces render exactly what the connection snapshot reports.
+    pub fn set_account_view(&mut self, account: AccountView, cx: &mut Context<Self>) {
+        if self.account != account {
+            self.account = account;
             cx.notify();
         }
     }
@@ -2221,12 +2343,29 @@ impl SidebarView {
             )
     }
 
+    /// Account row at the bottom of the sidebar. The label, avatar initials and
+    /// sign-in state all come from the connection snapshot.
     fn profile_button(&self, theme: Theme, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
+        let title = self
+            .account
+            .account_label()
+            .or_else(|| {
+                if self.account.is_signed_in() {
+                    Some("已登录".to_owned())
+                } else if self.account.needs_login() {
+                    Some("登录".to_owned())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| "账户".to_owned());
+        let initials = self.account.account_initials();
         div()
             .id("sidebar-profile")
-            .h(px(38.0))
+            .w(px((self.width - 56.0).max(96.0)))
+            .h(px(ACCOUNT_ROW_HEIGHT))
             .mx(px(8.0))
-            .mb(px(5.0))
+            .mb(px(8.0))
             .px(px(8.0))
             .rounded(px(ROW_RADIUS))
             .flex()
@@ -2234,37 +2373,232 @@ impl SidebarView {
             .gap(px(8.0))
             .cursor_pointer()
             .text_size(px(14.0))
+            .line_height(px(21.0))
             .text_color(theme.sidebar_text)
             .hover(move |style| style.bg(theme.sidebar_hover))
+            .child(account_avatar(initials.as_deref(), theme))
             .child(
                 div()
-                    .size(px(22.0))
-                    .rounded_full()
-                    .bg(theme.control)
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_size(px(8.0))
-                    .child("RI"),
+                    .min_w(px(0.0))
+                    .flex_1()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .child(title),
             )
-            .child(div().flex_1().child("rita"))
             .on_click(cx.listener(|this, _, _, cx| {
                 cx.stop_propagation();
                 this.profile_menu_open = !this.profile_menu_open;
+                if this.profile_menu_open {
+                    // Opening the account page reads the account and the quota.
+                    cx.emit(AccountAction(AccountIntent::Refresh));
+                }
                 cx.notify();
             }))
     }
 
-    fn profile_menu(&self, theme: Theme, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
-        self.menu_shell("profile-menu", self.width - 16.0, theme)
+    fn account_menu_header(&self, theme: Theme) -> Div {
+        let title = self
+            .account
+            .account_label()
+            .unwrap_or_else(|| "已登录".to_owned());
+        let plan = self.account.plan_label().unwrap_or("").to_owned();
+        div()
+            .h(px(ACCOUNT_HEADER_HEIGHT))
+            .px(px(8.0))
+            .rounded(px(ROW_RADIUS))
+            .flex()
+            .items_center()
+            .gap(px(6.0))
+            .child(account_avatar(
+                self.account.account_initials().as_deref(),
+                theme,
+            ))
             .child(
-                Self::menu_item("profile-settings", "设置", "profile-settings", theme, true)
-                    .on_click(cx.listener(|this, _, _, cx| {
+                div()
+                    .min_w(px(0.0))
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .text_size(px(13.0))
+                            .line_height(px(ACCOUNT_HEADER_LINE))
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .child(title),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .line_height(px(16.0))
+                            .text_color(theme.sidebar_text_muted)
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .child(plan),
+                    ),
+            )
+    }
+
+    fn account_menu(&self, theme: Theme, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
+        let mut menu = div()
+            .id("account-menu")
+            .w(px(ACCOUNT_MENU_WIDTH))
+            .p(px(4.0))
+            .rounded(px(20.0))
+            .border(px(0.5))
+            .border_color(theme.border)
+            .bg(theme.model_picker_surface)
+            .shadow(vec![
+                gpui::BoxShadow::new(px(0.0), px(8.0), theme.profile_menu_shadow.into())
+                    .blur_radius(px(16.0))
+                    .spread_radius(px(-4.0)),
+            ])
+            .font_family(".SystemUIFont")
+            .text_size(px(13.0))
+            .text_color(theme.sidebar_text)
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
+        if self.account.is_signed_in() {
+            menu = menu
+                .child(self.account_menu_header(theme))
+                .child(account_menu_separator(theme));
+        }
+        if let Some(error) = self.account.action_error.clone() {
+            menu = menu.child(account_menu_notice(error, theme));
+        }
+        if self.account.login_pending() {
+            menu = menu.child(account_menu_row(
+                "account-login-pending",
+                "登录中…",
+                "profile-lock",
+                None,
+                theme,
+                false,
+            ));
+            if let Some(login_id) = self.account.login_id().map(str::to_owned) {
+                menu = menu.child(
+                    account_menu_row(
+                        "account-login-cancel",
+                        "取消登录",
+                        "close-dialog",
+                        None,
+                        theme,
+                        true,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
                         this.profile_menu_open = false;
-                        cx.emit(OpenSettings);
+                        cx.emit(AccountAction(AccountIntent::CancelLogin(login_id.clone())));
                         cx.notify();
                     })),
+                );
+            }
+        } else if self.account.needs_login() {
+            menu = menu.child(
+                account_menu_row(
+                    "account-sign-in",
+                    "使用 ChatGPT 登录",
+                    "profile-lock",
+                    None,
+                    theme,
+                    true,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.profile_menu_open = false;
+                    cx.emit(AccountAction(AccountIntent::StartLogin));
+                    cx.notify();
+                })),
+            );
+        } else if self.account.account_unknown() {
+            // No answer yet: say so and offer a real read instead of showing a
+            // guessed account or a fabricated quota.
+            menu = menu.child(account_menu_row(
+                "account-unknown",
+                "账户状态未知",
+                "profile-lock",
+                None,
+                theme,
+                false,
+            ));
+            menu = menu.child(
+                account_menu_row(
+                    "account-retry",
+                    "读取账户状态",
+                    "settings-refresh",
+                    None,
+                    theme,
+                    true,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.profile_menu_open = false;
+                    cx.emit(AccountAction(AccountIntent::Refresh));
+                    cx.notify();
+                })),
+            );
+        } else {
+            menu = menu.child(
+                account_menu_row(
+                    "profile-usage",
+                    "使用情况",
+                    "profile-usage",
+                    Some(self.account.usage_summary()),
+                    theme,
+                    true,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.profile_menu_open = false;
+                    cx.emit(AccountAction(AccountIntent::OpenUsageSettings));
+                    cx.notify();
+                })),
+            );
+            menu = menu.child(account_menu_row(
+                "profile-pet",
+                "显示宠物",
+                "profile-pet",
+                Some("⌥Space".to_owned()),
+                theme,
+                false,
+            ));
+            menu = menu.child(account_menu_row(
+                "profile-invite",
+                "邀请好友",
+                "profile-invite",
+                None,
+                theme,
+                false,
+            ));
+        }
+        menu = menu.child(
+            account_menu_row(
+                "profile-settings",
+                "设置",
+                "profile-settings",
+                Some("⌘,".to_owned()),
+                theme,
+                true,
             )
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.profile_menu_open = false;
+                cx.emit(OpenSettings);
+                cx.notify();
+            })),
+        );
+        if self.account.is_signed_in() {
+            menu = menu.child(
+                account_menu_row(
+                    "profile-logout",
+                    "退出登录",
+                    "profile-logout",
+                    None,
+                    theme,
+                    true,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.profile_menu_open = false;
+                    cx.emit(AccountAction(AccountIntent::RequestLogout));
+                    cx.notify();
+                })),
+            );
+        }
+        menu
     }
 }
 
@@ -2353,9 +2687,9 @@ impl Render for SidebarView {
             sidebar = sidebar.child(deferred(
                 div()
                     .absolute()
-                    .left(px(8.0))
-                    .bottom(px(43.0))
-                    .child(self.profile_menu(theme, cx)),
+                    .left(px(9.0))
+                    .bottom(px(ACCOUNT_MENU_BOTTOM))
+                    .child(self.account_menu(theme, cx)),
             ));
         }
         if self.search_open {
@@ -2536,6 +2870,79 @@ mod tests {
         assert_eq!(SIDEBAR_TITLEBAR_SAFE_TOP, 46.0);
         assert_eq!(ROW_HEIGHT, 30.0);
         assert_eq!(ROW_RADIUS, 12.5);
+        if let Some(parent) = preferences.parent() {
+            let _ = std::fs::remove_dir_all(parent);
+        }
+        if let Some(parent) = preferences.parent() {
+            let _ = std::fs::remove_dir_all(parent);
+        }
+    }
+    #[test]
+    fn account_row_click_opens_and_closes_the_menu_with_the_real_snapshot() {
+        use crate::agent::{
+            AgentAccount, AgentAccountPlanType, AgentAccountPresence, AgentAccountSnapshot,
+        };
+        use crate::components::account::{AccountLoadStatus, AccountView};
+
+        static SERIAL: AtomicU64 = AtomicU64::new(1);
+        let preferences = std::env::temp_dir()
+            .join(format!(
+                "gpui-sidebar-account-{}-{}",
+                std::process::id(),
+                SERIAL.fetch_add(1, Ordering::Relaxed)
+            ))
+            .join("preferences.json");
+        let store =
+            WorkspaceStore::with_preferences_path(SidebarBackend::new(), preferences.clone());
+        let mut app = TestApp::new();
+        let mut window = app.open_window_with_options(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: point(px(0.0), px(0.0)),
+                    size: size(px(900.0), px(700.0)),
+                })),
+                ..Default::default()
+            },
+            |_, cx| SidebarView::new(ThemeMode::Dark, false, store, cx),
+        );
+        window.update(|sidebar, _, cx| {
+            sidebar.set_account_view(
+                AccountView {
+                    state: crate::agent::AgentAccountState {
+                        generation: 1,
+                        account: AgentAccountSnapshot {
+                            requires_openai_auth: true,
+                            account: AgentAccountPresence::Account(AgentAccount::Chatgpt {
+                                email: Some("rita@example.com".into()),
+                                plan_type: AgentAccountPlanType::Pro,
+                            }),
+                            auth_mode: None,
+                            plan_type: Some(AgentAccountPlanType::Pro),
+                        },
+                        login: Default::default(),
+                        rate_limits: Default::default(),
+                    },
+                    status: AccountLoadStatus::Loaded,
+                    dialog: None,
+                    action_error: None,
+                },
+                cx,
+            );
+        });
+        window.draw();
+        assert_eq!(
+            window.read(|sidebar, _| sidebar.account.account_label()),
+            Some("rita".to_owned())
+        );
+
+        // The account row sits at the bottom of the sidebar: 8px side inset,
+        // 30px tall, 8px above the window edge.
+        let row_y = 700.0 - 8.0 - 15.0;
+        window.simulate_click(point(px(80.0), px(row_y)), MouseButton::Left);
+        assert!(window.read(|sidebar, _| sidebar.profile_menu_open));
+        // Clicking the account row again closes the menu it opened.
+        window.simulate_click(point(px(80.0), px(row_y)), MouseButton::Left);
+        assert!(!window.read(|sidebar, _| sidebar.profile_menu_open));
         if let Some(parent) = preferences.parent() {
             let _ = std::fs::remove_dir_all(parent);
         }

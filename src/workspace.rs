@@ -370,6 +370,8 @@ impl WorkspaceStore {
             | AgentConnectionEvent::ConfigWarning(_)
             | AgentConnectionEvent::McpServerStartupStatusUpdated(_)
             | AgentConnectionEvent::ThreadSettingsUpdated { .. }
+            | AgentConnectionEvent::AccountUpdated(_)
+            | AgentConnectionEvent::AccountLoginUpdated(_)
             | AgentConnectionEvent::AccountRateLimitsUpdated(_) => {}
         }
     }

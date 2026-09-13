@@ -1,3 +1,4 @@
+pub mod account;
 pub mod approval;
 pub(crate) mod auto_approval;
 pub mod callback;

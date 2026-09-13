@@ -341,17 +341,11 @@ impl ManagerInner {
                 ));
                 Ok(())
             }
-            "account/rateLimits/updated" => {
-                let Some(AgentEvent::AccountRateLimitsUpdated(rate_limits)) =
-                    parse_agent_notification(message)?
-                else {
-                    bail!("account/rateLimits/updated 未映射为 AgentAccountRateLimits");
-                };
-                self.publish_connection_event(AgentConnectionEvent::AccountRateLimitsUpdated(
-                    rate_limits,
-                ));
-                Ok(())
-            }
+            // Account notifications are application-level: they never bind to
+            // a thread or turn, and they never end an active turn.
+            "account/rateLimits/updated" => self.handle_rate_limits_updated(connection, message),
+            "account/updated" => self.handle_account_updated(connection, message),
+            "account/login/completed" => self.handle_login_completed(connection, message),
             "warning" => {
                 let thread_id = match message.pointer("/params/threadId") {
                     None | Some(Value::Null) => None,

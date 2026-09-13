@@ -7,11 +7,13 @@ use async_channel::Receiver;
 
 use super::manager::CodexAppServerManager;
 use crate::agent::{
-    AgentBackend, AgentConnectionEvent, AgentModelCatalog, AgentPermissionProfile, AgentRequest,
-    AgentRun, CreateProject, HistoryItemDetail, Page, PageRequest, Project, ProjectId,
-    SideConversationRequest, ThreadHistoryItemEntry, ThreadId, ThreadListRequest,
-    ThreadMetadataUpdate, ThreadSearchResult, ThreadSection, ThreadSectionAppearance,
-    ThreadSectionId, ThreadSummary, ThreadTurn, UpdateProject, WorkspaceResult,
+    AgentAccountSnapshot, AgentBackend, AgentConnectionEvent, AgentLoginCancelOutcome,
+    AgentLoginStart, AgentLogoutOutcome, AgentModelCatalog, AgentPermissionProfile,
+    AgentRateLimitsRead, AgentRequest, AgentRun, CreateProject, HistoryItemDetail, Page,
+    PageRequest, Project, ProjectId, SideConversationRequest, ThreadHistoryItemEntry, ThreadId,
+    ThreadListRequest, ThreadMetadataUpdate, ThreadSearchResult, ThreadSection,
+    ThreadSectionAppearance, ThreadSectionId, ThreadSummary, ThreadTurn, UpdateProject,
+    WorkspaceResult,
 };
 
 /// Codex CLI adapter. JSON-RPC details intentionally stay inside this module.
@@ -87,6 +89,28 @@ impl AgentBackend for CodexAppServerBackend {
     fn config_choices(&self) -> Vec<crate::agent::AgentConfigChoiceSet> {
         super::config::config_choices()
     }
+
+    fn read_account(&self) -> Receiver<Result<AgentAccountSnapshot, String>> {
+        self.manager.read_account()
+    }
+
+    fn read_rate_limits(&self) -> Receiver<Result<AgentRateLimitsRead, String>> {
+        self.manager.read_rate_limits()
+    }
+
+    fn start_chatgpt_login(&self) -> Receiver<Result<AgentLoginStart, String>> {
+        self.manager
+            .start_login(super::manager::CHATGPT_LOGIN_TYPE.to_owned())
+    }
+
+    fn cancel_login(&self, login_id: String) -> Receiver<Result<AgentLoginCancelOutcome, String>> {
+        self.manager.cancel_login(login_id)
+    }
+
+    fn logout_account(&self) -> Receiver<Result<AgentLogoutOutcome, String>> {
+        self.manager.logout()
+    }
+
     fn read_config(
         &self,
         cwd: PathBuf,

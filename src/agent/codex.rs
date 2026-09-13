@@ -1,5 +1,6 @@
 //! Codex app-server adapter. Protocol details remain inside this module.
 
+mod account;
 #[cfg(feature = "screenshot")]
 mod approval_capture;
 mod approvals;
@@ -22,6 +23,8 @@ mod session;
 mod transport;
 mod workspace_protocol;
 
+#[cfg(test)]
+mod account_tests;
 #[cfg(test)]
 mod approvals_tests;
 #[cfg(test)]
@@ -60,17 +63,17 @@ use transport::{AppServerProcess, send};
 
 #[cfg(test)]
 use crate::agent::{
-    AgentAccountRateLimits, AgentBackend, AgentCommandApprovalChoice, AgentConfigWarning,
-    AgentCreditsSnapshot, AgentEvent, AgentFileChangeStatus, AgentImageGenerationFailure,
-    AgentImageGenerationStatus, AgentImageView, AgentInterruptControl, AgentInterruptHandle,
-    AgentInterruptOutcome, AgentMcpServerStartupFailureReason, AgentMcpServerStartupState,
-    AgentMcpServerStartupStatus, AgentMcpToolCall, AgentMcpToolCallStatus, AgentOptionalField,
-    AgentPermissionMode, AgentPermissionProfile, AgentPermissionsApprovalChoice,
-    AgentRateLimitWindow, AgentReasoning, AgentRequest, AgentServerRequestFailureKind,
-    AgentServerRequestId, AgentServerRequestKind, AgentServerRequestMetadata,
-    AgentThreadActiveFlag, AgentThreadSettings, AgentThreadStatus, AgentThreadStatusState,
-    AgentThreadTokenUsage, AgentTokenUsageBreakdown, AgentUserInputResponse, CommandExecution,
-    CommandExecutionAction, CommandExecutionStatus,
+    AGENT_DEFAULT_RATE_LIMIT_ID, AgentAccountPlanType, AgentBackend, AgentCommandApprovalChoice,
+    AgentConfigWarning, AgentCreditsSnapshot, AgentEvent, AgentFileChangeStatus,
+    AgentImageGenerationFailure, AgentImageGenerationStatus, AgentImageView, AgentInterruptControl,
+    AgentInterruptHandle, AgentInterruptOutcome, AgentMcpServerStartupFailureReason,
+    AgentMcpServerStartupState, AgentMcpServerStartupStatus, AgentMcpToolCall,
+    AgentMcpToolCallStatus, AgentOptionalField, AgentPermissionMode, AgentPermissionProfile,
+    AgentPermissionsApprovalChoice, AgentRateLimitWindow, AgentReasoning, AgentRequest,
+    AgentServerRequestFailureKind, AgentServerRequestId, AgentServerRequestKind,
+    AgentServerRequestMetadata, AgentThreadActiveFlag, AgentThreadSettings, AgentThreadStatus,
+    AgentThreadStatusState, AgentThreadTokenUsage, AgentTokenUsageBreakdown,
+    AgentUserInputResponse, CommandExecution, CommandExecutionAction, CommandExecutionStatus,
 };
 
 #[cfg(test)]

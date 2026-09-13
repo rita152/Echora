@@ -150,6 +150,29 @@ impl ChatApp {
         self.startup_minimum_duration_elapsed = true;
         cx.notify();
     }
+    /// True once the account surfaces have an answer to render, so an account
+    /// capture receives the real account and quota instead of a pending state.
+    #[cfg(feature = "screenshot")]
+    pub fn account_capture_ready(&self) -> bool {
+        !matches!(
+            self.account.status,
+            crate::components::account::AccountLoadStatus::Idle
+                | crate::components::account::AccountLoadStatus::Loading
+        )
+    }
+
+    /// Opens an account dialog for capture. Log out only becomes reachable
+    /// after the confirmation the capture shows.
+    pub fn open_account_dialog_for_capture(
+        &mut self,
+        dialog: crate::components::account::AccountDialog,
+        cx: &mut Context<Self>,
+    ) {
+        self.account.dialog = Some(dialog);
+        self.account_focus_pending = true;
+        self.sync_account_view(cx);
+    }
+
     pub fn open_profile_menu(&mut self, cx: &mut Context<Self>) {
         self.sidebar
             .update(cx, |sidebar, cx| sidebar.set_profile_menu_open(true, cx));
