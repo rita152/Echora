@@ -7,7 +7,7 @@ use super::{
     context::{ConversationRenderContext, MainConversationSnapshot},
     conversation::conversation,
     requests::{
-        command_approval_card, file_approval_card, permissions_approval_card,
+        command_approval_card, file_approval_card, mcp_elicitation_card, permissions_approval_card,
         user_input_request_card,
     },
 };
@@ -64,6 +64,12 @@ pub(super) fn home(
         } else {
             None
         };
+    let pending_mcp_elicitation =
+        if let Some(ConversationActivity::McpElicitation(model)) = visible_request {
+            Some(model.as_ref().clone())
+        } else {
+            None
+        };
     let turn_plan = conversation_activity
         .iter()
         .rev()
@@ -74,7 +80,8 @@ pub(super) fn home(
     let blocking_request_pending = pending_command_approval.is_some()
         || pending_user_input.is_some()
         || pending_file_approval.is_some()
-        || pending_permissions_approval.is_some();
+        || pending_permissions_approval.is_some()
+        || pending_mcp_elicitation.is_some();
 
     div()
         .size_full()
@@ -253,6 +260,27 @@ pub(super) fn home(
             root.when_some(card, |root, card| {
                 root.child(
                     div()
+                        .absolute()
+                        .bottom(px(16.0))
+                        .w_full()
+                        .max_w(px(736.0))
+                        .child(div().relative().left(px(0.671_875)).w_full().child(card)),
+                )
+            })
+        })
+        .when_some(pending_mcp_elicitation, |root, model| {
+            let card = mcp_elicitation_card(
+                home_entity.clone(),
+                render.request_owner.clone(),
+                model,
+                theme,
+                render.mcp_elicitation_input.clone(),
+            );
+            root.when_some(card, |root, card| {
+                root.child(
+                    div()
+                        .id("mcp-elicitation-overlay")
+                        .debug_selector(|| "mcp-elicitation-overlay".to_owned())
                         .absolute()
                         .bottom(px(16.0))
                         .w_full()

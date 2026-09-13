@@ -9,6 +9,7 @@ mod backend;
 mod catalog;
 mod config;
 mod dispatch;
+mod elicitation;
 mod input;
 mod items;
 mod manager;

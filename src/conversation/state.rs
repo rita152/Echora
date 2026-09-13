@@ -9,9 +9,9 @@ use super::{
 use crate::agent::{
     AgentApprovalHandle, AgentCommandApprovalRequest, AgentConnectionEvent,
     AgentEffectivePermissions, AgentFileApprovalHandle, AgentFileChange, AgentInterruptHandle,
-    AgentMcpServerStartupStatus, AgentModel, AgentPermissionsApprovalHandle,
-    AgentServerRequestMetadata, AgentThreadStatus, AgentThreadTokenUsage, AgentUserInputHandle,
-    ProjectId,
+    AgentMcpElicitationHandle, AgentMcpElicitationIdentity, AgentMcpServerStartupStatus,
+    AgentModel, AgentPermissionsApprovalHandle, AgentServerRequestMetadata, AgentThreadStatus,
+    AgentThreadTokenUsage, AgentUserInputHandle, ProjectId,
 };
 
 pub(crate) struct ConversationState {
@@ -44,6 +44,10 @@ pub(crate) struct ConversationState {
     pub(crate) file_changes: HashMap<String, AgentFileChange>,
     pub(crate) user_input_responders: HashMap<String, AgentUserInputHandle>,
     pub(crate) permissions_approval_responders: HashMap<String, AgentPermissionsApprovalHandle>,
+    /// Elicitation responders are keyed by connection generation plus the
+    /// original request id, never by the current turn.
+    pub(crate) mcp_elicitation_responders: HashMap<String, AgentMcpElicitationHandle>,
+    pub(crate) mcp_elicitation_contexts: HashMap<String, AgentMcpElicitationIdentity>,
     pub(crate) server_request_contexts: HashMap<String, AgentServerRequestMetadata>,
     pub(crate) thread_id: Option<String>,
     pub(crate) turn_id: Option<String>,
@@ -99,6 +103,8 @@ impl Default for ConversationState {
             file_changes: HashMap::new(),
             user_input_responders: HashMap::new(),
             permissions_approval_responders: HashMap::new(),
+            mcp_elicitation_responders: HashMap::new(),
+            mcp_elicitation_contexts: HashMap::new(),
             server_request_contexts: HashMap::new(),
             thread_id: None,
             turn_id: None,

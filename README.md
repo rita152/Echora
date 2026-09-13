@@ -48,6 +48,7 @@ Both images are captured from the current native application using the dedicated
 | **Projects & conversations** | Create, restore, search, rename, archive, delete, move, and pin conversations. Switching conversations keeps background turns running. |
 | **Talk while the agent works** | Stream responses and send additional input into an active turn. Plans, search, waits, tool activity, and file changes appear in the timeline. |
 | **Approve actions** | Inspect command, file, and extra-permission requests in native cards. View automatic review outcomes and choose supported permission profiles. |
+| **Answer MCP requests** | Answer `mcpServer/elicitation/request` in native form and url cards: validate required, typed, ranged, and enumerated fields, send structured content only on accept, map skip and cancel to their own protocol actions, and settle only after `serverRequest/resolved`. |
 | **Work with files** | Browse the local file tree, filter paths, edit in tabs, preview Markdown and images, and follow file links to a line. |
 | **Use the terminal** | Run the local shell in the conversation directory, with tabs, scrollback, text selection, and clipboard support. |
 | **Review & ship changes** | Inspect Git diffs, comment on lines, stage, restore, commit, create branches, push, and open pull requests through the local `gh` CLI. |

@@ -25,6 +25,11 @@ use crate::{
             FileApprovalStatus, captured_file_approval_fixture,
             captured_file_change_activity_fixture,
         },
+        mcp_elicitation::{
+            McpElicitationFieldControl, McpElicitationFieldPresentation,
+            McpElicitationFieldValueState, McpElicitationFocus, McpElicitationModePresentation,
+            McpElicitationOptionPresentation, McpElicitationPresentation, McpElicitationStatus,
+        },
         permissions_approval::{
             PermissionApprovalKeyboardFocus, PermissionApprovalMenuItem,
             PermissionApprovalPresentation, PermissionApprovalStatus,
@@ -856,6 +861,168 @@ impl ComposerView {
         cx.emit(ConversationChanged);
         cx.notify();
     }
+    /// Deterministic elicitation cards mirroring the CDP reference fixture
+    /// (artifacts/mcp-elicitation-cdp-20260913): same message, same wire field
+    /// order, same defaults, so a region comparison measures rendering only.
+    pub fn set_mcp_elicitation_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
+        eprintln!("mcp-elicitation capture state: {state}");
+        let option = |value: &str, title: &str| McpElicitationOptionPresentation {
+            value: value.to_owned(),
+            title: title.to_owned(),
+        };
+        let field =
+            |name: &str,
+             title: &str,
+             description: Option<&str>,
+             required: bool,
+             control: McpElicitationFieldControl,
+             value: McpElicitationFieldValueState| McpElicitationFieldPresentation {
+                name: name.to_owned(),
+                title: title.to_owned(),
+                description: description.map(str::to_owned),
+                required,
+                control,
+                value,
+                error: None,
+            };
+        let mut fields = vec![
+            field(
+                "contactEmail",
+                "联系邮箱",
+                None,
+                true,
+                McpElicitationFieldControl::Text {
+                    placeholder: "name@example.com".to_owned(),
+                    secret: false,
+                },
+                McpElicitationFieldValueState::Text(String::new()),
+            ),
+            field(
+                "enabled",
+                "立即启用",
+                None,
+                false,
+                McpElicitationFieldControl::Boolean,
+                McpElicitationFieldValueState::Boolean(false),
+            ),
+            field(
+                "features",
+                "附加功能",
+                Some("最多选择两项"),
+                false,
+                McpElicitationFieldControl::MultiSelect {
+                    options: vec![
+                        option("logs", "logs"),
+                        option("metrics", "metrics"),
+                        option("traces", "traces"),
+                    ],
+                    min_items: Some(1),
+                    max_items: Some(2),
+                },
+                McpElicitationFieldValueState::MultiSelection(Vec::new()),
+            ),
+            field(
+                "projectName",
+                "项目名称",
+                Some("用于生成部署清单的短名称"),
+                true,
+                McpElicitationFieldControl::Text {
+                    placeholder: String::new(),
+                    secret: false,
+                },
+                McpElicitationFieldValueState::Text(String::new()),
+            ),
+            field(
+                "region",
+                "部署区域",
+                None,
+                true,
+                McpElicitationFieldControl::SingleSelect {
+                    options: vec![
+                        option("us-east", "美东"),
+                        option("eu-west", "西欧"),
+                        option("ap-northeast", "东京"),
+                    ],
+                },
+                McpElicitationFieldValueState::Selection(Some(1)),
+            ),
+            field(
+                "replicas",
+                "副本数",
+                Some("1 到 8 之间"),
+                false,
+                McpElicitationFieldControl::Number {
+                    integer: true,
+                    minimum: Some("1".to_owned()),
+                    maximum: Some("8".to_owned()),
+                },
+                McpElicitationFieldValueState::Text("2".to_owned()),
+            ),
+        ];
+        if state == "form-filled" {
+            fields[0].value = McpElicitationFieldValueState::Text("dev@example.com".to_owned());
+            fields[2].value = McpElicitationFieldValueState::MultiSelection(vec![0]);
+            fields[3].value = McpElicitationFieldValueState::Text("echora".to_owned());
+        }
+        if state == "form-validation-error" {
+            fields[0].error = Some("填写此字段以继续".to_owned());
+            fields[3].error = Some("填写此字段以继续".to_owned());
+        }
+        let mode = if state.starts_with("url") {
+            McpElicitationModePresentation::Url {
+                message: "请在浏览器中完成登录，然后返回这里继续".to_owned(),
+                elicitation_id: "fixture-url-1".to_owned(),
+                url: "https://example.com/device?code=echora-fixture".to_owned(),
+                opened: state.contains("opened"),
+            }
+        } else {
+            McpElicitationModePresentation::Form {
+                message: "部署前需要确认以下信息".to_owned(),
+                fields,
+            }
+        };
+        let status = match state {
+            "form-submitting" | "url-submitting" => McpElicitationStatus::Submitting,
+            "form-resolved" | "url-resolved" => McpElicitationStatus::Accepted,
+            "form-declined" => McpElicitationStatus::Declined,
+            "form-cancelled" | "url-cancelled" => McpElicitationStatus::Cancelled,
+            "form-invalid" | "url-invalid" => McpElicitationStatus::Invalid,
+            _ => McpElicitationStatus::Pending,
+        };
+        let model = McpElicitationPresentation {
+            request_id: "mcp-elicitation-ui-capture".to_owned(),
+            server_name: "echora-elicitation-fixture".to_owned(),
+            keyboard_focus: if state == "form-keyboard-focus" {
+                Some(McpElicitationFocus::Cancel)
+            } else {
+                None
+            },
+            mode,
+            status,
+            last_action: matches!(
+                status,
+                McpElicitationStatus::Accepted
+                    | McpElicitationStatus::Declined
+                    | McpElicitationStatus::Cancelled
+            )
+            .then_some(crate::agent::AgentMcpElicitationAction::Accept),
+            failure_message: (status == McpElicitationStatus::Invalid)
+                .then(|| "连接已断开，等待中的 MCP elicitation 不再可回复".to_owned()),
+        };
+        self.conversation.user_message = Some(if state.starts_with("url") {
+            "请调用 elicit-url 工具，等待我的浏览器操作。".to_owned()
+        } else {
+            "请调用 elicit-form 工具，等待我的表单操作。".to_owned()
+        });
+        self.conversation.user_message_time = Some("21:05".to_owned());
+        self.conversation.assistant_message.clear();
+        self.conversation.assistant_message_time = None;
+        self.conversation.phase = ConversationPhase::Streaming;
+        self.conversation.activities = vec![ConversationActivity::McpElicitation(Box::new(model))];
+        cx.emit(ConversationChanged);
+        cx.notify();
+    }
+
     pub fn set_user_input_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
         let multi_fixture = state.starts_with("multi-");
         let skip_fixture = state.starts_with("skip-");

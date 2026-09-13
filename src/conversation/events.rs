@@ -66,6 +66,13 @@ impl ConversationState {
             AgentConnectionEvent::ThreadSettingsUpdated { thread_id, .. } => {
                 Some(thread_id.as_str())
             }
+            AgentConnectionEvent::McpElicitationRequested { request, .. } => {
+                Some(request.thread_id.as_str())
+            }
+            AgentConnectionEvent::McpElicitationResolved { thread_id, .. }
+            | AgentConnectionEvent::McpElicitationFailed { thread_id, .. } => {
+                Some(thread_id.as_str())
+            }
             AgentConnectionEvent::ConfigWarning(_) => None,
             // Account surfaces are connection-scoped: they never belong to a
             // conversation, so they are not routed into one.
@@ -90,6 +97,24 @@ impl ConversationState {
                     .push(event);
             }
             return false;
+        }
+        // Elicitations have their own connection-owned identity and responder,
+        // so they are reduced directly instead of being projected as turn
+        // events. They must not create, restart, or finish a turn.
+        if let AgentConnectionEvent::McpElicitationRequested { request, responder } = event {
+            return self.mcp_elicitation_requested(request, responder);
+        }
+        if let AgentConnectionEvent::McpElicitationResolved { identity, .. } = &event {
+            return self.mcp_elicitation_resolved(identity);
+        }
+        if let AgentConnectionEvent::McpElicitationFailed {
+            identity,
+            kind,
+            message,
+            ..
+        } = &event
+        {
+            return self.mcp_elicitation_failed(identity, *kind, message.clone());
         }
         let event = match event {
             AgentConnectionEvent::Runtime(_) | AgentConnectionEvent::DeprecationNotice(_) => {
@@ -125,6 +150,11 @@ impl ConversationState {
             | AgentConnectionEvent::ThreadNameUpdated { .. }
             | AgentConnectionEvent::ThreadClosed { .. }
             | AgentConnectionEvent::ThreadProjectUpdated { .. } => return false,
+            AgentConnectionEvent::McpElicitationRequested { .. }
+            | AgentConnectionEvent::McpElicitationResolved { .. }
+            | AgentConnectionEvent::McpElicitationFailed { .. } => {
+                unreachable!("elicitation lifecycle is reduced before turn projection")
+            }
         };
         self.apply_agent_event_batch(vec![event]);
         true

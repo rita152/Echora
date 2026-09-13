@@ -553,6 +553,7 @@ impl HomeView {
             );
         }
         let other_focus = self.composer.read(cx).user_input_other_focus_handle(cx);
+        let elicitation_focus = self.composer.read(cx).mcp_elicitation_focus_handle(cx);
         let preview_focused = self
             .approval_previews
             .values()
@@ -565,12 +566,28 @@ impl HomeView {
         {
             return;
         }
+        // The inline elicitation editor owns typing and Enter; only Tab and
+        // Escape cross back into the card's logical focus order.
+        if elicitation_focus.is_focused(window)
+            && !matches!(event.keystroke.key.as_str(), "tab" | "escape")
+        {
+            return;
+        }
         let handled = self.composer.update(cx, |composer, cx| {
-            composer.handle_approval_key(event, cx) || composer.handle_user_input_key(event, cx)
+            composer.handle_approval_key(event, cx)
+                || composer.handle_user_input_key(event, cx)
+                || composer.handle_mcp_elicitation_key(event, cx)
         });
         if handled {
+            let elicitation_text_focus = self
+                .composer
+                .read(cx)
+                .focused_mcp_elicitation_field_is_text();
             if preview_focused
                 || other_focus.is_focused(window) && event.keystroke.key.as_str() == "tab"
+                || elicitation_focus.is_focused(window)
+                    && matches!(event.keystroke.key.as_str(), "tab" | "escape")
+                    && !elicitation_text_focus
             {
                 window.focus(&self.approval_focus, cx);
             }
@@ -909,6 +926,13 @@ impl HomeView {
         cx.notify();
     }
 
+    pub fn set_mcp_elicitation_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
+        self.composer.update(cx, |composer, cx| {
+            composer.set_mcp_elicitation_for_capture(state, cx)
+        });
+        cx.notify();
+    }
+
     fn handle_approval_card_event(
         &mut self,
         request_id: &str,
@@ -975,6 +999,17 @@ impl HomeView {
     ) {
         self.composer.update(cx, |composer, cx| {
             composer.handle_user_input_request_event(request_id, event, cx)
+        });
+    }
+
+    fn handle_mcp_elicitation_event(
+        &mut self,
+        request_id: &str,
+        event: crate::components::mcp_elicitation::McpElicitationEvent,
+        cx: &mut Context<Self>,
+    ) {
+        self.composer.update(cx, |composer, cx| {
+            composer.handle_mcp_elicitation_event(request_id, event, cx)
         });
     }
 
@@ -1424,6 +1459,11 @@ impl Render for HomeView {
                 ConversationActivity::UserInput(model) if model.should_render() => {
                     Some(model.request_id.clone())
                 }
+                ConversationActivity::McpElicitation(model)
+                    if model.status.is_overlay_visible() =>
+                {
+                    Some(model.request_id.clone())
+                }
                 _ => None,
             });
         let blocking_keyboard_request_pending = self.presentation != HomePresentation::Subagent
@@ -1432,6 +1472,7 @@ impl Render for HomeView {
                     || matches!(activity, ConversationActivity::FileApproval(model) if model.should_render())
                     || matches!(activity, ConversationActivity::PermissionsApproval(model) if model.should_render())
                     || matches!(activity, ConversationActivity::UserInput(model) if model.should_render())
+                    || matches!(activity, ConversationActivity::McpElicitation(model) if model.status.is_interactive())
             });
         if blocking_keyboard_request_pending
             && self.focused_approval_request != pending_request_id
@@ -1600,6 +1641,7 @@ impl Render for HomeView {
                 ConversationRenderContext {
                     home_entity: cx.entity(),
                     approval_previews: self.approval_previews.clone(),
+                    mcp_elicitation_input: self.composer.read(cx).mcp_elicitation_input_entity(),
                     approval_border_offset: 0.5 / window.scale_factor(),
                     request_owner: context::RequestOwner::new(self.composer.clone(), cx),
                     theme,
@@ -1648,6 +1690,7 @@ impl Render for HomeView {
                 ConversationRenderContext {
                     home_entity: cx.entity(),
                     approval_previews: self.approval_previews.clone(),
+                    mcp_elicitation_input: self.composer.read(cx).mcp_elicitation_input_entity(),
                     approval_border_offset: 0.5 / window.scale_factor(),
                     request_owner: context::RequestOwner::new(self.composer.clone(), cx),
                     theme,

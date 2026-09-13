@@ -174,5 +174,6 @@ pub(super) fn is_integrated_server_request_method(method: &str) -> bool {
             | "item/tool/requestUserInput"
             | "tool/requestUserInput"
             | "item/permissions/requestApproval"
+            | "mcpServer/elicitation/request"
     )
 }

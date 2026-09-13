@@ -229,8 +229,21 @@ impl CodexAppServerManager {
         }
         let response = connection.request("thread/unsubscribe", json!({ "threadId": id }))?;
         match response.pointer("/result/status").and_then(Value::as_str) {
-            Some("unsubscribed" | "notSubscribed" | "notLoaded") => Ok(()),
+            Some("unsubscribed" | "notSubscribed" | "notLoaded") => {}
             _ => bail!("thread/unsubscribe 响应缺少有效 status"),
+        };
+        // A closed side conversation can no longer answer an elicitation that
+        // belongs to it, even though the shared connection stays alive.
+        for elicitation in connection.invalidate_mcp_elicitations(Some(id)) {
+            self.inner.publish_connection_event(
+                crate::agent::AgentConnectionEvent::McpElicitationFailed {
+                    identity: elicitation.identity,
+                    thread_id: elicitation.thread_id,
+                    kind: crate::agent::AgentServerRequestFailureKind::Cancelled,
+                    message: "侧边聊天已关闭，等待中的 MCP elicitation 不再可回复".to_owned(),
+                },
+            );
         }
+        Ok(())
     }
 }

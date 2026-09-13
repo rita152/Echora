@@ -14,11 +14,11 @@ codex app-server generate-json-schema --experimental --out artifacts/app-server-
 
 | 状态 | 数量 | 判定 |
 |---|---|---|
-| 已接入 | 76 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
+| 已接入 | 77 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
 | 后端已接入 | 4 | 已实现读取或校验，尚无对应可见 UI 调用方或展示 |
 | 部分接入 | 4 | 只支持部分类型、有效变体或限定生命周期窗口 |
 | 兼容退订 | 7 | initialize 按完整方法名退订；不代表对应产品能力已接入；保留明确的兼容窗口 |
-| 未接入 | 157 | 客户端不发送；服务端请求按原 id 回复 `-32601` 并终止当前连接，服务端通知直接报错并终止连接 |
+| 未接入 | 156 | 客户端不发送；服务端请求按原 id 回复 `-32601` 并终止当前连接，服务端通知直接报错并终止连接 |
 
 未接入行的“—”沿用上述规则。`tool/requestUserInput` 是兼容别名，不计入本版本 schema 的 248 项。
 
@@ -33,6 +33,18 @@ codex app-server generate-json-schema --experimental --out artifacts/app-server-
 - **状态通知**：应用／线程状态通过 `AgentConnectionEvent` 快照订阅，轮次事件进入各自 `AgentRun`。工作区通知可先于 RPC 响应；内存覆盖层防止迟到列表撤销重命名、移动、归档或删除。
 - **工作区与历史**：以服务端稳定 id 管理项目和线程；置顶使用服务端 `Pinned` 分区，当前 schema 无 `isPinned`。历史先 `thread/read(includeTurns=false)`，再分页读取 `thread/turns/list(itemsView=full)`；实际非 full 的轮次由 `thread/items/list` 补全。不维护本地会话数据库。
 - **临时侧边聊天**：`thread/fork → thread/inject_items` 完成后才允许发送。父历史仅供参考，侧边说明禁止延续父任务或调用子 agent；新消息明确要求的修改才属于侧边请求。关闭使用 `thread/unsubscribe`；临时 id 只在所属 generation 使用，失效后保留可读消息，禁止 resume。
+
+### MCP elicitation
+
+`mcpServer/elicitation/request` 是独立的 server-to-client 请求：卡片由 connection generation + 原始 request id 拥有，不进入 turn 会话的 pending registry，因此既不复用也不伪装成命令审批、文件审批、权限审批或 `item/tool/requestUserInput`。当前只支持标准 MCP `mode=form` 与 `mode=url`。
+
+**参数与字段边界**：`params.serverName`、`params.threadId` 必须是字符串；`params.turnId` 区分缺省、null 与字符串三种状态并原样保留，不强制绑定活动 turn。`form` 解析标准 `requestedSchema`：string（含 `format`、`minLength`、`maxLength`）、number/integer（含 `minimum`、`maximum`）、boolean、单选（`enum`／`enumNames`／`oneOf{const,title}`）、多选（`items.enum`／`items.anyOf`、`minItems`、`maxItems`）以及 `title`、`description`、`default`、`required`；未知字段、重复选项、非法边界与不支持的 primitive 都按协议错误处理。`url` 保留 `elicitationId`、`message`、`url`，只接受 http/https 绝对 URL。`openai/form`、`openaiForm`、`openai/userVerification` 需要完整 schema/UI 支持，尚未实现：收到时按协议错误回 `-32602` 并终止当前连接，不静默降级。
+
+**响应与 resolved**：响应严格为 `{action, content?}`，`accept` 才提交结构化 `content`，且写回前按 schema 校验必填、类型、枚举、数值范围、`minItems`／`maxItems` 与 `format`；校验失败不写任何响应，卡片保持可编辑。`decline`／`cancel` 永不伪造 `content`。写回成功只进入 Submitting，必须等匹配 generation 与 request id 的 `serverRequest/resolved` 才显示终态；重复与迟到 resolved 幂等，错 thread 或重复 request id 报错并终止连接。URL 模式打开链接只是本地动作，不产生协议 action。
+
+**失效路径**：EOF、崩溃、致命协议错误与显式重启都会回收 generation，并向 UI 发布该 generation 的 elicitation 失效事件；`thread/closed` 与关闭 side conversation 同样使该线程的等待请求失效。旧 generation 的 responder 一律拒绝回复，且不会自动重试或重复写回。连接重建不会重放旧 elicitation。
+
+**UI 与验收**：Pending／Submitting 卡片显示在 Composer 上方，终态（已接受、已拒绝、已取消、已失效）留在会话流中；elicitation 不结束、不重启、不覆盖所属 turn，也不改动会话 phase。字段保留明确的领域状态（文本、布尔、单选、多选）与逐字段校验错误。视觉基线来自 ChatGPT 桌面应用真实 CDP 采集（`artifacts/mcp-elicitation-cdp-20260913/`：form／url 卡片、校验错误、提交中、已解析、深色与浅色主题），可复现入口为 `scripts/cdp_mcp_elicitation_capture.mjs`、`scripts/mcp_elicitation_fixture.mjs` 与 `scripts/compare_mcp_elicitation_pixels.py`。
 
 ### 配置与权限
 
@@ -329,7 +341,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `item/permissions/requestApproval` | 默认 | 已接入 | 校验 thread/turn/item、cwd、startedAtMs、nullable environmentId/reason；保留 read/write、entries、glob 深度、path/glob/special path 与 nullable network。允许只返回请求子集及 turn/session scope，拒绝返回空权限。 | `requests`、`permissions`、`registry` |
 | `item/tool/call` | 默认 | 未接入 | — | — |
 | `item/tool/requestUserInput` | 默认 | 已接入 | 保留 question id/header/question/options/isOther/isSecret、isBlocking、nullable autoResolutionMs；返回 question id → 字符串数组的 answers，Debug 隐去答案；兼容 tool/requestUserInput 别名。 | `requests`、`registry` |
-| `mcpServer/elicitation/request` | 默认 | 未接入 | — | — |
+| `mcpServer/elicitation/request` | 默认 | 已接入 | 只支持标准 MCP `mode=form` 与 `mode=url`；请求由 connection generation + 原始 request id 拥有，不绑定 turn，缺省／null／活动／已完成 turn 与 side conversation 都可展示与回复；`openai/form`、`openaiForm`、`openai/userVerification` 按协议错误回 `-32602` 并终止连接。 | `elicitation`、`manager/dispatch`、`manager/connection`、`conversation/elicitation`、`mcp_elicitation` |
 
 ### 服务端通知（81）
 

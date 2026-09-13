@@ -5,8 +5,9 @@ use gpui::{Context, KeyDownEvent};
 use super::{ComposerView, ConversationChanged};
 use crate::{
     agent::{
-        AgentCommandApprovalChoice, AgentFileApprovalChoice, AgentPermissionsApprovalChoice,
-        AgentUserInputAnswer, AgentUserInputResponse,
+        AgentCommandApprovalChoice, AgentFileApprovalChoice, AgentMcpElicitationAction,
+        AgentMcpElicitationResponse, AgentPermissionsApprovalChoice, AgentUserInputAnswer,
+        AgentUserInputResponse,
     },
     components::{
         approval::{
@@ -17,6 +18,7 @@ use crate::{
             FileApprovalDecision, FileApprovalEvent, FileApprovalKeyboardFocus,
             FileApprovalMenuItem, FileApprovalStatus, FileApprovalVisualState,
         },
+        mcp_elicitation::{McpElicitationEvent, McpElicitationFocus, McpElicitationPresentation},
         permissions_approval::{
             PermissionApprovalDecision, PermissionApprovalEvent, PermissionApprovalHover,
             PermissionApprovalKeyboardFocus, PermissionApprovalMenuItem, PermissionApprovalStatus,
@@ -42,6 +44,7 @@ impl ComposerView {
                 ConversationActivity::FileApproval(model) => model.should_render(),
                 ConversationActivity::PermissionsApproval(model) => model.should_render(),
                 ConversationActivity::UserInput(model) => model.should_render(),
+                ConversationActivity::McpElicitation(model) => model.status.should_render(),
                 _ => false,
             })
     }
@@ -651,6 +654,291 @@ impl ComposerView {
         cx.emit(ConversationChanged);
         cx.notify();
     }
+    /// The elicitation card owns its own connection-scoped responder, so the
+    /// composer never reuses an approval or user-input responder for it.
+    fn focused_mcp_elicitation(&self) -> Option<&McpElicitationPresentation> {
+        self.conversation
+            .activities
+            .iter()
+            .find_map(|activity| match activity {
+                ConversationActivity::McpElicitation(model) if model.is_interactive() => {
+                    Some(model.as_ref())
+                }
+                _ => None,
+            })
+    }
+
+    pub(crate) fn focused_mcp_elicitation_request_id(&self) -> Option<String> {
+        self.focused_mcp_elicitation()
+            .map(|model| model.request_id.clone())
+    }
+
+    pub(crate) fn focused_mcp_elicitation_field_is_text(&self) -> bool {
+        self.focused_mcp_elicitation()
+            .and_then(|model| model.focused_field().and_then(|index| model.field(index)))
+            .is_some_and(|field| field.is_text_like())
+    }
+
+    /// Push the focused field's value into the shared inline editor.
+    pub(crate) fn sync_mcp_elicitation_input(&mut self, cx: &mut Context<Self>) {
+        let Some(model) = self.focused_mcp_elicitation() else {
+            return;
+        };
+        let Some(field) = model
+            .focused_field()
+            .and_then(|index| model.field(index))
+            .filter(|field| field.is_text_like())
+        else {
+            return;
+        };
+        let placeholder = field.placeholder();
+        let placeholder = if placeholder.is_empty() {
+            field.display_title().to_owned()
+        } else {
+            placeholder
+        };
+        let text = field.text().to_owned();
+        self.mcp_elicitation_input.update(cx, |input, cx| {
+            input.configure_inline_other(placeholder, false, cx);
+            input.set_text_silently(text, cx);
+        });
+    }
+
+    /// Mirror the shared inline editor into the focused elicitation field.
+    pub(crate) fn set_focused_mcp_elicitation_text(&mut self, text: String) -> bool {
+        let Some(index) = self
+            .conversation
+            .activities
+            .iter()
+            .position(|activity| match activity {
+                ConversationActivity::McpElicitation(model) => model.is_interactive(),
+                _ => false,
+            })
+        else {
+            return false;
+        };
+        let ConversationActivity::McpElicitation(model) = &mut self.conversation.activities[index]
+        else {
+            unreachable!("activity index was resolved as an elicitation")
+        };
+        let Some(field_index) = model.focused_field() else {
+            return false;
+        };
+        let Some(field) = model.field(field_index) else {
+            return false;
+        };
+        if !field.is_text_like() {
+            return false;
+        }
+        let name = field.name.clone();
+        model.set_field_text(&name, text)
+    }
+
+    pub fn handle_mcp_elicitation_event(
+        &mut self,
+        request_id: &str,
+        event: McpElicitationEvent,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(index) = self.conversation.activities.iter().position(|activity| {
+            matches!(activity, ConversationActivity::McpElicitation(model) if model.request_id == request_id)
+        }) else {
+            return;
+        };
+        let interactive = matches!(
+            &self.conversation.activities[index],
+            ConversationActivity::McpElicitation(model) if model.is_interactive()
+        );
+        if !interactive {
+            return;
+        }
+        let mut focus_changed = false;
+        match event {
+            McpElicitationEvent::Focus(focus) => {
+                let ConversationActivity::McpElicitation(model) =
+                    &mut self.conversation.activities[index]
+                else {
+                    unreachable!("activity index was resolved as an elicitation")
+                };
+                focus_changed = model.set_focus(focus);
+            }
+            McpElicitationEvent::ToggleBoolean { field } => {
+                let ConversationActivity::McpElicitation(model) =
+                    &mut self.conversation.activities[index]
+                else {
+                    unreachable!("activity index was resolved as an elicitation")
+                };
+                model.toggle_boolean(field);
+            }
+            McpElicitationEvent::SelectOption { field, option } => {
+                let ConversationActivity::McpElicitation(model) =
+                    &mut self.conversation.activities[index]
+                else {
+                    unreachable!("activity index was resolved as an elicitation")
+                };
+                model.set_focus(McpElicitationFocus::Field(field));
+                model.select_option(field, option);
+                focus_changed = true;
+            }
+            McpElicitationEvent::ToggleMultiOption { field, option } => {
+                let ConversationActivity::McpElicitation(model) =
+                    &mut self.conversation.activities[index]
+                else {
+                    unreachable!("activity index was resolved as an elicitation")
+                };
+                model.set_focus(McpElicitationFocus::Field(field));
+                model.toggle_multi_option(field, option);
+                focus_changed = true;
+            }
+            McpElicitationEvent::OpenUrl => {
+                let url = {
+                    let ConversationActivity::McpElicitation(model) =
+                        &mut self.conversation.activities[index]
+                    else {
+                        unreachable!("activity index was resolved as an elicitation")
+                    };
+                    model.url().map(|(_, url, _)| url.to_owned())
+                };
+                if let Some(url) = url {
+                    cx.open_url(&url);
+                    let ConversationActivity::McpElicitation(model) =
+                        &mut self.conversation.activities[index]
+                    else {
+                        unreachable!("activity index was resolved as an elicitation")
+                    };
+                    model.mark_url_opened();
+                }
+            }
+            McpElicitationEvent::Accept => {
+                self.respond_to_mcp_elicitation(request_id, AgentMcpElicitationAction::Accept, cx);
+            }
+            McpElicitationEvent::Decline => {
+                self.respond_to_mcp_elicitation(request_id, AgentMcpElicitationAction::Decline, cx);
+            }
+            McpElicitationEvent::Cancel => {
+                self.respond_to_mcp_elicitation(request_id, AgentMcpElicitationAction::Cancel, cx);
+            }
+        }
+        if focus_changed && self.focused_mcp_elicitation_field_is_text() {
+            self.sync_mcp_elicitation_input(cx);
+        }
+        cx.emit(ConversationChanged);
+        cx.notify();
+    }
+
+    /// Local validation is the recoverable path; any responder error is a
+    /// protocol or transport failure and never triggers an automatic retry.
+    fn respond_to_mcp_elicitation(
+        &mut self,
+        request_id: &str,
+        action: AgentMcpElicitationAction,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(index) = self.conversation.activities.iter().position(|activity| {
+            matches!(activity, ConversationActivity::McpElicitation(model) if model.request_id == request_id)
+        }) else {
+            return;
+        };
+        let response = {
+            let ConversationActivity::McpElicitation(model) =
+                &mut self.conversation.activities[index]
+            else {
+                unreachable!("activity index was resolved as an elicitation")
+            };
+            match action {
+                // url mode has no structured content: opening the link is a
+                // local action and continuing is the explicit protocol one.
+                AgentMcpElicitationAction::Accept if model.url().is_some() => {
+                    Some(AgentMcpElicitationResponse::accept(
+                        crate::agent::AgentMcpElicitationContent::default(),
+                    ))
+                }
+                AgentMcpElicitationAction::Accept => match model.validate() {
+                    Ok(content) => Some(AgentMcpElicitationResponse::accept(content)),
+                    Err(_) => {
+                        model.focus_first_invalid_field();
+                        None
+                    }
+                },
+                AgentMcpElicitationAction::Decline => Some(AgentMcpElicitationResponse::decline()),
+                AgentMcpElicitationAction::Cancel => Some(AgentMcpElicitationResponse::cancel()),
+            }
+        };
+        let Some(response) = response else {
+            // Recoverable: the request stays pending, the offending fields keep
+            // their own error, and nothing is written.
+            self.sync_mcp_elicitation_input(cx);
+            cx.emit(ConversationChanged);
+            cx.notify();
+            return;
+        };
+        let responder = self
+            .conversation
+            .mcp_elicitation_responders
+            .get(request_id)
+            .cloned();
+        let result = match responder {
+            Some(responder) => responder.respond(response),
+            None => Err("该 MCP elicitation 的 responder 已经失效".to_owned()),
+        };
+        let ConversationActivity::McpElicitation(model) = &mut self.conversation.activities[index]
+        else {
+            unreachable!("activity index was resolved as an elicitation")
+        };
+        match result {
+            Ok(()) => model.mark_submitted(action),
+            Err(error) => model.mark_write_failed(error),
+        }
+    }
+
+    /// Tab, Enter, Space, and Escape for the visible elicitation card. The
+    /// enclosing surface keeps native focus; this drives the logical order.
+    pub fn handle_mcp_elicitation_key(
+        &mut self,
+        event: &KeyDownEvent,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(model) = self.focused_mcp_elicitation() else {
+            return false;
+        };
+        let request_id = model.request_id.clone();
+        let key = event.keystroke.key.as_str();
+        let shift = event.keystroke.modifiers.shift;
+        let focus = model.keyboard_focus;
+        let next = model.next_focus(focus, shift);
+        let activation = model.activate_focus();
+        match key {
+            "tab" => {
+                self.handle_mcp_elicitation_event(
+                    &request_id,
+                    McpElicitationEvent::Focus(next),
+                    cx,
+                );
+            }
+            "enter" => {
+                let Some(event) = activation else {
+                    return false;
+                };
+                self.handle_mcp_elicitation_event(&request_id, event, cx);
+            }
+            "escape" => {
+                self.handle_mcp_elicitation_event(&request_id, McpElicitationEvent::Cancel, cx);
+            }
+            "space" => {
+                let Some(McpElicitationEvent::ToggleBoolean { field }) = activation else {
+                    return false;
+                };
+                self.handle_mcp_elicitation_event(
+                    &request_id,
+                    McpElicitationEvent::ToggleBoolean { field },
+                    cx,
+                );
+            }
+            _ => return false,
+        }
+        true
+    }
+
     pub fn handle_user_input_request_event(
         &mut self,
         request_id: &str,

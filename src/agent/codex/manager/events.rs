@@ -54,6 +54,15 @@ impl ConnectionEventHub {
     }
 
     pub(super) fn publish(&mut self, mut event: AgentConnectionEvent) {
+        if is_transient_connection_event(&event) {
+            // One-shot elicitation lifecycle events carry a live responder and
+            // describe a transition of a card the subscriber already saw.
+            // Replaying them to a late subscriber would either duplicate the
+            // request or report a resolution for a request it never received.
+            self.subscribers
+                .retain(|subscriber| subscriber.send_blocking(event.clone()).is_ok());
+            return;
+        }
         let key = match &mut event {
             AgentConnectionEvent::AccountUpdated(snapshot) => {
                 self.account.account = Some(AgentConnectionEvent::AccountUpdated(snapshot.clone()));
@@ -134,6 +143,15 @@ pub(super) fn connection_event_key(event: &AgentConnectionEvent) -> String {
         AgentConnectionEvent::Runtime(_) => {
             unreachable!("runtime observations use their generation-aware reducer")
         }
+        AgentConnectionEvent::McpElicitationRequested { request, .. } => {
+            format!("mcp-elicitation:{}", request.identity().ui_key())
+        }
+        AgentConnectionEvent::McpElicitationResolved { identity, .. } => {
+            format!("mcp-elicitation-resolved:{}", identity.ui_key())
+        }
+        AgentConnectionEvent::McpElicitationFailed { identity, .. } => {
+            format!("mcp-elicitation-failed:{}", identity.ui_key())
+        }
         AgentConnectionEvent::DeprecationNotice(notice) => format!("deprecation:{notice:?}"),
         AgentConnectionEvent::AutoApprovalReviewUpdated(review) => {
             format!("auto-review:{:?}", review.key)
@@ -179,4 +197,13 @@ pub(super) fn connection_event_key(event: &AgentConnectionEvent) -> String {
         AgentConnectionEvent::AccountLoginUpdated(_) => "account-login".to_owned(),
         AgentConnectionEvent::AccountRateLimitsUpdated(_) => "rate-limits".to_owned(),
     }
+}
+
+fn is_transient_connection_event(event: &AgentConnectionEvent) -> bool {
+    matches!(
+        event,
+        AgentConnectionEvent::McpElicitationRequested { .. }
+            | AgentConnectionEvent::McpElicitationResolved { .. }
+            | AgentConnectionEvent::McpElicitationFailed { .. }
+    )
 }

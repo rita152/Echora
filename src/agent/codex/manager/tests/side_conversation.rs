@@ -1,5 +1,101 @@
 use super::*;
-use crate::agent::SideConversationRequest;
+use crate::agent::{
+    AgentMcpElicitationContent, AgentMcpElicitationFieldValue, AgentMcpElicitationResponse,
+    AgentMcpElicitationValue, SideConversationRequest,
+};
+
+fn side_elicitation(id: Value, thread_id: &str) -> Value {
+    json!({
+        "id": id,
+        "method": "mcpServer/elicitation/request",
+        "params": {
+            "serverName": "fixture-mcp",
+            "threadId": thread_id,
+            "mode": "form",
+            "message": "side",
+            "requestedSchema": {
+                "type": "object",
+                "properties": { "note": { "type": "string" } }
+            }
+        }
+    })
+}
+
+#[test]
+fn side_conversation_elicitations_are_scoped_and_released_on_close() {
+    let (manager, spawner) = manager_with_fake();
+    let events = manager.subscribe_connection_events();
+    let opened = manager.open_side_conversation(side_request());
+    let mut endpoint = spawner.next_endpoint();
+    handshake(&mut endpoint);
+    accept_fork(&mut endpoint, "side");
+    accept_boundary(&mut endpoint, "side");
+    wait_value(&opened).unwrap();
+
+    // The same request shape on two different threads stays isolated.
+    endpoint.send(side_elicitation(json!(301), "parent"));
+    endpoint.send(side_elicitation(json!(302), "side"));
+    let mut parent = None;
+    let mut side = None;
+    let deadline = Instant::now() + WAIT;
+    while (parent.is_none() || side.is_none()) && Instant::now() < deadline {
+        match events.try_recv() {
+            Ok(AgentConnectionEvent::McpElicitationRequested { request, responder }) => {
+                match request.thread_id.as_str() {
+                    "parent" => parent = Some((request, responder)),
+                    "side" => side = Some((request, responder)),
+                    other => panic!("unexpected elicitation thread {other}"),
+                }
+            }
+            Ok(_) => {}
+            Err(_) => std::thread::sleep(Duration::from_millis(2)),
+        }
+    }
+    let (side_request, side_responder) = side.expect("side elicitation");
+    let (parent_request, parent_responder) = parent.expect("parent elicitation");
+    assert_eq!(side_request.request_id, AgentServerRequestId::Number(302));
+    assert_eq!(parent_request.request_id, AgentServerRequestId::Number(301));
+    assert_eq!(
+        side_request.turn_id,
+        crate::agent::AgentOptionalField::Unspecified
+    );
+
+    side_responder
+        .respond(AgentMcpElicitationResponse::accept(
+            AgentMcpElicitationContent {
+                fields: vec![AgentMcpElicitationFieldValue {
+                    name: "note".into(),
+                    value: AgentMcpElicitationValue::String("side answer".into()),
+                }],
+            },
+        ))
+        .unwrap();
+    let response = endpoint.recv();
+    assert_eq!(response["id"], json!(302));
+
+    let closed = manager.close_side_conversation("side".into());
+    let unsubscribe = endpoint.recv();
+    assert_eq!(unsubscribe["method"], "thread/unsubscribe");
+    endpoint.respond(&unsubscribe, json!({ "status": "unsubscribed" }));
+    wait_value(&closed).unwrap();
+    // Closing the temporary thread releases only its own responder.
+    assert!(
+        side_responder
+            .respond(AgentMcpElicitationResponse::decline())
+            .is_err()
+    );
+    parent_responder
+        .respond(AgentMcpElicitationResponse::decline())
+        .unwrap();
+    let response = endpoint.recv();
+    assert_eq!(response["id"], json!(301));
+    endpoint.send(json!({
+        "method": "serverRequest/resolved",
+        "params": { "threadId": "parent", "requestId": 301 }
+    }));
+    assert!(endpoint.process.is_alive());
+    manager.shutdown();
+}
 
 fn side_request() -> SideConversationRequest {
     SideConversationRequest {

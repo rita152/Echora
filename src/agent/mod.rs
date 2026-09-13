@@ -64,7 +64,12 @@ pub use requests::{
     AgentCommandApprovalChoice, AgentCommandApprovalKind, AgentCommandApprovalRequest,
     AgentFileApprovalChoice, AgentFileApprovalHandle, AgentFileApprovalRequest,
     AgentFileSystemAccess, AgentFileSystemPath, AgentFileSystemPermissionEntry,
-    AgentFileSystemSpecialPath, AgentNetworkApprovalContext, AgentNetworkApprovalProtocol,
+    AgentFileSystemSpecialPath, AgentMcpElicitationAction, AgentMcpElicitationContent,
+    AgentMcpElicitationField, AgentMcpElicitationFieldKind, AgentMcpElicitationFieldValue,
+    AgentMcpElicitationForm, AgentMcpElicitationHandle, AgentMcpElicitationIdentity,
+    AgentMcpElicitationMode, AgentMcpElicitationOption, AgentMcpElicitationRequest,
+    AgentMcpElicitationResponse, AgentMcpElicitationStringFormat, AgentMcpElicitationUrl,
+    AgentMcpElicitationValue, AgentNetworkApprovalContext, AgentNetworkApprovalProtocol,
     AgentNetworkPolicyAction, AgentNetworkPolicyAmendment, AgentOptionalField,
     AgentPermissionRequestProfile, AgentPermissionsApprovalChoice, AgentPermissionsApprovalHandle,
     AgentPermissionsApprovalRequest, AgentServerRequestFailureKind, AgentServerRequestId,
@@ -72,8 +77,8 @@ pub use requests::{
     AgentUserInputOption, AgentUserInputQuestion, AgentUserInputRequest, AgentUserInputResponse,
 };
 pub(crate) use requests::{
-    AgentApprovalControl, AgentFileApprovalControl, AgentPermissionsApprovalControl,
-    AgentUserInputControl,
+    AgentApprovalControl, AgentFileApprovalControl, AgentMcpElicitationControl,
+    AgentPermissionsApprovalControl, AgentUserInputControl,
 };
 pub use runtime::{
     AgentAuthRecovery, AgentDeprecationNotice, AgentHookOutput, AgentHookPrompt,

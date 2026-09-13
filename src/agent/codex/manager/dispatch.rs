@@ -61,6 +61,12 @@ impl ManagerInner {
                 method, message,
             ));
         }
+        // MCP elicitation is a standalone server-to-client request: it is owned
+        // by the connection generation, not by a turn, and must stay answerable
+        // while no turn is active.
+        if method == super::super::elicitation::ELICITATION_METHOD {
+            return self.handle_mcp_elicitation_request(connection, message);
+        }
         let thread_id = message
             .pointer("/params/threadId")
             .and_then(Value::as_str)
@@ -83,6 +89,43 @@ impl ManagerInner {
         if let Some(outcome) = turn.ingest(message)? {
             connection.finish_turn(&turn, Ok(outcome));
         }
+        Ok(())
+    }
+
+    fn handle_mcp_elicitation_request(
+        &self,
+        connection: &Arc<Connection>,
+        message: &Value,
+    ) -> Result<()> {
+        let request = match super::super::elicitation::parse_mcp_server_elicitation_request(
+            message,
+            connection.generation,
+        ) {
+            Ok(request) => request,
+            Err(error) => {
+                // Unsupported modes and malformed params follow the same
+                // failure semantics as an unknown server request: answer under
+                // the original id, then terminate the generation.
+                connection.send_message(json!({
+                    "id": message.get("id").cloned().unwrap_or(Value::Null),
+                    "error": {
+                        "code": -32602,
+                        "message": "Invalid mcpServer/elicitation/request params"
+                    }
+                }))?;
+                return Err(error).context("mcpServer/elicitation/request 参数校验失败");
+            }
+        };
+        if let Err(error) = connection.register_mcp_elicitation(request.clone()) {
+            // A duplicate id already identifies another responder; never send an
+            // error under that same id and accidentally answer the original.
+            return Err(error.context("mcpServer/elicitation/request 注册失败"));
+        }
+        let responder = connection.mcp_elicitation_handle(request.identity());
+        self.publish_connection_event(AgentConnectionEvent::McpElicitationRequested {
+            request,
+            responder,
+        });
         Ok(())
     }
     pub(super) fn handle_notification(
@@ -226,6 +269,14 @@ impl ManagerInner {
                             .try_send(Err("线程已关闭，权限更新未确认".into()));
                     }
                 }
+                for elicitation in connection.invalidate_mcp_elicitations(Some(&thread_id)) {
+                    self.publish_connection_event(AgentConnectionEvent::McpElicitationFailed {
+                        identity: elicitation.identity,
+                        thread_id: elicitation.thread_id,
+                        kind: crate::agent::AgentServerRequestFailureKind::Cancelled,
+                        message: "线程已关闭，等待中的 MCP elicitation 不再可回复".to_owned(),
+                    });
+                }
                 self.publish_runtime(
                     connection.generation,
                     crate::agent::AgentRuntimeObservation::ThreadClosed {
@@ -254,6 +305,20 @@ impl ManagerInner {
                     .pointer("/params/threadId")
                     .and_then(Value::as_str)
                     .context("serverRequest/resolved 缺少字符串 params.threadId")?;
+                if connection.knows_mcp_elicitation(&request_id)? {
+                    let Some(identity) =
+                        connection.resolve_mcp_elicitation(&request_id, notification_thread)?
+                    else {
+                        // Duplicate or late resolution of an already finished or
+                        // invalidated elicitation stays idempotent.
+                        return Ok(());
+                    };
+                    self.publish_connection_event(AgentConnectionEvent::McpElicitationResolved {
+                        identity,
+                        thread_id: notification_thread.to_owned(),
+                    });
+                    return Ok(());
+                }
                 let Some(owner) =
                     connection.resolve_server_request_owner(&request_id, notification_thread)?
                 else {

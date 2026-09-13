@@ -2106,6 +2106,7 @@ dependencies = [
  "two-face",
  "unicode-linebreak",
  "unicode-segmentation",
+ "url",
  "vt100",
 ]
 

@@ -148,6 +148,9 @@ pub struct ComposerView {
     draft_revision: u64,
     submission_error: Option<String>,
     user_input_other_input: Entity<PromptInput>,
+    /// Shared inline editor for the focused MCP elicitation text field. The
+    /// card renders whichever field currently owns logical focus.
+    mcp_elicitation_input: Entity<PromptInput>,
     model_menu_focus: FocusHandle,
     model_menu_focused_item: usize,
     model_menu_keyboard_focus: bool,
@@ -211,6 +214,7 @@ impl ComposerView {
         let user_input_other_input = cx.new(|cx| {
             PromptInput::inline_other(mode, "否，并告诉 ChatGPT 应该如何做得不同", false, cx)
         });
+        let mcp_elicitation_input = cx.new(|cx| PromptInput::inline_other(mode, "", false, cx));
         cx.subscribe(
             &prompt_editor,
             |this, editor, event: &crate::components::file_editor::EditorEvent, cx| {
@@ -279,6 +283,31 @@ impl ComposerView {
             },
         )
         .detach();
+        cx.subscribe(
+            &mcp_elicitation_input,
+            |this, input, _: &PromptChanged, cx| {
+                let text = input.read(cx).text().to_owned();
+                if this.set_focused_mcp_elicitation_text(text) {
+                    cx.emit(ConversationChanged);
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
+        cx.subscribe(
+            &mcp_elicitation_input,
+            |this, _, _: &PromptSubmitted, cx| {
+                let Some(request_id) = this.focused_mcp_elicitation_request_id() else {
+                    return;
+                };
+                this.handle_mcp_elicitation_event(
+                    &request_id,
+                    crate::components::mcp_elicitation::McpElicitationEvent::Accept,
+                    cx,
+                );
+            },
+        )
+        .detach();
         let mut view = Self {
             conversation: ConversationState::default(),
             backend,
@@ -297,6 +326,7 @@ impl ComposerView {
             draft_revision: 0,
             submission_error: None,
             user_input_other_input,
+            mcp_elicitation_input,
             model_menu_focus: cx.focus_handle(),
             model_menu_focused_item: 0,
             model_menu_keyboard_focus: false,
@@ -564,11 +594,21 @@ impl ComposerView {
     pub fn user_input_other_focus_handle(&self, cx: &gpui::App) -> FocusHandle {
         self.user_input_other_input.read(cx).focus_handle(cx)
     }
+
+    pub fn mcp_elicitation_focus_handle(&self, cx: &gpui::App) -> FocusHandle {
+        self.mcp_elicitation_input.read(cx).focus_handle(cx)
+    }
+
+    pub fn mcp_elicitation_input_entity(&self) -> Entity<PromptInput> {
+        self.mcp_elicitation_input.clone()
+    }
 }
 
 impl ComposerView {}
 
 #[cfg(test)]
 mod approval_tests;
+#[cfg(test)]
+mod elicitation_tests;
 #[cfg(test)]
 mod tests;

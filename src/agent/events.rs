@@ -9,9 +9,10 @@ use super::{
     catalog::AgentThreadSettings,
     requests::{
         AgentApprovalHandle, AgentCommandApprovalRequest, AgentFileApprovalHandle,
-        AgentFileApprovalRequest, AgentPermissionsApprovalHandle, AgentPermissionsApprovalRequest,
-        AgentServerRequestFailureKind, AgentServerRequestMetadata, AgentUserInputHandle,
-        AgentUserInputRequest,
+        AgentFileApprovalRequest, AgentMcpElicitationHandle, AgentMcpElicitationIdentity,
+        AgentMcpElicitationRequest, AgentPermissionsApprovalHandle,
+        AgentPermissionsApprovalRequest, AgentServerRequestFailureKind, AgentServerRequestMetadata,
+        AgentUserInputHandle, AgentUserInputRequest,
     },
     status::{
         AgentConfigWarning, AgentMcpServerStartupStatus, AgentThreadStatus, AgentThreadTokenUsage,
@@ -72,6 +73,23 @@ pub enum AgentConnectionEvent {
     AccountLoginUpdated(super::account::AgentAccountLoginState),
     /// Complete quota snapshot keyed by accountId + limitId.
     AccountRateLimitsUpdated(super::account::AgentAccountRateLimitsState),
+    /// A standalone MCP elicitation for one thread. It is not turn-scoped and
+    /// stays answerable while no turn is active, so it is published on the
+    /// connection hub instead of a turn event channel.
+    McpElicitationRequested {
+        request: AgentMcpElicitationRequest,
+        responder: AgentMcpElicitationHandle,
+    },
+    McpElicitationResolved {
+        identity: AgentMcpElicitationIdentity,
+        thread_id: String,
+    },
+    McpElicitationFailed {
+        identity: AgentMcpElicitationIdentity,
+        thread_id: String,
+        kind: AgentServerRequestFailureKind,
+        message: String,
+    },
 }
 
 /// Agent-neutral output consumed by the UI.

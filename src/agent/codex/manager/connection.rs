@@ -18,7 +18,23 @@ use super::{
     transport::{ManagedProcess, SharedJsonWriter},
     turn::ManagedTurn,
 };
-use crate::agent::{AgentAccountState, AgentServerRequestId, AgentThreadSettings};
+use crate::agent::{
+    AgentAccountState, AgentMcpElicitationControl, AgentMcpElicitationHandle,
+    AgentMcpElicitationIdentity, AgentMcpElicitationRequest, AgentMcpElicitationResponse,
+    AgentServerRequestId, AgentThreadSettings,
+};
+
+/// A standalone MCP elicitation owned by this connection generation.
+pub(super) struct PendingMcpElicitation {
+    pub(super) request: AgentMcpElicitationRequest,
+    pub(super) responded: bool,
+}
+
+/// One invalidated elicitation that the manager still has to report to the UI.
+pub(super) struct InvalidatedMcpElicitation {
+    pub(super) identity: AgentMcpElicitationIdentity,
+    pub(super) thread_id: String,
+}
 
 pub(super) struct PendingRpc {
     pub(super) method: String,
@@ -56,6 +72,9 @@ pub(super) struct ConnectionState {
     pub(super) server_request_owners: HashMap<AgentServerRequestId, TurnKey>,
     resolved_server_requests: HashMap<AgentServerRequestId, String>,
     resolved_server_request_order: VecDeque<AgentServerRequestId>,
+    pub(super) pending_mcp_elicitations: HashMap<AgentServerRequestId, PendingMcpElicitation>,
+    resolved_mcp_elicitations: HashMap<AgentServerRequestId, String>,
+    resolved_mcp_elicitation_order: VecDeque<AgentServerRequestId>,
     pub(super) settings_waiters: HashMap<String, super::settings::SettingsWaiter>,
     pub(super) thread_settings: HashMap<String, AgentThreadSettings>,
     pub(super) confirmed_settings: HashMap<String, VecDeque<AgentThreadSettings>>,
@@ -81,6 +100,55 @@ impl ConnectionState {
                 self.resolved_server_requests.remove(&id);
             }
         }
+    }
+
+    fn remember_resolved_elicitation(
+        &mut self,
+        request_id: AgentServerRequestId,
+        thread_id: String,
+    ) {
+        const RESOLVED_ELICITATION_LIMIT: usize = 4096;
+        if self
+            .resolved_mcp_elicitations
+            .insert(request_id.clone(), thread_id)
+            .is_none()
+        {
+            self.resolved_mcp_elicitation_order.push_back(request_id);
+        }
+        while self.resolved_mcp_elicitation_order.len() > RESOLVED_ELICITATION_LIMIT {
+            if let Some(id) = self.resolved_mcp_elicitation_order.pop_front() {
+                self.resolved_mcp_elicitations.remove(&id);
+            }
+        }
+    }
+
+    fn invalidate_pending_elicitations(
+        &mut self,
+        thread_id: Option<&str>,
+    ) -> Vec<InvalidatedMcpElicitation> {
+        let ids = self
+            .pending_mcp_elicitations
+            .iter()
+            .filter(|(_, pending)| {
+                thread_id.is_none_or(|thread_id| pending.request.thread_id == thread_id)
+            })
+            .map(|(request_id, _)| request_id.clone())
+            .collect::<Vec<_>>();
+        let mut invalidated = Vec::with_capacity(ids.len());
+        for request_id in ids {
+            let Some(pending) = self.pending_mcp_elicitations.remove(&request_id) else {
+                continue;
+            };
+            let thread_id = pending.request.thread_id.clone();
+            invalidated.push(InvalidatedMcpElicitation {
+                identity: pending.request.identity(),
+                thread_id: thread_id.clone(),
+            });
+            // A late serverRequest/resolved for an invalidated request stays
+            // idempotent instead of failing the connection.
+            self.remember_resolved_elicitation(request_id, thread_id);
+        }
+        invalidated
     }
 }
 
@@ -462,7 +530,147 @@ impl Connection {
         turn.finish(result);
     }
 
-    pub(super) fn fail_all(&self, message: &str) {
+    /// Register one MCP elicitation under its original request id. The id space
+    /// is shared with turn-scoped server requests, so a collision is a protocol
+    /// error instead of two live responders for the same wire id.
+    pub(super) fn register_mcp_elicitation(
+        &self,
+        request: AgentMcpElicitationRequest,
+    ) -> Result<()> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let request_id = request.request_id.clone();
+        if state.pending_mcp_elicitations.contains_key(&request_id)
+            || state.resolved_mcp_elicitations.contains_key(&request_id)
+            || state.server_request_owners.contains_key(&request_id)
+            || state.resolved_server_requests.contains_key(&request_id)
+        {
+            bail!("收到重复的 Codex server request id {request_id:?}");
+        }
+        state.pending_mcp_elicitations.insert(
+            request_id,
+            PendingMcpElicitation {
+                request,
+                responded: false,
+            },
+        );
+        Ok(())
+    }
+
+    /// Whether serverRequest/resolved belongs to an MCP elicitation, including
+    /// already resolved or invalidated ids whose tombstone must stay idempotent.
+    pub(super) fn knows_mcp_elicitation(&self, request_id: &AgentServerRequestId) -> Result<bool> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        Ok(state.pending_mcp_elicitations.contains_key(request_id)
+            || state.resolved_mcp_elicitations.contains_key(request_id))
+    }
+
+    pub(super) fn resolve_mcp_elicitation(
+        &self,
+        request_id: &AgentServerRequestId,
+        thread_id: &str,
+    ) -> Result<Option<AgentMcpElicitationIdentity>> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        if let Some(pending) = state.pending_mcp_elicitations.get(request_id) {
+            if pending.request.thread_id != thread_id {
+                bail!(
+                    "serverRequest/resolved threadId {thread_id:?} 与 elicitation {request_id:?} 的 threadId {:?} 不一致",
+                    pending.request.thread_id
+                );
+            }
+            let identity = pending.request.identity();
+            state.pending_mcp_elicitations.remove(request_id);
+            state.remember_resolved_elicitation(request_id.clone(), thread_id.to_owned());
+            return Ok(Some(identity));
+        }
+        if let Some(expected) = state.resolved_mcp_elicitations.get(request_id) {
+            if expected != thread_id {
+                bail!(
+                    "重复 serverRequest/resolved threadId {thread_id:?} 与 elicitation {request_id:?} 的 threadId {expected:?} 不一致"
+                );
+            }
+            return Ok(None);
+        }
+        bail!("serverRequest/resolved 引用了未知 elicitation {request_id:?}");
+    }
+
+    /// Drop every pending elicitation of one thread, or of the whole
+    /// generation when no thread is given, and report what the UI must
+    /// invalidate.
+    pub(super) fn invalidate_mcp_elicitations(
+        &self,
+        thread_id: Option<&str>,
+    ) -> Vec<InvalidatedMcpElicitation> {
+        self.state
+            .lock()
+            .map(|mut state| state.invalidate_pending_elicitations(thread_id))
+            .unwrap_or_default()
+    }
+
+    pub(super) fn respond_to_mcp_elicitation(
+        &self,
+        identity: &AgentMcpElicitationIdentity,
+        response: AgentMcpElicitationResponse,
+    ) -> Result<()> {
+        if identity.generation != self.generation {
+            bail!(
+                "MCP elicitation responder 属于已失效的 connection generation {}",
+                identity.generation
+            );
+        }
+        if self.failed.load(Ordering::Acquire) {
+            bail!("Codex app-server connection 已断开，MCP elicitation 不再可回复");
+        }
+        let result = {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+            let pending = state
+                .pending_mcp_elicitations
+                .get_mut(&identity.request_id)
+                .with_context(|| {
+                    format!(
+                        "MCP elicitation {:?} 已经 resolved、失效或不存在",
+                        identity.request_id
+                    )
+                })?;
+            if pending.responded {
+                bail!(
+                    "MCP elicitation {:?} 已经回复，拒绝重复响应",
+                    identity.request_id
+                );
+            }
+            // Schema validation happens before the response is written; a
+            // rejected payload stays answerable so the user can correct it.
+            let result = super::super::elicitation::elicitation_response_result(
+                &pending.request,
+                &response,
+            )?;
+            pending.responded = true;
+            result
+        };
+        self.send_message(json!({
+            "id": super::super::requests::request_id_value(&identity.request_id),
+            "result": result
+        }))
+        .with_context(|| {
+            format!(
+                "写入 MCP elicitation {:?} 的 JSON-RPC response 失败；请勿重复提交",
+                identity.request_id
+            )
+        })
+    }
+
+    pub(super) fn fail_all(&self, message: &str) -> Vec<InvalidatedMcpElicitation> {
         let pending = self
             .pending_rpcs
             .lock()
@@ -472,7 +680,7 @@ impl Connection {
             let _ = request.sender.send_blocking(Err(message.to_owned()));
         }
 
-        let (turns, settings_waiters) = self
+        let (turns, settings_waiters, elicitations) = self
             .state
             .lock()
             .map(|mut state| {
@@ -484,6 +692,7 @@ impl Connection {
                 turns.extend(state.turns.drain().map(|(_, turn)| turn));
                 turns.sort_by_key(|turn| Arc::as_ptr(turn) as usize);
                 turns.dedup_by(|left, right| Arc::ptr_eq(left, right));
+                let elicitations = state.invalidate_pending_elicitations(None);
                 state.loaded_threads.clear();
                 state.pending_thread_lifecycle = None;
                 state.resume_bootstrap_threads.clear();
@@ -492,7 +701,7 @@ impl Connection {
                 state.resolved_server_requests.clear();
                 state.resolved_server_request_order.clear();
                 let settings_waiters = std::mem::take(&mut state.settings_waiters);
-                (turns, settings_waiters)
+                (turns, settings_waiters, elicitations)
             })
             .unwrap_or_default();
         for turn in turns {
@@ -501,5 +710,28 @@ impl Connection {
         for (_, waiter) in settings_waiters {
             let _ = waiter.sender.try_send(Err(message.to_owned()));
         }
+        elicitations
+    }
+}
+
+impl AgentMcpElicitationControl for Connection {
+    fn respond(
+        &self,
+        identity: &AgentMcpElicitationIdentity,
+        response: AgentMcpElicitationResponse,
+    ) -> Result<(), String> {
+        self.respond_to_mcp_elicitation(identity, response)
+            .map_err(|error| format!("{error:#}"))
+    }
+}
+
+impl Connection {
+    /// Build a scoped responder for one pending elicitation.
+    pub(super) fn mcp_elicitation_handle(
+        self: &Arc<Self>,
+        identity: AgentMcpElicitationIdentity,
+    ) -> AgentMcpElicitationHandle {
+        let control: Arc<dyn AgentMcpElicitationControl> = self.clone();
+        AgentMcpElicitationHandle::new(identity, control)
     }
 }

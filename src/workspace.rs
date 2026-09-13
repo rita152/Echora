@@ -372,6 +372,9 @@ impl WorkspaceStore {
             | AgentConnectionEvent::ThreadSettingsUpdated { .. }
             | AgentConnectionEvent::AccountUpdated(_)
             | AgentConnectionEvent::AccountLoginUpdated(_)
+            | AgentConnectionEvent::McpElicitationRequested { .. }
+            | AgentConnectionEvent::McpElicitationResolved { .. }
+            | AgentConnectionEvent::McpElicitationFailed { .. }
             | AgentConnectionEvent::AccountRateLimitsUpdated(_) => {}
         }
     }

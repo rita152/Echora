@@ -10,6 +10,7 @@ pub mod file_panel;
 pub mod home;
 pub mod icons;
 pub mod markdown;
+pub mod mcp_elicitation;
 pub mod permissions_approval;
 pub mod prompt_input;
 pub mod review_panel;

@@ -353,6 +353,14 @@ pub(super) fn render_activity_stream_unit(
             | ConversationActivity::PermissionsApproval(_)
             | ConversationActivity::UserInput(_)
             | ConversationActivity::AssistantMessage { .. } => div().into_any_element(),
+            ConversationActivity::McpElicitation(model) if !model.status.is_overlay_visible() => {
+                crate::components::mcp_elicitation::render_mcp_elicitation_status(
+                    model.as_ref(),
+                    theme,
+                )
+                .into_any_element()
+            }
+            ConversationActivity::McpElicitation(_) => div().into_any_element(),
         },
     }
 }

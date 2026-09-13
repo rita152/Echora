@@ -5,6 +5,7 @@ pub(crate) use permissions::PermissionChange;
 
 mod activity;
 mod auto_approval;
+mod elicitation;
 mod events;
 mod lifecycle;
 mod model;

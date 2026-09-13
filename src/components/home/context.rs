@@ -36,6 +36,7 @@ pub(super) struct ConversationRenderContext {
     pub(super) home_entity: Entity<HomeView>,
     pub(super) approval_previews:
         HashMap<String, Entity<crate::components::file_editor::FileEditor>>,
+    pub(super) mcp_elicitation_input: Entity<crate::components::prompt_input::PromptInput>,
     pub(super) approval_border_offset: f32,
     pub(super) request_owner: RequestOwner,
     pub(super) theme: Theme,

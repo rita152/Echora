@@ -19,7 +19,10 @@ impl ConversationState {
         self.user_message = Some(normalize_user_message_for_display(prompt));
         self.user_message_time = Some(current_local_time_label());
         self.assistant_message.clear();
-        self.activities.clear();
+        // Elicitation cards belong to the connection, not to the turn that
+        // observed them: a new prompt must not drop a request the server is
+        // still waiting on.
+        self.retain_pending_mcp_elicitations();
         self.approval_responders.clear();
         self.command_approval_requests.clear();
         self.file_approval_responders.clear();

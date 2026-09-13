@@ -7,6 +7,10 @@ use crate::{
     components::{
         approval::{ApprovalCardCallback, render_approval_card},
         file_change::{FileApprovalCallback, FileApprovalPresentation, render_file_approval_card},
+        mcp_elicitation::{
+            McpElicitationCallback, McpElicitationEvent, McpElicitationFocus,
+            McpElicitationPresentation, render_mcp_elicitation,
+        },
         permissions_approval::{
             PermissionApprovalCallback, PermissionApprovalPresentation, render_permissions_approval,
         },
@@ -118,5 +122,48 @@ pub(super) fn user_input_request_card(
         });
     });
     render_user_input_request(&model, theme, other_input, callback)
+        .map(|card| div().id(scope).w_full().child(card))
+}
+
+/// Standalone MCP elicitation card. Its responder is connection-scoped, so the
+/// card stays interactive independently of any active turn.
+pub(super) fn mcp_elicitation_card(
+    home_entity: Entity<HomeView>,
+    owner: RequestOwner,
+    model: McpElicitationPresentation,
+    theme: Theme,
+    text_input: Entity<PromptInput>,
+) -> Option<gpui::Stateful<Div>> {
+    let scope = owner.scope();
+    let request_id = model.request_id.clone();
+    let fields = model.fields().to_vec();
+    let target = home_entity;
+    let callback = McpElicitationCallback::new(move |event, window, cx| {
+        if !owner.matches(target.read(cx), cx) {
+            return;
+        }
+        let request_id = request_id.clone();
+        let focus_editor = match &event {
+            McpElicitationEvent::Focus(McpElicitationFocus::Field(index)) => fields
+                .get(*index)
+                .is_some_and(
+                crate::components::mcp_elicitation::McpElicitationFieldPresentation::is_text_like,
+            ),
+            McpElicitationEvent::Focus(_) => false,
+            _ => false,
+        };
+        target.update(cx, |home, cx| {
+            if !owner.matches(home, cx) {
+                return;
+            }
+            home.handle_mcp_elicitation_event(&request_id, event, cx);
+        });
+        if focus_editor {
+            let composer = target.read(cx).composer.clone();
+            let focus = composer.read(cx).mcp_elicitation_focus_handle(cx);
+            window.focus(&focus, cx);
+        }
+    });
+    render_mcp_elicitation(&model, theme, text_input, callback)
         .map(|card| div().id(scope).w_full().child(card))
 }

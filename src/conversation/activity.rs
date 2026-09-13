@@ -11,6 +11,7 @@ use crate::{
     components::{
         approval::ApprovalCardViewModel,
         file_change::{FileApprovalPresentation, FileChangeActivityPresentation},
+        mcp_elicitation::McpElicitationPresentation,
         permissions_approval::{
             PermissionApprovalPresentation, PermissionPathAccess, PermissionPathRequest,
         },
@@ -85,6 +86,9 @@ pub(crate) enum ConversationActivity {
         answer: String,
     },
     UserInput(UserInputRequestPresentation),
+    /// Standalone MCP elicitation card. It is connection-scoped, so it stays
+    /// valid across turn boundaries until the protocol resolves it.
+    McpElicitation(Box<McpElicitationPresentation>),
     ProtocolError {
         message: String,
         details: Option<String>,
@@ -106,6 +110,7 @@ impl ConversationActivity {
             Self::FileApproval(model) => model.should_render(),
             Self::PermissionsApproval(model) => model.should_render(),
             Self::UserInput(model) => model.should_render(),
+            Self::McpElicitation(model) => model.status.is_overlay_visible(),
             _ => false,
         }
     }

@@ -410,6 +410,10 @@ fn main() {
         arg.strip_prefix("--user-input-ui-state=")
             .map(ToOwned::to_owned)
     });
+    let mcp_elicitation_ui_state = args.iter().find_map(|arg| {
+        arg.strip_prefix("--mcp-elicitation-ui-state=")
+            .map(ToOwned::to_owned)
+    });
     let file_approval_ui_state = args.iter().find_map(|arg| {
         arg.strip_prefix("--file-approval-ui-state=")
             .map(ToOwned::to_owned)
@@ -833,6 +837,9 @@ fn main() {
                         }
                         if let Some(state) = user_input_ui_state.as_deref() {
                             app.set_user_input_for_capture(state, cx);
+                        }
+                        if let Some(state) = mcp_elicitation_ui_state.as_deref() {
+                            app.set_mcp_elicitation_for_capture(state, cx);
                         }
                         if let Some(state) = file_approval_ui_state.as_deref() {
                             app.set_file_approval_for_capture(state, cx);

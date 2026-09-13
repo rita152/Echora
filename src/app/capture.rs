@@ -312,6 +312,11 @@ impl ChatApp {
         self.home
             .update(cx, |home, cx| home.set_user_input_for_capture(state, cx));
     }
+    pub fn set_mcp_elicitation_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
+        self.home.update(cx, |home, cx| {
+            home.set_mcp_elicitation_for_capture(state, cx)
+        });
+    }
     pub fn set_file_approval_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
         self.home
             .update(cx, |home, cx| home.set_file_approval_for_capture(state, cx));

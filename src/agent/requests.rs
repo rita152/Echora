@@ -2,6 +2,8 @@
 
 use std::{fmt, sync::Arc};
 
+use serde_json::Number;
+
 /// JSON-RPC request ids are deliberately not normalized: a numeric `7` and a
 /// string `"7"` identify different server requests and must be echoed with
 /// their original type.
@@ -453,3 +455,215 @@ pub enum AgentServerRequestFailureKind {
     Cancelled,
     Failed,
 }
+
+/// Identity of one MCP elicitation. A connection generation owns its own
+/// requests, so the original JSON-RPC id alone is never a global key.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct AgentMcpElicitationIdentity {
+    pub generation: u64,
+    pub request_id: AgentServerRequestId,
+}
+
+impl AgentMcpElicitationIdentity {
+    pub fn ui_key(&self) -> String {
+        format!(
+            "generation:{}-{}",
+            self.generation,
+            self.request_id.ui_key()
+        )
+    }
+}
+
+/// Standard MCP requestedSchema primitives supported by the first version.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AgentMcpElicitationStringFormat {
+    Email,
+    Uri,
+    Date,
+    DateTime,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentMcpElicitationOption {
+    /// Wire value submitted for this option.
+    pub value: String,
+    /// Display title; defaults to the wire value when the schema has none.
+    pub title: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AgentMcpElicitationFieldKind {
+    String {
+        format: Option<AgentMcpElicitationStringFormat>,
+        min_length: Option<u64>,
+        max_length: Option<u64>,
+    },
+    Number {
+        integer: bool,
+        minimum: Option<Number>,
+        maximum: Option<Number>,
+    },
+    Boolean,
+    SingleSelect {
+        options: Vec<AgentMcpElicitationOption>,
+    },
+    MultiSelect {
+        options: Vec<AgentMcpElicitationOption>,
+        min_items: Option<u64>,
+        max_items: Option<u64>,
+    },
+}
+
+/// One submitted value. Numbers keep their original JSON representation so an
+/// integer schema never receives a lossy float.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AgentMcpElicitationValue {
+    String(String),
+    Number(Number),
+    Boolean(bool),
+    StringArray(Vec<String>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentMcpElicitationField {
+    pub name: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub required: bool,
+    pub kind: AgentMcpElicitationFieldKind,
+    pub default: Option<AgentMcpElicitationValue>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentMcpElicitationForm {
+    pub message: String,
+    pub fields: Vec<AgentMcpElicitationField>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentMcpElicitationUrl {
+    pub elicitation_id: String,
+    pub message: String,
+    pub url: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AgentMcpElicitationMode {
+    Form(AgentMcpElicitationForm),
+    Url(AgentMcpElicitationUrl),
+}
+
+/// A standalone server-to-client MCP elicitation. It is not a turn-scoped
+/// approval: turn_id may be missing or null, and the request must stay
+/// answerable without an active turn.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentMcpElicitationRequest {
+    pub generation: u64,
+    pub request_id: AgentServerRequestId,
+    pub server_name: String,
+    pub thread_id: String,
+    pub turn_id: AgentOptionalField<String>,
+    pub mode: AgentMcpElicitationMode,
+}
+
+impl AgentMcpElicitationRequest {
+    pub fn identity(&self) -> AgentMcpElicitationIdentity {
+        AgentMcpElicitationIdentity {
+            generation: self.generation,
+            request_id: self.request_id.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AgentMcpElicitationAction {
+    Accept,
+    Decline,
+    Cancel,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentMcpElicitationFieldValue {
+    pub name: String,
+    pub value: AgentMcpElicitationValue,
+}
+
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
+pub struct AgentMcpElicitationContent {
+    pub fields: Vec<AgentMcpElicitationFieldValue>,
+}
+
+/// Response payload mirroring the MCP CreateElicitationResult shape.
+/// content is only ever present for accept.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentMcpElicitationResponse {
+    pub action: AgentMcpElicitationAction,
+    pub content: Option<AgentMcpElicitationContent>,
+}
+
+impl AgentMcpElicitationResponse {
+    pub fn accept(content: AgentMcpElicitationContent) -> Self {
+        Self {
+            action: AgentMcpElicitationAction::Accept,
+            content: Some(content),
+        }
+    }
+
+    pub fn decline() -> Self {
+        Self {
+            action: AgentMcpElicitationAction::Decline,
+            content: None,
+        }
+    }
+
+    pub fn cancel() -> Self {
+        Self {
+            action: AgentMcpElicitationAction::Cancel,
+            content: None,
+        }
+    }
+}
+
+pub(crate) trait AgentMcpElicitationControl: Send + Sync {
+    fn respond(
+        &self,
+        identity: &AgentMcpElicitationIdentity,
+        response: AgentMcpElicitationResponse,
+    ) -> Result<(), String>;
+}
+
+#[derive(Clone)]
+pub struct AgentMcpElicitationHandle {
+    identity: AgentMcpElicitationIdentity,
+    control: Arc<dyn AgentMcpElicitationControl>,
+}
+
+impl AgentMcpElicitationHandle {
+    pub(crate) fn new(
+        identity: AgentMcpElicitationIdentity,
+        control: Arc<dyn AgentMcpElicitationControl>,
+    ) -> Self {
+        Self { identity, control }
+    }
+
+    pub fn respond(&self, response: AgentMcpElicitationResponse) -> Result<(), String> {
+        self.control.respond(&self.identity, response)
+    }
+}
+
+impl fmt::Debug for AgentMcpElicitationHandle {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AgentMcpElicitationHandle")
+            .field("identity", &self.identity)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PartialEq for AgentMcpElicitationHandle {
+    fn eq(&self, other: &Self) -> bool {
+        self.identity == other.identity && Arc::ptr_eq(&self.control, &other.control)
+    }
+}
+
+impl Eq for AgentMcpElicitationHandle {}

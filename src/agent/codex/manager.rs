@@ -222,7 +222,15 @@ impl ManagerInner {
             }
             None => message,
         };
-        connection.fail_all(&message);
+        let invalidated_elicitations = connection.fail_all(&message);
+        for elicitation in invalidated_elicitations {
+            self.publish_connection_event(AgentConnectionEvent::McpElicitationFailed {
+                identity: elicitation.identity,
+                thread_id: elicitation.thread_id,
+                kind: crate::agent::AgentServerRequestFailureKind::Failed,
+                message: message.clone(),
+            });
+        }
         if let Ok(mut hub) = self.connection_events.lock() {
             hub.snapshots.retain(|_,event| !matches!(event,AgentConnectionEvent::ThreadSettingsUpdated {generation:old,..} if *old==generation));
             // The account snapshots belonged to the generation that just

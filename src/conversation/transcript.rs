@@ -472,6 +472,17 @@ impl ConversationState {
         let Some(user_message) = self.user_message.take() else {
             return;
         };
+        // A pending elicitation is not part of the turn's history: it stays in
+        // the live activity list until the protocol resolves it.
+        let mut pending_elicitations = Vec::new();
+        self.activities.retain(|activity| {
+            if activity.is_mcp_elicitation() {
+                pending_elicitations.push(activity.clone());
+                false
+            } else {
+                true
+            }
+        });
         self.transcript.push(ConversationTranscriptTurn {
             turn_id: self.turn_id.clone(),
             phase: self.phase,
@@ -483,6 +494,7 @@ impl ConversationState {
             activities: std::mem::take(&mut self.activities),
             resumed: self.resumed_turn.take(),
         });
+        self.activities = pending_elicitations;
     }
     pub(crate) fn user_images(&self) -> Vec<crate::agent::UserMessageAttachment> {
         self.user_images.clone()
