@@ -6,9 +6,11 @@ mod config;
 mod connection;
 mod dispatch;
 mod events;
+mod mcp;
 mod protocol;
 mod settings;
 mod side_conversation;
+mod skills;
 mod steer;
 mod transport;
 mod turn;
@@ -56,6 +58,18 @@ struct ManagerInner {
 }
 
 impl ManagerInner {
+    /// The active generation, if one is currently usable. Used by operations
+    /// that must not create a connection as a side effect (for example local
+    /// cancellation of an OAuth login that is already in flight).
+    fn current_connection(&self) -> Option<Arc<Connection>> {
+        let state = self.state.lock().ok()?;
+        let connection = state.current.as_ref()?;
+        if connection.failed.load(Ordering::Acquire) {
+            return None;
+        }
+        Some(connection.clone())
+    }
+
     fn ensure_connection(self: &Arc<Self>) -> Result<Arc<Connection>> {
         let mut waited_for = None;
         let attempt = loop {
@@ -391,6 +405,11 @@ impl CodexAppServerManager {
             AgentCapability::ThreadSectionCreate,
             AgentCapability::ThreadSectionMove,
             AgentCapability::SideConversation,
+            AgentCapability::SkillsList,
+            AgentCapability::SkillConfigWrite,
+            AgentCapability::McpServerStatusList,
+            AgentCapability::McpServerReload,
+            AgentCapability::McpOauthLogin,
         ])
     }
 }

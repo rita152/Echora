@@ -167,8 +167,20 @@ pub(super) fn connection_event_key(event: &AgentConnectionEvent) -> String {
             "config:{:?}:{:?}:{:?}:{}",
             warning.path, warning.line, warning.column, warning.summary
         ),
-        AgentConnectionEvent::McpServerStartupStatusUpdated(status) => {
-            format!("mcp:{:?}:{}", status.thread_id, status.name)
+        AgentConnectionEvent::McpServerStartupStatusUpdated(updated) => {
+            format!(
+                "mcp:{}:{:?}:{}",
+                updated.generation, updated.status.thread_id, updated.status.name
+            )
+        }
+        AgentConnectionEvent::SkillsChanged { generation } => {
+            format!("skills:{generation}")
+        }
+        AgentConnectionEvent::McpOauthLoginCompleted(completion) => {
+            format!(
+                "mcp-oauth:{}:{}",
+                completion.generation, completion.login_id
+            )
         }
         AgentConnectionEvent::ThreadStatusChanged(status) => {
             format!("thread-status:{}", status.thread_id)

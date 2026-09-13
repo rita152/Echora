@@ -124,6 +124,49 @@ impl AgentBackend for CodexAppServerBackend {
         self.manager.write_config(write)
     }
 
+    fn load_skills(
+        &self,
+        request: crate::agent::AgentSkillsLoadRequest,
+    ) -> Receiver<Result<crate::agent::AgentSkillsSnapshot, crate::agent::AgentSkillsError>> {
+        self.manager.load_skills(request)
+    }
+
+    fn write_skill_config(
+        &self,
+        request: crate::agent::AgentSkillWriteRequest,
+    ) -> Receiver<Result<crate::agent::AgentSkillWriteReceipt, crate::agent::AgentSkillsError>>
+    {
+        self.manager.write_skill_config(request)
+    }
+
+    fn list_mcp_servers(
+        &self,
+        request: crate::agent::AgentMcpServerStatusRequest,
+    ) -> Receiver<Result<crate::agent::AgentMcpServerPage, crate::agent::AgentMcpError>> {
+        self.manager.list_mcp_servers(request)
+    }
+
+    fn reload_mcp_servers(
+        &self,
+        request: crate::agent::AgentMcpReloadRequest,
+    ) -> Receiver<crate::agent::AgentMcpReloadResult> {
+        self.manager.reload_mcp_servers(request)
+    }
+
+    fn start_mcp_oauth_login(
+        &self,
+        request: crate::agent::AgentMcpOauthLoginRequest,
+    ) -> Receiver<Result<crate::agent::AgentMcpOauthLogin, crate::agent::AgentMcpError>> {
+        self.manager.start_mcp_oauth_login(request)
+    }
+
+    fn cancel_mcp_oauth_login(
+        &self,
+        login_id: u64,
+    ) -> Receiver<Result<(), crate::agent::AgentMcpError>> {
+        self.manager.cancel_mcp_oauth_login(login_id)
+    }
+
     fn list_projects(&self, page: PageRequest) -> Receiver<WorkspaceResult<Page<Project>>> {
         self.manager.list_projects(page)
     }

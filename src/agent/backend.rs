@@ -44,6 +44,11 @@ pub enum AgentCapability {
     ThreadSectionCreate,
     ThreadSectionMove,
     SideConversation,
+    SkillsList,
+    SkillConfigWrite,
+    McpServerStatusList,
+    McpServerReload,
+    McpOauthLogin,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -282,6 +287,93 @@ pub trait AgentBackend: Send + Sync {
     /// Signs out and confirms the resulting account state.
     fn logout_account(&self) -> Receiver<Result<AgentLogoutOutcome, String>> {
         unsupported_account_receiver("退出登录")
+    }
+
+    /// Reads the skills inventory. `skills/changed` invalidates the caller's
+    /// cache; this call is the only source of skill data.
+    fn load_skills(
+        &self,
+        _request: super::AgentSkillsLoadRequest,
+    ) -> Receiver<Result<super::AgentSkillsSnapshot, super::AgentSkillsError>> {
+        let (sender, receiver) = async_channel::bounded(1);
+        let _ = sender.try_send(Err(super::AgentSkillsError {
+            kind: super::AgentSkillsErrorKind::Unsupported,
+            message: "当前 coding agent 不支持技能管理".into(),
+            data: None,
+            outcome_unknown: false,
+        }));
+        receiver
+    }
+
+    /// Persists one skill's enabled flag. The returned receipt is the server's
+    /// effective value; the client never predicts it.
+    fn write_skill_config(
+        &self,
+        _request: super::AgentSkillWriteRequest,
+    ) -> Receiver<Result<super::AgentSkillWriteReceipt, super::AgentSkillsError>> {
+        let (sender, receiver) = async_channel::bounded(1);
+        let _ = sender.try_send(Err(super::AgentSkillsError {
+            kind: super::AgentSkillsErrorKind::Unsupported,
+            message: "当前 coding agent 不支持技能管理".into(),
+            data: None,
+            outcome_unknown: false,
+        }));
+        receiver
+    }
+
+    fn list_mcp_servers(
+        &self,
+        _request: super::AgentMcpServerStatusRequest,
+    ) -> Receiver<Result<super::AgentMcpServerPage, super::AgentMcpError>> {
+        let (sender, receiver) = async_channel::bounded(1);
+        let _ = sender.try_send(Err(super::AgentMcpError {
+            kind: super::AgentMcpErrorKind::Unsupported,
+            message: "当前 coding agent 不支持 MCP 管理".into(),
+            data: None,
+            outcome_unknown: false,
+        }));
+        receiver
+    }
+
+    /// Reloads MCP server configuration. Always produces a result, including
+    /// for a timeout or an unconfirmed outcome.
+    fn reload_mcp_servers(
+        &self,
+        request: super::AgentMcpReloadRequest,
+    ) -> Receiver<super::AgentMcpReloadResult> {
+        let (sender, receiver) = async_channel::bounded(1);
+        let _ = sender.try_send(super::AgentMcpReloadResult {
+            generation: request.generation,
+            cwd: request.cwd,
+            outcome: super::AgentMcpReloadOutcome::Failed {
+                message: "当前 coding agent 不支持 MCP 管理".into(),
+                data: None,
+            },
+        });
+        receiver
+    }
+
+    /// Starts an interactive OAuth login. Cancellation is client-side: the
+    /// protocol defines no cancel request, so the caller invalidates the login
+    /// and ignores any later completion for it.
+    fn start_mcp_oauth_login(
+        &self,
+        _request: super::AgentMcpOauthLoginRequest,
+    ) -> Receiver<Result<super::AgentMcpOauthLogin, super::AgentMcpError>> {
+        let (sender, receiver) = async_channel::bounded(1);
+        let _ = sender.try_send(Err(super::AgentMcpError {
+            kind: super::AgentMcpErrorKind::Unsupported,
+            message: "当前 coding agent 不支持 MCP 登录".into(),
+            data: None,
+            outcome_unknown: false,
+        }));
+        receiver
+    }
+
+    fn cancel_mcp_oauth_login(&self, _login_id: u64) -> Receiver<Result<(), super::AgentMcpError>> {
+        let (sender, receiver) = async_channel::bounded(1);
+        let _ = sender.try_send(Ok(()));
+        receiver
     }
     fn read_config(
         &self,

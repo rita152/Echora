@@ -23,8 +23,10 @@ fn runtime_notifications_before_start_and_after_completion_do_not_steal_or_end_t
     let opt_out = initialize["params"]["capabilities"]["optOutNotificationMethods"]
         .as_array()
         .unwrap();
-    assert_eq!(opt_out.len(), 7);
+    assert_eq!(opt_out.len(), 6);
     assert!(opt_out.contains(&json!("thread/goal/cleared")));
+    // Skills invalidation is consumed by the skills management surface.
+    assert!(!opt_out.contains(&json!("skills/changed")));
     assert!(
         !opt_out.contains(&json!("item/started")) && !opt_out.contains(&json!("item/completed"))
     );

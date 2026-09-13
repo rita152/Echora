@@ -55,6 +55,7 @@ Both images are captured from the current native application using the dedicated
 | **Explore in side chats** | Fork temporary conversations from the main thread, with their own input, model, permissions, and stop controls. |
 | **Configure Codex** | Read effective configuration and its sources, inspect managed restrictions, edit supported user settings, and verify saves against the backend. |
 | **Manage the account** | See the connected ChatGPT account, plan, and remaining quota in the account menu; sign in through Codex-managed ChatGPT auth, cancel a pending login, and sign out behind a confirmation. The billing page reads the account's real quota buckets instead of sample values. |
+| **Manage skills & MCP** | Read the skills inventory with per-skill enable/disable receipts, list MCP servers with status, auth, tools and server extensions, reload servers, and complete OAuth logins with explicit waiting, success, failure, cancellation and disconnect states. |
 
 The exact protocol coverage and compatibility rules live in [the app-server integration table](docs/APP_SERVER_INTEGRATION.md). A visible control does not imply full support for the corresponding provider feature.
 

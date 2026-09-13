@@ -61,15 +61,9 @@ pub(super) fn parse_mcp_server_startup_status_updated(
     let thread_id = optional_string_at(message, "/params/threadId", "params.threadId")?;
     let name = required_notification_string(message, "name")?;
     let raw_state = required_notification_string(message, "status")?;
-    let state = match raw_state.as_str() {
-        "starting" => AgentMcpServerStartupState::Starting,
-        "ready" => AgentMcpServerStartupState::Ready,
-        "failed" => AgentMcpServerStartupState::Failed,
-        "cancelled" => AgentMcpServerStartupState::Cancelled,
-        _ => {
-            bail!("mcpServer/startupStatus/updated 通知字段 params.status 为未知状态 `{raw_state}`")
-        }
-    };
+    let state = AgentMcpServerStartupState::parse(&raw_state).with_context(|| {
+        format!("mcpServer/startupStatus/updated 通知字段 params.status 为未知状态 `{raw_state}`")
+    })?;
     let error = optional_string_at(message, "/params/error", "params.error")?;
     let failure_reason = match optional_string_at(
         message,

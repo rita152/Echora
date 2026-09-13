@@ -59,9 +59,16 @@ impl ConversationState {
             }
             AgentConnectionEvent::GuardianWarning(warning) => Some(warning.thread_id.as_str()),
             AgentConnectionEvent::Warning { thread_id, .. } => thread_id.as_deref(),
-            AgentConnectionEvent::McpServerStartupStatusUpdated(status) => {
-                status.thread_id.as_deref()
+            AgentConnectionEvent::McpServerStartupStatusUpdated(updated) => {
+                // Application scoped observations belong to the MCP management
+                // surface, not to whichever conversation happens to be open.
+                match updated.status.thread_id.as_deref() {
+                    Some(thread_id) => Some(thread_id),
+                    None => return false,
+                }
             }
+            AgentConnectionEvent::SkillsChanged { .. }
+            | AgentConnectionEvent::McpOauthLoginCompleted(_) => return false,
             AgentConnectionEvent::ThreadStatusChanged(status) => Some(status.thread_id.as_str()),
             AgentConnectionEvent::ThreadSettingsUpdated { thread_id, .. } => {
                 Some(thread_id.as_str())
@@ -129,8 +136,8 @@ impl ConversationState {
             AgentConnectionEvent::GuardianWarning(warning) => AgentEvent::GuardianWarning(warning),
             AgentConnectionEvent::Warning { message, .. } => AgentEvent::Warning { message },
             AgentConnectionEvent::ConfigWarning(warning) => AgentEvent::ConfigWarning(warning),
-            AgentConnectionEvent::McpServerStartupStatusUpdated(status) => {
-                AgentEvent::McpServerStartupStatusUpdated(status)
+            AgentConnectionEvent::McpServerStartupStatusUpdated(updated) => {
+                AgentEvent::McpServerStartupStatusUpdated(updated.status)
             }
             AgentConnectionEvent::ThreadStatusChanged(status) => {
                 AgentEvent::ThreadStatusChanged(status)
@@ -149,6 +156,10 @@ impl ConversationState {
             | AgentConnectionEvent::ThreadDeleted { .. }
             | AgentConnectionEvent::ThreadNameUpdated { .. }
             | AgentConnectionEvent::ThreadClosed { .. }
+            // Skills invalidation and OAuth completions belong to the MCP and
+            // skills management surface, not to a conversation timeline.
+            | AgentConnectionEvent::SkillsChanged { .. }
+            | AgentConnectionEvent::McpOauthLoginCompleted(_)
             | AgentConnectionEvent::ThreadProjectUpdated { .. } => return false,
             AgentConnectionEvent::McpElicitationRequested { .. }
             | AgentConnectionEvent::McpElicitationResolved { .. }

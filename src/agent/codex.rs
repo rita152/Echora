@@ -13,6 +13,7 @@ mod elicitation;
 mod input;
 mod items;
 mod manager;
+mod mcp;
 mod methods;
 mod notifications;
 mod permissions;
@@ -21,6 +22,7 @@ mod registry;
 mod requests;
 mod runtime;
 mod session;
+mod skills;
 mod transport;
 mod workspace_protocol;
 

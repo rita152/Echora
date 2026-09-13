@@ -88,6 +88,8 @@ pub(super) fn is_defined_server_method(method: &str) -> bool {
             | "model/rerouted"
             | "model/verification"
             | "model/safetyBuffering/updated"
+            | "skills/changed"
+            | "mcpServer/oauthLogin/completed"
     )
 }
 
@@ -125,6 +127,8 @@ pub(super) fn ensure_server_method_is_defined(message: &Value) -> Result<()> {
         "mcpServer/startupStatus/updated" => {
             parse_mcp_server_startup_status_updated(message).map(|_| ())
         }
+        "skills/changed" => super::skills::parse_changed(message),
+        "mcpServer/oauthLogin/completed" => super::mcp::parse_oauth_completed(message).map(|_| ()),
         "thread/status/changed" => parse_thread_status_changed(message).map(|_| ()),
         "thread/tokenUsage/updated" => parse_thread_token_usage_updated(message).map(|_| ()),
         // Account notifications are connection-scoped: the manager reduces them

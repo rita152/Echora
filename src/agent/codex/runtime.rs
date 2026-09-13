@@ -8,14 +8,15 @@ use crate::agent::{
     AgentHookPromptFragment, AgentHookRun, AgentHookStatus, AgentRuntimeObservation,
 };
 
-/// No goals, server-side queue, skill/app catalog, or moderation-metadata product
+/// No goals, server-side queue, app catalog, or moderation-metadata product
 /// exists in this client. Context compaction is driven by its item, not the
-/// deprecated duplicate notification. Never apply this policy to requests.
+/// deprecated duplicate notification. `skills/changed` is not opted out: the
+/// skills management surface consumes it as a cache invalidation signal. Never
+/// apply this policy to requests.
 pub(super) const OPT_OUT_NOTIFICATION_METHODS: &[&str] = &[
     "thread/goal/updated",
     "thread/goal/cleared",
     "thread/queue/changed",
-    "skills/changed",
     "app/list/updated",
     "turn/moderationMetadata",
     "thread/compacted",

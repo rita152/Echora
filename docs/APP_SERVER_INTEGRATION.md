@@ -97,6 +97,16 @@ UI 由真实后端状态驱动：侧边栏账户菜单显示账户标签、套�
 
 本阶段不接入 `account/usage/read`、`account/rateLimitResetCredit/consume`、`account/chatgptAuthTokens/refresh`、Amazon Bedrock 登录、`mcpServer/elicitation/request`、Skills/MCP 管理以及 realtime/queue/remoteControl/environment 方法；这些入口不显示或明确标注不可用。参考采集脚本为 `scripts/cdp_capture_account.mjs`，GPUI 采集脚本为 `scripts/capture_account_gpui.sh`，像素比较脚本为 `scripts/compare_account_phase.py`；原始截图、动作日志、CDP 脚本与相似度报告保存在 `artifacts/account-phase/`。当前对比分数见该目录的报告：账户菜单、退出确认与额度卡片在两种主题下为 90.7%–97.3%（相对 ChatGPT 参考；差异主要来自字形栅格化、半透明表面的底层内容不同，以及协议不提供的账户显示名）。Computer Use 在本机无法附加到 `GPUI Capture.app`（多次 `timeoutReached`），因此交互验收改用应用自身的采集入口与真实事件驱动的 UI 测试，细节见 `artifacts/account-phase/ui-validation/computer-use-report.json`。
 
+### 技能与 MCP 管理
+
+设置页的「插件」页承载插件、应用、MCP 与技能四个分段：插件与应用沿用参考目录，MCP 与技能由 app-server 驱动。`skills/list` 按 cwd 读取，保留 scope、interface、dependencies、未知字段与每项加载错误；本版 schema 没有 cursor，若服务端返回 `nextCursor` 会带重复游标校验地跟随并在超过 32 页时中止。`skills/config/write` 只提交用户明确修改的 `enabled` 与单一选择器，本机技能用 `path`、插件技能用 `name`，以服务端 `effectiveEnabled` 回执为准并随后复查列表；保存中、成功与失败分别建模，失败保留用户意图以便显式重试，重试不会翻转成相反值。`skills/changed` 只作为失效信号：使缓存过期并重新读取，不覆盖较新的本地写入结果，也不清空正在保存或失败的本地操作；读取按 cycle 丢弃过期响应，切换工作目录会重建该目录的缓存。
+
+`mcpServerStatus/list` 每次请求都显式选择 detail：列表与详情首读使用 `full`，重新加载或登录完成后的复查使用 `toolsAndAuthOnly`，此时保留已加载的工具／资源目录而不是用空目录覆盖。每个 server 保留稳定 name、pluginId、runtimeStatus（nullable 与 `notStarted` 区分）、authStatus、serverInfo、工具、资源、资源模板、`toolsError` 以及服务端未知字段；分页按 cursor 顺序合并，重复或循环 cursor 中止并显示错误。`config/mcpServer/reload` 无 params，绑定当前 cwd 与 generation，30 秒无响应即关闭旧 generation 并报告超时；成功、失败与结果未知使用不同文案，成功后重新读取列表。
+
+`mcpServer/oauth/login` 只发送用户选择的 name、可选 threadId、scopes 与 clientRegistration，返回 `authorizationUrl` 后由客户端生成 loginId 并记录 pending 登录；协议没有服务端 loginId，也没有取消请求，因此取消是本地失效：过期通知按 (threadId, name) 找不到 pending 登录时被解码后忽略，断连或 generation 切换会把仍等待的登录报告为已中断。`mcpServer/startupStatus/updated` 按 generation、thread（无 threadId 时按应用层）与 server 分层保存，仅供 MCP 管理界面和所属会话使用，不结束任何轮次；应用层状态不会写入无关会话。启动状态与 OAuth 状态互补：列表 `runtimeStatus` 为 null 时用最近的生命周期通知展示连接中／失败，收到更细的列表数据后以服务端为准。
+
+代码入口：领域类型在 `src/agent/skills.rs`、`src/agent/mcp.rs`，编解码在 `src/agent/codex/skills.rs`、`src/agent/codex/mcp.rs`，连接操作在 `src/agent/codex/manager/skills.rs`、`src/agent/codex/manager/mcp.rs`，界面状态在 `src/skills.rs`、`src/mcp.rs`，视图在 `src/settings/view/plugins.rs`、`plugins_mcp.rs`、`plugins_skills.rs`。未接入边界：`skills/extraRoots/set`、`plugin/*`、`marketplace/*`、`mcpServer/event/stream/*`、`mcpServer/tool/call`、`mcpServer/resource/read`；`mcpServer/elicitation/request` 已在上一节接入；MCP 服务器配置的新增／编辑／卸载仍由 Codex 配置文件负责，本阶段只做状态、重新加载与 OAuth。参考采集与对比工具见 `scripts/stage4/`，产物在 `artifacts/skills-mcp-stage4/`。
+
 ### 运行中追加输入
 
 `AgentBackend::steer_turn` 只操作已接受的活动轮次。`turn/start` 响应校验后发布包含 generation、threadId、turnId 的身份；追加调用捕获该身份和独立提交 id，再按原连接的 request id 接收响应。追加不创建 AgentRun，不等待新的 `turn/started`，不清空输出、活动或审批，也不修改轮次终态。同一轮次的请求按提交顺序在后台写出，响应独立等待；这是客户端写入次序，不是服务端消息队列。发送与中断意图同步；请求已写出后的结束竞态交由服务端 `expectedTurnId` 前置条件决定，不自动改发 `turn/start`。
@@ -185,7 +195,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `command/exec/terminate` | 默认 | 未接入 | — | — |
 | `command/exec/write` | 默认 | 未接入 | — | — |
 | `config/batchWrite` | 默认 | 已接入 | 单项／多项统一 edits+replace，用户层 filePath、expectedVersion、适用的 reloadUserConfig；消费完整回执并回读，冲突或失败保留草稿。 | `manager/config`、`config` |
-| `config/mcpServer/reload` | 默认 | 未接入 | — | — |
+| `config/mcpServer/reload` | 默认 | 已接入 | 无 params；绑定当前 cwd 与 generation，区分成功、失败、超时与结果未知；成功后再读 `mcpServerStatus/list`。 | `manager/mcp`、`mcp` |
 | `config/read` | 默认 | 已接入 | 当前 cwd、includeLayers=true；有效配置、origins、layers、版本与覆盖关系驱动设置及新线程默认值。 | `manager/config`、`config` |
 | `config/value/write` | 默认 | 未接入 | — | — |
 | `configRequirements/read` | 默认 | 已接入 | 同 generation 读取 nullable requirements，约束对应选项和强制值；其余要求在来源详情保留展示。 | `manager/config`、`config` |
@@ -219,10 +229,10 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `marketplace/upgrade` | 默认 | 未接入 | — | — |
 | `mcpServer/event/stream/start` | 实验 | 未接入 | — | — |
 | `mcpServer/event/stream/stop` | 实验 | 未接入 | — | — |
-| `mcpServer/oauth/login` | 默认 | 未接入 | — | — |
+| `mcpServer/oauth/login` | 默认 | 已接入 | 只提交 name/threadId/scopes/clientRegistration/timeoutSecs；返回 authorizationUrl 并记录客户端生成的 loginId；取消是本地失效，断连使 pending 登录失效。 | `manager/mcp`、`mcp` |
 | `mcpServer/resource/read` | 默认 | 未接入 | — | — |
 | `mcpServer/tool/call` | 默认 | 未接入 | — | — |
-| `mcpServerStatus/list` | 默认 | 未接入 | — | — |
+| `mcpServerStatus/list` | 默认 | 已接入 | cursor/limit/detail/threadId；保留 id/name、runtimeStatus、authStatus、错误、工具、资源、模板与全部未知字段；循环游标中止并报错。 | `manager/mcp`、`mcp` |
 | `memory/reset` | 实验 | 未接入 | — | — |
 | `mock/experimentalMethod` | 实验 | 未接入 | — | — |
 | `model/list` | 默认 | 已接入 | limit=50、includeHidden=false；遍历 nextCursor，拒绝循环游标；返回模型、默认值、推理强度及服务档位。 | `manager/catalog` |
@@ -261,9 +271,9 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `remoteControl/status/read` | 实验 | 未接入 | — | — |
 | `review/start` | 默认 | 未接入 | 启动模型代码评审；本机 Git 审查面板使用 Git/gh 与已有 turn diff，不调用此方法。 | — |
 | `server/diagnostics` | 实验 | 未接入 | — | — |
-| `skills/config/write` | 默认 | 未接入 | — | — |
+| `skills/config/write` | 默认 | 已接入 | 只提交用户明确修改的 enabled 与单一选择器（插件技能用 name，本机技能用 path）；以服务端 effectiveEnabled 回执为准并复查列表。 | `manager/skills`、`skills` |
 | `skills/extraRoots/set` | 默认 | 未接入 | — | — |
-| `skills/list` | 默认 | 未接入 | — | — |
+| `skills/list` | 默认 | 已接入 | cwds/forceReload；保留 scope、interface、dependencies、errors 与未知字段；本版 schema 无 cursor，若服务端返回 nextCursor 则带重复游标校验地跟随。 | `manager/skills`、`skills` |
 | `thread/approveGuardianDeniedAction` | 默认 | 未接入 | — | — |
 | `thread/archive` | 默认 | 已接入 | 按 threadId 归档；通知与列表合并规则见“连接与状态”。 | `manager/workspace` |
 | `thread/backgroundTerminals/clean` | 实验 | 未接入 | — | — |
@@ -379,7 +389,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `item/reasoning/textDelta` | 默认 | 已接入 | 按 itemId/contentIndex 追加 delta；summary 为空时以 content 展示正文。 | `dispatch` |
 | `item/started` | 默认 | 部分接入 | 接入类型见“Item 与历史兼容”；创建或原位更新活动。userMessage 按 item.id/clientId 关联提交并原位去重；未知实时类型使连接失败。 | `dispatch`、`items` |
 | `mcpServer/event/stream/notification` | 默认 | 未接入 | — | — |
-| `mcpServer/oauthLogin/completed` | 默认 | 未接入 | — | — |
+| `mcpServer/oauthLogin/completed` | 默认 | 已接入 | 按 name/threadId 关联本客户端启动的 loginId；迟到、已取消或本客户端未启动的完成通知解码后不再影响状态；成功后只做轻量状态读。 | `manager/mcp`、`mcp` |
 | `mcpServer/startupStatus/updated` | 默认 | 已接入 | 按 app 或 thread/server 保存 starting/ready/failed/cancelled；threadId/error/failureReason 可省略或 null，仅接受 reauthenticationRequired 原因；不结束 turn。 | `manager/dispatch`、`notifications` |
 | `model/rerouted` | 默认 | 已接入 | 定向轮次的 fromModel/toModel/reason，更新实际模型与提示。 | `notifications` |
 | `model/safetyBuffering/updated` | 默认 | 已接入 | 保留 model/useCases/reasons/showBufferingUi、nullable fasterModel；更新所属会话的安全检查状态。 | `notifications` |
@@ -391,7 +401,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `project/changed` | 默认 | 已接入 | projectId、created/updated/deleted；刷新或移除项目，可先于 RPC 响应。 | `manager/dispatch` |
 | `remoteControl/status/changed` | 默认 | 后端已接入 | 校验 status/serverName/installationId、nullable environmentId，保存连接快照；无 Composer UI。 | `manager/dispatch`、`notifications` |
 | `serverRequest/resolved` | 默认 | 已接入 | 按原类型 requestId 找到所属轮次，再核对 thread/item/kind，释放命令／文件／权限审批或输入 responder 与活动 owner。已知同线程的重复及终态后迟到通知幂等忽略；未知 id 或错配 thread 报错；过期 handle 始终不可回复。 | `manager/dispatch`、`manager/connection`、`requests`、`registry` |
-| `skills/changed` | 默认 | 兼容退订 | 完整方法名退订；schema 定义为 skills/list 失效信号，当前没有该目录或缓存。将来接入技能目录时必须恢复订阅并重新查询。 | `runtime::OPT_OUT_NOTIFICATION_METHODS` |
+| `skills/changed` | 默认 | 已接入 | 作为失效信号使技能缓存过期并重新执行 `skills/list`；不携带可消费载荷，不覆盖较新的本地写入结果，也不清空用户正在编辑的状态。 | `manager/dispatch` |
 | `thread/archived` | 默认 | 已接入 | 按 threadId 移除最近、项目及置顶条目，刷新归档；覆盖迟到快照。 | `manager/dispatch` |
 | `thread/closed` | 默认 | 已接入 | 从当前 generation 的已加载集合移除并发布关闭状态；侧边聊天保留消息，禁用发送。 | `manager/dispatch` |
 | `thread/compacted` | 默认 | 兼容退订 | 按本机 schema 的 Deprecated: Use ContextCompaction item type instead 说明退订；继续通过 contextCompaction item 展示，避免双重活动。 | `runtime::OPT_OUT_NOTIFICATION_METHODS` |

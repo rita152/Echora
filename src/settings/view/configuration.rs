@@ -60,6 +60,9 @@ impl SettingsView {
             self.config_drafts.insert(previous, editor);
             self.config_editor = self.config_drafts.remove(&cwd).unwrap_or_default();
             self.config_menu = None;
+            // Skills are discovered per working directory: switching projects
+            // starts a fresh cache instead of showing another directory's list.
+            self.skills.directory = crate::skills::SkillsDirectory::for_cwd(cwd.clone());
         }
         self.reload_config(cx);
     }

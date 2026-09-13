@@ -17,6 +17,29 @@ pub enum AgentMcpServerStartupState {
     Cancelled,
 }
 
+impl AgentMcpServerStartupState {
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "starting" => Some(Self::Starting),
+            "ready" => Some(Self::Ready),
+            "failed" => Some(Self::Failed),
+            "cancelled" => Some(Self::Cancelled),
+            _ => None,
+        }
+    }
+
+    /// Runtime status implied by a lifecycle notification. The notification is
+    /// what the UI shows while `mcpServerStatus/list` still reports `null`.
+    pub fn connection_status(self) -> super::AgentMcpServerConnectionStatus {
+        match self {
+            Self::Starting => super::AgentMcpServerConnectionStatus::Starting,
+            Self::Ready => super::AgentMcpServerConnectionStatus::Connected,
+            Self::Failed => super::AgentMcpServerConnectionStatus::Failed,
+            Self::Cancelled => super::AgentMcpServerConnectionStatus::Cancelled,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AgentMcpServerStartupFailureReason {
     ReauthenticationRequired,

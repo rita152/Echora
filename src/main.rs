@@ -4,8 +4,10 @@ mod components;
 mod configuration;
 mod conversation;
 mod git_review;
+mod mcp;
 mod media;
 mod settings;
+mod skills;
 mod theme;
 mod typography;
 mod workspace;
@@ -205,6 +207,59 @@ fn schedule_account_screenshot(
             }
         },
     );
+}
+
+/// Waits until the plugins management segments have loaded their backend data,
+/// then saves the frame. A capture must never encode an empty list that only
+/// reflects "not loaded yet".
+#[cfg(feature = "screenshot")]
+fn schedule_manage_screenshot(
+    window: &mut gpui::Window,
+    app: gpui::Entity<ChatApp>,
+    path: String,
+    deadline: Instant,
+    stable_frames_remaining: usize,
+) {
+    window.on_next_frame(move |window, cx| {
+        if app.read(cx).manage_capture_ready(cx) {
+            if stable_frames_remaining > 0 {
+                window.refresh();
+                schedule_manage_screenshot(
+                    window,
+                    app,
+                    path,
+                    deadline,
+                    stable_frames_remaining - 1,
+                );
+                return;
+            }
+            match save_screenshot(window, &path) {
+                Ok(()) => println!("{path}"),
+                Err(error) => {
+                    eprintln!("failed to save screenshot: {error:#}");
+                    std::process::exit(1);
+                }
+            }
+            cx.quit();
+            return;
+        }
+        if Instant::now() >= deadline {
+            // Save what is on screen and report the incomplete wait instead of
+            // leaving an unfinished capture behind.
+            eprintln!("plugins management screenshot deadline reached; saving current frame");
+            match save_screenshot(window, &path) {
+                Ok(()) => println!("{path}"),
+                Err(error) => {
+                    eprintln!("failed to save screenshot: {error:#}");
+                    std::process::exit(1);
+                }
+            }
+            cx.quit();
+            return;
+        }
+        window.refresh();
+        schedule_manage_screenshot(window, app, path, deadline, stable_frames_remaining);
+    });
 }
 
 #[cfg(feature = "screenshot")]
@@ -567,6 +622,30 @@ fn main() {
         arg.strip_prefix("--settings-page=")
             .map(|slug| Box::leak(slug.to_owned().into_boxed_str()) as &'static str)
     });
+    // Capture-only selectors for the plugins page segments and management
+    // states. They render deterministic fixtures for visual verification.
+    let plugins_segment = args.iter().find_map(|arg| {
+        arg.strip_prefix("--plugins-segment=")
+            .map(ToOwned::to_owned)
+    });
+    let mcp_detail = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--mcp-detail=").map(ToOwned::to_owned));
+    let mcp_login_state = args.iter().find_map(|arg| {
+        arg.strip_prefix("--mcp-login-state=")
+            .map(ToOwned::to_owned)
+    });
+    let mcp_reload_state = args.iter().find_map(|arg| {
+        arg.strip_prefix("--mcp-reload-state=")
+            .map(ToOwned::to_owned)
+    });
+    let mcp_hover_row = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--mcp-hover-row=").map(ToOwned::to_owned));
+    let skills_hover_row = args.iter().find_map(|arg| {
+        arg.strip_prefix("--skills-hover-row=")
+            .map(ToOwned::to_owned)
+    });
 
     #[cfg(feature = "screenshot")]
     if components::auto_approval::capture_auto_approval(&args) {
@@ -871,6 +950,15 @@ fn main() {
                         } else if settings_open {
                             app.open_settings(cx);
                         }
+                        app.apply_manage_capture_flags(
+                            plugins_segment.as_deref(),
+                            mcp_detail.as_deref(),
+                            mcp_login_state.as_deref(),
+                            mcp_reload_state.as_deref(),
+                            mcp_hover_row.as_deref(),
+                            skills_hover_row.as_deref(),
+                            cx,
+                        );
                         if let Some(thread_id) = resume_thread.as_deref() {
                             app.resume_thread_for_capture(thread_id.to_owned(), cx);
                         }
@@ -896,7 +984,15 @@ fn main() {
                     });
                     #[cfg(feature = "screenshot")]
                     if let Some(path) = screenshot_path.clone() {
-                        if args.iter().any(|a| a.starts_with("--review-root=")) {
+                        if plugins_segment.is_some() {
+                            schedule_manage_screenshot(
+                                window,
+                                app.clone(),
+                                path,
+                                Instant::now() + Duration::from_secs(45),
+                                RESUMED_THREAD_STABLE_FRAMES,
+                            );
+                        } else if args.iter().any(|a| a.starts_with("--review-root=")) {
                             schedule_review_screenshot(
                                 window,
                                 app.clone(),

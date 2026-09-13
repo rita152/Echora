@@ -36,6 +36,7 @@ mod elicitation;
 mod runtime;
 mod settings;
 mod side_conversation;
+mod skills_mcp;
 mod steer;
 
 #[test]

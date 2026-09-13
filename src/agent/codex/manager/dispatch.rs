@@ -395,9 +395,33 @@ impl ManagerInner {
                 Ok(())
             }
             "mcpServer/startupStatus/updated" => {
+                let status = parse_mcp_server_startup_status_updated(message)?;
                 self.publish_connection_event(AgentConnectionEvent::McpServerStartupStatusUpdated(
-                    parse_mcp_server_startup_status_updated(message)?,
+                    crate::agent::AgentMcpStartupStatusUpdated {
+                        generation: connection.generation,
+                        status,
+                    },
                 ));
+                Ok(())
+            }
+            // Watched skill files changed. This is an invalidation signal only;
+            // the caller re-reads `skills/list` with its own parameters.
+            "skills/changed" => {
+                super::super::skills::parse_changed(message)?;
+                self.publish_connection_event(AgentConnectionEvent::SkillsChanged {
+                    generation: connection.generation,
+                });
+                Ok(())
+            }
+            "mcpServer/oauthLogin/completed" => {
+                let notification = super::super::mcp::parse_oauth_completed(message)?;
+                // A `None` result means the completion is late, superseded, or
+                // was never started by this client: decoded, then inert.
+                if let Some(completion) =
+                    super::mcp::correlate_oauth_completion(connection, &notification)?
+                {
+                    connection.publish_oauth_completion(completion);
+                }
                 Ok(())
             }
             "thread/status/changed" => {

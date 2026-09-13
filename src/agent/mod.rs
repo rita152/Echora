@@ -9,9 +9,11 @@ mod catalog;
 mod codex;
 mod config;
 mod events;
+mod mcp;
 mod message;
 mod requests;
 mod runtime;
+mod skills;
 mod status;
 mod thread;
 
@@ -57,6 +59,14 @@ pub use config::{
     AgentConfigSnapshot, AgentConfigSource, AgentConfigWrite, config_value,
 };
 pub use events::{AgentConnectionEvent, AgentEvent};
+pub use mcp::{
+    AgentMcpAuthStatus, AgentMcpError, AgentMcpErrorKind, AgentMcpOauthClientRegistration,
+    AgentMcpOauthCompletion, AgentMcpOauthCompletionStatus, AgentMcpOauthLogin,
+    AgentMcpOauthLoginRequest, AgentMcpReloadOutcome, AgentMcpReloadRequest, AgentMcpReloadResult,
+    AgentMcpResource, AgentMcpResourceTemplate, AgentMcpServerConnectionStatus, AgentMcpServerInfo,
+    AgentMcpServerPage, AgentMcpServerStatus, AgentMcpServerStatusRequest,
+    AgentMcpStartupStatusUpdated, AgentMcpStatusDetail, AgentMcpTool,
+};
 pub use message::normalize_user_message_for_display;
 pub(crate) use message::user_message_context_files;
 pub use requests::{
@@ -84,6 +94,11 @@ pub use runtime::{
     AgentAuthRecovery, AgentDeprecationNotice, AgentHookOutput, AgentHookPrompt,
     AgentHookPromptFragment, AgentHookRun, AgentHookStatus, AgentLocalClosure, AgentRuntimeEvent,
     AgentRuntimeObservation, AgentRuntimeState, AgentScopedHookPrompt,
+};
+pub use skills::{
+    AgentSkill, AgentSkillDependency, AgentSkillInterface, AgentSkillLoadError, AgentSkillScope,
+    AgentSkillSelector, AgentSkillWriteReceipt, AgentSkillWriteRequest, AgentSkillsEntry,
+    AgentSkillsError, AgentSkillsErrorKind, AgentSkillsLoadRequest, AgentSkillsSnapshot,
 };
 pub use status::{
     AgentConfigWarning, AgentMcpServerStartupFailureReason, AgentMcpServerStartupState,

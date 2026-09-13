@@ -34,7 +34,15 @@ pub enum AgentConnectionEvent {
         message: String,
     },
     ConfigWarning(AgentConfigWarning),
-    McpServerStartupStatusUpdated(AgentMcpServerStartupStatus),
+    McpServerStartupStatusUpdated(super::mcp::AgentMcpStartupStatusUpdated),
+    /// A watched skill file changed. Treated as an invalidation signal, never
+    /// as authoritative data.
+    SkillsChanged {
+        generation: u64,
+    },
+    /// Result of an OAuth login this client started, correlated to the client's
+    /// own login id.
+    McpOauthLoginCompleted(Box<super::mcp::AgentMcpOauthCompletion>),
     ThreadStatusChanged(AgentThreadStatus),
     ThreadSettingsUpdated {
         thread_id: String,

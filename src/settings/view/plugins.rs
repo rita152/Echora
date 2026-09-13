@@ -1,12 +1,20 @@
-//! Plugins settings presentation.
+//! Plugins settings presentation. The plugins and apps segments keep the
+//! reference catalog rendering; the MCP and skills segments are backed by the
+//! coding-agent protocol through `plugins_mcp` and `plugins_skills`.
 
 use gpui::{Context, IntoElement, div, prelude::*, px, svg};
 
+use super::PluginSegment;
 use super::SettingsView;
 use crate::{
     settings::PageSpec,
     theme::{Theme, ThemeMode},
 };
+
+/// Reference catalog sizes for the two segments this client does not read from
+/// a backend (plugins and apps). MCP and skills counts are live values.
+const PLUGIN_CATALOG_COUNT: usize = 14;
+const APP_CATALOG_COUNT: usize = 8;
 
 impl SettingsView {
     pub(super) fn plugins_content(
@@ -129,6 +137,13 @@ impl SettingsView {
                     .child(self.switch_control(true, (page.slug, 1, index), theme, cx)),
             );
         }
+        let body = match self.plugins_segment {
+            PluginSegment::Plugins | PluginSegment::Apps => list.into_any_element(),
+            PluginSegment::Mcp => self.mcp_segment_content(&theme, cx),
+            PluginSegment::Skills => self.skills_segment_content(&theme, cx),
+        };
+        let segment = self.plugins_segment;
+        let counts = self.plugins_segment_counts();
         div()
             .w_full()
             .max_w(px(768.0))
@@ -221,49 +236,26 @@ impl SettingsView {
                             .text_size(px(14.0))
                             .line_height(px(18.0))
                             .text_color(theme.text_tertiary)
-                            .child(
+                            .children((0..4).map(|index| {
+                                let (label, count, target) = counts[index];
+                                let selected = segment == target;
                                 div()
+                                    .id(("plugins-segment", index))
                                     .h(px(28.0))
-                                    .w(px(67.203125))
                                     .pl(px(9.0))
                                     .pr(px(7.0))
                                     .rounded(px(12.5))
-                                    .bg(plugin_hover)
                                     .flex()
                                     .items_center()
-                                    .text_color(theme.text)
-                                    .child("插件 14"),
-                            )
-                            .child(
-                                div()
-                                    .h(px(28.0))
-                                    .w(px(60.796875))
-                                    .pl(px(9.0))
-                                    .pr(px(7.0))
-                                    .flex()
-                                    .items_center()
-                                    .child("应用 8"),
-                            )
-                            .child(
-                                div()
-                                    .h(px(28.0))
-                                    .w(px(63.5625))
-                                    .pl(px(9.0))
-                                    .pr(px(7.0))
-                                    .flex()
-                                    .items_center()
-                                    .child("MCP 4"),
-                            )
-                            .child(
-                                div()
-                                    .h(px(28.0))
-                                    .w(px(60.3125))
-                                    .pl(px(9.0))
-                                    .pr(px(7.0))
-                                    .flex()
-                                    .items_center()
-                                    .child("技能 2"),
-                            ),
+                                    .cursor_pointer()
+                                    .when(selected, |chip| {
+                                        chip.bg(plugin_hover).text_color(theme.text)
+                                    })
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.select_plugins_segment(target, cx)
+                                    }))
+                                    .child(format!("{label} {count}"))
+                            })),
                     )
                     .child(
                         div()
@@ -280,10 +272,31 @@ impl SettingsView {
                             .line_height(px(18.0))
                             .text_color(theme.text_tertiary)
                             .child(svg().path("icons/search.svg").size(px(15.0)))
-                            .child("搜索插件"),
+                            .child(self.plugins_segment_search_label()),
                     ),
             )
-            .child(list)
+            .child(body)
             .into_any_element()
+    }
+
+    /// Segment labels, counts and targets in the reference order. Plugin and
+    /// app counts come from the reference catalog; MCP and skills report what
+    /// the backend actually returned.
+    fn plugins_segment_counts(&self) -> [(&'static str, usize, PluginSegment); 4] {
+        [
+            ("插件", PLUGIN_CATALOG_COUNT, PluginSegment::Plugins),
+            ("应用", APP_CATALOG_COUNT, PluginSegment::Apps),
+            ("MCP", self.mcp.directory.server_count(), PluginSegment::Mcp),
+            ("技能", self.skills.skill_count(), PluginSegment::Skills),
+        ]
+    }
+
+    fn plugins_segment_search_label(&self) -> &'static str {
+        match self.plugins_segment {
+            PluginSegment::Plugins => "搜索插件",
+            PluginSegment::Apps => "搜索应用",
+            PluginSegment::Mcp => "搜索 MCP 服务器",
+            PluginSegment::Skills => "搜索技能",
+        }
     }
 }

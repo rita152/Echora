@@ -81,6 +81,12 @@ pub(super) struct ConnectionState {
     pub(super) remote_control_status: Option<Value>,
     /// Connection-scoped account, login, and quota state for this generation.
     pub(super) account: AgentAccountState,
+    /// Keyed by (thread scope, server name): a login only exists once the
+    /// client has actually started it, and only one may be outstanding per
+    /// server and scope.
+    pub(super) oauth_logins: HashMap<(Option<String>, String), u64>,
+    /// Retired login ids. Late completion notifications for these are inert.
+    pub(super) retired_oauth_logins: HashSet<u64>,
 }
 
 impl ConnectionState {
@@ -166,6 +172,88 @@ pub(super) struct Connection {
 }
 
 impl Connection {
+    /// Registers a login this client is about to start. Returns the id of a
+    /// previously outstanding login for the same server and scope, which the
+    /// caller reports as superseded.
+    pub(super) fn register_oauth_login(
+        &self,
+        scope: (Option<String>, String),
+        login_id: u64,
+    ) -> Result<Option<u64>> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let superseded = state.oauth_logins.insert(scope, login_id);
+        if let Some(superseded) = superseded {
+            state.retired_oauth_logins.insert(superseded);
+        }
+        Ok(superseded)
+    }
+
+    pub(super) fn remove_oauth_login(&self, login_id: u64) -> Option<(Option<String>, String)> {
+        let mut state = self.state.lock().ok()?;
+        let scope = state
+            .oauth_logins
+            .iter()
+            .find(|(_, candidate)| **candidate == login_id)
+            .map(|(scope, _)| scope.clone())?;
+        state.oauth_logins.remove(&scope);
+        state.retired_oauth_logins.insert(login_id);
+        Some(scope)
+    }
+
+    pub(super) fn cancel_oauth_login(&self, login_id: u64) -> Option<(Option<String>, String)> {
+        self.remove_oauth_login(login_id)
+    }
+
+    /// Consumes the outstanding login for a scope. `None` means the completion
+    /// is late, was already superseded, or was never started by this client.
+    pub(super) fn take_oauth_login(&self, scope: &(Option<String>, String)) -> Option<u64> {
+        let mut state = self.state.lock().ok()?;
+        let login_id = state.oauth_logins.remove(scope)?;
+        state.retired_oauth_logins.insert(login_id);
+        Some(login_id)
+    }
+
+    pub(super) fn publish_oauth_completion(
+        &self,
+        completion: crate::agent::AgentMcpOauthCompletion,
+    ) {
+        if let Some(manager) = self.manager.upgrade() {
+            manager.publish_connection_event(
+                crate::agent::AgentConnectionEvent::McpOauthLoginCompleted(Box::new(completion)),
+            );
+        }
+    }
+
+    /// Asks for a response with a caller chosen deadline. On timeout the
+    /// generation is failed so a late answer can never satisfy a newer caller.
+    pub(super) fn request_with_timeout(
+        &self,
+        method: &str,
+        params: Option<Value>,
+        timeout: std::time::Duration,
+    ) -> Result<Value> {
+        let receiver = self.begin_request_with_params(method, params)?;
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            match receiver.try_recv() {
+                Ok(result) => return result.map_err(anyhow::Error::msg),
+                Err(async_channel::TryRecvError::Closed) => {
+                    bail!("`{method}` 连接在返回前关闭")
+                }
+                Err(async_channel::TryRecvError::Empty) => {}
+            }
+            if std::time::Instant::now() >= deadline {
+                let message = format!("`{method}` 等待响应超时，结果未确认；连接已关闭，请重试");
+                self.fail_protocol(message.clone());
+                bail!(message);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
     pub(super) fn send_message(&self, message: Value) -> Result<()> {
         let mut writer = self.writer.clone();
         super::super::send(&mut writer, message)
@@ -210,6 +298,16 @@ impl Connection {
         method: &str,
         params: Value,
     ) -> Result<Receiver<Result<Value, String>>> {
+        self.begin_request_with_params(method, Some(params))
+    }
+
+    /// Some methods take no params at all. Sending `params: null` is legal but
+    /// not what the reference client does, so the key is omitted.
+    pub(super) fn begin_request_with_params(
+        &self,
+        method: &str,
+        params: Option<Value>,
+    ) -> Result<Receiver<Result<Value, String>>> {
         if self.failed.load(Ordering::Acquire) {
             bail!("Codex app-server connection generation 已失败");
         }
@@ -235,11 +333,11 @@ impl Connection {
             },
         );
         drop(pending);
-        if let Err(error) = self.send_message(json!({
-            "method": method,
-            "id": request_id,
-            "params": params
-        })) {
+        let message = match params {
+            Some(params) => json!({"method": method, "id": request_id, "params": params}),
+            None => json!({"method": method, "id": request_id}),
+        };
+        if let Err(error) = self.send_message(message) {
             if let Ok(mut pending) = self.pending_rpcs.lock() {
                 pending.remove(&request_id);
             }
@@ -271,7 +369,11 @@ impl Connection {
         };
         if matches!(
             pending.method.as_str(),
-            "turn/steer" | "thread/settings/update" | "config/batchWrite"
+            "turn/steer"
+                | "thread/settings/update"
+                | "config/batchWrite"
+                | "skills/config/write"
+                | "config/mcpServer/reload"
         ) {
             self.completed_control_rpcs
                 .lock()
@@ -671,6 +773,29 @@ impl Connection {
     }
 
     pub(super) fn fail_all(&self, message: &str) -> Vec<InvalidatedMcpElicitation> {
+        // Pending OAuth logins belong to this generation only: report them once
+        // so no view keeps waiting on a connection that can never answer.
+        let interrupted = self
+            .state
+            .lock()
+            .map(|mut state| {
+                let logins = std::mem::take(&mut state.oauth_logins);
+                state.retired_oauth_logins.clear();
+                logins
+            })
+            .unwrap_or_default();
+        for ((thread_id, server_name), login_id) in interrupted {
+            self.publish_oauth_completion(crate::agent::AgentMcpOauthCompletion {
+                login_id,
+                generation: self.generation,
+                server_name,
+                thread_id,
+                status: crate::agent::AgentMcpOauthCompletionStatus::Interrupted(
+                    message.to_owned(),
+                ),
+                extra: Default::default(),
+            });
+        }
         let pending = self
             .pending_rpcs
             .lock()

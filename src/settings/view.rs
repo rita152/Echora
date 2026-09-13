@@ -18,6 +18,8 @@ mod navigation;
 mod personalization;
 mod pets;
 mod plugins;
+mod plugins_mcp;
+mod plugins_skills;
 mod profile;
 mod usage;
 mod worktrees;
@@ -37,6 +39,16 @@ pub struct CloseSettings;
 pub struct RefreshAccount;
 pub struct ChangeTheme(pub ThemeMode);
 pub struct ConfigSaveFinished;
+
+/// Segment of the plugins settings page. Plugins and apps keep the reference
+/// catalog rendering; MCP servers and skills are backed by the backend.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum PluginSegment {
+    Plugins,
+    Apps,
+    Mcp,
+    Skills,
+}
 
 pub struct SettingsView {
     mode: ThemeMode,
@@ -68,6 +80,14 @@ pub struct SettingsView {
     config_input: gpui::Entity<crate::components::prompt_input::PromptInput>,
     /// Connection-scoped account snapshot rendered by the usage page.
     account: crate::components::account::AccountView,
+    plugins_segment: PluginSegment,
+    mcp: plugins_mcp::McpPanel,
+    skills: plugins_skills::SkillsPanel,
+    /// Last connection generation reported for skills and MCP.
+    skills_generation: u64,
+    mcp_generation: u64,
+    /// Active conversation thread, used for thread scoped MCP runtime status.
+    mcp_thread_id: Option<String>,
 }
 
 impl EventEmitter<CloseSettings> for SettingsView {}
@@ -130,6 +150,37 @@ impl SettingsView {
             },
         )
         .detach();
+        // Skills invalidation, MCP startup status and OAuth completions are
+        // connection scoped. Each is stamped with its generation so a retired
+        // connection can never update this surface.
+        let connection_events = backend.subscribe_connection_events();
+        cx.spawn(async move |this, cx| {
+            while let Ok(event) = connection_events.recv().await {
+                let keep_going = this
+                    .update(cx, |this, cx| match &event {
+                        crate::agent::AgentConnectionEvent::SkillsChanged { generation } => {
+                            this.apply_skills_changed(*generation, cx);
+                            true
+                        }
+                        crate::agent::AgentConnectionEvent::McpServerStartupStatusUpdated(
+                            updated,
+                        ) => {
+                            this.apply_mcp_startup(updated, cx);
+                            true
+                        }
+                        crate::agent::AgentConnectionEvent::McpOauthLoginCompleted(completion) => {
+                            this.apply_mcp_login_completion(completion, cx);
+                            true
+                        }
+                        _ => true,
+                    })
+                    .is_ok();
+                if !keep_going {
+                    return;
+                }
+            }
+        })
+        .detach();
         Self {
             config_choices,
             config_field_focus,
@@ -152,6 +203,12 @@ impl SettingsView {
             config_custom_key: None,
             config_input,
             account: Default::default(),
+            plugins_segment: PluginSegment::Plugins,
+            mcp: plugins_mcp::McpPanel::default(),
+            skills: plugins_skills::SkillsPanel::default(),
+            skills_generation: 0,
+            mcp_generation: 0,
+            mcp_thread_id: None,
             mode,
             selected: "general-settings",
             nav_scroll: ScrollHandle::new(),
@@ -168,6 +225,68 @@ impl SettingsView {
             self.set_config_context(self.config_cwd.clone(), cx);
         }
         self.content_scroll.set_offset(point(px(0.0), px(0.0)));
+        self.ensure_plugins_segment_loaded(cx);
+        cx.notify();
+    }
+
+    /// Passes the active conversation so thread scoped MCP status can be shown
+    /// without pretending the application scope is the same thing.
+    pub fn set_manage_context(&mut self, thread_id: Option<String>, cx: &mut Context<Self>) {
+        if self.mcp_thread_id == thread_id {
+            return;
+        }
+        self.mcp_thread_id = thread_id;
+        self.mcp.directory.startup.clear();
+        cx.notify();
+    }
+
+    /// Loads whatever the selected plugins segment needs. Called when the page
+    /// becomes visible so the segments never show stale data silently.
+    pub fn ensure_plugins_segment_loaded(&mut self, cx: &mut Context<Self>) {
+        match self.plugins_segment {
+            PluginSegment::Mcp => {
+                if self.mcp.directory.servers.is_empty() && !self.mcp.directory.loading {
+                    self.refresh_mcp_servers(crate::agent::AgentMcpStatusDetail::Full, cx);
+                }
+            }
+            PluginSegment::Skills => {
+                if self.skills.directory.snapshot.is_none() && !self.skills.directory.loading {
+                    self.refresh_skills(false, cx);
+                }
+            }
+            PluginSegment::Plugins | PluginSegment::Apps => {}
+        }
+    }
+
+    /// True once the visible plugins segment has finished its first backend
+    /// read (or reported an error it can display).
+    #[cfg(feature = "screenshot")]
+    pub fn plugins_capture_ready(&self) -> bool {
+        match self.plugins_segment {
+            PluginSegment::Mcp => {
+                !self.mcp.directory.loading
+                    && (!self.mcp.directory.servers.is_empty()
+                        || self.mcp.directory.error.is_some())
+            }
+            PluginSegment::Skills => {
+                !self.skills.directory.loading
+                    && (self.skills.directory.snapshot.is_some()
+                        || self.skills.directory.error.is_some())
+            }
+            PluginSegment::Plugins | PluginSegment::Apps => true,
+        }
+    }
+
+    pub(super) fn select_plugins_segment(
+        &mut self,
+        segment: PluginSegment,
+        cx: &mut Context<Self>,
+    ) {
+        if self.plugins_segment == segment {
+            return;
+        }
+        self.plugins_segment = segment;
+        self.ensure_plugins_segment_loaded(cx);
         cx.notify();
     }
 
@@ -246,7 +365,9 @@ impl Render for SettingsView {
                 } else if event.keystroke.key == "escape" {
                     this.config_menu = None;
                     this.config_custom_key = None;
-                    cx.notify();
+                    if !this.dismiss_manage_overlays(cx) {
+                        cx.notify();
+                    }
                     cx.stop_propagation();
                 } else {
                     cx.propagate();
@@ -256,6 +377,7 @@ impl Render for SettingsView {
             .bg(theme.surface)
             .font_family(UI_FONT_FAMILY)
             .text_color(theme.markdown_text)
+            .relative()
             .flex()
             .child(
                 div()
@@ -408,6 +530,11 @@ impl Render for SettingsView {
                     .pl(px(40.0))
                     .pr(px(55.0))
                     .child(self.content(selected, theme, viewport_width, cx)),
+            )
+            .children(
+                (selected.slug == "plugins-settings")
+                    .then(|| self.mcp_login_overlay(&theme, cx))
+                    .flatten(),
             )
     }
 }

@@ -609,8 +609,17 @@ impl ChatApp {
             .get(&self.active_conversation)
             .map(|host| host.cwd.clone())
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-        self.settings
-            .update(cx, |settings, cx| settings.set_config_context(cwd, cx));
+        // MCP runtime status is thread scoped; the management surface needs the
+        // conversation the user is actually in.
+        let thread_id = self
+            .conversation_hosts
+            .get(&self.active_conversation)
+            .and_then(|host| host.composer.read(cx).thread_id().map(str::to_owned));
+        self.settings.update(cx, |settings, cx| {
+            settings.set_config_context(cwd, cx);
+            settings.set_manage_context(thread_id, cx);
+            settings.ensure_plugins_segment_loaded(cx);
+        });
         self.showing_settings = true;
         cx.notify();
     }
@@ -619,6 +628,48 @@ impl ChatApp {
         self.settings
             .update(cx, |settings, cx| settings.select(slug, cx));
         self.open_settings(cx);
+    }
+
+    /// Capture-only fixture selection for the plugins page. Every argument is
+    /// an explicit CLI flag; nothing here runs for an ordinary launch.
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_manage_capture_flags(
+        &mut self,
+        segment: Option<&str>,
+        detail: Option<&str>,
+        login_state: Option<&str>,
+        reload_state: Option<&str>,
+        mcp_hover_row: Option<&str>,
+        skills_hover_row: Option<&str>,
+        cx: &mut Context<Self>,
+    ) {
+        if segment.is_none()
+            && detail.is_none()
+            && login_state.is_none()
+            && reload_state.is_none()
+            && mcp_hover_row.is_none()
+            && skills_hover_row.is_none()
+        {
+            return;
+        }
+        self.settings.update(cx, |settings, cx| {
+            settings.apply_manage_capture_fixtures(
+                segment,
+                detail,
+                login_state,
+                reload_state,
+                mcp_hover_row,
+                skills_hover_row,
+                cx,
+            );
+        });
+    }
+
+    /// Capture gate: the plugins segments have finished their first backend
+    /// read, so a captured frame cannot show an unloaded list.
+    #[cfg(feature = "screenshot")]
+    pub fn manage_capture_ready(&self, cx: &gpui::App) -> bool {
+        self.showing_settings && self.settings.read(cx).plugins_capture_ready()
     }
 }
 
