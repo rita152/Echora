@@ -658,8 +658,7 @@ impl ChatApp {
                 detail,
                 login_state,
                 reload_state,
-                mcp_hover_row,
-                skills_hover_row,
+                (mcp_hover_row, skills_hover_row),
                 cx,
             );
         });

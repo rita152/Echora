@@ -326,10 +326,10 @@ impl SettingsView {
         detail: Option<&str>,
         login_state: Option<&str>,
         reload_state: Option<&str>,
-        mcp_hover_row: Option<&str>,
-        skills_hover_row: Option<&str>,
+        hover_rows: (Option<&str>, Option<&str>),
         cx: &mut Context<Self>,
     ) {
+        let (mcp_hover_row, skills_hover_row) = hover_rows;
         if let Some(segment) = segment {
             let target = match segment {
                 "plugins" => PluginSegment::Plugins,
