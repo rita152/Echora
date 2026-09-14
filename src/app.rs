@@ -44,6 +44,7 @@ use crate::{
     },
     components::{
         account::{AccountDialog, AccountLoadStatus, AccountView},
+        chat_search::{ChatSearchView, OpenFolder, SearchFiles, SelectChat, StartNewChat},
         composer::{
             ComposerView, ConversationThreadCreated, ModelCatalogLoadFinished,
             RequestFullAccessConfirmation,
@@ -55,8 +56,8 @@ use crate::{
         review_panel::ReviewPanel,
         side_chat::SideChatPanel,
         sidebar::{
-            AccountAction, AccountIntent, NewConversation, OpenProjectCreation, OpenSettings,
-            SelectThread, SidebarView,
+            AccountAction, AccountIntent, NewConversation, OpenChatSearch, OpenProjectCreation,
+            OpenSettings, SelectThread, SidebarView,
         },
         terminal::TerminalPanel,
     },
@@ -79,6 +80,7 @@ pub struct ChatApp {
     startup_sidebar_resolved: bool,
     startup_minimum_duration_elapsed: bool,
     sidebar: Entity<SidebarView>,
+    chat_search: Entity<ChatSearchView>,
     home: Entity<HomeView>,
     settings: Entity<SettingsView>,
     showing_settings: bool,
@@ -176,6 +178,30 @@ impl ChatApp {
         #[cfg(not(test))]
         let workspace_receiver = workspace_store.subscribe();
         let settings = cx.new(|cx| SettingsView::new(mode, agent_backend.clone(), cx));
+        let chat_search = cx.new(|cx| ChatSearchView::new(mode, workspace_store.clone(), cx));
+        cx.subscribe(&sidebar, |this, _, _: &OpenChatSearch, cx| {
+            this.chat_search.update(cx, |search, cx| search.open(cx));
+        })
+        .detach();
+        cx.subscribe(&chat_search, |this, _, event: &SelectChat, cx| {
+            this.select_conversation(event.0.clone(), cx);
+        })
+        .detach();
+        cx.subscribe(&chat_search, |this, _, _: &StartNewChat, cx| {
+            let (project_id, cwd) = this
+                .sidebar
+                .update(cx, |sidebar, _| sidebar.new_conversation_target());
+            this.start_draft(project_id, cwd, cx);
+        })
+        .detach();
+        cx.subscribe(&chat_search, |this, _, _: &OpenFolder, cx| {
+            this.open_project_creation(cx);
+        })
+        .detach();
+        cx.subscribe(&chat_search, |this, _, _: &SearchFiles, cx| {
+            this.open_files(cx);
+        })
+        .detach();
         let home = cx.new(|cx| HomeView::new_with_backend(mode, agent_backend.clone(), cx));
         let initial_composer = home.read(cx).composer_entity();
         let initial_cwd = std::env::current_dir().unwrap_or_default();
@@ -283,6 +309,9 @@ impl ChatApp {
             this.sidebar.update(cx, |sidebar, cx| {
                 sidebar.set_mode(event.0, cx);
             });
+            this.chat_search.update(cx, |search, cx| {
+                search.set_mode(event.0, cx);
+            });
             this.home.update(cx, |home, cx| {
                 home.set_mode(event.0, cx);
             });
@@ -389,6 +418,7 @@ impl ChatApp {
             startup_sidebar_resolved: cfg!(test),
             startup_minimum_duration_elapsed: cfg!(test),
             sidebar,
+            chat_search,
             home,
             settings,
             showing_settings: false,

@@ -13,6 +13,8 @@ use crate::theme::{Theme, ThemeMode};
 
 const PROMPT_FONT_SIZE: f32 = 14.0;
 const PROMPT_LINE_HEIGHT: f32 = 20.0;
+/// `[cmdk-input]` computed line-height in the reference command menu.
+const CHAT_SEARCH_LINE_HEIGHT: f32 = 21.0;
 const PLACEHOLDER_OPACITY: f32 = 0.5;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -20,6 +22,9 @@ pub enum PromptInputKind {
     #[default]
     Composer,
     InlineOther,
+    /// The command menu's `[cmdk-input]` field: 6px/10px padding inside a 33px
+    /// row with the 14px/21px body type measured from the desktop app.
+    ChatSearch,
 }
 
 gpui::actions!(
@@ -103,6 +108,18 @@ impl PromptInput {
 
     pub fn set_accessible_name(&mut self, name: impl Into<SharedString>) {
         self.accessible_name = Some(name.into());
+    }
+
+    /// Borderless single-line field used by the chat search dialog.
+    pub fn chat_search(
+        mode: ThemeMode,
+        placeholder: impl Into<SharedString>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut input = Self::new(mode, cx);
+        input.kind = PromptInputKind::ChatSearch;
+        input.placeholder = placeholder.into();
+        input
     }
 
     pub fn set_mode(&mut self, mode: ThemeMode, cx: &mut Context<Self>) {
@@ -826,14 +843,27 @@ impl PromptInput {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let inline = self.kind == PromptInputKind::InlineOther;
-        let element_id = if inline {
-            "user-input-native-other"
-        } else {
-            "prompt-input"
+        let chat_search = self.kind == PromptInputKind::ChatSearch;
+        let element_id = match self.kind {
+            PromptInputKind::InlineOther => "user-input-native-other",
+            PromptInputKind::ChatSearch => "chat-search-input",
+            PromptInputKind::Composer => "prompt-input",
         };
-        let height = if inline { 28.0 } else { 44.0 };
-        let horizontal_padding = if inline { 0.0 } else { 4.0 };
-        let top_padding = if inline { 4.0 } else { 1.0 };
+        let height = match self.kind {
+            PromptInputKind::InlineOther => 28.0,
+            PromptInputKind::ChatSearch => 33.0,
+            PromptInputKind::Composer => 44.0,
+        };
+        let horizontal_padding = match self.kind {
+            PromptInputKind::InlineOther => 0.0,
+            PromptInputKind::ChatSearch => 10.0,
+            PromptInputKind::Composer => 4.0,
+        };
+        let top_padding = match self.kind {
+            PromptInputKind::InlineOther => 4.0,
+            PromptInputKind::ChatSearch => 6.0,
+            PromptInputKind::Composer => 1.0,
+        };
         div()
             .id(element_id)
             .w_full()
@@ -887,7 +917,11 @@ impl PromptInput {
                             } else {
                                 crate::theme::UI_BODY_FONT_WEIGHT
                             },
-                            line_height: PROMPT_LINE_HEIGHT,
+                            line_height: if chat_search {
+                                CHAT_SEARCH_LINE_HEIGHT
+                            } else {
+                                PROMPT_LINE_HEIGHT
+                            },
                         })
                     }
                 },
@@ -898,7 +932,10 @@ impl PromptInput {
 impl Render for PromptInput {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::for_mode(self.mode);
-        let placeholder = if self.kind == PromptInputKind::InlineOther {
+        let placeholder = if self.kind == PromptInputKind::ChatSearch {
+            // CDP: ::placeholder resolves to the input colour at 50% alpha.
+            theme.chat_search_text.alpha(0.5)
+        } else if self.kind == PromptInputKind::InlineOther {
             // The request-user-input control uses the card's captured
             // `text-secondary` token directly. The main Composer placeholder
             // instead applies a second 50% opacity layer to text-tertiary.
@@ -911,7 +948,12 @@ impl Render for PromptInput {
                 .text_tertiary
                 .alpha(theme.text_tertiary.a * PLACEHOLDER_OPACITY)
         };
-        self.element(theme.text.into(), placeholder.into(), cx)
+        let text = if self.kind == PromptInputKind::ChatSearch {
+            theme.chat_search_text
+        } else {
+            theme.text
+        };
+        self.element(text.into(), placeholder.into(), cx)
     }
 }
 
