@@ -315,7 +315,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/resume` | 默认 | 已接入 | threadId、excludeTurns=true；当前 generation 未加载时执行一次，返回 id 必须匹配；失败不回退为新建。 | `manager/turn` |
 | `thread/revert` | 默认 | 未接入 | — | — |
 | `thread/rollback` | 默认 | 未接入 | — | — |
-| `thread/search` | 实验 | 已接入 | 非空 searchTerm、archived、分页和排序；返回 thread 与 snippet。 | `manager/workspace` |
+| `thread/search` | 实验 | 已接入 | 非空 searchTerm、archived、分页和排序；返回 thread 与 snippet。历史会话搜索弹窗用它检索会话；空查询改用 `threadSection/list` 的置顶分区与 `thread/list`（recency 倒序）拼出前九行。参考实现的弹窗还会合并 ChatGPT 云端会话，app-server 无对应数据。 | `manager/workspace` |
 | `thread/searchOccurrences` | 实验 | 未接入 | — | — |
 | `thread/section/move` | 默认 | 已接入 | threadId、nullable sectionId/beforeThreadId；用于置顶和取消置顶。 | `manager/workspace` |
 | `thread/settings/update` | 实验 | 已接入 | 主／临时线程按线程队列更新 approvalPolicy、approvalsReviewer、permissions 或 sandboxPolicy；绑定 generation／操作，等待 RPC 成功和匹配的有效权限通知，影响后续轮次。 | `manager/settings`、`permissions` |

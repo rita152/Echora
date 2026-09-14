@@ -708,6 +708,9 @@ impl Render for ChatApp {
             .when(self.project_creation.open, |shell| {
                 shell.child(self.project_creation_overlay(theme, cx))
             })
+            .when(self.chat_search.read(cx).is_open(), |shell| {
+                shell.child(self.chat_search.clone())
+            })
             .when_some(self.image_preview.path.clone(), |shell, path| {
                 let viewport = window.viewport_size();
                 let zoom = self.image_preview.zoom;

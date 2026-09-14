@@ -84,6 +84,7 @@ Cargo 包和可执行文件目前仍名为 `gpui-chat-clone`，现有构建与�
 | 操作 | 入口 / 快捷键 |
 |---|---|
 | 打开会话 | 侧栏项目、最近、归档或搜索 |
+| 搜索聊天 | 侧边栏搜索按钮 → 历史会话搜索弹窗（`Enter` 打开、`⌘1`–`⌘9` 选择、`Esc` 关闭） |
 | 切换终端 | 右侧面板 → 终端；`Ctrl+反引号` |
 | 打开文件 | 右侧面板 → 文件；`Cmd+P` |
 | 打开 Git 审查 | 右侧面板 → 审查；`Ctrl+Shift+G` |
@@ -106,6 +107,7 @@ Cargo 包和可执行文件目前仍名为 `gpui-chat-clone`，现有构建与�
 - **文件编辑：** 停止输入约 400 ms 后自动保存，撤销 / 重做也写回磁盘。保留 UTF-8 BOM、CRLF 和权限，保存前检查外部修改。文本上限 2 MiB，单行上限 64 KiB；仅访问本机文件。
 - **Git 审查：** 范围包括上一轮、未提交、未暂存、已暂存、已提交和分支，分支使用 merge-base。支持统一 / 拆分差异、文字差异、上下文展开和逐行评论。写入前校验 worktree 与 index；还原新增文件时，在 worktree Git 目录的 `gpui-discarded/` 下保留备份。
 - **面板生命周期：** 收起面板或切换会话保留状态，shell 与临时侧边聊天不跨应用退出恢复。标签可拖动排序，有消息的侧边聊天关闭前需要确认。连接失效后仍可查看和复制消息。
+- **聊天搜索：** 弹窗先列出置顶聊天，再按最近顺序补足，最多九行；输入后经 app-server `thread/search` 检索。参考实现还会通过自身的检索服务合并 ChatGPT 云端会话，app-server 不提供该数据，因此命中较多时结果集合与排序可能不同。`Search files` 打开既有文件面板，而不是参考实现弹窗内的文件搜索（对应 `fuzzyFileSearch` 尚未接入）。
 
 </details>
 
@@ -197,6 +199,7 @@ Computer Use 先枚举应用，连接 **GPUI Capture**，读取可访问性树�
 | `--file-panel-root=/absolute/workspace --open-file=/absolute/file` | 真实文件编辑、保存与冲突检查；使用专用测试文件。 |
 | `--review-root=/absolute/repository --review-filter=src/example.rs` | 真实 Git 审查；截图等待 diff 就绪。 |
 | `--settings-page=appearance` | 直接打开设置页，页面列表见 `src/settings/mod.rs`。 |
+| `--chat-search-state=initial\|selected\|hover\|query\|no-match` | 以固定状态打开历史会话搜索弹窗用于截图；配合 `--chat-search-query=` 与 `--chat-search-index=`。 |
 | `--image-generation-ui-state=running/completed/failed/load-error` | 固定图像生成状态；完成态另传 `--image-generation-path=/absolute/image.png`。 |
 | `--auto-approval-ui-state=inProgress/approved/denied/timedOut/aborted/strict/warning` | 自动复核，支持 `--auto-approval-expanded`、`--auto-approval-details-expanded` 与 `--reduce-motion`；长说明和动态采样使用 `--auto-approval-rationale-file`、`--auto-approval-motion-output`。 |
 | `--runtime-ui-state=completed/running/turnless/auth-started/auth-completed/interrupted/disconnected/history/long/deprecation` | 确定性 Hook、hookPrompt、认证与应用提示，不执行 Hook 或模型请求；`GPUI_RUNTIME_AUDIT_OUTPUT` 输出原始状态与本地收束原因。 |

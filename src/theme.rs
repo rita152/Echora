@@ -113,6 +113,18 @@ pub struct Theme {
     pub profile_menu_shadow: Rgba,
     pub settings_panel: Rgba,
     pub settings_switch_off: Rgba,
+    /// Command menu / chat search overlay, panel, and row tokens measured from
+    /// the live ChatGPT desktop app (`.codex-dialog-overlay`, `[cmdk-root]`).
+    pub chat_search_overlay: Rgba,
+    pub chat_search_surface: Rgba,
+    pub chat_search_border: Rgba,
+    /// The command menu keeps its own primary foreground. In dark mode it is
+    /// pure white even though the surrounding native shell uses a softened
+    /// #dfdfdf body foreground.
+    pub chat_search_text: Rgba,
+    pub chat_search_row_hover: Rgba,
+    pub chat_search_description: Rgba,
+    pub chat_search_hint_surface: Rgba,
     pub settings_search: Rgba,
     pub settings_accent: Rgba,
     pub settings_description: Rgba,
@@ -221,6 +233,15 @@ impl Theme {
                 // pane background so the two views cannot drift by theme.
                 settings_panel: rgba(0xffffffff),
                 settings_switch_off: rgba(0x1a1c1f1a),
+                // CDP: overlay electron:bg-[#00000022]; [cmdk-root] #ffffff with
+                // a transparent 1px border; ghost-hover 0.055; description 0.494.
+                chat_search_overlay: rgba(0x00000022),
+                chat_search_surface: rgba(0xffffffff),
+                chat_search_border: rgba(0x00000000),
+                chat_search_text: rgba(0x1a1c1fff),
+                chat_search_row_hover: rgba(0x1a1c1f0e),
+                chat_search_description: rgba(0x1a1c1f7e),
+                chat_search_hint_surface: rgba(0x1a1c1f1a),
                 // ChatGPT settings search surface at the reference capture
                 // resolves to #f2f2f2 on the light shell.
                 settings_search: rgba(0xf2f2f2ff),
@@ -302,6 +323,15 @@ impl Theme {
                 // slightly raised #232323 fill in ChatGPT's dark shell.
                 settings_panel: rgba(0x232323ff),
                 settings_switch_off: rgba(0xffffff1a),
+                // CDP dark: [cmdk-root] #2d2d2d, border rgba(255,255,255,0.082),
+                // ghost-hover rgba(255,255,255,0.08), description 0.498.
+                chat_search_overlay: rgba(0x00000022),
+                chat_search_surface: rgba(0x2d2d2dff),
+                chat_search_border: rgba(0xffffff15),
+                chat_search_text: rgba(0xffffffff),
+                chat_search_row_hover: rgba(0xffffff14),
+                chat_search_description: rgba(0xffffff7f),
+                chat_search_hint_surface: rgba(0xffffff1a),
                 // The sidebar search is a little brighter than the page;
                 // the management search has its own #2d2d2d fill.
                 settings_search: rgba(0x2e2e2eff),

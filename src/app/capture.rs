@@ -161,6 +161,28 @@ impl ChatApp {
         )
     }
 
+    /// Opens the chat search dialog in a deterministic state for capture.
+    #[cfg(feature = "screenshot")]
+    pub fn capture_chat_search(
+        &mut self,
+        state: &str,
+        query: Option<&str>,
+        index: Option<usize>,
+        cx: &mut Context<Self>,
+    ) {
+        self.chat_search.update(cx, |search, cx| {
+            search.open(cx);
+            search.apply_capture_state(state, query, index, cx);
+        });
+        cx.notify();
+    }
+
+    /// Ready once the workspace data the dialog reads has settled.
+    #[cfg(feature = "screenshot")]
+    pub fn chat_search_capture_ready(&self, cx: &gpui::App) -> Result<bool, String> {
+        self.chat_search.read(cx).capture_ready()
+    }
+
     /// Opens an account dialog for capture. Log out only becomes reachable
     /// after the confirmation the capture shows.
     pub fn open_account_dialog_for_capture(

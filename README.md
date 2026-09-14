@@ -83,6 +83,7 @@ The Cargo package and executable are still named `gpui-chat-clone`, so the exist
 | Action | Entry point / shortcut |
 |---|---|
 | Open a conversation | Sidebar projects, recent items, archive, or search |
+| Search chats | Sidebar search button → the chat search dialog (`Enter` opens, `⌘1`–`⌘9` select, `Esc` closes) |
 | Toggle the terminal | Right panel → Terminal; `Ctrl+Backtick` |
 | Open files | Right panel → Files; `Cmd+P` |
 | Open Git review | Right panel → Review; `Ctrl+Shift+G` |
@@ -108,6 +109,7 @@ The Cargo package and executable are still named `gpui-chat-clone`, so the exist
 - **File editing:** autosave runs about 400 ms after typing stops; undo and redo also write to disk. UTF-8 BOM, CRLF, and permissions are retained, and external edits are checked before saving. Text files are limited to 2 MiB and individual lines to 64 KiB; files are local only.
 - **Git review:** scopes include the last turn, uncommitted, unstaged, staged, committed, and branch changes; branch review uses merge-base. Unified/split views, word diffs, context expansion, and line comments are available. Writes validate the worktree and index first. Restoring a newly added file preserves a backup under the worktree Git directory's `gpui-discarded/`.
 - **Panel lifetime:** collapsing panels or switching conversations preserves their state. Shell sessions and temporary side chats do not survive app exit. Tabs can be reordered by dragging; closing a side chat with messages requires confirmation. Disconnected side chats remain readable and copyable.
+- **Chat search:** the dialog lists pinned chats first and then recency order, capped at nine rows, and searches through app-server `thread/search` once a query is typed. The reference app also merges ChatGPT cloud conversations from its own search service, which app-server does not expose, so matching and ordering can differ once a query has many hits. `Search files` opens the existing file panel rather than the reference's in-dialog file search, which needs the unconnected `fuzzyFileSearch` methods.
 
 </details>
 
@@ -199,6 +201,7 @@ Full launch options are in [src/main.rs](src/main.rs).
 | `--file-panel-root=/absolute/workspace --open-file=/absolute/file` | Real file editing, saving, and conflict checks; use disposable files. |
 | `--review-root=/absolute/repository --review-filter=src/example.rs` | Real Git review; screenshots wait for the diff to load. |
 | `--settings-page=appearance` | Open a settings page; slugs are in `src/settings/mod.rs`. |
+| `--chat-search-state=initial\|selected\|hover\|query\|no-match` | Open the chat search dialog in a fixed state for capture; combine with `--chat-search-query=` and `--chat-search-index=`. |
 | `--image-generation-ui-state=running/completed/failed/load-error` | Fixed image-generation states; completed also uses `--image-generation-path=/absolute/image.png`. |
 | `--auto-approval-ui-state=inProgress/approved/denied/timedOut/aborted/strict/warning` | Automatic review; add `--auto-approval-expanded`, `--auto-approval-details-expanded`, or `--reduce-motion`. Long text and motion traces use `--auto-approval-rationale-file` and `--auto-approval-motion-output`. |
 | `--runtime-ui-state=completed/running/turnless/auth-started/auth-completed/interrupted/disconnected/history/long/deprecation` | Deterministic Hook, hookPrompt, authentication, and app-notice states, without hooks or model requests. Set `GPUI_RUNTIME_AUDIT_OUTPUT` for raw state and local completion reasons. |

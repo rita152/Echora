@@ -2,6 +2,7 @@ pub mod account;
 pub mod approval;
 pub(crate) mod auto_approval;
 pub mod callback;
+pub mod chat_search;
 pub mod composer;
 pub mod file_change;
 pub mod file_editor;

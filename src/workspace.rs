@@ -25,6 +25,15 @@ use loaders::{
 use preferences::{PreferenceStore, default_preferences_path};
 pub use preferences::{ReviewPreferences, UiPreferences};
 
+/// One row of the chat search dialog: the thread plus the match snippet the
+/// backend returned for the current query. The reference collapses the snippet
+/// when the query matches the title, so the view treats it as optional data.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChatSearchEntry {
+    pub thread: ThreadSummary,
+    pub snippet: Option<String>,
+}
+
 // `Pinned` is the app-server's canonical built-in section name. The sidebar
 // localizes the heading independently; sending the localized label would
 // create a second, incompatible server section.
@@ -129,6 +138,36 @@ impl WorkspaceSnapshot {
         self.pending
             .iter()
             .any(|operation| operation.thread_id() == Some(thread_id))
+    }
+
+    /// Rows for the chat search dialog. An empty query mirrors the reference's
+    /// command menu: pinned chats first, then recency order, deduplicated and
+    /// capped so the ⌘1…⌘9 hints stay stable. A non-empty query uses the
+    /// app-server's own `thread/search` results, which already carry the match
+    /// snippet and its ordering.
+    pub fn chat_search_entries(&self, limit: usize) -> Vec<ChatSearchEntry> {
+        if self.search_query.trim().is_empty() {
+            let mut seen = HashSet::new();
+            return self
+                .pinned_threads
+                .iter()
+                .chain(self.recent_threads.iter())
+                .filter(|thread| seen.insert(thread.thread_id.clone()))
+                .take(limit)
+                .map(|thread| ChatSearchEntry {
+                    thread: thread.clone(),
+                    snippet: None,
+                })
+                .collect();
+        }
+        self.search_results
+            .iter()
+            .take(limit)
+            .map(|result| ChatSearchEntry {
+                thread: result.thread.clone(),
+                snippet: (!result.snippet.trim().is_empty()).then(|| result.snippet.clone()),
+            })
+            .collect()
     }
 
     pub fn is_pending_project(&self, project_id: &str) -> bool {

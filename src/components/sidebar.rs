@@ -20,7 +20,7 @@ use crate::{
     components::{
         account::AccountView,
         icons::{chevron, icon},
-        prompt_input::{PromptChanged, PromptInput, PromptSubmitted},
+        prompt_input::{PromptInput, PromptSubmitted},
     },
     theme::{Theme, ThemeMode},
     workspace::{WorkspaceSnapshot, WorkspaceStore, project_id_for_thread},
@@ -28,6 +28,8 @@ use crate::{
 
 pub struct OpenSettings;
 pub struct OpenProjectCreation;
+/// The sidebar search button asks the host to open the chat search dialog.
+pub struct OpenChatSearch;
 
 /// Actions the account surfaces ask the application to perform. Requests that
 /// need a manager RPC are never issued from a view.
@@ -62,8 +64,20 @@ pub struct NewConversation {
 impl gpui::EventEmitter<OpenSettings> for SidebarView {}
 impl gpui::EventEmitter<AccountAction> for SidebarView {}
 impl gpui::EventEmitter<OpenProjectCreation> for SidebarView {}
+impl gpui::EventEmitter<OpenChatSearch> for SidebarView {}
 impl gpui::EventEmitter<SelectThread> for SidebarView {}
 impl gpui::EventEmitter<NewConversation> for SidebarView {}
+
+/// Project and working directory for a new conversation. Selecting a project in
+/// the sidebar drives both; without one the process working directory is used.
+fn new_conversation_target(project: Option<&Project>) -> (Option<ProjectId>, PathBuf) {
+    let project_id = project.map(|project| project.project_id.clone());
+    let cwd = project
+        .and_then(|project| project.roots.first().cloned())
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_default();
+    (project_id, cwd)
+}
 
 // These values come from the live ChatGPT desktop app at 127.0.0.1:9222.
 const SIDEBAR_WIDTH: f32 = 240.0;
@@ -72,10 +86,6 @@ const ROW_HEIGHT: f32 = 30.0;
 const ROW_RADIUS: f32 = 12.5;
 const ROW_HORIZONTAL_PADDING: f32 = 8.0;
 const SECTION_HEADER_HEIGHT: f32 = 25.0;
-const SEARCH_PANEL_WIDTH: f32 = 520.0;
-const SEARCH_PANEL_HEIGHT: f32 = 487.0;
-const SEARCH_INPUT_HEIGHT: f32 = 38.0;
-const SEARCH_RESULT_HEIGHT: f32 = 31.0;
 const MAX_VISIBLE_PROJECT_THREADS: usize = 5;
 const MAX_VISIBLE_RECENTS: usize = 10;
 const SIDEBAR_BODY_FONT_WEIGHT: gpui::FontWeight = crate::theme::UI_BODY_FONT_WEIGHT;
@@ -353,10 +363,7 @@ pub struct SidebarView {
     marquee_animation_ends_at: Option<Instant>,
     marquee_animation_running: bool,
     show_all_projects: BTreeSet<ProjectId>,
-    search_input: Entity<PromptInput>,
     rename_input: Entity<PromptInput>,
-    search_open: bool,
-    search_focus_pending: bool,
     rename_target: Option<RenameTarget>,
     rename_focus_pending: bool,
     project_menu_id: Option<ProjectId>,
@@ -380,18 +387,7 @@ impl SidebarView {
         cx: &mut Context<Self>,
     ) -> Self {
         let snapshot = store.snapshot();
-        let search_input = cx.new(|cx| PromptInput::inline_other(mode, "搜索聊天", false, cx));
         let rename_input = cx.new(|cx| PromptInput::inline_other(mode, "名称", false, cx));
-        cx.subscribe(&search_input, |this, input, _: &PromptChanged, cx| {
-            this.store.search(input.read(cx).text().to_owned());
-        })
-        .detach();
-        cx.subscribe(&search_input, |this, _, _: &PromptSubmitted, cx| {
-            if let Some(result) = this.snapshot.search_results.first() {
-                this.select_thread(result.thread.thread_id.clone(), cx);
-            }
-        })
-        .detach();
         cx.subscribe(&rename_input, |this, _, event: &PromptSubmitted, cx| {
             this.commit_rename(event.0.clone(), cx);
         })
@@ -423,10 +419,7 @@ impl SidebarView {
             marquee_animation_ends_at: None,
             marquee_animation_running: false,
             show_all_projects: BTreeSet::new(),
-            search_input,
             rename_input,
-            search_open: false,
-            search_focus_pending: false,
             rename_target: None,
             rename_focus_pending: false,
             project_menu_id: None,
@@ -445,8 +438,6 @@ impl SidebarView {
 
     pub fn set_mode(&mut self, mode: ThemeMode, cx: &mut Context<Self>) {
         self.mode = mode;
-        self.search_input
-            .update(cx, |input, cx| input.set_mode(mode, cx));
         self.rename_input
             .update(cx, |input, cx| input.set_mode(mode, cx));
         cx.notify();
@@ -551,7 +542,6 @@ impl SidebarView {
     /// drives the matching conversation load directly from `ChatApp`.
     pub fn select_thread_for_capture(&mut self, thread_id: ThreadId, cx: &mut Context<Self>) {
         self.selected_thread_id = Some(thread_id);
-        self.search_open = false;
         self.activity_open = false;
         self.archived_open = false;
         self.project_menu_id = None;
@@ -573,7 +563,6 @@ impl SidebarView {
 
     fn select_thread(&mut self, thread_id: ThreadId, cx: &mut Context<Self>) {
         self.selected_thread_id = Some(thread_id.clone());
-        self.search_open = false;
         self.activity_open = false;
         self.archived_open = false;
         self.project_menu_id = None;
@@ -583,16 +572,24 @@ impl SidebarView {
     }
 
     fn new_conversation(&mut self, project: Option<&Project>, cx: &mut Context<Self>) {
-        let project_id = project.map(|project| project.project_id.clone());
-        let cwd = project
-            .and_then(|project| project.roots.first().cloned())
-            .or_else(|| std::env::current_dir().ok())
-            .unwrap_or_default();
+        let (project_id, cwd) = new_conversation_target(project);
         self.selected_project_id = project_id.clone();
         self.selected_thread_id = None;
-        self.search_open = false;
         cx.emit(NewConversation { project_id, cwd });
         cx.notify();
+    }
+
+    /// Project and working directory the next conversation should use, derived
+    /// from the sidebar's current selection. The chat search dialog asks for the
+    /// same target instead of guessing from its own list.
+    pub fn new_conversation_target(&self) -> (Option<ProjectId>, PathBuf) {
+        let project = self.selected_project_id.as_deref().and_then(|project_id| {
+            self.snapshot
+                .projects
+                .iter()
+                .find(|project| project.project_id == project_id)
+        });
+        new_conversation_target(project)
     }
 
     fn start_rename(&mut self, target: RenameTarget, current: String, cx: &mut Context<Self>) {
@@ -2129,92 +2126,6 @@ impl SidebarView {
             )
     }
 
-    fn search_panel(&self, theme: Theme, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
-        let mut results = div()
-            .id("search-results")
-            .min_h(px(0.0))
-            .flex_1()
-            .overflow_y_scroll()
-            .px(px(5.0))
-            .pb(px(5.0));
-        if let Some(error) = self.snapshot.error.clone() {
-            results = results.child(self.retryable_error_row(
-                "search-error",
-                error,
-                Some(self.snapshot.search_query.clone()),
-                theme,
-                cx,
-            ));
-        } else if self.snapshot.loading.search {
-            results = results.child(self.status_row("search-loading", "正在搜索…", theme));
-        } else if self.snapshot.search_query.trim().is_empty() {
-            results = results.child(self.status_row("search-hint", "输入关键词搜索聊天", theme));
-        } else if self.snapshot.search_results.is_empty() {
-            results = results.child(self.status_row("search-empty", "未找到聊天", theme));
-        } else {
-            for (index, result) in self.snapshot.search_results.iter().enumerate() {
-                let thread_id = result.thread.thread_id.clone();
-                results = results.child(
-                    div()
-                        .id(format!("search-result-{thread_id}"))
-                        .h(px(SEARCH_RESULT_HEIGHT))
-                        .px(px(8.0))
-                        .rounded(px(ROW_RADIUS))
-                        .flex()
-                        .items_center()
-                        .gap(px(8.0))
-                        .cursor_pointer()
-                        .text_size(px(14.0))
-                        .text_color(theme.sidebar_text)
-                        .when(index == 0, |row| row.bg(theme.sidebar_hover))
-                        .hover(move |style| style.bg(theme.sidebar_hover))
-                        .child(icon("search", theme.sidebar_icon_muted.into()).size(px(16.0)))
-                        .child(
-                            div()
-                                .min_w(px(0.0))
-                                .flex_1()
-                                .overflow_hidden()
-                                .whitespace_nowrap()
-                                .child(result.thread.title.clone()),
-                        )
-                        .child(
-                            div()
-                                .max_w(px(210.0))
-                                .overflow_hidden()
-                                .whitespace_nowrap()
-                                .text_size(px(13.0))
-                                .text_color(theme.sidebar_text_muted)
-                                .child(result.snippet.clone()),
-                        )
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.select_thread(thread_id.clone(), cx);
-                        })),
-                );
-            }
-        }
-        self.menu_shell("search-panel", SEARCH_PANEL_WIDTH, theme)
-            .h(px(SEARCH_PANEL_HEIGHT))
-            .flex()
-            .flex_col()
-            .child(
-                div()
-                    .h(px(SEARCH_INPUT_HEIGHT))
-                    .px(px(10.0))
-                    .flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .child(icon("search", theme.sidebar_icon_muted.into()).size(px(16.0)))
-                    .child(
-                        div()
-                            .min_w(px(0.0))
-                            .flex_1()
-                            .child(self.search_input.clone()),
-                    ),
-            )
-            .child(Self::menu_separator(theme))
-            .child(results)
-    }
-
     fn header(&self, theme: Theme, cx: &mut Context<Self>) -> Div {
         let can_search = self
             .snapshot
@@ -2258,8 +2169,7 @@ impl SidebarView {
             .when(can_search, |button| {
                 button.on_click(cx.listener(|this, _, _, cx| {
                     this.close_transient_menus(cx);
-                    this.search_open = true;
-                    this.search_focus_pending = true;
+                    cx.emit(OpenChatSearch);
                     cx.notify();
                 }))
             });
@@ -2607,9 +2517,6 @@ impl Render for SidebarView {
         if std::mem::take(&mut self.scroll_to_bottom) {
             self.scroll.scroll_to_bottom();
         }
-        if std::mem::take(&mut self.search_focus_pending) {
-            self.search_input.focus_handle(cx).focus(window, cx);
-        }
         if std::mem::take(&mut self.rename_focus_pending) {
             self.rename_input.focus_handle(cx).focus(window, cx);
         }
@@ -2690,15 +2597,6 @@ impl Render for SidebarView {
                     .left(px(9.0))
                     .bottom(px(ACCOUNT_MENU_BOTTOM))
                     .child(self.account_menu(theme, cx)),
-            ));
-        }
-        if self.search_open {
-            sidebar = sidebar.child(deferred(
-                div()
-                    .absolute()
-                    .left(px(self.width + 32.0))
-                    .top(px(64.0))
-                    .child(self.search_panel(theme, cx)),
             ));
         }
         sidebar

@@ -21,6 +21,10 @@ use std::time::{Duration, Instant};
 
 #[cfg(feature = "screenshot")]
 const RESUMED_THREAD_STABLE_FRAMES: usize = 3;
+/// The chat search dialog reads real backend data, so its capture waits for a
+/// few painted frames after the list settles.
+#[cfg(feature = "screenshot")]
+const CHAT_SEARCH_STABLE_FRAMES: usize = 4;
 
 use anyhow::Result;
 use gpui::{
@@ -299,6 +303,118 @@ fn schedule_review_screenshot(
 }
 
 #[cfg(feature = "screenshot")]
+#[allow(clippy::too_many_arguments)]
+fn schedule_chat_search_screenshot(
+    window: &mut gpui::Window,
+    app: gpui::Entity<ChatApp>,
+    path: String,
+    state: String,
+    query: Option<String>,
+    index: Option<usize>,
+    deadline: Instant,
+    phase: usize,
+    stable_frames_remaining: usize,
+) {
+    window.on_next_frame(move |window, cx| {
+        if phase == 0 {
+            match app.read(cx).chat_search_capture_ready(cx) {
+                Err(error) => {
+                    eprintln!("chat search capture failed: {error}");
+                    std::process::exit(1);
+                }
+                Ok(true) => {
+                    let state = state.clone();
+                    let query = query.clone();
+                    app.update(cx, |app, cx| {
+                        app.capture_chat_search(&state, query.as_deref(), index, cx)
+                    });
+                    window.refresh();
+                    schedule_chat_search_screenshot(
+                        window, app, path, state, query, index, deadline, 1, 0,
+                    );
+                    return;
+                }
+                Ok(false) if Instant::now() < deadline => {
+                    schedule_chat_search_screenshot(
+                        window,
+                        app,
+                        path,
+                        state,
+                        query,
+                        index,
+                        deadline,
+                        0,
+                        stable_frames_remaining,
+                    );
+                    return;
+                }
+                Ok(false) => {
+                    eprintln!("timed out waiting for chat search data");
+                    std::process::exit(1);
+                }
+            }
+        }
+        if phase == 1 {
+            // The query issued by the capture state is an asynchronous read;
+            // wait for the dialog to leave its loading state before counting
+            // stable frames.
+            if app.read(cx).chat_search_capture_ready(cx).unwrap_or(false) {
+                schedule_chat_search_screenshot(
+                    window,
+                    app,
+                    path,
+                    state,
+                    query,
+                    index,
+                    deadline,
+                    2,
+                    CHAT_SEARCH_STABLE_FRAMES,
+                );
+            } else if Instant::now() < deadline {
+                schedule_chat_search_screenshot(
+                    window,
+                    app,
+                    path,
+                    state,
+                    query,
+                    index,
+                    deadline,
+                    1,
+                    stable_frames_remaining,
+                );
+            } else {
+                eprintln!("timed out waiting for chat search results");
+                std::process::exit(1);
+            }
+            return;
+        }
+        if stable_frames_remaining > 0 {
+            window.refresh();
+            schedule_chat_search_screenshot(
+                window,
+                app,
+                path,
+                state,
+                query,
+                index,
+                deadline,
+                2,
+                stable_frames_remaining - 1,
+            );
+            return;
+        }
+        match save_screenshot(window, &path) {
+            Ok(()) => println!("{path}"),
+            Err(error) => {
+                eprintln!("failed to save screenshot: {error:#}");
+                std::process::exit(1);
+            }
+        }
+        cx.quit();
+    });
+}
+
+#[cfg(feature = "screenshot")]
 fn schedule_resumed_thread_screenshot(
     window: &mut gpui::Window,
     app: gpui::Entity<ChatApp>,
@@ -432,6 +548,20 @@ fn main() {
             .parse::<f32>()
             .ok()
     });
+    let chat_search_state = args.iter().find_map(|arg| {
+        arg.strip_prefix("--chat-search-state=")
+            .map(ToOwned::to_owned)
+    });
+    let chat_search_query = args.iter().find_map(|arg| {
+        arg.strip_prefix("--chat-search-query=")
+            .map(ToOwned::to_owned)
+    });
+    let chat_search_index = args.iter().find_map(|arg| {
+        arg.strip_prefix("--chat-search-index=")
+            .and_then(|value| value.parse::<usize>().ok())
+    });
+    #[cfg(not(feature = "screenshot"))]
+    let _ = (chat_search_state, chat_search_query, chat_search_index);
     #[cfg(not(feature = "screenshot"))]
     let _ = (screenshot_frames, resume_scroll_from_bottom);
     let submit_prompt = args
@@ -1020,6 +1150,18 @@ fn main() {
                                 path,
                                 Instant::now() + Duration::from_secs(45),
                                 3,
+                            );
+                        } else if let Some(state) = chat_search_state.clone() {
+                            schedule_chat_search_screenshot(
+                                window,
+                                app.clone(),
+                                path,
+                                state,
+                                chat_search_query.clone(),
+                                chat_search_index,
+                                Instant::now() + Duration::from_secs(60),
+                                0,
+                                CHAT_SEARCH_STABLE_FRAMES,
                             );
                         } else if let Some(thread_id) = resume_thread.clone() {
                             schedule_resumed_thread_screenshot(
