@@ -172,7 +172,7 @@ Composer 在运行中有草稿时显示“追加输入”，无草稿时显示�
 
 ## 运行时观察与能力协商
 
-初始化保持 `experimentalApi=true`、`requestAttestation=false`，发送精确的 `optOutNotificationMethods` 五项：`thread/goal/updated`、`thread/goal/cleared`、`thread/queue/changed`、`turn/moderationMetadata`、`thread/compacted`。`skills/changed` 与 `app/list/updated` 不在退订名单中：设置页分别把它们当作技能目录与应用目录的失效信号。默认 schema 与 experimental schema 均包含这些通知方法；逐项理由见总表。退订只作用于通知，不能屏蔽请求、响应或错误；未实现的服务端请求仍按原 id 回复 `-32601`，随后进入现有连接失败处理。不会退订 item/started 或 item/completed，也不会忽略未知方法。
+初始化保持 `experimentalApi=true`、`requestAttestation=false`，发送精确的 `optOutNotificationMethods` 五项：`thread/goal/updated`、`thread/goal/cleared`、`thread/queue/changed`、`turn/moderationMetadata`、`thread/compacted`。`skills/changed` 与 `app/list/updated` 不在退订名单中：设置页分别把它们当作技能目录与应用目录的失效信号。默认 schema 与 experimental schema 均包含这些通知方法；逐项理由见总表。退订只作用于通知，不能屏蔽请求、响应或错误；未实现的服务端请求按原 id 回复 `-32601` 并保持 generation 与共享连接；只有 EOF、崩溃、写失败或致命协议错误才进入连接失败处理。不会退订 item/started 或 item/completed，也不会忽略未知方法。
 
 Hook、认证恢复和 hookPrompt 快照通过带 generation 的观察通道交付。Hook 以 threadId/optional turnId/run.id 区分身份；缺省与 null 共同使用独立的无轮次键，同一 run.id 可以跨轮次存在，不把无 turnId 的记录迁移到前台或已知轮次。认证恢复以 threadId/turnId/provider 区分身份。两者可以早于 turn/start 响应，也可以晚于 turn/completed；不会建立或结束 turn。重复事件原位更新；服务端完成、终态 status 和较新完成时间不会被迟到 started 回退。turn 完成／中断／失败只收束该 turn 的本地等待；无 turnId 的 Hook 继续独立存在，在线程关闭或连接失效时本地收束。原始 status、message、output、时间和是否实际收到 completed 始终保留。
 
