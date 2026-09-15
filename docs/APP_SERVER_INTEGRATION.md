@@ -10,15 +10,23 @@ codex app-server generate-json-schema --out artifacts/app-server-schema/default
 codex app-server generate-json-schema --experimental --out artifacts/app-server-schema/experimental
 ```
 
+参考客户端的方法封装面可用只读扫描核对，不启动参考应用、不触碰运行中的实例：
+
+```bash
+node scripts/scan_reference_rpc_methods.mjs /Applications/ChatGPT.app/Contents/Resources/app.asar artifacts/app-server-reference-methods-20260914
+```
+
+当前扫描：参考 bundle 内嵌 248 个方法名中的 233 个，未出现的 15 个均为客户端请求，明细见 `artifacts/app-server-reference-methods-20260914/reference-method-scan.json`。方法名出现只代表参考客户端包含对应协议封装，不等于该产品流程已启用；未出现也不排除运行时动态拼接方法名。
+
 共 **248** 个方法：155 个客户端请求、11 个服务端请求、1 个客户端通知、81 个服务端通知。表中“默认”表示方法出现在默认 schema，“实验”表示仅出现在 experimental schema；字段以 experimental schema 为准。运行时启用 `experimentalApi=true`。
 
 | 状态 | 数量 | 判定 |
 |---|---|---|
-| 已接入 | 102 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
+| 已接入 | 108 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
 | 后端已接入 | 4 | 已实现读取或校验，尚无对应可见 UI 调用方或展示 |
-| 部分接入 | 4 | 只支持部分类型、有效变体或限定生命周期窗口 |
+| 部分接入 | 5 | 只支持部分类型、有效变体或限定生命周期窗口 |
 | 兼容退订 | 6 | initialize 按完整方法名退订；不代表对应产品能力已接入；保留明确的兼容窗口 |
-| 未接入 | 132 | 客户端不发送；服务端请求按原 id 回复 `-32601` 并终止当前连接，服务端通知直接报错并终止连接 |
+| 未接入 | 125 | 客户端不发送；服务端请求按原 id 回复 `-32601` 并保持 generation 与共享连接；仅 EOF、崩溃、写失败或致命协议错误终止连接；服务端通知仍按严格协议校验处理 |
 
 未接入行的“—”沿用上述规则。`tool/requestUserInput` 是兼容别名，不计入本版本 schema 的 248 项。
 
@@ -223,10 +231,10 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `fs/unwatch` | 默认 | 未接入 | — | — |
 | `fs/watch` | 默认 | 未接入 | — | — |
 | `fs/writeFile` | 默认 | 未接入 | — | — |
-| `fuzzyFileSearch` | 默认 | 未接入 | — | — |
-| `fuzzyFileSearch/sessionStart` | 实验 | 未接入 | — | — |
-| `fuzzyFileSearch/sessionStop` | 实验 | 未接入 | — | — |
-| `fuzzyFileSearch/sessionUpdate` | 实验 | 未接入 | — | — |
+| `fuzzyFileSearch` | 默认 | 已接入 | 搜索弹窗文件模式的回退路径：服务端不支持会话时改为一次性请求，cancellationToken 固定为 gpui-fuzzy-file-search。 | `manager` |
+| `fuzzyFileSearch/sessionStart` | 实验 | 已接入 | 搜索弹窗进入文件模式时为当前会话 cwd 建一个会话；失败按 session not found 回退到一次性请求。 | `manager` |
+| `fuzzyFileSearch/sessionStop` | 实验 | 已接入 | 关闭弹窗、切换模式或切换会话时结束会话；会话 id 保留有上限的退休标记，迟到通知保持惰性。 | `manager` |
+| `fuzzyFileSearch/sessionUpdate` | 实验 | 已接入 | 每次输入变化更新查询；结果经 sessionUpdated 通知返回，按 cycle 丢弃过期响应。 | `manager` |
 | `hooks/list` | 默认 | 未接入 | — | — |
 | `initialize` | 默认 | 已接入 | 每个连接 generation 一次；发送 clientInfo、experimentalApi=true、requestAttestation=false；按完整方法名统一退订五项通知，列表与兼容窗口见运行时能力协商。 | `manager` |
 | `marketplace/add` | 默认 | 已接入 | source（必填）与可选 refName/sparsePaths；来源文本只来自用户在“添加”面板的输入；成功/失败/超时/结果未知四态分离，结果未知不自动重试。 | `manager/plugins`、`plugins_catalog` |
@@ -354,7 +362,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `item/commandExecution/requestApproval` | 默认 | 已接入 | kind 缺省为 command，支持 writeStdin；保留 approvalId、startedAtMs、nullable environmentId/cwd/command/reason、网络 host/protocol 与 additionalPermissions。availableDecisions 缺省／null 使用历史决策及服务端建议；显式空列表显示错误。按有序决策及完整策略载荷校验 accept、acceptForSession、decline、cancel、execpolicy 和网络 allow/deny，拒绝未提供的决策；cancel 不改写为 decline。 | `approvals`、`requests`、`registry` |
 | `item/fileChange/requestApproval` | 默认 | 已接入 | 校验 threadId/turnId/itemId/startedAtMs，保留 nullable reason/grantRoot。原始 item changes 到达前仅允许拒绝；支持 accept、acceptForSession、decline、cancel，原 id 回传并等待 resolved。文件行打开对应原始补丁；grantRoot 是 schema 标注的不稳定提示，不由客户端自行扩大写入权限。 | `approvals`、`requests`、`registry`、`dispatch` |
 | `item/permissions/requestApproval` | 默认 | 已接入 | 校验 thread/turn/item、cwd、startedAtMs、nullable environmentId/reason；保留 read/write、entries、glob 深度、path/glob/special path 与 nullable network。允许只返回请求子集及 turn/session scope，拒绝返回空权限。 | `requests`、`permissions`、`registry` |
-| `item/tool/call` | 默认 | 未接入 | — | — |
+| `item/tool/call` | 默认 | 部分接入 | 通过 namespace + tool 注册表路由；内置工作区依赖与自动化工具在当前运行时诚实返回 success=false，未知工具同样返回协议合法失败，不伪造成功。 | `client_tools`、`server_requests`、`manager` |
 | `item/tool/requestUserInput` | 默认 | 已接入 | 保留 question id/header/question/options/isOther/isSecret、isBlocking、nullable autoResolutionMs；返回 question id → 字符串数组的 answers，Debug 隐去答案；兼容 tool/requestUserInput 别名。 | `requests`、`registry` |
 | `mcpServer/elicitation/request` | 默认 | 已接入 | 只支持标准 MCP `mode=form` 与 `mode=url`；请求由 connection generation + 原始 request id 拥有，不绑定 turn，缺省／null／活动／已完成 turn 与 side conversation 都可展示与回复；`openai/form`、`openaiForm`、`openai/userVerification` 按协议错误回 `-32602` 并终止连接。 | `elicitation`、`manager/dispatch`、`manager/connection`、`conversation/elicitation`、`mcp_elicitation` |
 
@@ -374,8 +382,8 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `externalAgentConfig/import/completed` | 默认 | 已接入 | 按 importId 与本次导入关联并收束进度；成功后重读 readHistories 与插件目录；importId 不匹配的通知保持惰性。 | `manager/dispatch`、`imports` |
 | `externalAgentConfig/import/progress` | 默认 | 已接入 | 与完成通知共用同一结构，只更新同 importId 的运行中导入计数（成功/失败项数），不改变尚未收到的完成状态。 | `manager/dispatch`、`imports` |
 | `fs/changed` | 默认 | 未接入 | — | — |
-| `fuzzyFileSearch/sessionCompleted` | 默认 | 未接入 | — | — |
-| `fuzzyFileSearch/sessionUpdated` | 默认 | 未接入 | — | — |
+| `fuzzyFileSearch/sessionCompleted` | 默认 | 已接入 | 标记当前查询结果结束。 | `manager` |
+| `fuzzyFileSearch/sessionUpdated` | 默认 | 已接入 | 按 sessionId 路由到拥有该会话的弹窗；未知会话报协议错误，已退休的会话忽略。 | `manager` |
 | `guardianWarning` | 默认 | 已接入 | 线程级 message，允许无活动轮次；同一当前轮次去重，通用消息保留原文，反复拒绝提示显示状态分隔行。schema 无 turnId/reviewId，不推定归属或终态。 | `auto_approval`、`manager/dispatch` |
 | `hook/completed` | 默认 | 部分接入 | 同一 run.id 原位收敛，保留 running/completed/failed/blocked/stopped 原始状态与实际收到 completed 的标记，不由方法名推断成功。匹配已结束轮次且存在回复操作栏时显示钩子图标和运行详情浮层；无 turnId 或没有对应回复操作栏的展示路径未完成。 | `agent/runtime/state`、`home/runtime` |
 | `hook/started` | 默认 | 部分接入 | 按 generation/threadId/run.id 和实际提供的 optional/nullable turnId 建模，保留完整运行身份、来源、事件、执行模式、状态、输出及时间。支持无活动 turn；不抢占 pending turn/start。运行中的独立提示在 ChatGPT 参考中不可见；无 turnId 记录目前只有运行时状态。 | `runtime`、`manager/dispatch` |
