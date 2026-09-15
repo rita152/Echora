@@ -5,6 +5,13 @@ use std::sync::{Arc, atomic::Ordering};
 use anyhow::{Context as _, Result, anyhow, bail};
 use serde_json::{Value, json};
 
+use super::super::{
+    client_tools::{TOOL_CALL_METHOD, parse_dynamic_tool_call_request},
+    server_requests::{
+        ControlledServerRequestReply, controlled_reply_message, invalid_params_reply,
+        reply_to_controlled_server_request, reply_to_dynamic_tool_call,
+    },
+};
 use super::{
     super::{
         TURN_SCOPED_SERVER_METHODS, ensure_server_method_is_defined,
@@ -14,7 +21,9 @@ use super::{
         validate_resume_goal_cleared,
     },
     ManagerInner,
-    connection::{Connection, PendingThreadLifecycle, ThreadLifecycleKind, TurnKey},
+    connection::{
+        Connection, PendingThreadLifecycle, ServerRequestResponder, ThreadLifecycleKind, TurnKey,
+    },
     protocol::{
         optional_nullable_param_string, required_nullable_param_string, required_param_string,
     },
@@ -49,18 +58,37 @@ impl ManagerInner {
         method: &str,
         message: &Value,
     ) -> Result<()> {
-        if !is_integrated_server_request_method(method) {
-            connection.send_message(json!({
-                "id": message.get("id").cloned().unwrap_or(Value::Null),
-                "error": {
-                    "code": -32601,
-                    "message": "This client does not implement this server-initiated request"
-                }
-            }))?;
-            return Err(super::super::methods::undefined_server_method_error(
-                method, message,
-            ));
+        if is_integrated_server_request_method(method) {
+            return self.handle_interactive_server_request(connection, method, message);
         }
+        if method == TOOL_CALL_METHOD {
+            return self.handle_client_tool_call_request(connection, message);
+        }
+        // Everything else is answered under its original id: the legacy approval
+        // protocols, methods this client deliberately does not integrate, and any
+        // method outside the schema this client was built against. The connection
+        // and every active turn keep running; the old guardrail of failing the
+        // generation to make an uncovered method visible now costs shared pending
+        // RPCs and live turns, so visibility comes from the diagnostic trail.
+        let reply = match reply_to_controlled_server_request(method, message, &self.client_tools) {
+            Ok(reply) => reply,
+            Err(_error) => return self.answer_invalid_params(connection, method, message),
+        };
+        // A duplicate id would answer two requests under one wire id; that stays
+        // the same protocol error it is for every other server request.
+        connection.record_controlled_server_request(&reply.diagnostic.request_id)?;
+        self.write_controlled_reply(connection, reply)
+    }
+
+    /// Server requests with a real interactive responder: v2 approvals, user
+    /// input, permissions, and MCP elicitation. Their validation and fatal-error
+    /// semantics are unchanged.
+    fn handle_interactive_server_request(
+        &self,
+        connection: &Arc<Connection>,
+        method: &str,
+        message: &Value,
+    ) -> Result<()> {
         // MCP elicitation is a standalone server-to-client request: it is owned
         // by the connection generation, not by a turn, and must stay answerable
         // while no turn is active.
@@ -85,11 +113,80 @@ impl ManagerInner {
             thread_id: thread_id.to_owned(),
             turn_id: turn_id.to_owned(),
         };
-        connection.record_server_request_owner(request_id, key)?;
+        connection.record_server_request_owner(
+            request_id,
+            key,
+            ServerRequestResponder::Interactive,
+        )?;
         if let Some(outcome) = turn.ingest(message)? {
             connection.finish_turn(&turn, Ok(outcome));
         }
         Ok(())
+    }
+
+    /// `item/tool/call` is turn-scoped like every other turn request and follows
+    /// the same thread/turn routing and pending `turn/start` rules, but it is
+    /// answered immediately under its original id: this client shows no tool card,
+    /// and the model needs a result to continue its turn. The ownership record is
+    /// released by the matching `serverRequest/resolved`; duplicates and late
+    /// resolutions stay inert.
+    fn handle_client_tool_call_request(
+        &self,
+        connection: &Arc<Connection>,
+        message: &Value,
+    ) -> Result<()> {
+        let call = match parse_dynamic_tool_call_request(message) {
+            Ok(call) => call,
+            Err(_error) => {
+                return self.answer_invalid_params(connection, TOOL_CALL_METHOD, message);
+            }
+        };
+        connection.bind_starting_turn(&call.thread_id, &call.turn_id)?;
+        connection.record_server_request_owner(
+            call.request_id.clone(),
+            TurnKey {
+                thread_id: call.thread_id.clone(),
+                turn_id: call.turn_id.clone(),
+            },
+            ServerRequestResponder::ControlledReply,
+        )?;
+        let reply = reply_to_dynamic_tool_call(&call, &self.client_tools, message);
+        self.write_controlled_reply(connection, reply)
+    }
+
+    /// Writes one controlled reply under the request's original id, keeping the
+    /// string/number distinction, and records its diagnostic.
+    fn write_controlled_reply(
+        &self,
+        connection: &Arc<Connection>,
+        reply: ControlledServerRequestReply,
+    ) -> Result<()> {
+        connection.send_message(controlled_reply_message(&reply))?;
+        connection.record_server_request_diagnostic(reply.diagnostic);
+        Ok(())
+    }
+
+    /// `-32602` for a controlled request whose payload this client could not
+    /// decode. The connection and the active turn stay alive: for an
+    /// auto-answered method a malformed payload is a request-level error, not a
+    /// fatal protocol error.
+    fn answer_invalid_params(
+        &self,
+        connection: &Arc<Connection>,
+        method: &str,
+        message: &Value,
+    ) -> Result<()> {
+        let request_id = request_id_from_value(
+            message
+                .get("id")
+                .context("server request 缺少 JSON-RPC id")?,
+        )?;
+        // The id is remembered even though the payload failed validation: the
+        // server may still resolve this request, and a resolution must stay inert
+        // instead of failing the generation.
+        connection.record_controlled_server_request(&request_id)?;
+        let reply = invalid_params_reply(method, message, request_id);
+        self.write_controlled_reply(connection, reply)
     }
 
     fn handle_mcp_elicitation_request(
@@ -319,12 +416,22 @@ impl ManagerInner {
                     });
                     return Ok(());
                 }
+                if connection.knows_controlled_server_request(&request_id)? {
+                    // This generation answered the request itself under its
+                    // original id; there is no responder left to release.
+                    return Ok(());
+                }
                 let Some(owner) =
                     connection.resolve_server_request_owner(&request_id, notification_thread)?
                 else {
                     return Ok(());
                 };
-                let turn = connection.turn_for_key(&owner)?;
+                if owner.responder == ServerRequestResponder::ControlledReply {
+                    // The controlled reply was written when the request arrived;
+                    // resolution only releases the ownership record.
+                    return Ok(());
+                }
+                let turn = connection.turn_for_key(&owner.key)?;
                 let mut dispatch = turn
                     .dispatch
                     .lock()

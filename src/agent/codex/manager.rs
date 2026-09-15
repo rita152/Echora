@@ -34,6 +34,8 @@ use connection::{Connection, ConnectionState};
 use events::ConnectionEventHub;
 use transport::{AppServerSpawner, RealAppServerSpawner, SharedJsonWriter};
 
+use super::client_tools::ClientToolRegistry;
+
 #[derive(Default)]
 struct ManagerState {
     current: Option<Arc<Connection>>,
@@ -46,6 +48,8 @@ struct ManagerState {
 
 struct ManagerInner {
     spawner: Arc<dyn AppServerSpawner>,
+    /// Client tools this application can actually run for `item/tool/call`.
+    client_tools: ClientToolRegistry,
     state: Mutex<ManagerState>,
     connection_ready: Condvar,
     connection_events: Mutex<ConnectionEventHub>,
@@ -355,9 +359,17 @@ impl CodexAppServerManager {
     }
 
     fn with_spawner(spawner: Arc<dyn AppServerSpawner>) -> Self {
+        Self::with_client_tools(spawner, ClientToolRegistry::builtin())
+    }
+
+    fn with_client_tools(
+        spawner: Arc<dyn AppServerSpawner>,
+        client_tools: ClientToolRegistry,
+    ) -> Self {
         Self {
             inner: Arc::new(ManagerInner {
                 spawner,
+                client_tools,
                 state: Mutex::new(ManagerState::default()),
                 connection_ready: Condvar::new(),
                 connection_events: Mutex::new(ConnectionEventHub::default()),
@@ -411,6 +423,18 @@ impl CodexAppServerManager {
             AgentCapability::McpServerReload,
             AgentCapability::McpOauthLogin,
         ])
+    }
+}
+
+#[cfg(test)]
+impl ManagerInner {
+    /// The controlled replies the live generation wrote, oldest first.
+    pub(super) fn server_request_diagnostics(
+        &self,
+    ) -> Vec<super::server_requests::ServerRequestDiagnostic> {
+        self.current_connection()
+            .map(|connection| connection.server_request_diagnostics())
+            .unwrap_or_default()
     }
 }
 

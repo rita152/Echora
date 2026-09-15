@@ -14,11 +14,11 @@ codex app-server generate-json-schema --experimental --out artifacts/app-server-
 
 | 状态 | 数量 | 判定 |
 |---|---|---|
-| 已接入 | 77 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
+| 已接入 | 94 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
 | 后端已接入 | 4 | 已实现读取或校验，尚无对应可见 UI 调用方或展示 |
-| 部分接入 | 4 | 只支持部分类型、有效变体或限定生命周期窗口 |
-| 兼容退订 | 7 | initialize 按完整方法名退订；不代表对应产品能力已接入；保留明确的兼容窗口 |
-| 未接入 | 156 | 客户端不发送；服务端请求按原 id 回复 `-32601` 并终止当前连接，服务端通知直接报错并终止连接 |
+| 部分接入 | 5 | 只支持部分类型、有效变体或限定生命周期窗口 |
+| 兼容退订 | 6 | initialize 按完整方法名退订；不代表对应产品能力已接入；保留明确的兼容窗口 |
+| 未接入 | 139 | 客户端不发送；未实现或未知的服务端请求按原 id 回受控回执（方法特定结果、`-32601` 或 `-32602`）并保持连接、记录连接级诊断；未接入的服务端通知仍直接报错并终止连接 |
 
 未接入行的“—”沿用上述规则。`tool/requestUserInput` 是兼容别名，不计入本版本 schema 的 248 项。
 
@@ -26,13 +26,33 @@ codex app-server generate-json-schema --experimental --out artifacts/app-server-
 
 - **连接**：`ChatApp` 持有一个共享 manager。每个 generation 启动一个 `codex app-server --stdio`，只握手一次；单 reader 读取 stdout，stdin 串行写入完整 JSONL。所有 RPC 共用递增 request id，响应可乱序；已消费的追加、配置写入和线程设置 RPC id 保留到 generation 结束，重复响应不再次更新结果。初始化按下文能力协商统一退订七项通知；其中 goal 通知退订避免恢复空闲线程时中断配置或权限操作。
 - **线程与轮次**：首次提示词执行 `thread/start → turn/start`；既有线程在当前 generation 未加载时先 resume，之后直接 start turn。同一线程最多一个活动 turn，不同线程可并行；start/resume/fork 共用串行生命周期注册表。
-- **归属与提前事件**：轮次事件按 `threadId + turnId` 路由；server request 按原始字符串／数字 id 记录所属轮次。`turn/start` 响应前的事件按 wire 顺序缓存，取得响应后验证并回放；错配 id、字段或枚举报错。
+- **归属与提前事件**：轮次事件按 `threadId + turnId` 路由；server request 按原始字符串／数字 id 记录所属轮次。`item/tool/call` 沿用同一 threadId+turnId 归属与 pending turn/start 规则，但立即按原 id 回执，并由匹配的 `serverRequest/resolved` 释放 owner；重复与迟到 resolved 幂等。`turn/start` 响应前的事件按 wire 顺序缓存，取得响应后验证并回放；错配 id、字段或枚举报错。
 - **审批与输入**：保留数字／字符串 request id 的区别，按到达顺序显示一张请求卡；键盘只响应当前可见请求。响应写入最多尝试一次，提交后等待 `serverRequest/resolved` 释放 responder；写入失败显示错误并阻止重复提交。文件审批关联同轮次、同 item 的原始 changes／patch，不使用聚合 turn diff 或当前磁盘内容代替。会话或轮次切换使旧点击失效；终态清理自身请求、响应句柄及临时关联。连接仅保留有上限的已释放 id／thread 标记，忽略已知重复或迟到的 resolved。
 - **自动复核**：复核记录与人工审批请求分开，所有复核通知统一通过线程订阅与单调快照分发，避免轮次通道关闭时的竞争。未绑定 turn 的提前通知按完整标识等待真实 turn/start 响应，复核通知不会抢占启动中的轮次；已结束轮次的迟到通知经线程订阅更新原活动或历史快照。中断／失败／完成后本地结束等待展示，保留服务端原始状态与时间，不伪造完成通知；后续真实结果仍可补全。重复开始、重复完成和较旧完成消息不会回退已有结果。视图复用完整复核键，有目标项时随对应工具展示（MCP 拒绝独立展示），无目标项时独立展示；通过态隐藏但保留数据。当前 schema 未提供复核历史 item，应用重启后仅恢复服务端实际返回的历史，不从 rollout 或本地数据库补造复核。
-- **终止与恢复**：turn 完成、中断或业务失败不关闭共享进程。EOF、崩溃、写失败或致命协议错误使旧 generation 的 pending RPC 和活动轮次各失败一次；回收旧进程后，下一次显式操作可重建连接，不自动重放提示词。应用退出时幂等终止并 wait 子进程。
+- **终止与恢复**：turn 完成、中断或业务失败不关闭共享进程。EOF、崩溃、写失败或已实现方法的字段／枚举错配等致命协议错误使旧 generation 的 pending RPC 和活动轮次各失败一次；未实现或未知的服务端请求不再进入这条路径（见“未实现服务端请求的受控回执”）。回收旧进程后，下一次显式操作可重建连接，不自动重放提示词。应用退出时幂等终止并 wait 子进程。
 - **状态通知**：应用／线程状态通过 `AgentConnectionEvent` 快照订阅，轮次事件进入各自 `AgentRun`。工作区通知可先于 RPC 响应；内存覆盖层防止迟到列表撤销重命名、移动、归档或删除。
 - **工作区与历史**：以服务端稳定 id 管理项目和线程；置顶使用服务端 `Pinned` 分区，当前 schema 无 `isPinned`。历史先 `thread/read(includeTurns=false)`，再分页读取 `thread/turns/list(itemsView=full)`；实际非 full 的轮次由 `thread/items/list` 补全。不维护本地会话数据库。
 - **临时侧边聊天**：`thread/fork → thread/inject_items` 完成后才允许发送。父历史仅供参考，侧边说明禁止延续父任务或调用子 agent；新消息明确要求的修改才属于侧边请求。关闭使用 `thread/unsubscribe`；临时 id 只在所属 generation 使用，失效后保留可读消息，禁止 resume。
+
+### 未实现服务端请求的受控回执
+
+早期适配器刻意让未覆盖的服务端请求按原 id 回 `-32601` 后终止连接，用连接死亡暴露协议面。共享连接进入正式接入阶段后，这条护栏会连带杀死同一 generation 上的 pending RPC 与活动轮次，CLI 升级新增的服务端请求也会触发断连；因此改为三级处理：
+
+| 级别 | 方法 | 行为 |
+|---|---|---|
+| 已实现 | v2 审批、`item/tool/requestUserInput`／`tool/requestUserInput`、`item/permissions/requestApproval`、`mcpServer/elicitation/request` | 现行行为不变：卡片、resolved 生命周期与致命校验策略都不改 |
+| 本阶段受控 | `item/tool/call`、`applyPatchApproval`、`execCommandApproval`、`currentTime/read`、`account/chatgptAuthTokens/refresh`、`attestation/generate` | 方法特定回执，保持连接 |
+| 兜底 | 其余一切（含 schema 外的未来方法） | 按原 id 回 `-32601`，保持连接 |
+
+通用规则：回执按原始 id 原样回写，保留字符串／数字 id 的区别；`item/tool/call` 之外的受控方法不进入 turn 会话的 pending registry，重复 id 与其他 server request id 冲突同样按协议错误处理；处理器自身的 params 校验失败（JSON-RPC 外壳仍可解析）按原 id 回 `-32602`、保持连接并记录。每次受控回执都会在连接上追加一条 generation 作用域、有上限的诊断记录：方法名、id 类型与值、threadId／turnId，以及脱敏后的 params 摘要（只保留 threadId／turnId／callId／conversationId／itemId／approvalId／tool／namespace 等身份字符串，其余值替换为形状描述），不落 patch 内容、命令、工具参数或密钥。诊断记录是替代“断连告警”的非静默手段：没有请求被静默吞掉，也没有请求为可见性牺牲连接。
+
+逐方法边界：
+
+- `item/tool/call`：params 为 `{threadId, turnId, callId, tool, namespace?, arguments}`，`arguments` 的 schema 为 `true`（任意 JSON 合法，含显式 null），校验口径与 `items.rs` 的 dynamicToolCall item 一致；result 为 `{success, contentItems}`，contentItems 只允许 `inputText`／`inputImage`／`inputAudio` 三种 camelCase 类型。工具注册表按 `namespace + tool` 建立，空 namespace 与 `codex_app` 走同一组语义。归属校验沿用既有轮次规则：未知或错配的 thread／turn 仍按协议错误处理。回执只写一次，owner 由匹配 generation 与 request id 的 `serverRequest/resolved` 释放（本机 schema 中该通知只有 `requestId` 与 `threadId`，没有 kind 字段），重复与迟到 resolved 幂等忽略。
+- 工具诚实性：只有本客户端真实具备的能力才回 `success=true` 与真实 contentItems。已知生态工具 `load_workspace_dependencies` 与 `automation_update` 当前都不可执行（原生 Rust 应用未捆绑参考客户端的 Node.js／Python 文档运行时，也没有 automation 存储与调度器），未知工具与它们一样回 `success=false` + 空 contentItems，让模型继续轮次并留下诊断，而不是伪造成功或 JSON-RPC error。
+- `applyPatchApproval`／`execCommandApproval`：旧版协议（无 turn 身份，`conversationId` 对应 v2 的 threadId）。解析校验 `callId`／`conversationId`／`fileChanges`（add／delete／update 变体）或 `command`／`cwd`／`parsedCmd` 后立即回 `{decision:{denied:{rejection}}}`，文案说明本客户端不为旧版协议提供审批 UI；不进 v2 展示与审批队列，也不与 v2 item 请求混用。
+- `currentTime/read`：`params.threadId` 只做字符串校验（schema 未要求线程已加载），回 `{currentTimeAt}` 为取本机时钟的 Unix 整秒。
+- `account/chatgptAuthTokens/refresh`／`attestation/generate`：只校验收到的 params，回 `-32601` 错误并记录；结果类型要求 `accessToken` + `chatgptAccountId` 或 attestation token，本客户端无法诚实产出，因此不伪造，保持未接入状态。
 
 ### MCP elicitation
 
@@ -164,7 +184,7 @@ Composer 在运行中有草稿时显示“追加输入”，无草稿时显示�
 
 ## 运行时观察与能力协商
 
-初始化保持 `experimentalApi=true`、`requestAttestation=false`，增加精确的 `optOutNotificationMethods`：`thread/goal/updated`、`thread/goal/cleared`、`thread/queue/changed`、`skills/changed`、`app/list/updated`、`turn/moderationMetadata`、`thread/compacted`。默认 schema 与 experimental schema 均包含这些通知方法；逐项理由见总表。退订只作用于通知，不能屏蔽请求、响应或错误；未实现的服务端请求仍按原 id 回复 `-32601`，随后进入现有连接失败处理。不会退订 item/started 或 item/completed，也不会忽略未知方法。
+初始化保持 `experimentalApi=true`、`requestAttestation=false`，增加精确的 `optOutNotificationMethods`：`thread/goal/updated`、`thread/goal/cleared`、`thread/queue/changed`、`skills/changed`、`app/list/updated`、`turn/moderationMetadata`、`thread/compacted`。默认 schema 与 experimental schema 均包含这些通知方法；逐项理由见总表。退订只作用于通知，不能屏蔽请求、响应或错误；未实现或未知的服务端请求改为按原 id 回受控回执（方法特定结果、`-32601` 或 `-32602`）、保持连接并记录连接级诊断，不再进入连接失败处理。不会退订 item/started 或 item/completed，也不会忽略未知方法：兜底回执同样落诊断。
 
 Hook、认证恢复和 hookPrompt 快照通过带 generation 的观察通道交付。Hook 以 threadId/optional turnId/run.id 区分身份；缺省与 null 共同使用独立的无轮次键，同一 run.id 可以跨轮次存在，不把无 turnId 的记录迁移到前台或已知轮次。认证恢复以 threadId/turnId/provider 区分身份。两者可以早于 turn/start 响应，也可以晚于 turn/completed；不会建立或结束 turn。重复事件原位更新；服务端完成、终态 status 和较新完成时间不会被迟到 started 回退。turn 完成／中断／失败只收束该 turn 的本地等待；无 turnId 的 Hook 继续独立存在，在线程关闭或连接失效时本地收束。原始 status、message、output、时间和是否实际收到 completed 始终保留。
 
@@ -346,15 +366,15 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 
 | 方法 | API | 状态 | 已实现行为与限制 | 入口 |
 |---|---|---|---|---|
-| `account/chatgptAuthTokens/refresh` | 默认 | 未接入 | — | — |
-| `applyPatchApproval` | 默认 | 未接入 | 旧版文件审批；不由现有展示组件接管。 | — |
-| `attestation/generate` | 默认 | 未接入 | — | — |
-| `currentTime/read` | 实验 | 未接入 | — | — |
-| `execCommandApproval` | 默认 | 未接入 | 旧版命令审批；不与 v2 item 请求混用。 | — |
+| `account/chatgptAuthTokens/refresh` | 默认 | 未接入 | 只校验收到的 previousAccountId／reason（当前仅 unauthorized），随后按原 id 回 `-32601` 错误、保持连接并记录诊断：本客户端只做 Codex 托管登录，没有可刷新的外部令牌，不伪造 accessToken／chatgptAccountId。 | `server_requests`、`manager/dispatch` |
+| `applyPatchApproval` | 默认 | 部分接入 | 旧版文件审批：校验 callId／conversationId／fileChanges（add／delete／update 变体）后立即回 `{decision:{denied:{rejection}}}`，文案说明本客户端不为旧版协议提供审批 UI；不进 v2 展示与审批队列、无卡片，诊断记录登记方法、id 与 conversationId。 | `approvals`、`server_requests`、`manager/dispatch` |
+| `attestation/generate` | 默认 | 未接入 | initialize 一直发送 requestAttestation=false；若到达则校验 params 为对象后按原 id 回 `-32601`、保持连接并记录诊断，不伪造 attestation token。 | `server_requests`、`manager/dispatch` |
+| `currentTime/read` | 实验 | 已接入 | 校验字符串 params.threadId 后回 `{currentTimeAt}`，取本机时钟的 Unix 整秒；schema 未要求线程已加载，因此不做加载校验，也不缓存或伪造时间。 | `server_requests`、`manager/dispatch` |
+| `execCommandApproval` | 默认 | 部分接入 | 旧版命令审批：校验 callId／command[]／conversationId／cwd／parsedCmd[]（read／list_files／search／unknown）后立即回 denied 回执；不复用 v2 命令审批卡片或决策队列，诊断记录登记方法、id 与 conversationId。 | `approvals`、`server_requests`、`manager/dispatch` |
 | `item/commandExecution/requestApproval` | 默认 | 已接入 | kind 缺省为 command，支持 writeStdin；保留 approvalId、startedAtMs、nullable environmentId/cwd/command/reason、网络 host/protocol 与 additionalPermissions。availableDecisions 缺省／null 使用历史决策及服务端建议；显式空列表显示错误。按有序决策及完整策略载荷校验 accept、acceptForSession、decline、cancel、execpolicy 和网络 allow/deny，拒绝未提供的决策；cancel 不改写为 decline。 | `approvals`、`requests`、`registry` |
 | `item/fileChange/requestApproval` | 默认 | 已接入 | 校验 threadId/turnId/itemId/startedAtMs，保留 nullable reason/grantRoot。原始 item changes 到达前仅允许拒绝；支持 accept、acceptForSession、decline、cancel，原 id 回传并等待 resolved。文件行打开对应原始补丁；grantRoot 是 schema 标注的不稳定提示，不由客户端自行扩大写入权限。 | `approvals`、`requests`、`registry`、`dispatch` |
 | `item/permissions/requestApproval` | 默认 | 已接入 | 校验 thread/turn/item、cwd、startedAtMs、nullable environmentId/reason；保留 read/write、entries、glob 深度、path/glob/special path 与 nullable network。允许只返回请求子集及 turn/session scope，拒绝返回空权限。 | `requests`、`permissions`、`registry` |
-| `item/tool/call` | 默认 | 未接入 | — | — |
+| `item/tool/call` | 默认 | 部分接入 | 按 namespace + tool 建立客户端工具注册表（空 namespace 与 codex_app 同级）；校验 threadId／turnId／callId／tool／namespace 与 required arguments（schema 为 `true`，任意 JSON 含显式 null）后立即回 `{success, contentItems}`，contentItems 只允许 inputText／inputImage／inputAudio。已知工具 load_workspace_dependencies／automation_update 当前不可执行，未知工具同样回 `success=false` + 空 contentItems；不伪造工具成功、不断连、无 UI 卡片，owner 由匹配的 serverRequest/resolved 释放。 | `client_tools`、`server_requests`、`manager/dispatch`、`manager/connection` |
 | `item/tool/requestUserInput` | 默认 | 已接入 | 保留 question id/header/question/options/isOther/isSecret、isBlocking、nullable autoResolutionMs；返回 question id → 字符串数组的 answers，Debug 隐去答案；兼容 tool/requestUserInput 别名。 | `requests`、`registry` |
 | `mcpServer/elicitation/request` | 默认 | 已接入 | 只支持标准 MCP `mode=form` 与 `mode=url`；请求由 connection generation + 原始 request id 拥有，不绑定 turn，缺省／null／活动／已完成 turn 与 side conversation 都可展示与回复；`openai/form`、`openaiForm`、`openai/userVerification` 按协议错误回 `-32602` 并终止连接。 | `elicitation`、`manager/dispatch`、`manager/connection`、`conversation/elicitation`、`mcp_elicitation` |
 

@@ -2340,21 +2340,178 @@ fn handshake_wait_rejects_unknown_methods_instead_of_skipping_them() {
 }
 
 #[test]
-fn unknown_server_request_is_replied_to_and_reported_locally() {
-    let mut reader = Cursor::new(
-        b"{\"id\":99,\"method\":\"item/futureApproval/request\",\"params\":{\"reason\":\"probe\"}}\n",
+fn unknown_server_request_is_answered_without_ending_the_connection() {
+    // The old guardrail failed the connection to make an uncovered method
+    // visible. The unknown method is now answered under its original id and the
+    // connection keeps reading until its own response arrives.
+    let input = format!(
+        "{{\"id\":99,\"method\":\"item/futureApproval/request\",\"params\":{{\"reason\":\"probe\"}}}}\n{{\"id\":{INITIALIZE_ID},\"result\":{{\"userAgent\":\"fake\"}}}}\n"
     );
+    let mut reader = Cursor::new(input.as_bytes());
     let mut output = Vec::new();
 
-    let error = wait_for_response(&mut reader, &mut output, INITIALIZE_ID, None)
-        .unwrap_err()
-        .to_string();
-    let response = String::from_utf8(output).unwrap();
+    let response = wait_for_response(&mut reader, &mut output, INITIALIZE_ID, None).unwrap();
+    let replies = String::from_utf8(output).unwrap();
 
-    assert!(error.contains("请求"));
-    assert!(error.contains("item/futureApproval/request"));
-    assert!(response.contains("\"id\":99"));
-    assert!(response.contains("\"code\":-32601"));
+    assert_eq!(response["id"], json!(INITIALIZE_ID));
+    assert!(replies.contains("\"id\":99"));
+    assert!(replies.contains("\"code\":-32601"));
+}
+
+#[test]
+fn session_answers_controlled_server_requests_under_the_original_id() {
+    let session = Arc::new(CodexTurnSession::new(Vec::new(), None));
+    let (tx, _rx) = async_channel::unbounded();
+
+    // A dynamic tool call this client cannot honestly run.
+    respond_to_server_request_on_session(
+        &session,
+        &json!({
+            "id": 5,
+            "method": "item/tool/call",
+            "params": {
+                "threadId": "thr_1", "turnId": "turn_1", "callId": "call_1",
+                "tool": "automation_update", "namespace": null, "arguments": {"probe": true}
+            }
+        }),
+        &tx,
+    )
+    .unwrap();
+    let output = String::from_utf8(take_session_output(&session)).unwrap();
+    assert!(output.contains("\"id\":5"), "{output}");
+    assert!(output.contains("\"success\":false"), "{output}");
+    assert!(output.contains("\"contentItems\":[]"), "{output}");
+    assert!(!output.contains("\"error\""), "{output}");
+
+    // A real local clock read keeps string ids as strings.
+    respond_to_server_request_on_session(
+        &session,
+        &json!({"id": "clock", "method": "currentTime/read", "params": {"threadId": "thr_1"}}),
+        &tx,
+    )
+    .unwrap();
+    let output = String::from_utf8(take_session_output(&session)).unwrap();
+    let response: Value = serde_json::from_str(&output).unwrap();
+    assert_eq!(response["id"], json!("clock"));
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    assert!((now - response["result"]["currentTimeAt"].as_i64().unwrap()).abs() <= 2);
+
+    // Legacy approvals are denied, and the methods this client cannot serve keep
+    // an error reply instead of a fabricated result.
+    respond_to_server_request_on_session(
+        &session,
+        &json!({
+            "id": 6,
+            "method": "execCommandApproval",
+            "params": {
+                "callId": "exec_1", "command": ["pwd"], "conversationId": "thr_1",
+                "cwd": "/tmp/project", "parsedCmd": []
+            }
+        }),
+        &tx,
+    )
+    .unwrap();
+    let output = String::from_utf8(take_session_output(&session)).unwrap();
+    let response: Value = serde_json::from_str(&output).unwrap();
+    assert_eq!(response["id"], json!(6));
+    assert!(response["result"]["decision"]["denied"]["rejection"].is_string());
+
+    for (method, params) in [
+        (
+            "account/chatgptAuthTokens/refresh",
+            json!({"reason": "unauthorized"}),
+        ),
+        ("attestation/generate", json!({})),
+    ] {
+        respond_to_server_request_on_session(
+            &session,
+            &json!({"id": 7, "method": method, "params": params}),
+            &tx,
+        )
+        .unwrap();
+        let output = String::from_utf8(take_session_output(&session)).unwrap();
+        let response: Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(response["error"]["code"], -32601, "{method}: {response}");
+        assert!(response.get("result").is_none(), "{method}: {response}");
+    }
+}
+
+#[test]
+fn session_answers_invalid_controlled_params_without_ending_the_turn() {
+    let session = Arc::new(CodexTurnSession::new(Vec::new(), None));
+    let (tx, _rx) = async_channel::unbounded();
+
+    respond_to_server_request_on_session(
+        &session,
+        &json!({"id": 9, "method": "currentTime/read", "params": {"threadId": 4}}),
+        &tx,
+    )
+    .unwrap();
+    let output = String::from_utf8(take_session_output(&session)).unwrap();
+    let response: Value = serde_json::from_str(&output).unwrap();
+    assert_eq!(response["id"], json!(9));
+    assert_eq!(response["error"]["code"], -32602);
+
+    // An unknown method keeps the `-32601` fallback and stays answerable.
+    respond_to_server_request_on_session(
+        &session,
+        &json!({"id": "future", "method": "protocol/futureRequest", "params": {}}),
+        &tx,
+    )
+    .unwrap();
+    let output = String::from_utf8(take_session_output(&session)).unwrap();
+    let response: Value = serde_json::from_str(&output).unwrap();
+    assert_eq!(response["id"], json!("future"));
+    assert_eq!(response["error"]["code"], -32601);
+}
+
+#[test]
+fn turn_request_with_an_unknown_method_is_answered_without_failing_the_turn() {
+    let session = Arc::new(CodexTurnSession::new(Vec::new(), None));
+    session
+        .activate_turn("thr_1".to_owned(), "turn_1".to_owned())
+        .unwrap();
+    let (tx, _rx) = async_channel::unbounded();
+    let mut streamed_text = false;
+
+    let request = json!({
+        "id": "future-1",
+        "method": "protocol/futureTurnRequest",
+        "params": {"threadId": "thr_1", "turnId": "turn_1"}
+    });
+    let outcome = super::process_turn_message(
+        &session,
+        &request,
+        "thr_1",
+        "turn_1",
+        &tx,
+        &mut streamed_text,
+    )
+    .unwrap();
+    assert!(outcome.is_none());
+    let output = String::from_utf8(take_session_output(&session)).unwrap();
+    let response: Value = serde_json::from_str(&output).unwrap();
+    assert_eq!(response["id"], json!("future-1"));
+    assert_eq!(response["error"]["code"], -32601);
+
+    // Notifications keep the strict policy: an unknown notification still fails
+    // fast instead of being swallowed.
+    let notification = json!({"method": "protocol/futureTurnNotification", "params": {}});
+    let error = super::process_turn_message(
+        &session,
+        &notification,
+        "thr_1",
+        "turn_1",
+        &tx,
+        &mut streamed_text,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("未定义"), "{error}");
+    assert!(error.contains("protocol/futureTurnNotification"), "{error}");
 }
 
 #[test]

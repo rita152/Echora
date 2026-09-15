@@ -34,6 +34,7 @@ mod auto_approval;
 mod config;
 mod elicitation;
 mod runtime;
+mod server_requests;
 mod settings;
 mod side_conversation;
 mod skills_mcp;
@@ -2164,13 +2165,20 @@ fn transport_write_failure_fails_the_rpc_and_reaps_the_generation() {
 }
 
 #[test]
-fn unknown_server_request_replies_method_not_found_then_fails_generation() {
+fn unknown_server_request_replies_method_not_found_and_keeps_generation() {
     let (manager, spawner) = manager_with_fake();
     let run = manager.run_prompt(request("unknown request", Some("thr_unknown")));
     let (events, interrupt) = run.into_parts();
     let mut endpoint = spawner.next_endpoint();
     handshake(&mut endpoint);
     start_known_turn(&mut endpoint, "thr_unknown", "turn_unknown");
+
+    // A pending RPC shared with the active turn: it must survive the unknown
+    // server request together with the turn and the connection.
+    let catalog = manager.load_model_catalog();
+    let model_list = endpoint.recv();
+    assert_eq!(model_list["method"], "model/list");
+
     endpoint.send(json!({
         "id": 999,
         "method": "item/futureTool/requestApproval",
@@ -2181,11 +2189,23 @@ fn unknown_server_request_replies_method_not_found_then_fails_generation() {
     let response = endpoint.recv();
     assert_eq!(response["id"], 999);
     assert_eq!(response["error"]["code"], -32601);
+
+    endpoint.respond(&model_list, model_page());
+    assert!(wait_value(&catalog).is_ok());
+
+    complete(&endpoint, "thr_unknown", "turn_unknown", "completed");
     assert!(matches!(
         collect_terminal(&events).last(),
-        Some(AgentEvent::Failed(message)) if message.contains("item/futureTool/requestApproval")
+        Some(AgentEvent::Completed)
     ));
+
+    // The unknown request is recorded instead of killing the generation.
+    let recorded = manager.inner.server_request_diagnostics();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].method, "item/futureTool/requestApproval");
+
     drop(interrupt);
+    manager.shutdown();
     wait_for_process(&endpoint.process);
 }
 

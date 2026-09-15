@@ -15,6 +15,12 @@ use crate::agent::{
     AgentServerRequestId,
 };
 
+pub(super) const APPLY_PATCH_APPROVAL_METHOD: &str = "applyPatchApproval";
+pub(super) const EXEC_COMMAND_APPROVAL_METHOD: &str = "execCommandApproval";
+
+pub(super) const LEGACY_APPROVAL_METHODS: &[&str] =
+    &[APPLY_PATCH_APPROVAL_METHOD, EXEC_COMMAND_APPROVAL_METHOD];
+
 fn string_list(value: &Value) -> Result<Vec<String>> {
     value
         .as_array()
@@ -256,5 +262,184 @@ pub(super) fn parse_file_approval_request(message: &Value) -> Result<AgentFileAp
             .context("file approval params.startedAtMs 必须是 int64")?,
         reason: optional_request_string(params, METHOD, "reason")?,
         grant_root: optional_request_string(params, METHOD, "grantRoot")?,
+    })
+}
+
+/// A parsed legacy approval request. Both legacy methods answer with the same
+/// automatic denial, so only the identity that shapes the reply and the
+/// connection diagnostic is kept.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct LegacyApprovalRequest {
+    pub(super) method: &'static str,
+    pub(super) request_id: AgentServerRequestId,
+    pub(super) call_id: String,
+    /// `conversationId` on the wire. The v2 API calls the same identity
+    /// `threadId`; the legacy protocol has no turn identity.
+    pub(super) conversation_id: String,
+}
+
+pub(super) fn parse_legacy_approval_request(
+    method: &str,
+    message: &Value,
+) -> Result<LegacyApprovalRequest> {
+    match method {
+        APPLY_PATCH_APPROVAL_METHOD => parse_legacy_apply_patch_approval(message),
+        EXEC_COMMAND_APPROVAL_METHOD => parse_legacy_exec_command_approval(message),
+        method => bail!("`{method}` 不是旧版审批请求"),
+    }
+}
+
+fn parse_legacy_apply_patch_approval(message: &Value) -> Result<LegacyApprovalRequest> {
+    const METHOD: &str = APPLY_PATCH_APPROVAL_METHOD;
+    let request_id =
+        request_id_from_value(message.get("id").context("applyPatchApproval 缺少 id")?)?;
+    let params = message
+        .get("params")
+        .and_then(Value::as_object)
+        .context("applyPatchApproval 缺少对象 params")?;
+    let call_id = required_request_string(params, METHOD, "callId")?;
+    let conversation_id = required_request_string(params, METHOD, "conversationId")?;
+    // File changes are validated by variant even though every legacy request is
+    // denied: a payload this client cannot decode must not be answered as if it
+    // had been understood.
+    let file_changes = params
+        .get("fileChanges")
+        .and_then(Value::as_object)
+        .context("applyPatchApproval params.fileChanges 必须是对象")?;
+    for (path, change) in file_changes {
+        validate_legacy_file_change(path, change)?;
+    }
+    optional_request_string(params, METHOD, "grantRoot")?;
+    optional_request_string(params, METHOD, "reason")?;
+    Ok(LegacyApprovalRequest {
+        method: METHOD,
+        request_id,
+        call_id,
+        conversation_id,
+    })
+}
+
+fn validate_legacy_file_change(path: &str, value: &Value) -> Result<()> {
+    let change = value
+        .as_object()
+        .with_context(|| format!("applyPatchApproval params.fileChanges[`{path}`] 必须是对象"))?;
+    match change.get("type").and_then(Value::as_str) {
+        Some("add" | "delete") => {
+            if change.get("content").and_then(Value::as_str).is_none() {
+                bail!("applyPatchApproval params.fileChanges[`{path}`].content 必须是字符串");
+            }
+        }
+        Some("update") => {
+            if change.get("unified_diff").and_then(Value::as_str).is_none() {
+                bail!("applyPatchApproval params.fileChanges[`{path}`].unified_diff 必须是字符串");
+            }
+            match change.get("move_path") {
+                None | Some(Value::Null) | Some(Value::String(_)) => {}
+                Some(_) => bail!(
+                    "applyPatchApproval params.fileChanges[`{path}`].move_path 必须是字符串或 null"
+                ),
+            }
+        }
+        Some(other) => {
+            bail!("applyPatchApproval params.fileChanges[`{path}`].type 包含未知值 `{other}`")
+        }
+        None => bail!("applyPatchApproval params.fileChanges[`{path}`].type 必须是字符串"),
+    }
+    Ok(())
+}
+
+fn parse_legacy_exec_command_approval(message: &Value) -> Result<LegacyApprovalRequest> {
+    const METHOD: &str = EXEC_COMMAND_APPROVAL_METHOD;
+    let request_id =
+        request_id_from_value(message.get("id").context("execCommandApproval 缺少 id")?)?;
+    let params = message
+        .get("params")
+        .and_then(Value::as_object)
+        .context("execCommandApproval 缺少对象 params")?;
+    let call_id = required_request_string(params, METHOD, "callId")?;
+    let conversation_id = required_request_string(params, METHOD, "conversationId")?;
+    optional_request_string(params, METHOD, "approvalId")?;
+    required_request_string(params, METHOD, "cwd")?;
+    optional_request_string(params, METHOD, "reason")?;
+    let command = params
+        .get("command")
+        .and_then(Value::as_array)
+        .context("execCommandApproval params.command 必须是字符串数组")?;
+    for (index, value) in command.iter().enumerate() {
+        if value.as_str().is_none() {
+            bail!("execCommandApproval params.command[{index}] 必须是字符串");
+        }
+    }
+    let parsed = params
+        .get("parsedCmd")
+        .and_then(Value::as_array)
+        .context("execCommandApproval params.parsedCmd 必须是数组")?;
+    for (index, value) in parsed.iter().enumerate() {
+        validate_parsed_command(index, value)?;
+    }
+    Ok(LegacyApprovalRequest {
+        method: METHOD,
+        request_id,
+        call_id,
+        conversation_id,
+    })
+}
+
+fn validate_parsed_command(index: usize, value: &Value) -> Result<()> {
+    let command = value
+        .as_object()
+        .with_context(|| format!("execCommandApproval params.parsedCmd[{index}] 必须是对象"))?;
+    match command.get("type").and_then(Value::as_str) {
+        Some("read") => {
+            for field in ["cmd", "name", "path"] {
+                if command.get(field).and_then(Value::as_str).is_none() {
+                    bail!("execCommandApproval params.parsedCmd[{index}].{field} 必须是字符串");
+                }
+            }
+        }
+        Some("list_files" | "search") => {
+            if command.get("cmd").and_then(Value::as_str).is_none() {
+                bail!("execCommandApproval params.parsedCmd[{index}].cmd 必须是字符串");
+            }
+            for field in ["path", "query"] {
+                match command.get(field) {
+                    None | Some(Value::Null) | Some(Value::String(_)) => {}
+                    Some(_) => bail!(
+                        "execCommandApproval params.parsedCmd[{index}].{field} 必须是字符串或 null"
+                    ),
+                }
+            }
+        }
+        Some("unknown") => {
+            if command.get("cmd").and_then(Value::as_str).is_none() {
+                bail!("execCommandApproval params.parsedCmd[{index}].cmd 必须是字符串");
+            }
+        }
+        Some(other) => {
+            bail!("execCommandApproval params.parsedCmd[{index}].type 包含未知值 `{other}`")
+        }
+        None => bail!("execCommandApproval params.parsedCmd[{index}].type 必须是字符串"),
+    }
+    Ok(())
+}
+
+/// The controlled decision for a legacy approval. These methods belong to turns
+/// this client never starts, and the reference client shows no card for them:
+/// denying is the safe default, and the text tells the model why instead of
+/// pretending the request was approved or silently dropping it.
+pub(super) fn legacy_approval_denied_result(request: &LegacyApprovalRequest) -> Value {
+    let subject = match request.method {
+        EXEC_COMMAND_APPROVAL_METHOD => "command",
+        _ => "file change",
+    };
+    json!({
+        "decision": {
+            "denied": {
+                "rejection": format!(
+                    "This client provides no approval UI for the legacy `{}` protocol, so the {subject} was automatically denied. Continue the turn without it.",
+                    request.method
+                )
+            }
+        }
     })
 }

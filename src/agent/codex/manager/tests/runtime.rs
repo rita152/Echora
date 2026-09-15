@@ -183,7 +183,7 @@ fn runtime_application_snapshot_and_disconnect_rebuild_are_generation_scoped() {
 }
 
 #[test]
-fn runtime_notification_policy_never_swallows_server_requests() {
+fn runtime_notification_methods_as_requests_are_answered_and_keep_the_connection() {
     for method in [
         "deprecationNotice",
         "hook/started",
@@ -195,13 +195,17 @@ fn runtime_notification_policy_never_swallows_server_requests() {
         let catalog = manager.load_model_catalog();
         let mut endpoint = spawner.next_endpoint();
         handshake(&mut endpoint);
-        assert_eq!(endpoint.recv()["method"], "model/list");
+        let request = endpoint.recv();
+        assert_eq!(request["method"], "model/list");
         endpoint.send(json!({"id":"server-request","method":method,"params":{}}));
-        let error = endpoint.recv();
-        assert_eq!(error["id"], "server-request");
-        assert_eq!(error["error"]["code"], -32601);
-        assert!(wait_value(&catalog).is_err());
-        wait_for_process(&endpoint.process);
+        let response = endpoint.recv();
+        assert_eq!(response["id"], "server-request");
+        assert_eq!(response["error"]["code"], -32601);
+        // The request is answered under its original id, so the notification
+        // policy never swallows it and never ends the connection either.
+        endpoint.respond(&request, model_page());
+        assert!(wait_value(&catalog).is_ok());
         manager.shutdown();
+        wait_for_process(&endpoint.process);
     }
 }
