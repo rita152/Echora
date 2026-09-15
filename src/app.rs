@@ -703,6 +703,14 @@ impl ChatApp {
     pub fn manage_capture_ready(&self, cx: &gpui::App) -> bool {
         self.showing_settings && self.settings.read(cx).plugins_capture_ready()
     }
+
+    /// Capture gate for the settings import page. Detection and history are
+    /// independent reads, so both must settle before a frame is considered
+    /// representative of the page.
+    #[cfg(feature = "screenshot")]
+    pub fn import_capture_ready(&self, cx: &gpui::App) -> bool {
+        self.showing_settings && self.settings.read(cx).import_capture_ready()
+    }
 }
 
 impl ChatApp {}

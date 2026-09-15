@@ -461,7 +461,11 @@ impl SettingsView {
     pub(super) fn apps_list(&self, theme: &Theme, cx: &mut Context<Self>) -> gpui::AnyElement {
         let directory = &self.apps.directory;
         let mut list = div().mt(px(36.0)).flex().flex_col().gap(px(8.0));
-        if directory.loading && directory.page.is_none() {
+        // Keep an explicit pending state until the first directory response
+        // arrives. A disconnected app-server can leave the request unresolved
+        // for a while; rendering an empty panel would look like a valid empty
+        // catalog and diverge from the reference loading treatment.
+        if directory.page.is_none() && !directory.resolved() {
             list = list.child(self.catalog_state_card("正在读取应用目录…", None, theme));
         }
         if let Some(error) = &directory.error {

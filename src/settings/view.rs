@@ -379,6 +379,14 @@ impl SettingsView {
         }
     }
 
+    /// True once the import page has finished both its provider detection sweep
+    /// and its import-history read. Captures wait for this gate so they never
+    /// encode the transient empty/loading state shown while the page starts.
+    #[cfg(feature = "screenshot")]
+    pub fn import_capture_ready(&self) -> bool {
+        self.imports.detected() && !self.imports.histories_loading
+    }
+
     pub(super) fn select_plugins_segment(
         &mut self,
         segment: PluginSegment,
