@@ -250,6 +250,14 @@ pub(super) fn thread_started_id(message: &Value) -> Result<String> {
     required_string_at(message, "/params/thread/id", "params.thread.id")
 }
 
+/// thread/reverted carries only the thread whose durable history changed.
+pub(super) fn parse_thread_reverted(message: &Value) -> Result<String> {
+    if message.get("id").is_some() {
+        bail!("thread/reverted 必须是通知，不能包含 id");
+    }
+    required_notification_string(message, "threadId")
+}
+
 pub(super) fn validate_resume_goal_cleared(
     message: &Value,
     expected_thread_id: &str,

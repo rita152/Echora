@@ -46,6 +46,13 @@ impl ComposerView {
         .detach();
     }
     pub(super) fn submit_prompt(&mut self, raw_prompt: String, cx: &mut Context<Self>) {
+        // Manual context compaction is a composer command, not a chat message:
+        // the reference exposes it as the "Compact" slash command and the
+        // server answers through the ordinary turn stream.
+        if raw_prompt.trim() == super::COMPACT_COMMAND {
+            self.start_context_compaction(cx);
+            return;
+        }
         if raw_prompt.trim().is_empty()
             && self.review_comments.is_empty()
             && self.prompt_context.files.is_empty()
@@ -332,5 +339,84 @@ impl ComposerView {
     }
     pub fn retry_image_generation(&mut self, cx: &mut Context<Self>) {
         self.submit_prompt("请重新生成上一张图像，保持相同要求。".to_owned(), cx);
+    }
+
+    /// Typed form of the reference's "Compact" slash command. The request only
+    /// acknowledges the compaction; progress and completion arrive as ordinary
+    /// turn and item events, and steering during it fails with
+    /// activeTurnNotSteerable, which the composer reports like any other
+    /// submission failure.
+    pub(super) fn start_context_compaction(&mut self, cx: &mut Context<Self>) {
+        let Some(thread_id) = self.conversation.thread_id.clone() else {
+            self.submission_error = Some("当前没有可压缩的会话".to_owned());
+            cx.notify();
+            return;
+        };
+        if self.is_running() {
+            self.submission_error = Some("会话进行中，无法压缩上下文".to_owned());
+            cx.notify();
+            return;
+        }
+        let receiver = self.backend.start_thread_compaction(thread_id);
+        let input = self.prompt_editor.clone();
+        cx.spawn(async move |this, cx| {
+            let result = receiver.recv().await;
+            let error = match result {
+                Ok(Ok(())) => None,
+                Ok(Err(error)) => Some(error),
+                Err(_) => Some("压缩请求的响应通道提前关闭".to_owned()),
+            };
+            let _ = this.update(cx, |this, cx| {
+                match error {
+                    None => input.update(cx, |input, cx| input.set_text_silently("", cx)),
+                    Some(error) => this.submission_error = Some(error),
+                }
+                cx.emit(ConversationChanged);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Rewrites the newest user message. The revert response is the
+    /// authoritative history, so the conversation is marked stale and reloaded
+    /// through the normal paging path before the edited turn is submitted.
+    pub(crate) fn submit_edited_message(&mut self, text: String, cx: &mut Context<Self>) {
+        let Some(thread_id) = self.conversation.thread_id.clone() else {
+            self.conversation.cancel_message_edit();
+            self.submission_error = Some("当前没有可编辑的会话".to_owned());
+            cx.notify();
+            return;
+        };
+        let Some(turn_id) = self.conversation.message_edit_turn_id.take() else {
+            return;
+        };
+        let receiver = self.backend.revert_thread(crate::agent::AgentThreadRevert {
+            thread_id: thread_id.clone(),
+            before_turn_id: turn_id,
+        });
+        let input = self.prompt_editor.clone();
+        cx.spawn(async move |this, cx| {
+            let outcome = receiver.recv().await;
+            let _ = this.update(cx, |this, cx| {
+                match outcome {
+                    Ok(Ok(_)) => {
+                        this.conversation.mark_history_stale(&thread_id);
+                        this.submit_prompt(text.clone(), cx);
+                    }
+                    Ok(Err(error)) => {
+                        this.submission_error = Some(error.user_message("回退会话历史"));
+                        input.update(cx, |input, cx| input.set_text_silently(&text, cx));
+                    }
+                    Err(_) => {
+                        this.submission_error =
+                            Some("回退请求的响应通道提前关闭，历史状态未知".to_owned());
+                    }
+                }
+                cx.emit(ConversationChanged);
+                cx.notify();
+            });
+        })
+        .detach();
     }
 }

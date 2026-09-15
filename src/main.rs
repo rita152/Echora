@@ -303,6 +303,37 @@ fn schedule_review_screenshot(
 }
 
 #[cfg(feature = "screenshot")]
+fn schedule_message_edit_screenshot(
+    window: &mut gpui::Window,
+    app: gpui::Entity<ChatApp>,
+    path: String,
+    phase: usize,
+    stable_frames_remaining: usize,
+) {
+    window.on_next_frame(move |window, cx| {
+        if phase == 0 {
+            app.update(cx, |app, cx| app.capture_message_edit(cx));
+            window.refresh();
+            schedule_message_edit_screenshot(window, app, path, 1, stable_frames_remaining);
+            return;
+        }
+        if stable_frames_remaining > 0 {
+            window.refresh();
+            schedule_message_edit_screenshot(window, app, path, phase, stable_frames_remaining - 1);
+            return;
+        }
+        match save_screenshot(window, &path) {
+            Ok(()) => println!("{path}"),
+            Err(error) => {
+                eprintln!("failed to save screenshot: {error:#}");
+                std::process::exit(1);
+            }
+        }
+        cx.quit();
+    });
+}
+
+#[cfg(feature = "screenshot")]
 #[allow(clippy::too_many_arguments)]
 fn schedule_chat_search_screenshot(
     window: &mut gpui::Window,
@@ -626,6 +657,12 @@ fn main() {
         arg.strip_prefix("--context-compaction-ui-state=")
             .map(ToOwned::to_owned)
     });
+    let message_edit_state = args.iter().find_map(|arg| {
+        arg.strip_prefix("--message-edit-state=")
+            .map(ToOwned::to_owned)
+    });
+    #[cfg(not(feature = "screenshot"))]
+    let _ = message_edit_state;
     let collaboration_ui_state = args.iter().find_map(|arg| {
         arg.strip_prefix("--collaboration-ui-state=")
             .map(ToOwned::to_owned)
@@ -1160,6 +1197,14 @@ fn main() {
                                 chat_search_query.clone(),
                                 chat_search_index,
                                 Instant::now() + Duration::from_secs(60),
+                                0,
+                                CHAT_SEARCH_STABLE_FRAMES,
+                            );
+                        } else if message_edit_state.is_some() {
+                            schedule_message_edit_screenshot(
+                                window,
+                                app.clone(),
+                                path,
                                 0,
                                 CHAT_SEARCH_STABLE_FRAMES,
                             );

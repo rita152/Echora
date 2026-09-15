@@ -705,6 +705,7 @@ mod tests {
             let rows = super::super::timeline::conversation_list_rows(
                 vec![],
                 super::super::context::CurrentTurnRows {
+                    message_edit_active: false,
                     phase: crate::conversation::ConversationPhase::Complete,
                     user_message: String::new(),
                     user_images: vec![],

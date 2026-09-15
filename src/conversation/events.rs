@@ -47,6 +47,12 @@ impl ConversationState {
             self.deprecation_notices.push(notice);
             return true;
         }
+        if let AgentConnectionEvent::ThreadReverted { thread_id } = &event {
+            // The durable history of one thread was replaced outside this
+            // client's revert request. Locally reduced turns are no longer
+            // trustworthy, so the host is asked to reload them.
+            return self.mark_history_stale(thread_id);
+        }
         let scoped_thread_id = match &event {
             AgentConnectionEvent::Runtime(_) | AgentConnectionEvent::DeprecationNotice(_) => {
                 unreachable!()
@@ -58,6 +64,7 @@ impl ConversationState {
                 Some(requirement.thread_id.as_str())
             }
             AgentConnectionEvent::GuardianWarning(warning) => Some(warning.thread_id.as_str()),
+            AgentConnectionEvent::ThreadReverted { thread_id } => Some(thread_id.as_str()),
             AgentConnectionEvent::Warning { thread_id, .. } => thread_id.as_deref(),
             AgentConnectionEvent::McpServerStartupStatusUpdated(updated) => {
                 // Application scoped observations belong to the MCP management
@@ -124,7 +131,9 @@ impl ConversationState {
             return self.mcp_elicitation_failed(identity, *kind, message.clone());
         }
         let event = match event {
-            AgentConnectionEvent::Runtime(_) | AgentConnectionEvent::DeprecationNotice(_) => {
+            AgentConnectionEvent::Runtime(_)
+            | AgentConnectionEvent::DeprecationNotice(_)
+            | AgentConnectionEvent::ThreadReverted { .. } => {
                 unreachable!()
             }
             AgentConnectionEvent::AutoApprovalReviewUpdated(review) => {

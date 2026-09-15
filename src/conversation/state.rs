@@ -31,6 +31,11 @@ pub(crate) struct ConversationState {
     pub(crate) project_id: Option<ProjectId>,
     pub(crate) history_loading: bool,
     pub(crate) history_error: Option<String>,
+    /// Set when a revert this client did not request invalidated the locally
+    /// reduced turns; the host reloads them from app-server.
+    pub(crate) history_stale: bool,
+    /// Turn currently being rewritten by the composer's edit mode.
+    pub(crate) message_edit_turn_id: Option<String>,
     pub(crate) cycle: u64,
     pub(crate) turn_identity: Option<crate::agent::AgentTurnIdentity>,
     pub(crate) submissions: Vec<super::UserSubmission>,
@@ -90,6 +95,8 @@ impl Default for ConversationState {
             project_id: None,
             history_loading: false,
             history_error: None,
+            history_stale: false,
+            message_edit_turn_id: None,
             cycle: 0,
             turn_identity: None,
             submissions: Vec::new(),

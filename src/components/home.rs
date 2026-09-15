@@ -80,6 +80,10 @@ pub struct HomeView {
     presentation: HomePresentation,
     composer: Entity<ComposerView>,
     observed_composers: Vec<Entity<ComposerView>>,
+    /// Inline editor of the reference's message rewrite form, created while the
+    /// newest user message is being edited.
+    message_edit_input: Option<Entity<crate::components::prompt_input::PromptInput>>,
+    message_edit_focus_pending: bool,
     suggestion_scale: [f32; 2],
     suggestion_animation_from: [f32; 2],
     suggestion_animation_to: [f32; 2],
@@ -379,6 +383,8 @@ impl HomeView {
             hook_hover_started: HashMap::new(),
             hook_control_focus: HashMap::new(),
             user_message_actions_visible_for_capture: false,
+            message_edit_input: None,
+            message_edit_focus_pending: false,
             conversation_rows: Rc::new(Vec::new()),
             conversation_phase: ConversationPhase::Empty,
             conversation_activity: Rc::new(Vec::new()),
@@ -426,6 +432,7 @@ impl HomeView {
             CurrentTurnRows {
                 phase,
                 user_message: user_message.unwrap_or_default(),
+                message_edit_active: self.composer.read(cx).message_edit_active(),
                 user_images: self.composer.read(cx).user_images(),
                 user_message_time: user_message_time.unwrap_or_default(),
                 assistant_message,
@@ -752,6 +759,74 @@ impl HomeView {
         cx.notify();
     }
 
+    /// Puts the composer into the reference's message rewrite mode for the
+    /// newest user message.
+    pub fn begin_message_edit(&mut self, cx: &mut Context<Self>) {
+        let Some(text) = self
+            .composer
+            .update(cx, |composer, cx| composer.begin_message_edit(cx))
+        else {
+            return;
+        };
+        let mode = self.mode;
+        let input = match self.message_edit_input.clone() {
+            Some(input) => {
+                input.update(cx, |input, cx| input.set_text_silently(&text, cx));
+                input
+            }
+            None => cx.new(|cx| {
+                crate::components::prompt_input::PromptInput::message_edit(mode, &text, cx)
+            }),
+        };
+        self.message_edit_input = Some(input);
+        self.message_edit_focus_pending = true;
+        cx.notify();
+    }
+
+    /// Whether the newest user message can be rewritten right now.
+    pub fn message_edit_available(&self, cx: &gpui::App) -> bool {
+        self.composer.read(cx).message_edit_available()
+    }
+
+    /// Cancels the rewrite and returns the transcript to the plain message.
+    pub fn cancel_message_edit(&mut self, cx: &mut Context<Self>) {
+        self.message_edit_input = None;
+        self.message_edit_focus_pending = false;
+        self.composer
+            .update(cx, |composer, cx| composer.cancel_message_edit(cx));
+        cx.notify();
+    }
+
+    /// Submits the rewritten message: the composer reverts the thread to just
+    /// before that turn and starts a fresh one with this text.
+    pub fn submit_message_edit(&mut self, cx: &mut Context<Self>) {
+        let Some(input) = self.message_edit_input.clone() else {
+            return;
+        };
+        let text = input.read(cx).text().trim().to_owned();
+        if text.is_empty() {
+            self.cancel_message_edit(cx);
+            return;
+        }
+        self.message_edit_input = None;
+        self.message_edit_focus_pending = false;
+        self.composer
+            .update(cx, |composer, cx| composer.submit_edited_message(text, cx));
+        cx.notify();
+    }
+
+    pub(super) fn message_edit_form(
+        &self,
+        theme: crate::theme::Theme,
+        home: Entity<Self>,
+    ) -> gpui::AnyElement {
+        let Some(input) = self.message_edit_input.clone() else {
+            return gpui::div().into_any_element();
+        };
+        crate::components::home::messages::message_edit_form(input, theme, home, self.content_width)
+            .into_any_element()
+    }
+
     #[cfg(feature = "screenshot")]
     pub fn set_conversation_scroll_from_bottom_for_capture(
         &mut self,
@@ -794,6 +869,28 @@ impl HomeView {
         self.composer.update(cx, |composer, cx| {
             composer.set_context_compaction_for_capture(running, cx)
         });
+        cx.notify();
+    }
+
+    #[cfg(feature = "screenshot")]
+    /// Deterministic rewrite state for the pixel gate: the newest user message
+    /// is open in the reference's inline editor.
+    pub fn seed_message_rewrite_for_capture(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.composer.update(cx, |composer, cx| {
+            composer.seed_message_rewrite_for_capture(text, cx)
+        });
+        let mode = self.mode;
+        let input = match self.message_edit_input.clone() {
+            Some(input) => {
+                input.update(cx, |input, cx| input.set_text_silently(text, cx));
+                input
+            }
+            None => cx.new(|cx| {
+                crate::components::prompt_input::PromptInput::message_edit(mode, text, cx)
+            }),
+        };
+        self.message_edit_input = Some(input);
+        self.message_edit_focus_pending = false;
         cx.notify();
     }
 
@@ -1396,6 +1493,13 @@ impl HomeView {
 impl Render for HomeView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::for_mode(self.mode);
+        if self.message_edit_focus_pending {
+            self.message_edit_focus_pending = false;
+            if let Some(input) = self.message_edit_input.clone() {
+                let handle = input.read(cx).focus_handle(cx);
+                handle.focus(window, cx);
+            }
+        }
         let (transcript, phase, assistant_message, conversation_activity) =
             if self.presentation != HomePresentation::Subagent {
                 (

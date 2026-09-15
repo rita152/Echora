@@ -44,7 +44,7 @@ use crate::{
     },
     components::{
         account::{AccountDialog, AccountLoadStatus, AccountView},
-        chat_search::{ChatSearchView, OpenFolder, SearchFiles, SelectChat, StartNewChat},
+        chat_search::{ChatSearchView, OpenFile, OpenFolder, SelectChat, StartNewChat},
         composer::{
             ComposerView, ConversationThreadCreated, ModelCatalogLoadFinished,
             RequestFullAccessConfirmation,
@@ -178,8 +178,11 @@ impl ChatApp {
         #[cfg(not(test))]
         let workspace_receiver = workspace_store.subscribe();
         let settings = cx.new(|cx| SettingsView::new(mode, agent_backend.clone(), cx));
-        let chat_search = cx.new(|cx| ChatSearchView::new(mode, workspace_store.clone(), cx));
+        let chat_search = cx.new(|cx| {
+            ChatSearchView::new(mode, workspace_store.clone(), agent_backend.clone(), cx)
+        });
         cx.subscribe(&sidebar, |this, _, _: &OpenChatSearch, cx| {
+            this.update_chat_search_roots(cx);
             this.chat_search.update(cx, |search, cx| search.open(cx));
         })
         .detach();
@@ -198,8 +201,8 @@ impl ChatApp {
             this.open_project_creation(cx);
         })
         .detach();
-        cx.subscribe(&chat_search, |this, _, _: &SearchFiles, cx| {
-            this.open_files(cx);
+        cx.subscribe(&chat_search, |this, _, event: &OpenFile, cx| {
+            this.open_matched_file(event.path.clone(), event.is_directory, cx);
         })
         .detach();
         let home = cx.new(|cx| HomeView::new_with_backend(mode, agent_backend.clone(), cx));

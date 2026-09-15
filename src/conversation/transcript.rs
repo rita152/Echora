@@ -189,6 +189,50 @@ impl ConversationState {
     pub(crate) fn history_needs_retry(&self) -> bool {
         self.history_error.is_some()
     }
+    pub(crate) fn history_needs_reload(&self) -> bool {
+        self.history_stale
+    }
+    pub(crate) fn clear_history_stale(&mut self) {
+        self.history_stale = false;
+    }
+    /// Newest user turn the composer may edit. The reference only offers
+    /// editing for the latest user message and refuses while a turn runs.
+    pub(crate) fn editable_user_turn(&self) -> Option<(String, String)> {
+        if self.active_turn.is_some() {
+            return None;
+        }
+        if let Some(identity) = self.turn_identity.as_ref()
+            && let Some(text) = self
+                .user_message
+                .as_deref()
+                .filter(|text| !text.trim().is_empty())
+        {
+            return Some((identity.turn_id.clone(), text.to_owned()));
+        }
+        let turn = self.transcript.last()?;
+        let turn_id = turn.turn_id.clone()?;
+        if turn.user_message.trim().is_empty() {
+            return None;
+        }
+        Some((turn_id, turn.user_message.clone()))
+    }
+    pub(crate) fn begin_message_edit(&mut self, turn_id: String) {
+        self.message_edit_turn_id = Some(turn_id);
+    }
+    pub(crate) fn cancel_message_edit(&mut self) {
+        self.message_edit_turn_id = None;
+    }
+    /// A revert this client did not request, or one whose request failed after
+    /// the server had already confirmed it, leaves the locally reduced turns
+    /// out of date. The truncated history is never fabricated locally: the
+    /// host reloads it from app-server instead.
+    pub(crate) fn mark_history_stale(&mut self, thread_id: &str) -> bool {
+        if self.thread_id.as_deref() != Some(thread_id) || self.history_stale {
+            return false;
+        }
+        self.history_stale = true;
+        true
+    }
     #[cfg(feature = "screenshot")]
     pub(crate) fn history_loading(&self) -> bool {
         self.history_loading
@@ -235,6 +279,7 @@ impl ConversationState {
     pub(crate) fn hydrate_history(&mut self, history: ThreadHistory) {
         self.change_runtime_scope(Some(&history.thread.thread_id));
         self.reconcile_history_submissions(&history);
+        self.history_stale = false;
         if self.active_turn.is_none() {
             self.turn_identity = None;
         }
