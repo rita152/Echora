@@ -19,7 +19,10 @@ use gpui::{
 use gpui::{prelude::*, rgba};
 
 use crate::{
-    agent::ThreadId,
+    agent::{
+        AgentBackend, AgentFileMatchType, AgentFileSearchResult, AgentFileSearchSession,
+        AgentFileSearchSessionEvent, ThreadId,
+    },
     components::prompt_input::{PromptChanged, PromptInput, PromptSubmitted},
     theme::{Theme, ThemeMode},
     workspace::{ChatSearchEntry, WorkspaceSnapshot, WorkspaceStore},
@@ -59,6 +62,24 @@ const HINT_LINE_HEIGHT: f32 = 12.0;
 const HINT_RADIUS: f32 = 10.0;
 /// The reference caps the chat list at nine rows so ⌘1…⌘9 stay stable.
 const MAX_CHAT_ROWS: usize = 9;
+/// File rows in the reference command menu: a 24px row with a 16px leading
+/// icon and an 8px gap to the label.
+const FILE_ROW_HEIGHT: f32 = 24.0;
+const FILE_ICON_SIZE: f32 = 16.0;
+const FILE_LABEL_FONT_SIZE: f32 = 14.0;
+const FILE_LABEL_LINE_HEIGHT: f32 = 21.0;
+const FILE_PATH_FONT_SIZE: f32 = 12.0;
+const FILE_PATH_LINE_HEIGHT: f32 = 16.0;
+const FILE_ICON_GAP: f32 = 8.0;
+
+/// Which search the dialog is running. The reference command menu has one
+/// dialog with two search modes: chats (the default) and files, entered from
+/// the "Search files" action or ⌘P.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DialogMode {
+    Chats,
+    Files,
+}
 
 /// A quick action the dialog can run for real. Every variant maps to an
 /// existing application flow; none of them are placeholders.
@@ -110,13 +131,18 @@ pub struct StartNewChat;
 /// Runs the "Open folder" quick action.
 pub struct OpenFolder;
 
-/// Runs the "Search files" quick action.
-pub struct SearchFiles;
+/// Opens one file matched by the dialog's file search. The host owns the file
+/// panel, so the dialog only reports the absolute path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OpenFile {
+    pub path: String,
+    pub is_directory: bool,
+}
 
 impl gpui::EventEmitter<SelectChat> for ChatSearchView {}
 impl gpui::EventEmitter<StartNewChat> for ChatSearchView {}
 impl gpui::EventEmitter<OpenFolder> for ChatSearchView {}
-impl gpui::EventEmitter<SearchFiles> for ChatSearchView {}
+impl gpui::EventEmitter<OpenFile> for ChatSearchView {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Row {
@@ -127,11 +153,15 @@ enum Row {
         snippet: Option<String>,
     },
     Quick(QuickAction),
+    File {
+        index: usize,
+    },
 }
 
 pub struct ChatSearchView {
     mode: ThemeMode,
     store: Arc<WorkspaceStore>,
+    backend: Arc<dyn AgentBackend>,
     snapshot: WorkspaceSnapshot,
     input: Entity<PromptInput>,
     focus_handle: FocusHandle,
@@ -140,6 +170,17 @@ pub struct ChatSearchView {
     focus_pending: bool,
     selected: usize,
     hovered: Option<usize>,
+    dialog_mode: DialogMode,
+    /// Workspace roots of the active conversation. The reference searches the
+    /// conversation's working directory, not the whole machine.
+    roots: Vec<String>,
+    files: Vec<AgentFileSearchResult>,
+    files_loading: bool,
+    files_error: Option<String>,
+    files_session: Option<AgentFileSearchSession>,
+    /// Bumped for every query or mode change so a late session update can be
+    /// discarded instead of overwriting newer results.
+    files_cycle: u64,
     /// Hover drives selection in the real dialog. Scripted captures pin an
     /// explicit state, so they disable the pointer path unless the state under
     /// test is the hover state itself.
@@ -148,7 +189,192 @@ pub struct ChatSearchView {
 }
 
 impl ChatSearchView {
-    pub fn new(mode: ThemeMode, store: Arc<WorkspaceStore>, cx: &mut Context<Self>) -> Self {
+    /// The reference's file group: a "Files" header and 24px rows with a 16px
+    /// leading icon, the matched file name highlighted from the server's match
+    /// indices, and the containing directory in the description colour.
+    fn files_group(&self, theme: Theme, cx: &mut Context<Self>) -> gpui::Stateful<gpui::Div> {
+        let query = self.input.read(cx).text().trim().to_owned();
+        // A query with no hits collapses the group entirely, matching the
+        // reference's return to a bare input row.
+        if self.files.is_empty()
+            && !query.is_empty()
+            && self.files_error.is_none()
+            && !self.files_loading
+        {
+            return div().id("chat-search-files");
+        }
+        let group = div()
+            .id("chat-search-files")
+            .flex()
+            .flex_col()
+            .gap(px(PANEL_GAP))
+            .child(
+                div()
+                    .h(px(HEADER_HEIGHT))
+                    .px(px(8.0))
+                    .pt(px(8.0))
+                    .flex()
+                    .items_center()
+                    .text_size(px(HEADER_FONT_SIZE))
+                    .line_height(px(HEADER_LINE_HEIGHT))
+                    .text_color(theme.chat_search_description)
+                    .child("Files"),
+            );
+        let mut body = div().flex().flex_col();
+        if self.files.is_empty() {
+            body = body.child(self.files_status_row(theme, cx));
+        } else {
+            for index in 0..self.files.len() {
+                body = body.child(self.file_row(index, theme, cx));
+            }
+        }
+        group.child(body)
+    }
+
+    /// Mirrors the reference's placeholder, loading, and error rows: an empty
+    /// query asks for input, a running search shows its progress, and a failed
+    /// one reports the reason instead of an empty list.
+    fn files_status_row(&self, theme: Theme, cx: &mut Context<Self>) -> gpui::Stateful<gpui::Div> {
+        let query = self.input.read(cx).text().trim().to_owned();
+        let message = if let Some(error) = &self.files_error {
+            error.clone()
+        } else if query.is_empty() {
+            "Type to search for files".to_owned()
+        } else if self.files_loading {
+            "Loading…".to_owned()
+        } else {
+            // The reference renders nothing at all when a query has no hits;
+            // the list simply collapses back to the input row.
+            return div().id("chat-search-files-status").h(px(0.0));
+        };
+        div()
+            .id("chat-search-files-status")
+            .h(px(FILE_ROW_HEIGHT))
+            .px(px(ROW_PADDING_X))
+            .flex()
+            .items_center()
+            .text_size(px(HEADER_FONT_SIZE))
+            .line_height(px(HEADER_LINE_HEIGHT))
+            .text_color(theme.chat_search_description)
+            .child(message)
+    }
+
+    fn file_row(
+        &self,
+        index: usize,
+        theme: Theme,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<gpui::Div> {
+        let Some(file) = self.files.get(index) else {
+            return div().id("chat-search-file-missing");
+        };
+        let selected = self.selected == index;
+        let is_directory = file.match_type == AgentFileMatchType::Directory;
+        let directory = relative_directory(&file.path);
+        let mut name = div().flex_none().flex().items_center();
+        for (text, matched) in highlighted_runs(&file.file_name, file.indices.as_deref()) {
+            name = name.child(
+                div()
+                    .text_color(if matched {
+                        theme.chat_search_text
+                    } else {
+                        theme.chat_search_description
+                    })
+                    .child(text),
+            );
+        }
+        div()
+            .id(SharedString::from(format!("chat-search-file-{index}")))
+            .h(px(FILE_ROW_HEIGHT))
+            .px(px(ROW_PADDING_X))
+            .rounded(px(ROW_RADIUS))
+            .flex()
+            .items_center()
+            .gap(px(FILE_ICON_GAP))
+            .text_size(px(FILE_LABEL_FONT_SIZE))
+            .line_height(px(FILE_LABEL_LINE_HEIGHT))
+            .cursor_pointer()
+            .when(selected, |row| row.bg(theme.chat_search_row_hover))
+            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                #[cfg(feature = "screenshot")]
+                if !this.hover_enabled {
+                    return;
+                }
+                if *hovered {
+                    this.hovered = Some(index);
+                    this.selected = index;
+                } else if this.hovered == Some(index) {
+                    this.hovered = None;
+                }
+                cx.notify();
+            }))
+            .on_click(cx.listener({
+                move |this, _, _, cx| {
+                    this.selected = index;
+                    this.activate_selected(cx);
+                }
+            }))
+            .child(
+                gpui::svg()
+                    .path(if is_directory {
+                        "icons/folder.svg"
+                    } else {
+                        "icons/markdown-file-document.svg"
+                    })
+                    .size(px(FILE_ICON_SIZE))
+                    .flex_none()
+                    .text_color(theme.chat_search_description),
+            )
+            .child(name)
+            .when(!directory.is_empty(), |row| {
+                row.child(
+                    div()
+                        .min_w(px(0.0))
+                        .truncate()
+                        .text_size(px(FILE_PATH_FONT_SIZE))
+                        .line_height(px(FILE_PATH_LINE_HEIGHT))
+                        .text_color(theme.chat_search_description)
+                        .child(directory),
+                )
+            })
+    }
+}
+
+/// Directory part of a backend-relative path, in the reference's form.
+fn relative_directory(path: &str) -> String {
+    match path.rsplit_once('/') {
+        Some((directory, _)) => directory.to_owned(),
+        None => String::new(),
+    }
+}
+
+/// Splits a file name into runs using the server's match indices, which are
+/// the authoritative highlight for fuzzy results.
+fn highlighted_runs(name: &str, indices: Option<&[u32]>) -> Vec<(String, bool)> {
+    let Some(indices) = indices else {
+        return vec![(name.to_owned(), false)];
+    };
+    if indices.is_empty() {
+        return vec![(name.to_owned(), false)];
+    }
+    let mut runs: Vec<(String, bool)> = Vec::new();
+    for (position, character) in name.chars().enumerate() {
+        let matched = indices.binary_search(&(position as u32)).is_ok();
+        match runs.last_mut() {
+            Some((text, last)) if *last == matched => text.push(character),
+            _ => runs.push((character.to_string(), matched)),
+        }
+    }
+    runs
+}
+
+impl ChatSearchView {
+    pub fn new(
+        mode: ThemeMode,
+        store: Arc<WorkspaceStore>,
+        backend: Arc<dyn AgentBackend>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let snapshot = store.snapshot();
         let input = cx.new(|cx| PromptInput::chat_search(mode, "Search chats", cx));
         cx.subscribe(&input, |this, input, _: &PromptChanged, cx| {
@@ -156,7 +382,10 @@ impl ChatSearchView {
             this.selected = 0;
             this.hovered = None;
             this.scroll.set_offset(gpui::point(px(0.0), px(0.0)));
-            this.store.search(query);
+            match this.dialog_mode {
+                DialogMode::Chats => this.store.search(query),
+                DialogMode::Files => this.search_files(query, cx),
+            }
             cx.notify();
         })
         .detach();
@@ -177,6 +406,7 @@ impl ChatSearchView {
         Self {
             mode,
             store,
+            backend,
             snapshot,
             input,
             focus_handle: cx.focus_handle(),
@@ -185,9 +415,22 @@ impl ChatSearchView {
             focus_pending: false,
             selected: 0,
             hovered: None,
+            dialog_mode: DialogMode::Chats,
+            roots: Vec::new(),
+            files: Vec::new(),
+            files_loading: false,
+            files_error: None,
+            files_session: None,
+            files_cycle: 0,
             #[cfg(feature = "screenshot")]
             hover_enabled: true,
         }
+    }
+
+    /// Roots the file search runs against. The host updates them whenever the
+    /// active conversation changes.
+    pub fn set_workspace_roots(&mut self, roots: Vec<String>) {
+        self.roots = roots;
     }
 
     pub fn set_mode(&mut self, mode: ThemeMode, cx: &mut Context<Self>) {
@@ -203,6 +446,7 @@ impl ChatSearchView {
     /// Opens the dialog with a clean query, matching the reference's behaviour
     /// when the sidebar search button is pressed.
     pub fn open(&mut self, cx: &mut Context<Self>) {
+        self.leave_files_mode(cx);
         self.open = true;
         self.selected = 0;
         self.hovered = None;
@@ -219,6 +463,7 @@ impl ChatSearchView {
         if !self.open {
             return;
         }
+        self.leave_files_mode(cx);
         self.open = false;
         self.focus_pending = false;
         self.input.update(cx, |input, cx| input.clear(cx));
@@ -226,8 +471,153 @@ impl ChatSearchView {
         cx.notify();
     }
 
+    /// Enters the reference's file search mode: the same dialog with the
+    /// "Search files" placeholder and a live fuzzy file search session for the
+    /// conversation's working directory.
+    fn enter_files_mode(&mut self, cx: &mut Context<Self>) {
+        self.dialog_mode = DialogMode::Files;
+        self.selected = 0;
+        self.hovered = None;
+        self.files.clear();
+        self.files_loading = true;
+        self.files_error = None;
+        self.scroll.set_offset(gpui::point(px(0.0), px(0.0)));
+        self.input.update(cx, |input, cx| {
+            input.set_text_silently("", cx);
+            input.set_placeholder("Search files", cx);
+        });
+        self.open_file_session(cx);
+        cx.notify();
+    }
+
+    fn leave_files_mode(&mut self, cx: &mut Context<Self>) {
+        self.stop_file_session();
+        if self.dialog_mode == DialogMode::Chats {
+            return;
+        }
+        self.dialog_mode = DialogMode::Chats;
+        self.files.clear();
+        self.files_loading = false;
+        self.files_error = None;
+        self.input
+            .update(cx, |input, cx| input.set_placeholder("Search chats", cx));
+    }
+
+    fn stop_file_session(&mut self) {
+        if let Some(session) = self.files_session.take() {
+            let _ = session.stop();
+        }
+        // A late update from the previous session must never overwrite newer
+        // results, so every session change also changes the cycle.
+        self.files_cycle = self.files_cycle.wrapping_add(1);
+    }
+
+    /// Opens one search session per entry into file mode. Sessions stream
+    /// results per query, which is the shape the reference client drives; a
+    /// build without session support falls back to one-shot searches inside
+    /// the adapter.
+    fn open_file_session(&mut self, cx: &mut Context<Self>) {
+        self.stop_file_session();
+        if self.roots.is_empty() {
+            self.files_loading = false;
+            self.files_error = Some("当前会话没有可搜索的工作区目录".to_owned());
+            cx.notify();
+            return;
+        }
+        let cycle = self.files_cycle;
+        let receiver = self.backend.open_file_search_session(self.roots.clone());
+        cx.spawn(async move |this, cx| {
+            let session = match receiver.recv().await {
+                Ok(Ok(session)) => session,
+                Ok(Err(error)) => {
+                    let _ = this.update(cx, |this, cx| {
+                        if this.files_cycle != cycle {
+                            return;
+                        }
+                        this.files_loading = false;
+                        this.files_error = Some(error);
+                        cx.notify();
+                    });
+                    return;
+                }
+                Err(_) => return,
+            };
+            let updates = session.updates();
+            let stored = session.clone();
+            let stored_ok = this
+                .update(cx, |this, cx| {
+                    if this.files_cycle != cycle {
+                        return false;
+                    }
+                    this.files_session = Some(stored);
+                    cx.notify();
+                    true
+                })
+                .unwrap_or(false);
+            if !stored_ok {
+                let _ = session.stop();
+                return;
+            }
+            while let Ok(event) = updates.recv().await {
+                let keep_streaming = this
+                    .update(cx, |this, cx| {
+                        if this.files_cycle != cycle {
+                            return false;
+                        }
+                        this.apply_file_session_event(event);
+                        cx.notify();
+                        true
+                    })
+                    .unwrap_or(false);
+                if !keep_streaming {
+                    break;
+                }
+            }
+            let _ = session.stop();
+        })
+        .detach();
+    }
+
+    fn apply_file_session_event(&mut self, event: AgentFileSearchSessionEvent) {
+        match event {
+            AgentFileSearchSessionEvent::Updated(update) => {
+                self.files = update.files;
+                self.files_error = None;
+            }
+            AgentFileSearchSessionEvent::Completed(_) => self.files_loading = false,
+            AgentFileSearchSessionEvent::Failed(message) => {
+                self.files_error = Some(message);
+                self.files_loading = false;
+            }
+        }
+    }
+
+    /// Pushes one query into the live session. Results arrive as notifications
+    /// instead of being returned inline, exactly like the reference.
+    fn search_files(&mut self, query: String, cx: &mut Context<Self>) {
+        let Some(session) = self.files_session.clone() else {
+            return;
+        };
+        match session.update_query(query) {
+            Ok(()) => {
+                self.files_error = None;
+                self.files_loading = true;
+            }
+            Err(error) => {
+                self.files_error = Some(error);
+                self.files_loading = false;
+            }
+        }
+        cx.notify();
+    }
+
     /// Rows in render order: the Chats group first, then Quick actions.
     fn rows(&self) -> Vec<Row> {
+        if self.dialog_mode == DialogMode::Files {
+            return (0..self.files.len())
+                .map(|index| Row::File { index })
+                .collect();
+        }
         let query = self.snapshot.search_query.trim().to_lowercase();
         let mut rows = Vec::new();
         for entry in self.snapshot.chat_search_entries(MAX_CHAT_ROWS) {
@@ -269,8 +659,22 @@ impl ChatSearchView {
                 cx.emit(OpenFolder);
             }
             Row::Quick(QuickAction::SearchFiles) => {
+                self.enter_files_mode(cx);
+            }
+            Row::File { index } => {
+                let Some(file) = self.files.get(index).cloned() else {
+                    return;
+                };
+                let path = if file.path.is_empty() {
+                    std::path::PathBuf::from(&file.root)
+                } else {
+                    std::path::Path::new(&file.root).join(&file.path)
+                };
                 self.close(cx);
-                cx.emit(SearchFiles);
+                cx.emit(OpenFile {
+                    path: path.to_string_lossy().into_owned(),
+                    is_directory: file.match_type == AgentFileMatchType::Directory,
+                });
             }
         }
     }
@@ -304,6 +708,16 @@ impl ChatSearchView {
     }
 
     fn selected_span(&self) -> (f32, f32) {
+        if self.dialog_mode == DialogMode::Files {
+            let mut top = HEADER_HEIGHT + ROW_GAP;
+            for index in 0..self.files.len() {
+                if index == self.selected {
+                    return (top, FILE_ROW_HEIGHT);
+                }
+                top += FILE_ROW_HEIGHT;
+            }
+            return (top, FILE_ROW_HEIGHT);
+        }
         let mut top = 0.0;
         let mut index = 0;
         let entries = self.snapshot.chat_search_entries(MAX_CHAT_ROWS);
@@ -350,6 +764,13 @@ impl ChatSearchView {
             return;
         }
         let key = event.keystroke.key.as_str();
+        if event.keystroke.modifiers.platform && key == "p" {
+            // ⌘P is the reference shortcut for the file search form of this
+            // dialog.
+            self.enter_files_mode(cx);
+            cx.stop_propagation();
+            return;
+        }
         if event.keystroke.modifiers.platform
             && let Some(index) = digit_index(key)
         {
@@ -396,6 +817,14 @@ impl ChatSearchView {
         selected: Option<usize>,
         cx: &mut Context<Self>,
     ) {
+        if let Some(file_state) = state.strip_prefix("files") {
+            self.apply_files_capture_state(file_state, query, cx);
+            if let Some(index) = selected {
+                self.selected = index;
+            }
+            cx.notify();
+            return;
+        }
         self.hover_enabled = state == "hover";
         if state != "hover" {
             self.hovered = None;
@@ -421,8 +850,50 @@ impl ChatSearchView {
         cx.notify();
     }
 
+    /// Deterministic file-search states. They use the same rendering path as a
+    /// live session; only the result source differs, so no session is opened
+    /// and the frozen rows mirror the reference capture byte for byte.
+    #[cfg(feature = "screenshot")]
+    fn apply_files_capture_state(
+        &mut self,
+        state: &str,
+        query: Option<&str>,
+        cx: &mut Context<Self>,
+    ) {
+        self.hover_enabled = state.contains("hover");
+        self.leave_files_mode(cx);
+        self.dialog_mode = DialogMode::Files;
+        self.selected = 0;
+        self.hovered = None;
+        let text = query.unwrap_or("");
+        self.input.update(cx, |input, cx| {
+            input.set_text_silently(text, cx);
+            input.set_placeholder("Search files", cx);
+        });
+        self.files_loading = state.contains("loading");
+        self.files_error = None;
+        self.files = if state.contains("result") {
+            vec![AgentFileSearchResult {
+                file_name: "chat_search.rs".to_owned(),
+                match_type: AgentFileMatchType::File,
+                path: "GPUI/src/components/chat_search.rs".to_owned(),
+                root: "/Volumes/ExternalSSD".to_owned(),
+                score: 0,
+                indices: Some(vec![
+                    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18,
+                ]),
+            }]
+        } else {
+            Vec::new()
+        };
+        self.scroll.set_offset(gpui::point(px(0.0), px(0.0)));
+    }
+
     /// Ready when the workspace has settled for the current query.
     pub fn capture_ready(&self) -> Result<bool, String> {
+        if self.dialog_mode == DialogMode::Files {
+            return Ok(!self.files_loading || !self.files.is_empty());
+        }
         if let Some(error) = &self.snapshot.error {
             return Err(format!("侧栏数据加载失败：{error}"));
         }
@@ -580,95 +1051,98 @@ impl Render for ChatSearchView {
             list = list.h(px(LIST_MAX_HEIGHT));
         }
 
-        if show_chats_group {
-            let mut group = div().flex().flex_col().gap(px(PANEL_GAP)).child(
-                div()
-                    .h(px(HEADER_HEIGHT))
-                    .px(px(8.0))
-                    .pt(px(8.0))
-                    .flex()
-                    .items_center()
-                    .gap(px(ROW_GAP))
-                    .text_size(px(HEADER_FONT_SIZE))
-                    .line_height(px(HEADER_LINE_HEIGHT))
-                    .text_color(theme.chat_search_description)
-                    .child("Chats")
-                    .when(loading, |header| {
-                        header.child(
-                            div().w(px(SPINNER_SIZE)).h(px(SPINNER_SIZE)).child(
-                                gpui::svg()
-                                    .path("icons/search-spinner.svg")
-                                    .size(px(SPINNER_SIZE))
-                                    .text_color(theme.chat_search_description)
-                                    .with_animation(
-                                        "chat-search-spinner",
-                                        Animation::new(Duration::from_millis(1000)).repeat(),
-                                        |spinner, progress| {
-                                            spinner.with_transformation(
-                                                gpui::Transformation::rotate(radians(
-                                                    progress * 2.0 * std::f32::consts::PI,
-                                                )),
-                                            )
-                                        },
-                                    ),
-                            ),
-                        )
-                    }),
-            );
-            let mut body = div().flex().flex_col();
-            for (index, row) in &chat_rows {
-                body = body.child(self.chat_row(*index, row, &query, theme, cx));
-            }
-            if chats_empty {
-                body = body.child(
+        if self.dialog_mode == DialogMode::Files {
+            list = list.child(self.files_group(theme, cx));
+        } else {
+            if show_chats_group {
+                let mut group = div().flex().flex_col().gap(px(PANEL_GAP)).child(
                     div()
-                        .id("chat-search-empty")
-                        .h(px(EMPTY_ROW_HEIGHT))
-                        .px(px(ROW_PADDING_X))
-                        .py(px(ROW_PADDING_Y))
-                        .rounded(px(ROW_RADIUS))
-                        .opacity(0.25)
+                        .h(px(HEADER_HEIGHT))
+                        .px(px(8.0))
+                        .pt(px(8.0))
                         .flex()
                         .items_center()
-                        .text_color(theme.chat_search_text)
-                        .child(
-                            div()
-                                .h(px(48.0))
-                                .px(px(16.0))
-                                .flex()
-                                .items_center()
-                                .text_size(px(HEADER_FONT_SIZE))
-                                .line_height(px(HEADER_LINE_HEIGHT))
-                                .text_color(theme.chat_search_description)
-                                .child("No matches"),
-                        ),
+                        .gap(px(ROW_GAP))
+                        .text_size(px(HEADER_FONT_SIZE))
+                        .line_height(px(HEADER_LINE_HEIGHT))
+                        .text_color(theme.chat_search_description)
+                        .child("Chats")
+                        .when(loading, |header| {
+                            header.child(
+                                div().w(px(SPINNER_SIZE)).h(px(SPINNER_SIZE)).child(
+                                    gpui::svg()
+                                        .path("icons/search-spinner.svg")
+                                        .size(px(SPINNER_SIZE))
+                                        .text_color(theme.chat_search_description)
+                                        .with_animation(
+                                            "chat-search-spinner",
+                                            Animation::new(Duration::from_millis(1000)).repeat(),
+                                            |spinner, progress| {
+                                                spinner.with_transformation(
+                                                    gpui::Transformation::rotate(radians(
+                                                        progress * 2.0 * std::f32::consts::PI,
+                                                    )),
+                                                )
+                                            },
+                                        ),
+                                ),
+                            )
+                        }),
                 );
+                let mut body = div().flex().flex_col();
+                for (index, row) in &chat_rows {
+                    body = body.child(self.chat_row(*index, row, &query, theme, cx));
+                }
+                if chats_empty {
+                    body = body.child(
+                        div()
+                            .id("chat-search-empty")
+                            .h(px(EMPTY_ROW_HEIGHT))
+                            .px(px(ROW_PADDING_X))
+                            .py(px(ROW_PADDING_Y))
+                            .rounded(px(ROW_RADIUS))
+                            .opacity(0.25)
+                            .flex()
+                            .items_center()
+                            .text_color(theme.chat_search_text)
+                            .child(
+                                div()
+                                    .h(px(48.0))
+                                    .px(px(16.0))
+                                    .flex()
+                                    .items_center()
+                                    .text_size(px(HEADER_FONT_SIZE))
+                                    .line_height(px(HEADER_LINE_HEIGHT))
+                                    .text_color(theme.chat_search_description)
+                                    .child("No matches"),
+                            ),
+                    );
+                }
+                group = group.child(body);
+                list = list.child(group);
             }
-            group = group.child(body);
-            list = list.child(group);
-        }
 
-        if !quick_rows.is_empty() {
-            let mut group = div().flex().flex_col().gap(px(PANEL_GAP)).child(
-                div()
-                    .h(px(HEADER_HEIGHT))
-                    .px(px(8.0))
-                    .pt(px(8.0))
-                    .flex()
-                    .items_center()
-                    .text_size(px(HEADER_FONT_SIZE))
-                    .line_height(px(HEADER_LINE_HEIGHT))
-                    .text_color(theme.chat_search_description)
-                    .child("Quick actions"),
-            );
-            let mut body = div().flex().flex_col();
-            for (index, row) in &quick_rows {
-                body = body.child(self.quick_row(*index, row, theme, cx));
+            if !quick_rows.is_empty() {
+                let mut group = div().flex().flex_col().gap(px(PANEL_GAP)).child(
+                    div()
+                        .h(px(HEADER_HEIGHT))
+                        .px(px(8.0))
+                        .pt(px(8.0))
+                        .flex()
+                        .items_center()
+                        .text_size(px(HEADER_FONT_SIZE))
+                        .line_height(px(HEADER_LINE_HEIGHT))
+                        .text_color(theme.chat_search_description)
+                        .child("Quick actions"),
+                );
+                let mut body = div().flex().flex_col();
+                for (index, row) in &quick_rows {
+                    body = body.child(self.quick_row(*index, row, theme, cx));
+                }
+                group = group.child(body);
+                list = list.child(group);
             }
-            group = group.child(body);
-            list = list.child(group);
         }
-
         div()
             .id("chat-search-overlay")
             .absolute()

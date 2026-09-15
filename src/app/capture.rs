@@ -297,6 +297,18 @@ impl ChatApp {
             home.set_context_compaction_for_capture(running, cx)
         });
     }
+
+    #[cfg(feature = "screenshot")]
+    /// Opens the reference's inline message rewrite form over a deterministic
+    /// conversation, without any app-server request.
+    pub fn capture_message_edit(&mut self, cx: &mut Context<Self>) {
+        let text = "Reply with exactly: p0 stage two".to_owned();
+        self.complete_startup_for_capture(cx);
+        self.home.update(cx, |home, cx| {
+            home.seed_message_rewrite_for_capture(&text, cx)
+        });
+        cx.notify();
+    }
     pub fn set_collaboration_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
         self.home
             .update(cx, |home, cx| home.set_collaboration_for_capture(state, cx));

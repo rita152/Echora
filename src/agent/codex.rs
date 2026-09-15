@@ -10,6 +10,7 @@ mod catalog;
 mod config;
 mod dispatch;
 mod elicitation;
+mod file_search;
 mod input;
 mod items;
 mod manager;

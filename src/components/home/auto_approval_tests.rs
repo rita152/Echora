@@ -172,6 +172,7 @@ fn guardian_warning_without_a_prompt_has_no_fabricated_user_bubble() {
     let rows = conversation_list_rows(
         Vec::new(),
         CurrentTurnRows {
+            message_edit_active: false,
             phase: ConversationPhase::Empty,
             user_message: String::new(),
             user_images: Vec::new(),

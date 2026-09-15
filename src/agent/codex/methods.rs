@@ -4,7 +4,7 @@ use anyhow::{Result, anyhow, bail};
 use serde_json::Value;
 
 use super::notifications::{
-    parse_mcp_server_startup_status_updated, parse_thread_status_changed,
+    parse_mcp_server_startup_status_updated, parse_thread_reverted, parse_thread_status_changed,
     parse_thread_token_usage_updated, thread_started_id, validate_remote_control_status_changed,
 };
 
@@ -74,6 +74,7 @@ pub(super) fn is_defined_server_method(method: &str) -> bool {
             | "thread/deleted"
             | "thread/name/updated"
             | "thread/closed"
+            | "thread/reverted"
             | "thread/project/updated"
             | "project/changed"
             | "turn/started"
@@ -90,6 +91,8 @@ pub(super) fn is_defined_server_method(method: &str) -> bool {
             | "model/safetyBuffering/updated"
             | "skills/changed"
             | "mcpServer/oauthLogin/completed"
+            | "fuzzyFileSearch/sessionUpdated"
+            | "fuzzyFileSearch/sessionCompleted"
     )
 }
 
@@ -130,6 +133,13 @@ pub(super) fn ensure_server_method_is_defined(message: &Value) -> Result<()> {
         "skills/changed" => super::skills::parse_changed(message),
         "mcpServer/oauthLogin/completed" => super::mcp::parse_oauth_completed(message).map(|_| ()),
         "thread/status/changed" => parse_thread_status_changed(message).map(|_| ()),
+        "thread/reverted" => parse_thread_reverted(message).map(|_| ()),
+        "fuzzyFileSearch/sessionUpdated" => {
+            super::file_search::parse_session_updated(message).map(|_| ())
+        }
+        "fuzzyFileSearch/sessionCompleted" => {
+            super::file_search::parse_session_completed(message).map(|_| ())
+        }
         "thread/tokenUsage/updated" => parse_thread_token_usage_updated(message).map(|_| ()),
         // Account notifications are connection-scoped: the manager reduces them
         // into the generation's account snapshot, so validation here keeps the

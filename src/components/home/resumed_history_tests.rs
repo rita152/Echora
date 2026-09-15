@@ -201,6 +201,7 @@ fn identical_resumed_answers_have_distinct_footer_scopes() {
     let rows = super::timeline::conversation_list_rows(
         turns,
         super::context::CurrentTurnRows {
+            message_edit_active: false,
             phase: ConversationPhase::Empty,
             user_message: String::new(),
             user_images: vec![],

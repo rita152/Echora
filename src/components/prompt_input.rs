@@ -25,6 +25,10 @@ pub enum PromptInputKind {
     /// The command menu's `[cmdk-input]` field: 6px/10px padding inside a 33px
     /// row with the 14px/21px body type measured from the desktop app.
     ChatSearch,
+    /// The inline message editor: a 40px content box without its own padding,
+    /// because the surrounding form supplies the 12px inset measured from the
+    /// reference editor.
+    MessageEdit,
 }
 
 gpui::actions!(
@@ -122,8 +126,29 @@ impl PromptInput {
         input
     }
 
+    /// Inline editor for rewriting the newest user message. The reference
+    /// wears the 40px content box inside its own rounded form.
+    pub fn message_edit(mode: ThemeMode, text: &str, cx: &mut Context<Self>) -> Self {
+        let mut input = Self::new(mode, cx);
+        input.kind = PromptInputKind::MessageEdit;
+        input.accessible_name = Some("编辑消息".into());
+        input.set_text_silently(text, cx);
+        input
+    }
+
     pub fn set_mode(&mut self, mode: ThemeMode, cx: &mut Context<Self>) {
         self.mode = mode;
+        cx.notify();
+    }
+
+    /// The command menu switches between chat and file search, so its
+    /// placeholder follows the active mode.
+    pub fn set_placeholder(
+        &mut self,
+        placeholder: impl Into<SharedString>,
+        cx: &mut Context<Self>,
+    ) {
+        self.placeholder = placeholder.into();
         cx.notify();
     }
 
@@ -847,21 +872,25 @@ impl PromptInput {
         let element_id = match self.kind {
             PromptInputKind::InlineOther => "user-input-native-other",
             PromptInputKind::ChatSearch => "chat-search-input",
+            PromptInputKind::MessageEdit => "message-edit-input",
             PromptInputKind::Composer => "prompt-input",
         };
         let height = match self.kind {
             PromptInputKind::InlineOther => 28.0,
             PromptInputKind::ChatSearch => 33.0,
+            PromptInputKind::MessageEdit => 40.0,
             PromptInputKind::Composer => 44.0,
         };
         let horizontal_padding = match self.kind {
             PromptInputKind::InlineOther => 0.0,
             PromptInputKind::ChatSearch => 10.0,
+            PromptInputKind::MessageEdit => 0.0,
             PromptInputKind::Composer => 4.0,
         };
         let top_padding = match self.kind {
             PromptInputKind::InlineOther => 4.0,
             PromptInputKind::ChatSearch => 6.0,
+            PromptInputKind::MessageEdit => 0.0,
             PromptInputKind::Composer => 1.0,
         };
         div()

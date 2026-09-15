@@ -35,6 +35,10 @@ use crate::{
 
 pub(crate) const COMPOSER_CORNER_RADIUS: f32 = 24.0;
 
+/// The reference exposes manual context compaction as the "Compact" slash
+/// command. The composer accepts its typed form.
+pub(crate) const COMPACT_COMMAND: &str = "/compact";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PickerSubmenu {
     Model,
@@ -410,6 +414,49 @@ impl ComposerView {
 
     pub fn history_needs_retry(&self) -> bool {
         self.conversation.history_needs_retry()
+    }
+
+    /// Whether a revert changed this conversation's durable history without a
+    /// local request, so the host has to reload the turns.
+    pub fn history_needs_reload(&self) -> bool {
+        self.conversation.history_needs_reload()
+    }
+
+    pub fn clear_history_stale(&mut self) {
+        self.conversation.clear_history_stale();
+    }
+
+    /// Enters the reference's rewrite mode for the newest user message and
+    /// returns its text for the transcript's inline editor. The transcript owns
+    /// the editor; the composer only owns the revert that submitting it runs.
+    pub fn begin_message_edit(&mut self, cx: &mut Context<Self>) -> Option<String> {
+        if self.conversation.message_edit_turn_id.is_some() {
+            return None;
+        }
+        let (turn_id, text) = self.conversation.editable_user_turn()?;
+        self.conversation.begin_message_edit(turn_id);
+        cx.emit(ConversationChanged);
+        cx.notify();
+        Some(text)
+    }
+
+    pub fn cancel_message_edit(&mut self, cx: &mut Context<Self>) {
+        if self.conversation.message_edit_turn_id.is_none() {
+            return;
+        }
+        self.conversation.cancel_message_edit();
+        cx.emit(ConversationChanged);
+        cx.notify();
+    }
+
+    pub fn message_edit_active(&self) -> bool {
+        self.conversation.message_edit_turn_id.is_some()
+    }
+
+    /// Whether the newest user message can be rewritten right now.
+    pub fn message_edit_available(&self) -> bool {
+        self.conversation.message_edit_turn_id.is_some()
+            || self.conversation.editable_user_turn().is_some()
     }
 
     #[cfg(feature = "screenshot")]

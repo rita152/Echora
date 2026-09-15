@@ -295,6 +295,10 @@ impl ManagerInner {
                 });
                 Ok(())
             }
+            "thread/reverted" => self.handle_thread_reverted(connection, message),
+            "fuzzyFileSearch/sessionUpdated" | "fuzzyFileSearch/sessionCompleted" => {
+                self.handle_file_search_notification(connection, method, message)
+            }
             "serverRequest/resolved" => {
                 let request_id = request_id_from_value(
                     message

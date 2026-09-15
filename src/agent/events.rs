@@ -69,6 +69,12 @@ pub enum AgentConnectionEvent {
     ThreadClosed {
         thread_id: ThreadId,
     },
+    /// The durable history of one thread was replaced with the prefix before a
+    /// turn. Published when a revert was not requested by this client, or when
+    /// the request failed after the server had already confirmed it.
+    ThreadReverted {
+        thread_id: ThreadId,
+    },
     ThreadProjectUpdated {
         thread_id: ThreadId,
         project_id: Option<ProjectId>,

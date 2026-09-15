@@ -7,7 +7,7 @@ use gpui::{Context, Entity, prelude::*};
 use super::{ChatApp, ConversationHost, ConversationKey, DraftId, state::RightPanelMode};
 use crate::{
     agent::{ProjectId, ThreadId},
-    components::composer::ComposerView,
+    components::composer::{ComposerView, ConversationChanged},
     workspace::project_id_for_thread,
 };
 
@@ -30,6 +30,7 @@ impl ChatApp {
         self.deactivate_review(cx);
         self.deactivate_side_chat(cx);
         self.active_conversation = key;
+        self.update_chat_search_roots(cx);
         if self.right_panel.open
             && matches!(self.right_panel.mode, Some(RightPanelMode::SideChat) | None)
         {
@@ -89,9 +90,14 @@ impl ChatApp {
         let key = ConversationKey::Thread(thread_id.clone());
         if let Some(host) = self.conversation_hosts.get(&key) {
             let composer = host.composer.clone();
-            let retry_history = composer.read(cx).history_needs_retry();
+            let composer_view = composer.read(cx);
+            let retry_history =
+                composer_view.history_needs_retry() || composer_view.history_needs_reload();
             if retry_history {
-                composer.update(cx, |composer, cx| composer.set_history_loading(true, cx));
+                composer.update(cx, |composer, cx| {
+                    composer.clear_history_stale();
+                    composer.set_history_loading(true, cx);
+                });
                 self.load_conversation_history(
                     ConversationKey::Thread(thread_id.clone()),
                     thread_id,
@@ -137,6 +143,7 @@ impl ChatApp {
                 project_id,
             },
         );
+        self.watch_history_invalidation(key.clone(), thread_id.clone(), composer.clone(), cx);
 
         self.load_conversation_history(
             ConversationKey::Thread(thread_id.clone()),
@@ -145,6 +152,51 @@ impl ChatApp {
             cx,
         );
         composer
+    }
+
+    /// A revert performed by another writer - or one whose request failed
+    /// after the server had already confirmed it - leaves the locally reduced
+    /// turns out of date. Reload them from app-server as soon as the
+    /// conversation reports its history as stale, without fabricating the
+    /// truncated turns locally.
+    fn watch_history_invalidation(
+        &mut self,
+        key: ConversationKey,
+        thread_id: ThreadId,
+        composer: Entity<ComposerView>,
+        cx: &mut Context<Self>,
+    ) {
+        cx.subscribe(
+            &composer,
+            move |this, composer, _: &ConversationChanged, cx| {
+                if !composer.read(cx).history_needs_reload() {
+                    return;
+                }
+                composer.update(cx, |composer, cx| {
+                    composer.clear_history_stale();
+                    composer.set_history_loading(true, cx);
+                });
+                this.load_conversation_history(
+                    key.clone(),
+                    thread_id.clone(),
+                    composer.clone(),
+                    cx,
+                );
+            },
+        )
+        .detach();
+    }
+
+    /// The command menu searches the active conversation's working directory,
+    /// which is also the root app-server reports matches against.
+    pub(super) fn update_chat_search_roots(&mut self, cx: &mut Context<Self>) {
+        let roots = self
+            .conversation_hosts
+            .get(&self.active_conversation)
+            .map(|host| vec![host.cwd.to_string_lossy().into_owned()])
+            .unwrap_or_default();
+        self.chat_search
+            .update(cx, |search, _| search.set_workspace_roots(roots));
     }
     pub(super) fn select_conversation(&mut self, thread_id: ThreadId, cx: &mut Context<Self>) {
         let key = ConversationKey::Thread(thread_id.clone());
@@ -202,7 +254,7 @@ impl ChatApp {
         let Some(host) = self.conversation_hosts.remove(&draft_key) else {
             return;
         };
-        let real_key = ConversationKey::Thread(thread_id);
+        let real_key = ConversationKey::Thread(thread_id.clone());
         if self.active_conversation == draft_key {
             self.active_conversation = real_key.clone();
         }
@@ -215,7 +267,14 @@ impl ChatApp {
         if let Some(panel) = self.review_panels.remove(&draft_key) {
             self.review_panels.insert(real_key.clone(), panel);
         }
+        let composer = host.composer.clone();
         self.conversation_hosts.insert(real_key, host);
+        self.watch_history_invalidation(
+            ConversationKey::Thread(thread_id.clone()),
+            thread_id,
+            composer,
+            cx,
+        );
         #[cfg(not(test))]
         self.workspace_store.refresh_all();
         cx.notify();

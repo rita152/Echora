@@ -19,10 +19,15 @@ use super::{
     turn::ManagedTurn,
 };
 use crate::agent::{
-    AgentAccountState, AgentMcpElicitationControl, AgentMcpElicitationHandle,
-    AgentMcpElicitationIdentity, AgentMcpElicitationRequest, AgentMcpElicitationResponse,
-    AgentServerRequestId, AgentThreadSettings,
+    AgentAccountState, AgentFileSearchSessionEvent, AgentMcpElicitationControl,
+    AgentMcpElicitationHandle, AgentMcpElicitationIdentity, AgentMcpElicitationRequest,
+    AgentMcpElicitationResponse, AgentServerRequestId, AgentThreadSettings,
 };
+
+/// How many retired file search sessions and settled reverts stay addressable
+/// so a late notification is inert instead of fatal.
+const RETIRED_FILE_SEARCH_SESSION_LIMIT: usize = 64;
+const SETTLED_REVERT_LIMIT: usize = 64;
 
 /// A standalone MCP elicitation owned by this connection generation.
 pub(super) struct PendingMcpElicitation {
@@ -87,6 +92,16 @@ pub(super) struct ConnectionState {
     pub(super) oauth_logins: HashMap<(Option<String>, String), u64>,
     /// Retired login ids. Late completion notifications for these are inert.
     pub(super) retired_oauth_logins: HashSet<u64>,
+    /// Live fuzzy file search sessions of this generation, keyed by the opaque
+    /// session id the client chose.
+    pub(super) file_search_sessions: HashMap<String, Sender<AgentFileSearchSessionEvent>>,
+    retired_file_search_sessions: VecDeque<String>,
+    /// Thread ids with a revert request in flight. The value records whether
+    /// the matching thread/reverted notification already arrived, because the
+    /// notification may precede the response.
+    pub(super) pending_reverts: HashMap<String, bool>,
+    settled_reverts: HashMap<String, ()>,
+    settled_revert_order: VecDeque<String>,
 }
 
 impl ConnectionState {
@@ -163,6 +178,9 @@ pub(super) struct Connection {
     pub(super) writer: SharedJsonWriter,
     pub(super) process: Arc<dyn ManagedProcess>,
     pub(super) next_request_id: AtomicU64,
+    /// Session ids are client-chosen and only have to be unique per
+    /// connection generation, so a counter is enough.
+    pub(super) next_file_search_session_id: AtomicU64,
     pub(super) pending_rpcs: Mutex<HashMap<u64, PendingRpc>>,
     pub(super) completed_control_rpcs: Mutex<HashSet<u64>>,
     pub(super) state: Mutex<ConnectionState>,
@@ -835,6 +853,13 @@ impl Connection {
         for (_, waiter) in settings_waiters {
             let _ = waiter.sender.try_send(Err(message.to_owned()));
         }
+        // Every live file search session belongs to the generation that just
+        // failed, so its owner learns why no further updates will arrive.
+        if let Ok(mut state) = self.state.lock() {
+            for (_, sender) in std::mem::take(&mut state.file_search_sessions) {
+                let _ = sender.try_send(AgentFileSearchSessionEvent::Failed(message.to_owned()));
+            }
+        }
         elicitations
     }
 }
@@ -858,5 +883,147 @@ impl Connection {
     ) -> AgentMcpElicitationHandle {
         let control: Arc<dyn AgentMcpElicitationControl> = self.clone();
         AgentMcpElicitationHandle::new(identity, control)
+    }
+
+    pub(super) fn next_file_search_session_id(&self) -> String {
+        let id = self
+            .next_file_search_session_id
+            .fetch_add(1, Ordering::Relaxed);
+        format!("gpui-file-search-{}-{id}", self.generation)
+    }
+
+    pub(super) fn register_file_search_session(
+        &self,
+        session_id: &str,
+        events: Sender<AgentFileSearchSessionEvent>,
+    ) -> Result<()> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        if state.file_search_sessions.contains_key(session_id) {
+            bail!("文件搜索会话 id 重复：{session_id}");
+        }
+        state
+            .file_search_sessions
+            .insert(session_id.to_owned(), events);
+        Ok(())
+    }
+
+    /// Stops routing updates to a session and keeps its id addressable, so a
+    /// notification already on the wire cannot fail the connection.
+    pub(super) fn retire_file_search_session(&self, session_id: &str) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        state.file_search_sessions.remove(session_id);
+        if !state
+            .retired_file_search_sessions
+            .iter()
+            .any(|id| id == session_id)
+        {
+            state
+                .retired_file_search_sessions
+                .push_back(session_id.to_owned());
+            while state.retired_file_search_sessions.len() > RETIRED_FILE_SEARCH_SESSION_LIMIT {
+                state.retired_file_search_sessions.pop_front();
+            }
+        }
+    }
+
+    /// Sender of a live session; None for a retired one, and an error for an
+    /// unknown session id.
+    pub(super) fn file_search_session_sender(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<Sender<AgentFileSearchSessionEvent>>> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        if let Some(sender) = state.file_search_sessions.get(session_id) {
+            return Ok(Some(sender.clone()));
+        }
+        if state
+            .retired_file_search_sessions
+            .iter()
+            .any(|id| id == session_id)
+        {
+            return Ok(None);
+        }
+        bail!("收到未知 fuzzy file search session 的通知：{session_id}")
+    }
+
+    /// Marks one thread as having a revert request in flight. A second revert
+    /// for the same thread while one is pending is a protocol error.
+    pub(super) fn begin_revert(&self, thread_id: &str) -> Result<()> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        if state.settled_reverts.contains_key(thread_id) {
+            // A new revert after a settled one starts a fresh expectation.
+            state.settled_reverts.remove(thread_id);
+        }
+        if state
+            .pending_reverts
+            .insert(thread_id.to_owned(), false)
+            .is_some()
+        {
+            bail!("线程 {thread_id} 已有一个进行中的 revert 请求");
+        }
+        Ok(())
+    }
+
+    /// Records an incoming thread/reverted notification. Returns true when it
+    /// belongs to a pending or settled revert (and is therefore consumed as
+    /// that operation's confirmation), false when it is unsolicited.
+    pub(super) fn observe_reverted(&self, thread_id: &str) -> Result<bool> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        if let Some(observed) = state.pending_reverts.get_mut(thread_id) {
+            if *observed {
+                bail!("线程 {thread_id} 收到重复的 thread/reverted 通知");
+            }
+            *observed = true;
+            return Ok(true);
+        }
+        Ok(state.settled_reverts.contains_key(thread_id))
+    }
+
+    /// Whether the pending revert for one thread was already confirmed by its
+    /// notification, which is authoritative even when the response failed.
+    pub(super) fn revert_observed(&self, thread_id: &str) -> bool {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|state| state.pending_reverts.get(thread_id).copied())
+            .unwrap_or(false)
+    }
+
+    /// Releases a revert expectation. Settled ids stay addressable for a
+    /// bounded window so a late duplicate notification stays inert.
+    pub(super) fn finish_revert(&self, thread_id: &str, settle: bool) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        state.pending_reverts.remove(thread_id);
+        if !settle {
+            return;
+        }
+        if state
+            .settled_reverts
+            .insert(thread_id.to_owned(), ())
+            .is_none()
+        {
+            state.settled_revert_order.push_back(thread_id.to_owned());
+        }
+        while state.settled_revert_order.len() > SETTLED_REVERT_LIMIT {
+            if let Some(oldest) = state.settled_revert_order.pop_front() {
+                state.settled_reverts.remove(&oldest);
+            }
+        }
     }
 }

@@ -376,6 +376,12 @@ impl WorkspaceStore {
                     });
                 });
             }
+            AgentConnectionEvent::ThreadReverted { .. } => {
+                // Durable history changed for a thread this client did not
+                // revert. Turns are reloaded by the conversation host through
+                // the normal paging path, so the sidebar entry keeps its
+                // identity; only its recency moves on the next list read.
+            }
             AgentConnectionEvent::ThreadProjectUpdated {
                 thread_id,
                 project_id,

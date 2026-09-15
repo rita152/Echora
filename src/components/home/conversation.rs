@@ -305,6 +305,7 @@ pub(super) fn conversation(
                         window,
                         home_entity.clone(),
                         home_entity.read(_cx).content_width,
+                        false,
                     ))
                     .into_any_element(),
                 0.0,
@@ -330,7 +331,21 @@ pub(super) fn conversation(
                         window,
                         home_entity.clone(),
                         home_entity.read(_cx).content_width,
+                        home_entity.read(_cx).message_edit_available(_cx),
                     ))
+                    .into_any_element(),
+                0.0,
+                16.0,
+            ),
+            ConversationListRow::MessageEdit { .. } => (
+                div()
+                    .id(("message-edit-row", index))
+                    .w_full()
+                    .child(
+                        home_entity
+                            .read(_cx)
+                            .message_edit_form(theme, home_entity.clone()),
+                    )
                     .into_any_element(),
                 0.0,
                 16.0,

@@ -85,6 +85,8 @@ pub(super) struct MainConversationSnapshot {
 pub(super) struct CurrentTurnRows<'a> {
     pub(super) phase: ConversationPhase,
     pub(super) user_message: String,
+    /// The newest user message is being rewritten in the transcript.
+    pub(super) message_edit_active: bool,
     pub(super) user_images: Vec<UserMessageAttachment>,
     pub(super) user_message_time: String,
     pub(super) assistant_message: String,

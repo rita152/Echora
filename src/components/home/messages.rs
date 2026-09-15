@@ -325,6 +325,7 @@ pub(super) fn current_user_message(
     window: &mut Window,
     home: Entity<HomeView>,
     content_width: f32,
+    message_edit_available: bool,
 ) -> Div {
     let UserMessageContent {
         continuation,
@@ -336,6 +337,7 @@ pub(super) fn current_user_message(
     let hover_group: SharedString = "user-message-hover".into();
     let copied_user_message = user_message.clone();
     let keyboard_user_message = user_message.clone();
+    let edit_home = home.clone();
     div()
         .min_h(px(USER_MESSAGE_VERTICAL_PADDING * 2.0
             + USER_MESSAGE_LINE_HEIGHT
@@ -421,7 +423,7 @@ pub(super) fn current_user_message(
                                 } else {
                                     0.0
                                 })
-                                .group_hover(hover_group, |button| button.opacity(1.0))
+                                .group_hover(hover_group.clone(), |button| button.opacity(1.0))
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -437,7 +439,41 @@ pub(super) fn current_user_message(
                                     icon("message-copy", theme.text_tertiary.into())
                                         .size(px(RESPONSE_ACTION_ICON_SIZE)),
                                 ),
-                        ),
+                        )
+                        .when(message_edit_available, |footer| {
+                            footer.child(
+                                div()
+                                    .id("user-message-edit")
+                                    .role(Role::Button)
+                                    .aria_label("编辑消息")
+                                    .focusable()
+                                    .tab_stop(true)
+                                    .focus_visible(|s| s.opacity(1.0))
+                                    .debug_selector(|| "USER_MESSAGE_EDIT".to_owned())
+                                    .size(px(26.0))
+                                    .rounded(px(10.0))
+                                    .opacity(if actions_visible_for_capture {
+                                        1.0
+                                    } else {
+                                        0.0
+                                    })
+                                    .group_hover(hover_group.clone(), |button| button.opacity(1.0))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .cursor_pointer()
+                                    .hover(move |button| button.bg(theme.sidebar_hover))
+                                    .active(move |button| button.bg(theme.text.alpha(0.12)))
+                                    .on_click(move |_, _, cx| {
+                                        edit_home
+                                            .update(cx, |home, cx| home.begin_message_edit(cx));
+                                    })
+                                    .child(
+                                        icon("message-edit", theme.text_tertiary.into())
+                                            .size(px(RESPONSE_ACTION_ICON_SIZE)),
+                                    ),
+                            )
+                        }),
                 ),
         )
 }
@@ -445,6 +481,114 @@ pub(super) fn current_user_message(
 pub(super) struct ResponseFooterMetadata {
     pub completed_at: Option<String>,
     pub hooks: Vec<crate::agent::AgentHookRun>,
+}
+
+/// Corner radius, type, and padding of the reference's inline message editor:
+/// a 734x100 form with a 25px radius over the message ink at 5% alpha, a 40px
+/// content box inset by 12px, and a right-aligned footer with 28px buttons.
+pub(super) const MESSAGE_EDIT_RADIUS: f32 = 25.0;
+const MESSAGE_EDIT_INSET: f32 = 12.0;
+const MESSAGE_EDIT_FOOTER_GAP: f32 = 6.0;
+const MESSAGE_EDIT_BUTTON_HEIGHT: f32 = 28.0;
+const MESSAGE_EDIT_BUTTON_RADIUS: f32 = 12.5;
+const MESSAGE_EDIT_BUTTON_PADDING: f32 = 8.0;
+const MESSAGE_EDIT_BUTTON_FONT_SIZE: f32 = 13.0;
+const MESSAGE_EDIT_BUTTON_LINE_HEIGHT: f32 = 18.0;
+
+pub(super) fn message_edit_form(
+    input: Entity<crate::components::prompt_input::PromptInput>,
+    theme: Theme,
+    home: Entity<HomeView>,
+    content_width: f32,
+) -> gpui::Stateful<Div> {
+    let cancel_home = home.clone();
+    div()
+        .id("message-edit-form")
+        .w_full()
+        .flex()
+        .flex_col()
+        .items_start()
+        .child(
+            div()
+                // The reference form spans the whole transcript content box
+                // (734px inside a 736px column), not the user bubble column.
+                .w(px(content_width.min(CONVERSATION_CONTENT_MAX_WIDTH) - 2.0))
+                .max_w_full()
+                .min_w(px(0.0))
+                .flex()
+                .flex_col()
+                .rounded(px(MESSAGE_EDIT_RADIUS))
+                .bg(theme.text.alpha(0.05))
+                .child(
+                    div()
+                        .px(px(MESSAGE_EDIT_INSET))
+                        .pt(px(MESSAGE_EDIT_INSET))
+                        .pb(px(MESSAGE_EDIT_INSET))
+                        .child(input),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .justify_end()
+                        .gap(px(MESSAGE_EDIT_FOOTER_GAP))
+                        .px(px(MESSAGE_EDIT_INSET))
+                        .pb(px(MESSAGE_EDIT_INSET))
+                        .child(
+                            div()
+                                .id("message-edit-cancel")
+                                .role(Role::Button)
+                                .aria_label("Cancel")
+                                .focusable()
+                                .tab_stop(true)
+                                .h(px(MESSAGE_EDIT_BUTTON_HEIGHT))
+                                .px(px(MESSAGE_EDIT_BUTTON_PADDING))
+                                .rounded(px(MESSAGE_EDIT_BUTTON_RADIUS))
+                                .border_1()
+                                .border_color(theme.text.alpha(0.082))
+                                .bg(theme.edit_button_surface)
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .gap(px(4.0))
+                                .text_size(px(MESSAGE_EDIT_BUTTON_FONT_SIZE))
+                                .line_height(px(MESSAGE_EDIT_BUTTON_LINE_HEIGHT))
+                                .text_color(theme.text)
+                                .cursor_pointer()
+                                .hover(move |button| button.bg(theme.text.alpha(0.08)))
+                                .on_click(move |_, _, cx| {
+                                    cancel_home.update(cx, |home, cx| home.cancel_message_edit(cx));
+                                })
+                                .child("Cancel"),
+                        )
+                        .child(
+                            div()
+                                .id("message-edit-send")
+                                .role(Role::Button)
+                                .aria_label("Send")
+                                .focusable()
+                                .tab_stop(true)
+                                .h(px(MESSAGE_EDIT_BUTTON_HEIGHT))
+                                .px(px(MESSAGE_EDIT_BUTTON_PADDING))
+                                .rounded(px(MESSAGE_EDIT_BUTTON_RADIUS))
+                                .border_1()
+                                .border_color(theme.text.alpha(0.082))
+                                .bg(theme.text)
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .gap(px(4.0))
+                                .text_size(px(MESSAGE_EDIT_BUTTON_FONT_SIZE))
+                                .line_height(px(MESSAGE_EDIT_BUTTON_LINE_HEIGHT))
+                                .text_color(theme.chat_search_surface)
+                                .cursor_pointer()
+                                .on_click(move |_, _, cx| {
+                                    home.update(cx, |home, cx| home.submit_message_edit(cx));
+                                })
+                                .child("Send"),
+                        ),
+                ),
+        )
 }
 
 pub(super) fn current_response_footer(

@@ -125,6 +125,8 @@ pub struct Theme {
     pub chat_search_row_hover: Rgba,
     pub chat_search_description: Rgba,
     pub chat_search_hint_surface: Rgba,
+    /// Surface of the inline message editor secondary button (dark: white 3%, light: white 96%).
+    pub edit_button_surface: Rgba,
     pub settings_search: Rgba,
     pub settings_accent: Rgba,
     pub settings_description: Rgba,
@@ -242,6 +244,7 @@ impl Theme {
                 chat_search_row_hover: rgba(0x1a1c1f0e),
                 chat_search_description: rgba(0x1a1c1f7e),
                 chat_search_hint_surface: rgba(0x1a1c1f1a),
+                edit_button_surface: rgba(0xfffffff5),
                 // ChatGPT settings search surface at the reference capture
                 // resolves to #f2f2f2 on the light shell.
                 settings_search: rgba(0xf2f2f2ff),
@@ -332,6 +335,7 @@ impl Theme {
                 chat_search_row_hover: rgba(0xffffff14),
                 chat_search_description: rgba(0xffffff7f),
                 chat_search_hint_surface: rgba(0xffffff1a),
+                edit_button_surface: rgba(0xffffff08),
                 // The sidebar search is a little brighter than the page;
                 // the management search has its own #2d2d2d fill.
                 settings_search: rgba(0x2e2e2eff),

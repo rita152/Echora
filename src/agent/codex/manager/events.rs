@@ -202,6 +202,9 @@ pub(super) fn connection_event_key(event: &AgentConnectionEvent) -> String {
         AgentConnectionEvent::ThreadClosed { thread_id } => {
             format!("thread-closed:{thread_id}")
         }
+        AgentConnectionEvent::ThreadReverted { thread_id } => {
+            format!("thread-reverted:{thread_id}")
+        }
         AgentConnectionEvent::ThreadProjectUpdated { thread_id, .. } => {
             format!("thread-project:{thread_id}")
         }
@@ -217,5 +220,6 @@ fn is_transient_connection_event(event: &AgentConnectionEvent) -> bool {
         AgentConnectionEvent::McpElicitationRequested { .. }
             | AgentConnectionEvent::McpElicitationResolved { .. }
             | AgentConnectionEvent::McpElicitationFailed { .. }
+            | AgentConnectionEvent::ThreadReverted { .. }
     )
 }

@@ -2,12 +2,15 @@
 
 mod account;
 mod catalog;
+mod compact;
 mod config;
 mod connection;
 mod dispatch;
 mod events;
+mod file_search;
 mod mcp;
 mod protocol;
+mod revert;
 mod settings;
 mod side_conversation;
 mod skills;
@@ -156,6 +159,7 @@ impl ManagerInner {
             writer,
             process: spawned.process,
             next_request_id: AtomicU64::new(1),
+            next_file_search_session_id: AtomicU64::new(1),
             pending_rpcs: Mutex::new(HashMap::new()),
             completed_control_rpcs: Mutex::new(Default::default()),
             state: Mutex::new(ConnectionState::default()),
@@ -396,6 +400,9 @@ impl CodexAppServerManager {
             AgentCapability::ThreadRead,
             AgentCapability::ThreadTurnsList,
             AgentCapability::ThreadItemsList,
+            AgentCapability::ThreadRevert,
+            AgentCapability::ThreadCompact,
+            AgentCapability::FileSearch,
             AgentCapability::ThreadRename,
             AgentCapability::ThreadArchive,
             AgentCapability::ThreadUnarchive,

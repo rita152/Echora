@@ -126,4 +126,30 @@ impl ChatApp {
         self.select_right_panel_item(3, cx);
         self.file_panels[&self.active_conversation].update(cx, |p, cx| p.show_picker(cx));
     }
+
+    /// Opens one file matched inside the chat search dialog in the existing
+    /// file panel. Directory matches reveal the picker instead, because the
+    /// panel owns the tree and the search only reports the path.
+    pub(super) fn open_matched_file(
+        &mut self,
+        path: String,
+        is_directory: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.ensure_files(cx);
+        self.right_panel.open = true;
+        self.right_panel.mode = Some(super::state::RightPanelMode::Files);
+        let key = self.active_conversation.clone();
+        let Some(panel) = self.file_panels.get(&key).cloned() else {
+            return;
+        };
+        panel.update(cx, |panel, cx| {
+            if is_directory {
+                panel.show_picker(cx);
+            } else {
+                panel.open_path(std::path::PathBuf::from(path), None, cx);
+            }
+        });
+        cx.notify();
+    }
 }

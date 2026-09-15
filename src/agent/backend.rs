@@ -35,6 +35,9 @@ pub enum AgentCapability {
     ThreadRead,
     ThreadTurnsList,
     ThreadItemsList,
+    ThreadRevert,
+    ThreadCompact,
+    FileSearch,
     ThreadRename,
     ThreadArchive,
     ThreadUnarchive,
@@ -454,6 +457,30 @@ pub trait AgentBackend: Send + Sync {
         _page: PageRequest,
     ) -> Receiver<WorkspaceResult<Page<ThreadHistoryItemEntry>>> {
         unsupported_receiver(AgentCapability::ThreadItemsList)
+    }
+
+    /// Replaces a thread's durable history with the prefix before one turn.
+    /// The response is the authoritative updated thread; callers reload turns
+    /// through the normal pagination path afterwards.
+    fn revert_thread(
+        &self,
+        _request: super::AgentThreadRevert,
+    ) -> Receiver<WorkspaceResult<super::AgentThreadRevertOutcome>> {
+        unsupported_receiver(AgentCapability::ThreadRevert)
+    }
+
+    /// Starts one manual context compaction. Progress and completion arrive as
+    /// ordinary turn events, so the acknowledgement carries no payload.
+    fn start_thread_compaction(&self, _thread_id: ThreadId) -> Receiver<Result<(), String>> {
+        unsupported_account_receiver("手动上下文压缩")
+    }
+
+    /// Opens a fuzzy file search session for the given workspace roots.
+    fn open_file_search_session(
+        &self,
+        _roots: Vec<String>,
+    ) -> Receiver<Result<super::AgentFileSearchSession, String>> {
+        unsupported_account_receiver("文件搜索")
     }
 
     fn set_thread_name(

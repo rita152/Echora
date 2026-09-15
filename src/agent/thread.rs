@@ -264,6 +264,27 @@ pub struct ThreadHistory {
     pub backwards_turn_cursor: Option<PageCursor>,
 }
 
+/// A client request that replaces a paginated thread's durable history with the
+/// prefix before one turn. It only changes persisted conversation history; it
+/// never reverts local file changes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentThreadRevert {
+    pub thread_id: ThreadId,
+    /// The turn excluded from the replacement history, together with every
+    /// later turn.
+    pub before_turn_id: String,
+}
+
+/// Authoritative result of a successful revert: the updated thread metadata
+/// plus the backwards cursors the response may carry. Turns are always
+/// hydrated again through the normal pagination path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentThreadRevertOutcome {
+    pub thread: ThreadSummary,
+    pub turns_backwards_cursor: Option<PageCursor>,
+    pub items_backwards_cursor: Option<PageCursor>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ThreadMetadataUpdate {
     /// `Unspecified` keeps the server value, `Null` clears it, and `Value`

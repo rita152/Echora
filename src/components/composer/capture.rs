@@ -183,6 +183,26 @@ impl ComposerView {
         cx.emit(ConversationChanged);
         cx.notify();
     }
+    #[cfg(feature = "screenshot")]
+    /// Deterministic rewrite state: a plain composer turn whose newest user
+    /// message is open in the reference's inline editor.
+    pub fn seed_message_rewrite_for_capture(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.conversation.user_message = Some(text.to_owned());
+        self.conversation.user_message_time = Some("12:00 PM".to_owned());
+        self.conversation.assistant_message = "p0 stage two".to_owned();
+        self.conversation.assistant_message_time = Some("12:00 PM".to_owned());
+        self.conversation.phase = ConversationPhase::Complete;
+        self.conversation.turn_identity = Some(crate::agent::AgentTurnIdentity {
+            generation: 1,
+            thread_id: "capture-thread".to_owned(),
+            turn_id: "capture-turn".to_owned(),
+        });
+        self.conversation
+            .begin_message_edit("capture-turn".to_owned());
+        cx.emit(ConversationChanged);
+        cx.notify();
+    }
+
     pub fn set_context_compaction_for_capture(&mut self, running: bool, cx: &mut Context<Self>) {
         self.conversation.user_message = Some("请压缩当前聊天的上下文。".to_owned());
         self.conversation.user_message_time = Some("19:19".to_owned());

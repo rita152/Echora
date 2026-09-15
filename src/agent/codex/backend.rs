@@ -231,6 +231,24 @@ impl AgentBackend for CodexAppServerBackend {
         self.manager.list_thread_items(thread_id, turn_id, page)
     }
 
+    fn revert_thread(
+        &self,
+        request: crate::agent::AgentThreadRevert,
+    ) -> Receiver<WorkspaceResult<crate::agent::AgentThreadRevertOutcome>> {
+        self.manager.revert_thread(request)
+    }
+
+    fn start_thread_compaction(&self, thread_id: ThreadId) -> Receiver<Result<(), String>> {
+        self.manager.start_thread_compaction(thread_id)
+    }
+
+    fn open_file_search_session(
+        &self,
+        roots: Vec<String>,
+    ) -> Receiver<Result<crate::agent::AgentFileSearchSession, String>> {
+        self.manager.open_file_search_session(roots)
+    }
+
     fn set_thread_name(&self, thread_id: ThreadId, name: String) -> Receiver<WorkspaceResult<()>> {
         self.manager.set_thread_name(thread_id, name)
     }

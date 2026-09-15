@@ -9,6 +9,7 @@ mod catalog;
 mod codex;
 mod config;
 mod events;
+mod file_search;
 mod mcp;
 mod message;
 mod requests;
@@ -61,6 +62,11 @@ pub use config::{
     AgentConfigSnapshot, AgentConfigSource, AgentConfigWrite, config_value,
 };
 pub use events::{AgentConnectionEvent, AgentEvent};
+pub(crate) use file_search::AgentFileSearchSessionControl;
+pub use file_search::{
+    AgentFileMatchType, AgentFileSearchRequest, AgentFileSearchResult, AgentFileSearchSession,
+    AgentFileSearchSessionCompleted, AgentFileSearchSessionEvent, AgentFileSearchSessionUpdate,
+};
 pub use mcp::{
     AgentMcpAuthStatus, AgentMcpError, AgentMcpErrorKind, AgentMcpOauthClientRegistration,
     AgentMcpOauthCompletion, AgentMcpOauthCompletionStatus, AgentMcpOauthLogin,
@@ -108,9 +114,10 @@ pub use status::{
     AgentThreadTokenUsage, AgentTokenUsageBreakdown,
 };
 pub use thread::{
-    CreateProject, FilterValue, HistoryItemDetail, HistoryTurnStatus, Page, PageRequest, Project,
-    ProjectChange, ProjectId, SortDirection, ThreadActivity, ThreadHistory, ThreadHistoryItem,
-    ThreadHistoryItemEntry, ThreadId, ThreadListRequest, ThreadMetadataUpdate, ThreadSearchResult,
-    ThreadSection, ThreadSectionAppearance, ThreadSectionId, ThreadSortKey, ThreadSummary,
-    ThreadTurn, UpdateProject, UserMessageAttachment,
+    AgentThreadRevert, AgentThreadRevertOutcome, CreateProject, FilterValue, HistoryItemDetail,
+    HistoryTurnStatus, Page, PageRequest, Project, ProjectChange, ProjectId, SortDirection,
+    ThreadActivity, ThreadHistory, ThreadHistoryItem, ThreadHistoryItemEntry, ThreadId,
+    ThreadListRequest, ThreadMetadataUpdate, ThreadSearchResult, ThreadSection,
+    ThreadSectionAppearance, ThreadSectionId, ThreadSortKey, ThreadSummary, ThreadTurn,
+    UpdateProject, UserMessageAttachment,
 };

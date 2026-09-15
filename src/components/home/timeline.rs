@@ -76,6 +76,10 @@ pub(super) enum ConversationListRow {
         images: Vec<crate::agent::UserMessageAttachment>,
         time: String,
     },
+    /// The newest user message replaced by the reference's inline rewrite form.
+    MessageEdit {
+        text: String,
+    },
     AssistantMarkdown {
         id: String,
         text: String,
@@ -578,6 +582,7 @@ pub(super) fn conversation_list_rows(
     let CurrentTurnRows {
         phase,
         user_message,
+        message_edit_active,
         user_images,
         user_message_time,
         assistant_message,
@@ -647,7 +652,9 @@ pub(super) fn conversation_list_rows(
         )
     });
     // Hook input never stands in for a missing human message.
-    if !user_message.is_empty()
+    if message_edit_active && !user_message.is_empty() {
+        rows.push(ConversationListRow::MessageEdit { text: user_message });
+    } else if !user_message.is_empty()
         || !user_images.is_empty()
         || (phase != ConversationPhase::Empty && !hook_input)
     {

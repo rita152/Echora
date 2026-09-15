@@ -14,11 +14,11 @@ codex app-server generate-json-schema --experimental --out artifacts/app-server-
 
 | 状态 | 数量 | 判定 |
 |---|---|---|
-| 已接入 | 77 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
+| 已接入 | 85 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
 | 后端已接入 | 4 | 已实现读取或校验，尚无对应可见 UI 调用方或展示 |
 | 部分接入 | 4 | 只支持部分类型、有效变体或限定生命周期窗口 |
 | 兼容退订 | 7 | initialize 按完整方法名退订；不代表对应产品能力已接入；保留明确的兼容窗口 |
-| 未接入 | 156 | 客户端不发送；服务端请求按原 id 回复 `-32601` 并终止当前连接，服务端通知直接报错并终止连接 |
+| 未接入 | 148 | 客户端不发送；服务端请求按原 id 回复 `-32601` 并终止当前连接，服务端通知直接报错并终止连接 |
 
 未接入行的“—”沿用上述规则。`tool/requestUserInput` 是兼容别名，不计入本版本 schema 的 248 项。
 
@@ -223,10 +223,10 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `fs/unwatch` | 默认 | 未接入 | — | — |
 | `fs/watch` | 默认 | 未接入 | — | — |
 | `fs/writeFile` | 默认 | 未接入 | — | — |
-| `fuzzyFileSearch` | 默认 | 未接入 | — | — |
-| `fuzzyFileSearch/sessionStart` | 实验 | 未接入 | — | — |
-| `fuzzyFileSearch/sessionStop` | 实验 | 未接入 | — | — |
-| `fuzzyFileSearch/sessionUpdate` | 实验 | 未接入 | — | — |
+| `fuzzyFileSearch` | 默认 | 已接入 | 搜索弹窗文件模式的回退路径：服务端不支持会话时改为一次性请求，cancellationToken 固定为 gpui-fuzzy-file-search。 | `manager` |
+| `fuzzyFileSearch/sessionStart` | 实验 | 已接入 | 搜索弹窗进入文件模式时为当前会话 cwd 建一个会话；失败按 session not found 回退到一次性请求。 | `manager` |
+| `fuzzyFileSearch/sessionStop` | 实验 | 已接入 | 关闭弹窗、切换模式或切换会话时结束会话；会话 id 保留有上限的退休标记，迟到通知保持惰性。 | `manager` |
+| `fuzzyFileSearch/sessionUpdate` | 实验 | 已接入 | 每次输入变化更新查询；结果经 sessionUpdated 通知返回，按 cycle 丢弃过期响应。 | `manager` |
 | `hooks/list` | 默认 | 未接入 | — | — |
 | `initialize` | 默认 | 已接入 | 每个连接 generation 一次；发送 clientInfo、experimentalApi=true、requestAttestation=false；按完整方法名统一退订七项通知，列表与兼容窗口见运行时能力协商。 | `manager` |
 | `marketplace/add` | 默认 | 未接入 | — | — |
@@ -284,7 +284,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/backgroundTerminals/clean` | 实验 | 未接入 | — | — |
 | `thread/backgroundTerminals/list` | 实验 | 未接入 | — | — |
 | `thread/backgroundTerminals/terminate` | 实验 | 未接入 | — | — |
-| `thread/compact/start` | 默认 | 未接入 | — | — |
+| `thread/compact/start` | 默认 | 已接入 | 手动压缩；composer 的 /compact 命令触发，压缩期间 turn/steer 按 activeTurnNotSteerable{turnKind:compact} 如实报错，完成经 turn/item 事件收束。 | `manager` |
 | `thread/decrement_elicitation` | 实验 | 未接入 | — | — |
 | `thread/delete` | 默认 | 已接入 | 按 threadId 删除；从所有侧栏集合移除。 | `manager/workspace` |
 | `thread/fork` | 默认 | 已接入 | 仅用于临时侧边聊天：ephemeral=true、excludeTurns=true、threadSource=user，携带 cwd、说明及可选 model/effort/serviceTier。验证新 id、ephemeral 和先到的 thread/started；无持久化分叉 UI。 | `manager/side_conversation` |
@@ -313,7 +313,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/realtime/start` | 实验 | 未接入 | — | — |
 | `thread/realtime/stop` | 实验 | 未接入 | — | — |
 | `thread/resume` | 默认 | 已接入 | threadId、excludeTurns=true；当前 generation 未加载时执行一次，返回 id 必须匹配；失败不回退为新建。 | `manager/turn` |
-| `thread/revert` | 默认 | 未接入 | — | — |
+| `thread/revert` | 默认 | 已接入 | 编辑最新用户消息时按 beforeTurnId 传该轮 id：把持久化历史替换为该轮之前的前缀，之后重载仍走 thread/read 与分页路径；响应是历史权威来源，不回退本地文件改动。 | `manager` |
 | `thread/rollback` | 默认 | 未接入 | — | — |
 | `thread/search` | 实验 | 已接入 | 非空 searchTerm、archived、分页和排序；返回 thread 与 snippet。历史会话搜索弹窗用它检索会话；空查询改用 `threadSection/list` 的置顶分区与 `thread/list`（recency 倒序）拼出前九行。参考实现的弹窗还会合并 ChatGPT 云端会话，app-server 无对应数据。 | `manager/workspace` |
 | `thread/searchOccurrences` | 实验 | 未接入 | — | — |
@@ -374,8 +374,8 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `externalAgentConfig/import/completed` | 默认 | 未接入 | — | — |
 | `externalAgentConfig/import/progress` | 默认 | 未接入 | — | — |
 | `fs/changed` | 默认 | 未接入 | — | — |
-| `fuzzyFileSearch/sessionCompleted` | 默认 | 未接入 | — | — |
-| `fuzzyFileSearch/sessionUpdated` | 默认 | 未接入 | — | — |
+| `fuzzyFileSearch/sessionCompleted` | 默认 | 已接入 | 标记当前查询结果结束。 | `manager` |
+| `fuzzyFileSearch/sessionUpdated` | 默认 | 已接入 | 按 sessionId 路由到拥有该会话的弹窗；未知会话报协议错误，已退休的会话忽略。 | `manager` |
 | `guardianWarning` | 默认 | 已接入 | 线程级 message，允许无活动轮次；同一当前轮次去重，通用消息保留原文，反复拒绝提示显示状态分隔行。schema 无 turnId/reviewId，不推定归属或终态。 | `auto_approval`、`manager/dispatch` |
 | `hook/completed` | 默认 | 部分接入 | 同一 run.id 原位收敛，保留 running/completed/failed/blocked/stopped 原始状态与实际收到 completed 的标记，不由方法名推断成功。匹配已结束轮次且存在回复操作栏时显示钩子图标和运行详情浮层；无 turnId 或没有对应回复操作栏的展示路径未完成。 | `agent/runtime/state`、`home/runtime` |
 | `hook/started` | 默认 | 部分接入 | 按 generation/threadId/run.id 和实际提供的 optional/nullable turnId 建模，保留完整运行身份、来源、事件、执行模式、状态、输出及时间。支持无活动 turn；不抢占 pending turn/start。运行中的独立提示在 ChatGPT 参考中不可见；无 turnId 记录目前只有运行时状态。 | `runtime`、`manager/dispatch` |
@@ -429,7 +429,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/realtime/started` | 默认 | 未接入 | — | — |
 | `thread/realtime/transcript/delta` | 默认 | 未接入 | — | — |
 | `thread/realtime/transcript/done` | 默认 | 未接入 | — | — |
-| `thread/reverted` | 默认 | 未接入 | — | — |
+| `thread/reverted` | 默认 | 已接入 | 仅 threadId；可先于 thread/revert 响应到达，按“通知先于 RPC 响应”暂存为该请求的确认，非本客户端发起的回退才作为连接事件发布并触发历史重载。 | `manager` |
 | `thread/settings/updated` | 默认 | 已接入 | 按原 threadId／generation 同步 model/effort/serviceTier/cwd 与有效权限；匹配本次期望值才满足 waiter，处理响应前通知、重复／已知迟到回执及关闭临时线程。 | `manager/dispatch`、`manager/settings`、`notifications` |
 | `thread/started` | 默认 | 已接入 | 校验 params.thread.id，关联当前 start/resume/fork；RPC 响应是最终 id 来源。已加载线程的迟到通知不得绑定到下一次生命周期请求。 | `manager/dispatch` |
 | `thread/status/changed` | 默认 | 已接入 | 按 threadId 保存 notLoaded/idle/systemError/active；active 仅接受 waitingOnApproval/waitingOnUserInput，不替代 turn 终态。 | `manager/dispatch`、`notifications` |
