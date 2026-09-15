@@ -75,6 +75,8 @@ impl ConversationState {
                 }
             }
             AgentConnectionEvent::SkillsChanged { .. }
+            | AgentConnectionEvent::AppListUpdated { .. }
+            | AgentConnectionEvent::ExternalAgentImportStatus(_)
             | AgentConnectionEvent::McpOauthLoginCompleted(_) => return false,
             AgentConnectionEvent::ThreadStatusChanged(status) => Some(status.thread_id.as_str()),
             AgentConnectionEvent::ThreadSettingsUpdated { thread_id, .. } => {
@@ -165,9 +167,12 @@ impl ConversationState {
             | AgentConnectionEvent::ThreadDeleted { .. }
             | AgentConnectionEvent::ThreadNameUpdated { .. }
             | AgentConnectionEvent::ThreadClosed { .. }
-            // Skills invalidation and OAuth completions belong to the MCP and
-            // skills management surface, not to a conversation timeline.
+            // Skills invalidation, app-catalog invalidation, import status,
+            // and OAuth completions belong to the management surfaces, not to
+            // a conversation timeline.
             | AgentConnectionEvent::SkillsChanged { .. }
+            | AgentConnectionEvent::AppListUpdated { .. }
+            | AgentConnectionEvent::ExternalAgentImportStatus(_)
             | AgentConnectionEvent::McpOauthLoginCompleted(_)
             | AgentConnectionEvent::ThreadProjectUpdated { .. } => return false,
             AgentConnectionEvent::McpElicitationRequested { .. }

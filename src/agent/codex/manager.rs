@@ -1,14 +1,17 @@
 //! Application-owned connection generations, startup, and shutdown.
 
 mod account;
+mod apps;
 mod catalog;
 mod compact;
 mod config;
 mod connection;
 mod dispatch;
 mod events;
+mod external_agent_config;
 mod file_search;
 mod mcp;
+mod plugins;
 mod protocol;
 mod revert;
 mod settings;
@@ -429,6 +432,12 @@ impl CodexAppServerManager {
             AgentCapability::McpServerStatusList,
             AgentCapability::McpServerReload,
             AgentCapability::McpOauthLogin,
+            AgentCapability::AppDirectory,
+            AgentCapability::PluginDirectory,
+            AgentCapability::PluginInstall,
+            AgentCapability::PluginShare,
+            AgentCapability::MarketplaceManagement,
+            AgentCapability::ExternalAgentImport,
         ])
     }
 }

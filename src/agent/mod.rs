@@ -3,15 +3,18 @@
 
 mod account;
 mod activity;
+mod apps;
 mod auto_approval;
 mod backend;
 mod catalog;
 mod codex;
 mod config;
 mod events;
+mod external_agent_config;
 mod file_search;
 mod mcp;
 mod message;
+mod plugins;
 mod requests;
 mod runtime;
 mod skills;
@@ -39,6 +42,12 @@ pub use activity::{
     AgentReasoning, AgentReviewMode, AgentSleep, AgentTurnPlan, AgentWebSearch, CommandExecution,
     CommandExecutionAction, CommandExecutionStatus, LegacySubAgentActivityKind,
 };
+pub use apps::{
+    AgentAppBranding, AgentAppInfo, AgentAppMetadata, AgentAppMetadataEntry, AgentAppReview,
+    AgentAppScreenshot, AgentAppToolSummary, AgentAppsError, AgentAppsErrorKind,
+    AgentAppsInstalledRequest, AgentAppsListRequest, AgentAppsPage, AgentAppsReadRequest,
+    AgentAppsReadResult, AgentInstalledApp, AgentInstalledApps,
+};
 pub use auto_approval::{
     AgentAutoApprovalReview, AgentAutoApprovalReviewAction, AgentAutoApprovalReviewKey,
     AgentAutoApprovalReviewStatus, AgentGuardianWarning, AgentStrictReviewRequirement,
@@ -62,6 +71,17 @@ pub use config::{
     AgentConfigSnapshot, AgentConfigSource, AgentConfigWrite, config_value,
 };
 pub use events::{AgentConnectionEvent, AgentEvent};
+pub use external_agent_config::{
+    AgentExternalAgentConfigError, AgentExternalAgentConfigErrorKind,
+    AgentExternalAgentConnectorSource, AgentExternalAgentDetectRequest,
+    AgentExternalAgentDetectResult, AgentExternalAgentDetectedConnector, AgentExternalAgentFailure,
+    AgentExternalAgentHistoryRecordRequest, AgentExternalAgentImportHistories,
+    AgentExternalAgentImportHistory, AgentExternalAgentImportReceipt,
+    AgentExternalAgentImportRequest, AgentExternalAgentImportStatus,
+    AgentExternalAgentImportedConnector, AgentExternalAgentImportedConnectorSource,
+    AgentExternalAgentItemType, AgentExternalAgentMigrationItem, AgentExternalAgentSuccess,
+    AgentExternalAgentTypeResult,
+};
 pub(crate) use file_search::AgentFileSearchSessionControl;
 pub use file_search::{
     AgentFileMatchType, AgentFileSearchRequest, AgentFileSearchResult, AgentFileSearchSession,
@@ -77,6 +97,29 @@ pub use mcp::{
 };
 pub use message::normalize_user_message_for_display;
 pub(crate) use message::user_message_context_files;
+pub use plugins::{
+    AgentAppTemplateUnavailableReason, AgentMarketplaceAddReceipt, AgentMarketplaceAddRequest,
+    AgentMarketplaceAddResult, AgentMarketplaceInterface, AgentMarketplaceLoadError,
+    AgentMarketplaceRemoveReceipt, AgentMarketplaceRemoveRequest, AgentMarketplaceRemoveResult,
+    AgentMarketplaceUpgradeError, AgentMarketplaceUpgradeReceipt, AgentMarketplaceUpgradeRequest,
+    AgentMarketplaceUpgradeResult, AgentPluginAppSummary, AgentPluginAppTemplateSummary,
+    AgentPluginAuthPolicy, AgentPluginAvailability, AgentPluginCatalog, AgentPluginCatalogRequest,
+    AgentPluginDetail, AgentPluginDisabledReason, AgentPluginHookSummary, AgentPluginInstallPolicy,
+    AgentPluginInstallPolicySource, AgentPluginInstallReceipt, AgentPluginInstallRequest,
+    AgentPluginInstallResult, AgentPluginInstalledRequest, AgentPluginInterface,
+    AgentPluginMarketplace, AgentPluginMarketplaceKind, AgentPluginOperationOutcome,
+    AgentPluginReadRequest, AgentPluginReconcileChangedPlugin, AgentPluginReconcileReceipt,
+    AgentPluginReconcileRequest, AgentPluginSearchPage, AgentPluginSearchRequest,
+    AgentPluginSearchResult, AgentPluginShareContext, AgentPluginShareDeleteRequest,
+    AgentPluginShareDeleteResult, AgentPluginShareDiscoverability, AgentPluginShareList,
+    AgentPluginShareListEntry, AgentPluginSharePrincipal, AgentPluginSharePrincipalType,
+    AgentPluginShareRole, AgentPluginShareSaveReceipt, AgentPluginShareSaveRequest,
+    AgentPluginShareSaveResult, AgentPluginShareTarget, AgentPluginShareUpdateTargetsReceipt,
+    AgentPluginShareUpdateTargetsRequest, AgentPluginShareUpdateTargetsResult,
+    AgentPluginSkillContent, AgentPluginSkillReadRequest, AgentPluginSkillSummary,
+    AgentPluginSource, AgentPluginSummary, AgentPluginUninstallRequest, AgentPluginUninstallResult,
+    AgentPluginsError, AgentPluginsErrorKind,
+};
 pub use requests::{
     AgentAdditionalFileSystemPermissions, AgentAdditionalNetworkPermissions, AgentApprovalHandle,
     AgentCommandApprovalChoice, AgentCommandApprovalKind, AgentCommandApprovalRequest,

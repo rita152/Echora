@@ -52,6 +52,12 @@ pub enum AgentCapability {
     McpServerStatusList,
     McpServerReload,
     McpOauthLogin,
+    AppDirectory,
+    PluginDirectory,
+    PluginInstall,
+    PluginShare,
+    MarketplaceManagement,
+    ExternalAgentImport,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -378,6 +384,246 @@ pub trait AgentBackend: Send + Sync {
         let _ = sender.try_send(Ok(()));
         receiver
     }
+
+    /// Reads the app (connector) directory. `app/list/updated` only invalidates
+    /// the caller's cache; this call is the only source of directory data.
+    fn load_apps(
+        &self,
+        _request: super::AgentAppsListRequest,
+    ) -> Receiver<Result<super::AgentAppsPage, super::AgentAppsError>> {
+        unsupported_apps_receiver("应用目录")
+    }
+
+    /// Reads the committed installed-connector runtime snapshot.
+    fn load_installed_apps(
+        &self,
+        _request: super::AgentAppsInstalledRequest,
+    ) -> Receiver<Result<super::AgentInstalledApps, super::AgentAppsError>> {
+        unsupported_apps_receiver("应用目录")
+    }
+
+    /// Reads metadata for specific apps.
+    fn read_apps(
+        &self,
+        _request: super::AgentAppsReadRequest,
+    ) -> Receiver<Result<super::AgentAppsReadResult, super::AgentAppsError>> {
+        unsupported_apps_receiver("应用目录")
+    }
+
+    /// Reads the plugin catalog, marketplace by marketplace.
+    fn load_plugin_catalog(
+        &self,
+        _request: super::AgentPluginCatalogRequest,
+    ) -> Receiver<Result<super::AgentPluginCatalog, super::AgentPluginsError>> {
+        unsupported_plugins_receiver("插件目录")
+    }
+
+    /// Reads only the marketplaces that have installed plugins.
+    fn load_installed_plugins(
+        &self,
+        _request: super::AgentPluginInstalledRequest,
+    ) -> Receiver<Result<super::AgentPluginCatalog, super::AgentPluginsError>> {
+        unsupported_plugins_receiver("插件目录")
+    }
+
+    fn read_plugin(
+        &self,
+        _request: super::AgentPluginReadRequest,
+    ) -> Receiver<Result<super::AgentPluginDetail, super::AgentPluginsError>> {
+        unsupported_plugins_receiver("插件目录")
+    }
+
+    /// Searches every marketplace for a term.
+    fn search_plugins(
+        &self,
+        _request: super::AgentPluginSearchRequest,
+    ) -> Receiver<Result<super::AgentPluginSearchPage, super::AgentPluginsError>> {
+        unsupported_plugins_receiver("插件搜索")
+    }
+
+    fn read_plugin_skill(
+        &self,
+        _request: super::AgentPluginSkillReadRequest,
+    ) -> Receiver<Result<super::AgentPluginSkillContent, super::AgentPluginsError>> {
+        unsupported_plugins_receiver("插件技能")
+    }
+
+    /// Reconciles installed plugins with the current configuration.
+    fn reconcile_plugins(
+        &self,
+        _request: super::AgentPluginReconcileRequest,
+    ) -> Receiver<Result<super::AgentPluginReconcileReceipt, super::AgentPluginsError>> {
+        unsupported_plugins_receiver("插件核对")
+    }
+
+    /// Installs one plugin. The outcome distinguishes success, failure, timeout
+    /// and an unconfirmed result; only the first two are safe to retry.
+    fn install_plugin(
+        &self,
+        request: super::AgentPluginInstallRequest,
+    ) -> Receiver<super::AgentPluginInstallResult> {
+        unsupported_plugin_operation(
+            request.generation,
+            request.plugin_name,
+            "当前 coding agent 不支持安装插件",
+        )
+    }
+
+    fn uninstall_plugin(
+        &self,
+        request: super::AgentPluginUninstallRequest,
+    ) -> Receiver<super::AgentPluginUninstallResult> {
+        let (sender, receiver) = async_channel::bounded(1);
+        let _ = sender.send_blocking(super::AgentPluginUninstallResult {
+            generation: request.generation,
+            plugin_id: request.plugin_id,
+            outcome: super::AgentPluginOperationOutcome::Failed {
+                message: "当前 coding agent 不支持卸载插件".to_owned(),
+                data: None,
+            },
+        });
+        receiver
+    }
+
+    fn plugin_share_list(
+        &self,
+    ) -> Receiver<Result<super::AgentPluginShareList, super::AgentPluginsError>> {
+        unsupported_plugins_receiver("插件共享")
+    }
+
+    fn save_plugin_share(
+        &self,
+        request: super::AgentPluginShareSaveRequest,
+    ) -> Receiver<super::AgentPluginShareSaveResult> {
+        let (sender, receiver) = async_channel::bounded(1);
+        let _ = sender.send_blocking(super::AgentPluginShareSaveResult {
+            generation: request.generation,
+            plugin_path: request.plugin_path,
+            outcome: super::AgentPluginOperationOutcome::Failed {
+                message: "当前 coding agent 不支持共享插件".to_owned(),
+                data: None,
+            },
+        });
+        receiver
+    }
+
+    fn update_plugin_share_targets(
+        &self,
+        request: super::AgentPluginShareUpdateTargetsRequest,
+    ) -> Receiver<super::AgentPluginShareUpdateTargetsResult> {
+        let (sender, receiver) = async_channel::bounded(1);
+        let _ = sender.send_blocking(super::AgentPluginShareUpdateTargetsResult {
+            generation: request.generation,
+            remote_plugin_id: request.remote_plugin_id,
+            outcome: super::AgentPluginOperationOutcome::Failed {
+                message: "当前 coding agent 不支持共享插件".to_owned(),
+                data: None,
+            },
+        });
+        receiver
+    }
+
+    fn delete_plugin_share(
+        &self,
+        request: super::AgentPluginShareDeleteRequest,
+    ) -> Receiver<super::AgentPluginShareDeleteResult> {
+        let (sender, receiver) = async_channel::bounded(1);
+        let _ = sender.send_blocking(super::AgentPluginShareDeleteResult {
+            generation: request.generation,
+            remote_plugin_id: request.remote_plugin_id,
+            outcome: super::AgentPluginOperationOutcome::Failed {
+                message: "当前 coding agent 不支持共享插件".to_owned(),
+                data: None,
+            },
+        });
+        receiver
+    }
+
+    fn add_marketplace(
+        &self,
+        request: super::AgentMarketplaceAddRequest,
+    ) -> Receiver<super::AgentMarketplaceAddResult> {
+        let (sender, receiver) = async_channel::bounded(1);
+        let _ = sender.send_blocking(super::AgentMarketplaceAddResult {
+            generation: request.generation,
+            source: request.source,
+            outcome: super::AgentPluginOperationOutcome::Failed {
+                message: "当前 coding agent 不支持 marketplace 管理".to_owned(),
+                data: None,
+            },
+        });
+        receiver
+    }
+
+    fn remove_marketplace(
+        &self,
+        request: super::AgentMarketplaceRemoveRequest,
+    ) -> Receiver<super::AgentMarketplaceRemoveResult> {
+        let (sender, receiver) = async_channel::bounded(1);
+        let _ = sender.send_blocking(super::AgentMarketplaceRemoveResult {
+            generation: request.generation,
+            marketplace_name: request.marketplace_name,
+            outcome: super::AgentPluginOperationOutcome::Failed {
+                message: "当前 coding agent 不支持 marketplace 管理".to_owned(),
+                data: None,
+            },
+        });
+        receiver
+    }
+
+    fn upgrade_marketplaces(
+        &self,
+        request: super::AgentMarketplaceUpgradeRequest,
+    ) -> Receiver<super::AgentMarketplaceUpgradeResult> {
+        let (sender, receiver) = async_channel::bounded(1);
+        let _ = sender.send_blocking(super::AgentMarketplaceUpgradeResult {
+            generation: request.generation,
+            marketplace_name: request.marketplace_name,
+            outcome: super::AgentPluginOperationOutcome::Failed {
+                message: "当前 coding agent 不支持 marketplace 管理".to_owned(),
+                data: None,
+            },
+        });
+        receiver
+    }
+
+    /// Lists the configuration found in other coding agents.
+    fn detect_external_agent_config(
+        &self,
+        _request: super::AgentExternalAgentDetectRequest,
+    ) -> Receiver<Result<super::AgentExternalAgentDetectResult, super::AgentExternalAgentConfigError>>
+    {
+        unsupported_external_agent_receiver("从其他应用导入")
+    }
+
+    /// Starts one import. The import id it returns is what closes the operation
+    /// through `externalAgentConfig/import/progress` and `.../completed`.
+    fn import_external_agent_config(
+        &self,
+        _request: super::AgentExternalAgentImportRequest,
+    ) -> Receiver<
+        Result<super::AgentExternalAgentImportReceipt, super::AgentExternalAgentConfigError>,
+    > {
+        unsupported_external_agent_receiver("从其他应用导入")
+    }
+
+    fn read_external_agent_import_histories(
+        &self,
+    ) -> Receiver<
+        Result<super::AgentExternalAgentImportHistories, super::AgentExternalAgentConfigError>,
+    > {
+        unsupported_external_agent_receiver("导入历史")
+    }
+
+    fn record_external_agent_import_history(
+        &self,
+        _request: super::AgentExternalAgentHistoryRecordRequest,
+    ) -> Receiver<
+        Result<super::AgentExternalAgentImportReceipt, super::AgentExternalAgentConfigError>,
+    > {
+        unsupported_external_agent_receiver("导入历史")
+    }
+
     fn read_config(
         &self,
         _cwd: PathBuf,
@@ -555,5 +801,61 @@ fn unsupported_receiver<T: Send + 'static>(
 fn unsupported_account_receiver<T: Send + 'static>(action: &str) -> Receiver<Result<T, String>> {
     let (sender, receiver) = async_channel::bounded(1);
     let _ = sender.send_blocking(Err(format!("当前 coding agent 不支持{action}")));
+    receiver
+}
+
+fn unsupported_apps_receiver<T: Send + 'static>(
+    action: &str,
+) -> Receiver<Result<T, super::AgentAppsError>> {
+    let (sender, receiver) = async_channel::bounded(1);
+    let _ = sender.send_blocking(Err(super::AgentAppsError {
+        kind: super::AgentAppsErrorKind::Unsupported,
+        message: format!("当前 coding agent 不支持{action}"),
+        data: None,
+        outcome_unknown: false,
+    }));
+    receiver
+}
+
+fn unsupported_plugins_receiver<T: Send + 'static>(
+    action: &str,
+) -> Receiver<Result<T, super::AgentPluginsError>> {
+    let (sender, receiver) = async_channel::bounded(1);
+    let _ = sender.send_blocking(Err(super::AgentPluginsError {
+        kind: super::AgentPluginsErrorKind::Unsupported,
+        message: format!("当前 coding agent 不支持{action}"),
+        data: None,
+        outcome_unknown: false,
+    }));
+    receiver
+}
+
+fn unsupported_plugin_operation(
+    generation: u64,
+    plugin_name: String,
+    message: &str,
+) -> Receiver<super::AgentPluginInstallResult> {
+    let (sender, receiver) = async_channel::bounded(1);
+    let _ = sender.send_blocking(super::AgentPluginInstallResult {
+        generation,
+        plugin_name,
+        outcome: super::AgentPluginOperationOutcome::Failed {
+            message: message.to_owned(),
+            data: None,
+        },
+    });
+    receiver
+}
+
+fn unsupported_external_agent_receiver<T: Send + 'static>(
+    action: &str,
+) -> Receiver<Result<T, super::AgentExternalAgentConfigError>> {
+    let (sender, receiver) = async_channel::bounded(1);
+    let _ = sender.send_blocking(Err(super::AgentExternalAgentConfigError {
+        kind: super::AgentExternalAgentConfigErrorKind::Unsupported,
+        message: format!("当前 coding agent 不支持{action}"),
+        data: None,
+        outcome_unknown: false,
+    }));
     receiver
 }

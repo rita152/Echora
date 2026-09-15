@@ -294,11 +294,12 @@ fn runtime_deprecation_nullability_and_exact_notification_policy() {
             .iter()
             .collect::<std::collections::HashSet<_>>()
             .len(),
-        6
+        5
     );
-    // The skills catalog is consumed by the skills management surface, so it is
-    // no longer opted out; the package/plugin catalogs still are.
+    // The skills and app catalogs are consumed by the settings surfaces, so
+    // neither is opted out any more.
     assert!(!OPT_OUT_NOTIFICATION_METHODS.contains(&"skills/changed"));
+    assert!(!OPT_OUT_NOTIFICATION_METHODS.contains(&"app/list/updated"));
     for method in [
         "item/started",
         "item/completed",

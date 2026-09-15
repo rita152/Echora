@@ -33,6 +33,7 @@ mod account;
 mod auto_approval;
 mod config;
 mod elicitation;
+mod manage;
 mod runtime;
 mod server_requests;
 mod settings;

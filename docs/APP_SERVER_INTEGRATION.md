@@ -14,17 +14,17 @@ codex app-server generate-json-schema --experimental --out artifacts/app-server-
 
 | 状态 | 数量 | 判定 |
 |---|---|---|
-| 已接入 | 85 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
+| 已接入 | 102 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
 | 后端已接入 | 4 | 已实现读取或校验，尚无对应可见 UI 调用方或展示 |
 | 部分接入 | 4 | 只支持部分类型、有效变体或限定生命周期窗口 |
-| 兼容退订 | 7 | initialize 按完整方法名退订；不代表对应产品能力已接入；保留明确的兼容窗口 |
-| 未接入 | 148 | 客户端不发送；服务端请求按原 id 回复 `-32601` 并终止当前连接，服务端通知直接报错并终止连接 |
+| 兼容退订 | 6 | initialize 按完整方法名退订；不代表对应产品能力已接入；保留明确的兼容窗口 |
+| 未接入 | 132 | 客户端不发送；服务端请求按原 id 回复 `-32601` 并终止当前连接，服务端通知直接报错并终止连接 |
 
 未接入行的“—”沿用上述规则。`tool/requestUserInput` 是兼容别名，不计入本版本 schema 的 248 项。
 
 ## 连接与状态
 
-- **连接**：`ChatApp` 持有一个共享 manager。每个 generation 启动一个 `codex app-server --stdio`，只握手一次；单 reader 读取 stdout，stdin 串行写入完整 JSONL。所有 RPC 共用递增 request id，响应可乱序；已消费的追加、配置写入和线程设置 RPC id 保留到 generation 结束，重复响应不再次更新结果。初始化按下文能力协商统一退订七项通知；其中 goal 通知退订避免恢复空闲线程时中断配置或权限操作。
+- **连接**：`ChatApp` 持有一个共享 manager。每个 generation 启动一个 `codex app-server --stdio`，只握手一次；单 reader 读取 stdout，stdin 串行写入完整 JSONL。所有 RPC 共用递增 request id，响应可乱序；已消费的追加、配置写入和线程设置 RPC id 保留到 generation 结束，重复响应不再次更新结果。初始化按下文能力协商统一退订五项通知；其中 goal 通知退订避免恢复空闲线程时中断配置或权限操作。
 - **线程与轮次**：首次提示词执行 `thread/start → turn/start`；既有线程在当前 generation 未加载时先 resume，之后直接 start turn。同一线程最多一个活动 turn，不同线程可并行；start/resume/fork 共用串行生命周期注册表。
 - **归属与提前事件**：轮次事件按 `threadId + turnId` 路由；server request 按原始字符串／数字 id 记录所属轮次。`turn/start` 响应前的事件按 wire 顺序缓存，取得响应后验证并回放；错配 id、字段或枚举报错。
 - **审批与输入**：保留数字／字符串 request id 的区别，按到达顺序显示一张请求卡；键盘只响应当前可见请求。响应写入最多尝试一次，提交后等待 `serverRequest/resolved` 释放 responder；写入失败显示错误并阻止重复提交。文件审批关联同轮次、同 item 的原始 changes／patch，不使用聚合 turn diff 或当前磁盘内容代替。会话或轮次切换使旧点击失效；终态清理自身请求、响应句柄及临时关联。连接仅保留有上限的已释放 id／thread 标记，忽略已知重复或迟到的 resolved。
@@ -105,7 +105,7 @@ UI 由真实后端状态驱动：侧边栏账户菜单显示账户标签、套�
 
 `mcpServer/oauth/login` 只发送用户选择的 name、可选 threadId、scopes 与 clientRegistration，返回 `authorizationUrl` 后由客户端生成 loginId 并记录 pending 登录；协议没有服务端 loginId，也没有取消请求，因此取消是本地失效：过期通知按 (threadId, name) 找不到 pending 登录时被解码后忽略，断连或 generation 切换会把仍等待的登录报告为已中断。`mcpServer/startupStatus/updated` 按 generation、thread（无 threadId 时按应用层）与 server 分层保存，仅供 MCP 管理界面和所属会话使用，不结束任何轮次；应用层状态不会写入无关会话。启动状态与 OAuth 状态互补：列表 `runtimeStatus` 为 null 时用最近的生命周期通知展示连接中／失败，收到更细的列表数据后以服务端为准。
 
-代码入口：领域类型在 `src/agent/skills.rs`、`src/agent/mcp.rs`，编解码在 `src/agent/codex/skills.rs`、`src/agent/codex/mcp.rs`，连接操作在 `src/agent/codex/manager/skills.rs`、`src/agent/codex/manager/mcp.rs`，界面状态在 `src/skills.rs`、`src/mcp.rs`，视图在 `src/settings/view/plugins.rs`、`plugins_mcp.rs`、`plugins_skills.rs`。未接入边界：`skills/extraRoots/set`、`plugin/*`、`marketplace/*`、`mcpServer/event/stream/*`、`mcpServer/tool/call`、`mcpServer/resource/read`；`mcpServer/elicitation/request` 已在上一节接入；MCP 服务器配置的新增／编辑／卸载仍由 Codex 配置文件负责，本阶段只做状态、重新加载与 OAuth。参考采集与对比工具见 `scripts/stage4/`，产物在 `artifacts/skills-mcp-stage4/`。
+代码入口：领域类型在 `src/agent/skills.rs`、`src/agent/mcp.rs`，编解码在 `src/agent/codex/skills.rs`、`src/agent/codex/mcp.rs`，连接操作在 `src/agent/codex/manager/skills.rs`、`src/agent/codex/manager/mcp.rs`，界面状态在 `src/skills.rs`、`src/mcp.rs`，视图在 `src/settings/view/plugins.rs`、`plugins_mcp.rs`、`plugins_skills.rs`。未接入边界：`skills/extraRoots/set`、`plugin/share/checkout`、`mcpServer/event/stream/*`、`mcpServer/tool/call`、`mcpServer/resource/read`；`mcpServer/elicitation/request` 已在上一节接入；MCP 服务器配置的新增／编辑／卸载仍由 Codex 配置文件负责，本阶段只做状态、重新加载与 OAuth。参考采集与对比工具见 `scripts/stage4/`，产物在 `artifacts/skills-mcp-stage4/`。
 
 ### 运行中追加输入
 
@@ -164,7 +164,7 @@ Composer 在运行中有草稿时显示“追加输入”，无草稿时显示�
 
 ## 运行时观察与能力协商
 
-初始化保持 `experimentalApi=true`、`requestAttestation=false`，增加精确的 `optOutNotificationMethods`：`thread/goal/updated`、`thread/goal/cleared`、`thread/queue/changed`、`skills/changed`、`app/list/updated`、`turn/moderationMetadata`、`thread/compacted`。默认 schema 与 experimental schema 均包含这些通知方法；逐项理由见总表。退订只作用于通知，不能屏蔽请求、响应或错误；未实现的服务端请求仍按原 id 回复 `-32601`，随后进入现有连接失败处理。不会退订 item/started 或 item/completed，也不会忽略未知方法。
+初始化保持 `experimentalApi=true`、`requestAttestation=false`，发送精确的 `optOutNotificationMethods` 五项：`thread/goal/updated`、`thread/goal/cleared`、`thread/queue/changed`、`turn/moderationMetadata`、`thread/compacted`。`skills/changed` 与 `app/list/updated` 不在退订名单中：设置页分别把它们当作技能目录与应用目录的失效信号。默认 schema 与 experimental schema 均包含这些通知方法；逐项理由见总表。退订只作用于通知，不能屏蔽请求、响应或错误；未实现的服务端请求仍按原 id 回复 `-32601`，随后进入现有连接失败处理。不会退订 item/started 或 item/completed，也不会忽略未知方法。
 
 Hook、认证恢复和 hookPrompt 快照通过带 generation 的观察通道交付。Hook 以 threadId/optional turnId/run.id 区分身份；缺省与 null 共同使用独立的无轮次键，同一 run.id 可以跨轮次存在，不把无 turnId 的记录迁移到前台或已知轮次。认证恢复以 threadId/turnId/provider 区分身份。两者可以早于 turn/start 响应，也可以晚于 turn/completed；不会建立或结束 turn。重复事件原位更新；服务端完成、终态 status 和较新完成时间不会被迟到 started 回退。turn 完成／中断／失败只收束该 turn 的本地等待；无 turnId 的 Hook 继续独立存在，在线程关闭或连接失效时本地收束。原始 status、message、output、时间和是否实际收到 completed 始终保留。
 
@@ -191,9 +191,9 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `account/sendAddCreditsNudgeEmail` | 默认 | 未接入 | — | — |
 | `account/usage/read` | 默认 | 未接入 | — | — |
 | `account/workspaceMessages/read` | 默认 | 未接入 | — | — |
-| `app/installed` | 默认 | 未接入 | — | — |
-| `app/list` | 默认 | 未接入 | — | — |
-| `app/read` | 默认 | 未接入 | — | — |
+| `app/installed` | 默认 | 已接入 | forceRefresh/threadId；保留 id、enabled、callable、runtimeName 与未知字段；与 `app/list` 分开缓存，两者不互相折算。 | `manager/apps`、`apps` |
+| `app/list` | 默认 | 已接入 | cursor/limit/forceRefetch/threadId；遍历 nextCursor，拒绝重复与循环游标；保留图标资产、标签、branding、appMetadata 与全部未知字段；应用行、分段徽标计数与空态均来自该响应。 | `manager/apps`、`apps` |
+| `app/read` | 默认 | 已接入 | appIds/includeTools/threadId；toolSummaries 缺失与空数组分别保留，missingAppIds 按服务端上报渲染。 | `manager/apps`、`apps` |
 | `collaborationMode/list` | 实验 | 未接入 | — | — |
 | `command/exec` | 默认 | 未接入 | — | — |
 | `command/exec/resize` | 默认 | 未接入 | — | — |
@@ -209,10 +209,10 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `environment/status` | 实验 | 未接入 | — | — |
 | `experimentalFeature/enablement/set` | 默认 | 未接入 | — | — |
 | `experimentalFeature/list` | 默认 | 未接入 | — | — |
-| `externalAgentConfig/detect` | 默认 | 未接入 | — | — |
-| `externalAgentConfig/import` | 默认 | 未接入 | — | — |
-| `externalAgentConfig/import/readHistories` | 默认 | 未接入 | — | — |
-| `externalAgentConfig/import/recordHistory` | 默认 | 未接入 | — | — |
+| `externalAgentConfig/detect` | 默认 | 已接入 | 按源发送 includeHome 与可选 cwds/maxSessions/maxSessionAgeDays；`migrationSource` 仅对 Cursor 发送（与参考客户端一致）；保留 items 的 details 原文、connectors 缺失与空数组的区别；未知 itemType 报协议错误。 | `manager/external_agent_config`、`imports` |
+| `externalAgentConfig/import` | 默认 | 已接入 | migrationItems（逐字段回显 detect 的 itemType/description/cwd/details）、providerId、source=`app`；返回的 importId 是进度与完成通知的唯一关联键；未选中任何项时不发送。 | `manager/external_agent_config`、`imports` |
+| `externalAgentConfig/import/readHistories` | 默认 | 已接入 | 无参数；保留 providerId 可空、successes/failures 逐条字段与 connectors；导入页历史卡片按 completedAtMs 取最新一条并展开 itemType。 | `manager/external_agent_config`、`imports` |
+| `externalAgentConfig/import/recordHistory` | 默认 | 已接入 | providerId + itemTypeResults；仅在完成通知的 importId 不在 readHistories 结果中时补记（参考客户端只在自身本地 provider 路径使用该方法），避免与服务端自身的记录重复。 | `manager/external_agent_config`、`imports` |
 | `feedback/upload` | 默认 | 未接入 | — | — |
 | `fs/copy` | 默认 | 未接入 | — | — |
 | `fs/createDirectory` | 默认 | 未接入 | — | — |
@@ -223,15 +223,15 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `fs/unwatch` | 默认 | 未接入 | — | — |
 | `fs/watch` | 默认 | 未接入 | — | — |
 | `fs/writeFile` | 默认 | 未接入 | — | — |
-| `fuzzyFileSearch` | 默认 | 已接入 | 搜索弹窗文件模式的回退路径：服务端不支持会话时改为一次性请求，cancellationToken 固定为 gpui-fuzzy-file-search。 | `manager` |
-| `fuzzyFileSearch/sessionStart` | 实验 | 已接入 | 搜索弹窗进入文件模式时为当前会话 cwd 建一个会话；失败按 session not found 回退到一次性请求。 | `manager` |
-| `fuzzyFileSearch/sessionStop` | 实验 | 已接入 | 关闭弹窗、切换模式或切换会话时结束会话；会话 id 保留有上限的退休标记，迟到通知保持惰性。 | `manager` |
-| `fuzzyFileSearch/sessionUpdate` | 实验 | 已接入 | 每次输入变化更新查询；结果经 sessionUpdated 通知返回，按 cycle 丢弃过期响应。 | `manager` |
+| `fuzzyFileSearch` | 默认 | 未接入 | — | — |
+| `fuzzyFileSearch/sessionStart` | 实验 | 未接入 | — | — |
+| `fuzzyFileSearch/sessionStop` | 实验 | 未接入 | — | — |
+| `fuzzyFileSearch/sessionUpdate` | 实验 | 未接入 | — | — |
 | `hooks/list` | 默认 | 未接入 | — | — |
-| `initialize` | 默认 | 已接入 | 每个连接 generation 一次；发送 clientInfo、experimentalApi=true、requestAttestation=false；按完整方法名统一退订七项通知，列表与兼容窗口见运行时能力协商。 | `manager` |
-| `marketplace/add` | 默认 | 未接入 | — | — |
-| `marketplace/remove` | 默认 | 未接入 | — | — |
-| `marketplace/upgrade` | 默认 | 未接入 | — | — |
+| `initialize` | 默认 | 已接入 | 每个连接 generation 一次；发送 clientInfo、experimentalApi=true、requestAttestation=false；按完整方法名统一退订五项通知，列表与兼容窗口见运行时能力协商。 | `manager` |
+| `marketplace/add` | 默认 | 已接入 | source（必填）与可选 refName/sparsePaths；来源文本只来自用户在“添加”面板的输入；成功/失败/超时/结果未知四态分离，结果未知不自动重试。 | `manager/plugins`、`plugins_catalog` |
+| `marketplace/remove` | 默认 | 已接入 | marketplaceName；先确认再发送，失败保留意图可显式重试，成功后强制重读目录。 | `manager/plugins`、`plugins_catalog` |
+| `marketplace/upgrade` | 默认 | 已接入 | marketplaceName 可空（空即由服务端选择全部）；逐条保留 selectedMarketplaces、upgradedRoots 与 errors。 | `manager/plugins`、`plugins_catalog` |
 | `mcpServer/event/stream/start` | 实验 | 未接入 | — | — |
 | `mcpServer/event/stream/stop` | 实验 | 未接入 | — | — |
 | `mcpServer/oauth/login` | 默认 | 已接入 | 只提交 name/threadId/scopes/clientRegistration/timeoutSecs；返回 authorizationUrl 并记录客户端生成的 loginId；取消是本地失效，断连使 pending 登录失效。 | `manager/mcp`、`mcp` |
@@ -243,19 +243,19 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `model/list` | 默认 | 已接入 | limit=50、includeHidden=false；遍历 nextCursor，拒绝循环游标；返回模型、默认值、推理强度及服务档位。 | `manager/catalog` |
 | `modelProvider/capabilities/read` | 默认 | 未接入 | — | — |
 | `permissionProfile/list` | 默认 | 已接入 | cwd、limit=100、遍历 nextCursor，拒绝循环游标及重复 id；消费 id/allowed/description，兼容可选 extends；设置和权限菜单展示，提交前复核 allowed。 | `manager/catalog`、`catalog` |
-| `plugin/install` | 默认 | 未接入 | — | — |
-| `plugin/installed` | 默认 | 未接入 | — | — |
-| `plugin/list` | 默认 | 未接入 | — | — |
-| `plugin/reconcile` | 默认 | 未接入 | — | — |
-| `plugin/read` | 默认 | 未接入 | — | — |
-| `plugin/search` | 实验 | 未接入 | — | — |
+| `plugin/install` | 默认 | 已接入 | pluginName + marketplacePath/remoteMarketplaceName（未用一侧显式 null），可选 installAttemptId；120s 操作窗口，成功回执保留 authPolicy 与 appsNeedingAuth；超时与不可读结果分别建模为 TimedOut/Unknown，不自动重试。 | `manager/plugins`、`plugins_catalog` |
+| `plugin/installed` | 默认 | 已接入 | cwds 与 installSuggestionPluginNames；与 `plugin/list` 分别缓存，安装开关状态以该响应为准。 | `manager/plugins`、`plugins` |
+| `plugin/list` | 默认 | 已接入 | cwds、forceRefetch、marketplaceKinds（浏览目录时请求全部类型）；保留 marketplaceLoadErrors、featuredPluginIds、interface、source 四种变体与未知字段；行内容与分段徽标计数均来自该响应。 | `manager/plugins`、`plugins` |
+| `plugin/reconcile` | 默认 | 已接入 | reason；每个连接 generation 首次加载插件目录时执行一次，回执中的 changedPlugins 与失败 id 列表按服务端上报展示。 | `manager/plugins`、`plugins_catalog` |
+| `plugin/read` | 默认 | 已接入 | pluginName + marketplacePath/remoteMarketplaceName；保留 description、apps、appTemplates、hooks、mcpServers、scheduledTasks、skills 与未知字段。 | `manager/plugins`、`plugins` |
+| `plugin/search` | 实验 | 已接入 | searchTerm + cursor/limit/scope/cwds；scope=global 表示跨全部可见 marketplace；遍历 nextCursor 并拒绝重复游标；结果行保留其自身的 marketplace 身份。 | `manager/plugins`、`plugins` |
 | `plugin/share/checkout` | 默认 | 未接入 | — | — |
-| `plugin/share/delete` | 默认 | 未接入 | — | — |
-| `plugin/share/list` | 默认 | 未接入 | — | — |
-| `plugin/share/save` | 默认 | 未接入 | — | — |
-| `plugin/share/updateTargets` | 默认 | 未接入 | — | — |
-| `plugin/skill/read` | 默认 | 未接入 | — | — |
-| `plugin/uninstall` | 默认 | 未接入 | — | — |
+| `plugin/share/delete` | 默认 | 已接入 | remotePluginId；经确认卡发送，结果未知不自动重试。 | `manager/plugins`、`plugins_catalog` |
+| `plugin/share/list` | 默认 | 已接入 | 无参数；未登录 ChatGPT 时服务端返回 -32600，错误原文按服务端语义展示，不伪造空列表。 | `manager/plugins`、`plugins_catalog` |
+| `plugin/share/save` | 默认 | 已接入 | pluginPath + 可选 remotePluginId/discoverability/shareTargets；无本地路径的插件在本地拒绝并说明原因，不发送注定失败的请求；成功保留 shareUrl。 | `manager/plugins`、`plugins_catalog` |
+| `plugin/share/updateTargets` | 默认 | 已接入 | remotePluginId + discoverability + shareTargets；targets 直接来自服务端 sharePrincipals，遇到接口无法表达的 owner 角色时拒绝发送而不是静默缩权。 | `manager/plugins`、`plugins_catalog` |
+| `plugin/skill/read` | 默认 | 已接入 | remoteMarketplaceName/remotePluginId/skillName；contents 为 null 与空串分开保留；无远端 id 的技能在本地说明原因。 | `manager/plugins`、`plugins_catalog` |
+| `plugin/uninstall` | 默认 | 已接入 | pluginId；先确认再发送，成功/失败/超时/结果未知四态分离，失败保留意图可显式重试。 | `manager/plugins`、`plugins_catalog` |
 | `process/kill` | 实验 | 未接入 | — | — |
 | `process/resizePty` | 实验 | 未接入 | — | — |
 | `process/spawn` | 实验 | 未接入 | — | — |
@@ -284,7 +284,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/backgroundTerminals/clean` | 实验 | 未接入 | — | — |
 | `thread/backgroundTerminals/list` | 实验 | 未接入 | — | — |
 | `thread/backgroundTerminals/terminate` | 实验 | 未接入 | — | — |
-| `thread/compact/start` | 默认 | 已接入 | 手动压缩；composer 的 /compact 命令触发，压缩期间 turn/steer 按 activeTurnNotSteerable{turnKind:compact} 如实报错，完成经 turn/item 事件收束。 | `manager` |
+| `thread/compact/start` | 默认 | 未接入 | — | — |
 | `thread/decrement_elicitation` | 实验 | 未接入 | — | — |
 | `thread/delete` | 默认 | 已接入 | 按 threadId 删除；从所有侧栏集合移除。 | `manager/workspace` |
 | `thread/fork` | 默认 | 已接入 | 仅用于临时侧边聊天：ephemeral=true、excludeTurns=true、threadSource=user，携带 cwd、说明及可选 model/effort/serviceTier。验证新 id、ephemeral 和先到的 thread/started；无持久化分叉 UI。 | `manager/side_conversation` |
@@ -313,7 +313,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/realtime/start` | 实验 | 未接入 | — | — |
 | `thread/realtime/stop` | 实验 | 未接入 | — | — |
 | `thread/resume` | 默认 | 已接入 | threadId、excludeTurns=true；当前 generation 未加载时执行一次，返回 id 必须匹配；失败不回退为新建。 | `manager/turn` |
-| `thread/revert` | 默认 | 已接入 | 编辑最新用户消息时按 beforeTurnId 传该轮 id：把持久化历史替换为该轮之前的前缀，之后重载仍走 thread/read 与分页路径；响应是历史权威来源，不回退本地文件改动。 | `manager` |
+| `thread/revert` | 默认 | 未接入 | — | — |
 | `thread/rollback` | 默认 | 未接入 | — | — |
 | `thread/search` | 实验 | 已接入 | 非空 searchTerm、archived、分页和排序；返回 thread 与 snippet。历史会话搜索弹窗用它检索会话；空查询改用 `threadSection/list` 的置顶分区与 `thread/list`（recency 倒序）拼出前九行。参考实现的弹窗还会合并 ChatGPT 云端会话，app-server 无对应数据。 | `manager/workspace` |
 | `thread/searchOccurrences` | 实验 | 未接入 | — | — |
@@ -365,17 +365,17 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `account/login/completed` | 默认 | 已接入 | 按 loginId 关联当前登录；支持 nullable loginId（仅在单个登录进行中时归属）与 onboardingEntrypoint 校验；取消后的迟到完成、重复通知均被忽略；成功后重读账户与配额。 | `manager/dispatch`、`manager/account` |
 | `account/rateLimits/updated` | 默认 | 已接入 | 应用级稀疏补丁：按 accountId + limitId 合并单桶，nullable/缺省字段不清除已确认值，不影响其他桶或其他会话，也不结束活动轮次；账户切换、登出与 generation 变化会清理旧快照。 | `manager/dispatch`、`manager/account` |
 | `account/updated` | 默认 | 已接入 | 应用级通知，不绑定 thread/turn；nullable authMode/planType 只表示当前不可用；进入连接事件快照并支持新订阅者回放。 | `manager/dispatch`、`manager/account` |
-| `app/list/updated` | 默认 | 兼容退订 | 完整方法名退订；当前没有 app/list 目录、缓存或刷新入口，静态设置页不消费此通知。 | `runtime::OPT_OUT_NOTIFICATION_METHODS` |
+| `app/list/updated` | 默认 | 已接入 | 只作缓存失效信号：载荷仍完整解码（形状变化照样报错），但不覆盖屏幕上已有目录、不清空进行中的操作；应用分段可见时才重新执行 `app/list`。 | `manager/dispatch`、`apps` |
 | `autoApprovalReview/strictReviewRequired` | 默认 | 已接入 | 按 thread/turn/startedAtMs 保存独立复核提示，同一时间去重；只展示额外安全检查状态，无 request id 或人工审批 responder，不改变 turn 终态。 | `auto_approval`、`manager/dispatch` |
 | `command/exec/outputDelta` | 默认 | 未接入 | — | — |
 | `configWarning` | 默认 | 已接入 | 应用级 summary 及可选 details/path/range；无活动轮次仍显示配置警告。 | `manager/dispatch`、`notifications` |
 | `deprecationNotice` | 默认 | 后端已接入 | 应用级 summary 与 optional/nullable details；无活动线程也接收、去重并向新订阅者重放。独立于会话内容保存。当前 ChatGPT 接收并保存该通知，未观察到首页／会话页可见提示；GPUI 不新增无参考的提示卡。 | `runtime`、`manager/events` |
 | `error` | 默认 | 已接入 | 定向轮次的 error.message、details、willRetry；显示错误信息，终态仍等待 turn/completed。 | `notifications` |
-| `externalAgentConfig/import/completed` | 默认 | 未接入 | — | — |
-| `externalAgentConfig/import/progress` | 默认 | 未接入 | — | — |
+| `externalAgentConfig/import/completed` | 默认 | 已接入 | 按 importId 与本次导入关联并收束进度；成功后重读 readHistories 与插件目录；importId 不匹配的通知保持惰性。 | `manager/dispatch`、`imports` |
+| `externalAgentConfig/import/progress` | 默认 | 已接入 | 与完成通知共用同一结构，只更新同 importId 的运行中导入计数（成功/失败项数），不改变尚未收到的完成状态。 | `manager/dispatch`、`imports` |
 | `fs/changed` | 默认 | 未接入 | — | — |
-| `fuzzyFileSearch/sessionCompleted` | 默认 | 已接入 | 标记当前查询结果结束。 | `manager` |
-| `fuzzyFileSearch/sessionUpdated` | 默认 | 已接入 | 按 sessionId 路由到拥有该会话的弹窗；未知会话报协议错误，已退休的会话忽略。 | `manager` |
+| `fuzzyFileSearch/sessionCompleted` | 默认 | 未接入 | — | — |
+| `fuzzyFileSearch/sessionUpdated` | 默认 | 未接入 | — | — |
 | `guardianWarning` | 默认 | 已接入 | 线程级 message，允许无活动轮次；同一当前轮次去重，通用消息保留原文，反复拒绝提示显示状态分隔行。schema 无 turnId/reviewId，不推定归属或终态。 | `auto_approval`、`manager/dispatch` |
 | `hook/completed` | 默认 | 部分接入 | 同一 run.id 原位收敛，保留 running/completed/failed/blocked/stopped 原始状态与实际收到 completed 的标记，不由方法名推断成功。匹配已结束轮次且存在回复操作栏时显示钩子图标和运行详情浮层；无 turnId 或没有对应回复操作栏的展示路径未完成。 | `agent/runtime/state`、`home/runtime` |
 | `hook/started` | 默认 | 部分接入 | 按 generation/threadId/run.id 和实际提供的 optional/nullable turnId 建模，保留完整运行身份、来源、事件、执行模式、状态、输出及时间。支持无活动 turn；不抢占 pending turn/start。运行中的独立提示在 ChatGPT 参考中不可见；无 turnId 记录目前只有运行时状态。 | `runtime`、`manager/dispatch` |
@@ -429,7 +429,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/realtime/started` | 默认 | 未接入 | — | — |
 | `thread/realtime/transcript/delta` | 默认 | 未接入 | — | — |
 | `thread/realtime/transcript/done` | 默认 | 未接入 | — | — |
-| `thread/reverted` | 默认 | 已接入 | 仅 threadId；可先于 thread/revert 响应到达，按“通知先于 RPC 响应”暂存为该请求的确认，非本客户端发起的回退才作为连接事件发布并触发历史重载。 | `manager` |
+| `thread/reverted` | 默认 | 未接入 | — | — |
 | `thread/settings/updated` | 默认 | 已接入 | 按原 threadId／generation 同步 model/effort/serviceTier/cwd 与有效权限；匹配本次期望值才满足 waiter，处理响应前通知、重复／已知迟到回执及关闭临时线程。 | `manager/dispatch`、`manager/settings`、`notifications` |
 | `thread/started` | 默认 | 已接入 | 校验 params.thread.id，关联当前 start/resume/fork；RPC 响应是最终 id 来源。已加载线程的迟到通知不得绑定到下一次生命周期请求。 | `manager/dispatch` |
 | `thread/status/changed` | 默认 | 已接入 | 按 threadId 保存 notLoaded/idle/systemError/active；active 仅接受 waitingOnApproval/waitingOnUserInput，不替代 turn 终态。 | `manager/dispatch`、`notifications` |

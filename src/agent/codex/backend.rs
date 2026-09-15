@@ -167,6 +167,181 @@ impl AgentBackend for CodexAppServerBackend {
         self.manager.cancel_mcp_oauth_login(login_id)
     }
 
+    fn load_apps(
+        &self,
+        request: crate::agent::AgentAppsListRequest,
+    ) -> Receiver<Result<crate::agent::AgentAppsPage, crate::agent::AgentAppsError>> {
+        self.manager.load_apps(request)
+    }
+
+    fn load_installed_apps(
+        &self,
+        request: crate::agent::AgentAppsInstalledRequest,
+    ) -> Receiver<Result<crate::agent::AgentInstalledApps, crate::agent::AgentAppsError>> {
+        self.manager.load_installed_apps(request)
+    }
+
+    fn read_apps(
+        &self,
+        request: crate::agent::AgentAppsReadRequest,
+    ) -> Receiver<Result<crate::agent::AgentAppsReadResult, crate::agent::AgentAppsError>> {
+        self.manager.read_apps(request)
+    }
+
+    fn load_plugin_catalog(
+        &self,
+        request: crate::agent::AgentPluginCatalogRequest,
+    ) -> Receiver<Result<crate::agent::AgentPluginCatalog, crate::agent::AgentPluginsError>> {
+        self.manager.load_plugin_catalog(request)
+    }
+
+    fn load_installed_plugins(
+        &self,
+        request: crate::agent::AgentPluginInstalledRequest,
+    ) -> Receiver<Result<crate::agent::AgentPluginCatalog, crate::agent::AgentPluginsError>> {
+        self.manager.load_installed_plugins(request)
+    }
+
+    fn read_plugin(
+        &self,
+        request: crate::agent::AgentPluginReadRequest,
+    ) -> Receiver<Result<crate::agent::AgentPluginDetail, crate::agent::AgentPluginsError>> {
+        self.manager.read_plugin(request)
+    }
+
+    fn search_plugins(
+        &self,
+        request: crate::agent::AgentPluginSearchRequest,
+    ) -> Receiver<Result<crate::agent::AgentPluginSearchPage, crate::agent::AgentPluginsError>>
+    {
+        self.manager.search_plugins(request)
+    }
+
+    fn read_plugin_skill(
+        &self,
+        request: crate::agent::AgentPluginSkillReadRequest,
+    ) -> Receiver<Result<crate::agent::AgentPluginSkillContent, crate::agent::AgentPluginsError>>
+    {
+        self.manager.read_plugin_skill(request)
+    }
+
+    fn reconcile_plugins(
+        &self,
+        request: crate::agent::AgentPluginReconcileRequest,
+    ) -> Receiver<Result<crate::agent::AgentPluginReconcileReceipt, crate::agent::AgentPluginsError>>
+    {
+        self.manager.reconcile_plugins(request)
+    }
+
+    fn install_plugin(
+        &self,
+        request: crate::agent::AgentPluginInstallRequest,
+    ) -> Receiver<crate::agent::AgentPluginInstallResult> {
+        self.manager.install_plugin(request)
+    }
+
+    fn uninstall_plugin(
+        &self,
+        request: crate::agent::AgentPluginUninstallRequest,
+    ) -> Receiver<crate::agent::AgentPluginUninstallResult> {
+        self.manager.uninstall_plugin(request)
+    }
+
+    fn plugin_share_list(
+        &self,
+    ) -> Receiver<Result<crate::agent::AgentPluginShareList, crate::agent::AgentPluginsError>> {
+        self.manager.plugin_share_list()
+    }
+
+    fn save_plugin_share(
+        &self,
+        request: crate::agent::AgentPluginShareSaveRequest,
+    ) -> Receiver<crate::agent::AgentPluginShareSaveResult> {
+        self.manager.save_plugin_share(request)
+    }
+
+    fn update_plugin_share_targets(
+        &self,
+        request: crate::agent::AgentPluginShareUpdateTargetsRequest,
+    ) -> Receiver<crate::agent::AgentPluginShareUpdateTargetsResult> {
+        self.manager.update_plugin_share_targets(request)
+    }
+
+    fn delete_plugin_share(
+        &self,
+        request: crate::agent::AgentPluginShareDeleteRequest,
+    ) -> Receiver<crate::agent::AgentPluginShareDeleteResult> {
+        self.manager.delete_plugin_share(request)
+    }
+
+    fn add_marketplace(
+        &self,
+        request: crate::agent::AgentMarketplaceAddRequest,
+    ) -> Receiver<crate::agent::AgentMarketplaceAddResult> {
+        self.manager.add_marketplace(request)
+    }
+
+    fn remove_marketplace(
+        &self,
+        request: crate::agent::AgentMarketplaceRemoveRequest,
+    ) -> Receiver<crate::agent::AgentMarketplaceRemoveResult> {
+        self.manager.remove_marketplace(request)
+    }
+
+    fn upgrade_marketplaces(
+        &self,
+        request: crate::agent::AgentMarketplaceUpgradeRequest,
+    ) -> Receiver<crate::agent::AgentMarketplaceUpgradeResult> {
+        self.manager.upgrade_marketplaces(request)
+    }
+
+    fn detect_external_agent_config(
+        &self,
+        request: crate::agent::AgentExternalAgentDetectRequest,
+    ) -> Receiver<
+        Result<
+            crate::agent::AgentExternalAgentDetectResult,
+            crate::agent::AgentExternalAgentConfigError,
+        >,
+    > {
+        self.manager.detect_external_agent_config(request)
+    }
+
+    fn import_external_agent_config(
+        &self,
+        request: crate::agent::AgentExternalAgentImportRequest,
+    ) -> Receiver<
+        Result<
+            crate::agent::AgentExternalAgentImportReceipt,
+            crate::agent::AgentExternalAgentConfigError,
+        >,
+    > {
+        self.manager.import_external_agent_config(request)
+    }
+
+    fn read_external_agent_import_histories(
+        &self,
+    ) -> Receiver<
+        Result<
+            crate::agent::AgentExternalAgentImportHistories,
+            crate::agent::AgentExternalAgentConfigError,
+        >,
+    > {
+        self.manager.read_external_agent_import_histories()
+    }
+
+    fn record_external_agent_import_history(
+        &self,
+        request: crate::agent::AgentExternalAgentHistoryRecordRequest,
+    ) -> Receiver<
+        Result<
+            crate::agent::AgentExternalAgentImportReceipt,
+            crate::agent::AgentExternalAgentConfigError,
+        >,
+    > {
+        self.manager.record_external_agent_import_history(request)
+    }
+
     fn list_projects(&self, page: PageRequest) -> Receiver<WorkspaceResult<Page<Project>>> {
         self.manager.list_projects(page)
     }

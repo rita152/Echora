@@ -415,6 +415,8 @@ impl WorkspaceStore {
             | AgentConnectionEvent::ConfigWarning(_)
             | AgentConnectionEvent::McpServerStartupStatusUpdated(_)
             | AgentConnectionEvent::SkillsChanged { .. }
+            | AgentConnectionEvent::AppListUpdated { .. }
+            | AgentConnectionEvent::ExternalAgentImportStatus(_)
             | AgentConnectionEvent::McpOauthLoginCompleted(_)
             | AgentConnectionEvent::ThreadSettingsUpdated { .. }
             | AgentConnectionEvent::AccountUpdated(_)

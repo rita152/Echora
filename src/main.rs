@@ -1,11 +1,14 @@
 mod agent;
 mod app;
+mod apps;
 mod components;
 mod configuration;
 mod conversation;
 mod git_review;
+mod imports;
 mod mcp;
 mod media;
+mod plugins;
 mod settings;
 mod skills;
 mod theme;

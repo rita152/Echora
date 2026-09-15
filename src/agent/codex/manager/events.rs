@@ -173,6 +173,15 @@ pub(super) fn connection_event_key(event: &AgentConnectionEvent) -> String {
                 updated.generation, updated.status.thread_id, updated.status.name
             )
         }
+        AgentConnectionEvent::AppListUpdated { generation } => {
+            format!("app-list-updated:{}", generation)
+        }
+        AgentConnectionEvent::ExternalAgentImportStatus(status) => {
+            format!(
+                "external-agent-import:{}:{}",
+                status.generation, status.import_id
+            )
+        }
         AgentConnectionEvent::SkillsChanged { generation } => {
             format!("skills:{generation}")
         }

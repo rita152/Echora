@@ -13,11 +13,14 @@ mod environments;
 mod git;
 mod hooks;
 mod import;
+mod import_actions;
 mod keyboard;
 mod navigation;
 mod personalization;
 mod pets;
 mod plugins;
+mod plugins_actions;
+mod plugins_catalog;
 mod plugins_mcp;
 mod plugins_skills;
 mod profile;
@@ -81,6 +84,23 @@ pub struct SettingsView {
     /// Connection-scoped account snapshot rendered by the usage page.
     account: crate::components::account::AccountView,
     plugins_segment: PluginSegment,
+    /// Catalog and install lifecycle of the plugins segment.
+    plugins_catalog: plugins_catalog::PluginsPanel,
+    /// App directory and installed connector snapshot.
+    apps: plugins_catalog::AppsPanel,
+    /// Working directory the directory reads are scoped to.
+    plugins_cwd: Option<std::path::PathBuf>,
+    /// External agent import page state.
+    imports: crate::imports::ExternalAgentImportState,
+    /// Search field of the plugins segment; its submitted text is the query.
+    plugin_search_input: gpui::Entity<crate::components::prompt_input::PromptInput>,
+    /// Marketplace source field of the add sheet.
+    marketplace_source_input: gpui::Entity<crate::components::prompt_input::PromptInput>,
+    /// Import page history disclosure state.
+    import_history_open: bool,
+    /// Connection generation the catalog and app reads belong to.
+    plugins_generation: u64,
+    apps_generation: u64,
     mcp: plugins_mcp::McpPanel,
     skills: plugins_skills::SkillsPanel,
     /// Last connection generation reported for skills and MCP.
@@ -131,6 +151,42 @@ impl SettingsView {
             input.set_accessible_name("配置值");
             input
         });
+        let plugin_search_input = cx.new(|cx| {
+            let mut input = crate::components::prompt_input::PromptInput::inline_other(
+                mode,
+                "搜索插件",
+                false,
+                cx,
+            );
+            input.set_accessible_name("搜索插件");
+            input
+        });
+        cx.subscribe(
+            &plugin_search_input,
+            |this, _, event: &crate::components::prompt_input::PromptSubmitted, cx| {
+                let term = event.0.clone();
+                this.plugins_catalog.directory.set_search_term(term);
+                this.submit_plugin_search(cx);
+            },
+        )
+        .detach();
+        let marketplace_source_input = cx.new(|cx| {
+            let mut input = crate::components::prompt_input::PromptInput::inline_other(
+                mode,
+                "git URL 或本地路径",
+                false,
+                cx,
+            );
+            input.set_accessible_name("marketplace 来源");
+            input
+        });
+        cx.subscribe(
+            &marketplace_source_input,
+            |this, _, event: &crate::components::prompt_input::PromptSubmitted, cx| {
+                this.confirm_marketplace_add(event.0.clone(), cx);
+            },
+        )
+        .detach();
         cx.subscribe(
             &config_input,
             |this, _, event: &crate::components::prompt_input::PromptSubmitted, cx| {
@@ -172,6 +228,22 @@ impl SettingsView {
                             this.apply_mcp_login_completion(completion, cx);
                             true
                         }
+                        // The app catalog notification is an invalidation
+                        // signal: it marks the cached directory stale and
+                        // re-reads only while the apps segment is visible.
+                        crate::agent::AgentConnectionEvent::AppListUpdated { generation } => {
+                            this.apps_generation = *generation;
+                            this.apply_app_list_updated(cx);
+                            true
+                        }
+                        // Import progress belongs to the import page; the
+                        // status is matched against the import this client
+                        // started, by its own import id.
+                        crate::agent::AgentConnectionEvent::ExternalAgentImportStatus(status) => {
+                            this.imports.generation = status.generation;
+                            this.apply_import_status(status, cx);
+                            true
+                        }
                         _ => true,
                     })
                     .is_ok();
@@ -202,6 +274,15 @@ impl SettingsView {
             config_advanced_open: false,
             config_custom_key: None,
             config_input,
+            plugins_catalog: Default::default(),
+            apps: Default::default(),
+            plugins_cwd: None,
+            plugins_generation: 0,
+            imports: Default::default(),
+            plugin_search_input,
+            marketplace_source_input,
+            import_history_open: true,
+            apps_generation: 0,
             account: Default::default(),
             plugins_segment: PluginSegment::Plugins,
             mcp: plugins_mcp::McpPanel::default(),
@@ -226,6 +307,12 @@ impl SettingsView {
         }
         self.content_scroll.set_offset(point(px(0.0), px(0.0)));
         self.ensure_plugins_segment_loaded(cx);
+        if slug == "import" && !self.imports.detected() {
+            // The import page reads what the backend can detect every time it
+            // becomes visible; a cached answer would misreport a source that
+            // changed since the last visit.
+            self.refresh_external_agent_imports(cx);
+        }
         cx.notify();
     }
 
@@ -254,7 +341,18 @@ impl SettingsView {
                     self.refresh_skills(false, cx);
                 }
             }
-            PluginSegment::Plugins | PluginSegment::Apps => {}
+            PluginSegment::Plugins => {
+                if self.plugins_catalog.directory.catalog.is_none()
+                    && !self.plugins_catalog.directory.loading
+                {
+                    self.refresh_plugins(false, cx);
+                }
+            }
+            PluginSegment::Apps => {
+                if self.apps.directory.page.is_none() && !self.apps.directory.loading {
+                    self.refresh_apps(cx);
+                }
+            }
         }
     }
 
@@ -273,7 +371,11 @@ impl SettingsView {
                     && (self.skills.directory.snapshot.is_some()
                         || self.skills.directory.error.is_some())
             }
-            PluginSegment::Plugins | PluginSegment::Apps => true,
+            PluginSegment::Plugins => {
+                self.plugins_catalog.directory.catalog.is_some()
+                    || self.plugins_catalog.directory.error.is_some()
+            }
+            PluginSegment::Apps => self.apps.directory.resolved(),
         }
     }
 
@@ -286,6 +388,15 @@ impl SettingsView {
             return;
         }
         self.plugins_segment = segment;
+        // Leaving a segment drops the detail it was showing: the read belongs to
+        // the list the user was looking at, not to the new one.
+        if segment != PluginSegment::Plugins {
+            self.plugins_catalog.directory.clear_detail();
+            self.plugins_catalog.open_plugin = None;
+        }
+        if segment != PluginSegment::Apps {
+            self.apps.directory.clear_detail();
+        }
         self.ensure_plugins_segment_loaded(cx);
         cx.notify();
     }
