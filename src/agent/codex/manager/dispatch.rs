@@ -413,6 +413,38 @@ impl ManagerInner {
                 });
                 Ok(())
             }
+            // The app catalog changed. The notification payload is decoded (so
+            // a shape change still fails loudly) and then discarded: the
+            // directory is re-read through `app/list`, which keeps the client
+            // from overwriting a newer local read or clearing an operation that
+            // is still in flight.
+            "app/list/updated" => {
+                super::super::apps::validate_list_updated(message)?;
+                self.publish_connection_event(AgentConnectionEvent::AppListUpdated {
+                    generation: connection.generation,
+                });
+                Ok(())
+            }
+            "externalAgentConfig/import/progress" => {
+                let status = super::super::external_agent_config::decode_progress(
+                    connection.generation,
+                    message,
+                )?;
+                self.publish_connection_event(AgentConnectionEvent::ExternalAgentImportStatus(
+                    Box::new(status),
+                ));
+                Ok(())
+            }
+            "externalAgentConfig/import/completed" => {
+                let status = super::super::external_agent_config::decode_completed(
+                    connection.generation,
+                    message,
+                )?;
+                self.publish_connection_event(AgentConnectionEvent::ExternalAgentImportStatus(
+                    Box::new(status),
+                ));
+                Ok(())
+            }
             "mcpServer/oauthLogin/completed" => {
                 let notification = super::super::mcp::parse_oauth_completed(message)?;
                 // A `None` result means the completion is late, superseded, or

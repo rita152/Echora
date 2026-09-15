@@ -40,6 +40,17 @@ pub enum AgentConnectionEvent {
     SkillsChanged {
         generation: u64,
     },
+    /// `app/list/updated` arrived. The payload is schema-checked on the way in,
+    /// but the notification is only an invalidation signal: the directory is
+    /// re-read with `app/list`, so a value the user is looking at is never
+    /// replaced by a notification payload.
+    AppListUpdated {
+        generation: u64,
+    },
+    /// Progress or completion of an external agent import. The status carries
+    /// the server's own import id, which is what makes a late notification for
+    /// a finished import inert.
+    ExternalAgentImportStatus(Box<super::external_agent_config::AgentExternalAgentImportStatus>),
     /// Result of an OAuth login this client started, correlated to the client's
     /// own login id.
     McpOauthLoginCompleted(Box<super::mcp::AgentMcpOauthCompletion>),

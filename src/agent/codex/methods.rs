@@ -90,6 +90,9 @@ pub(super) fn is_defined_server_method(method: &str) -> bool {
             | "model/safetyBuffering/updated"
             | "skills/changed"
             | "mcpServer/oauthLogin/completed"
+            | "app/list/updated"
+            | "externalAgentConfig/import/progress"
+            | "externalAgentConfig/import/completed"
     )
 }
 
@@ -128,6 +131,15 @@ pub(super) fn ensure_server_method_is_defined(message: &Value) -> Result<()> {
             parse_mcp_server_startup_status_updated(message).map(|_| ())
         }
         "skills/changed" => super::skills::parse_changed(message),
+        // The app catalog notification is decoded in full and then treated as a
+        // cache invalidation signal; the caller re-reads `app/list` itself.
+        "app/list/updated" => super::apps::validate_list_updated(message).map(|_| ()),
+        "externalAgentConfig/import/progress" => {
+            super::external_agent_config::decode_progress(0, message).map(|_| ())
+        }
+        "externalAgentConfig/import/completed" => {
+            super::external_agent_config::decode_completed(0, message).map(|_| ())
+        }
         "mcpServer/oauthLogin/completed" => super::mcp::parse_oauth_completed(message).map(|_| ()),
         "thread/status/changed" => parse_thread_status_changed(message).map(|_| ()),
         "thread/tokenUsage/updated" => parse_thread_token_usage_updated(message).map(|_| ()),
