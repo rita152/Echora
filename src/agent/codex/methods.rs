@@ -19,6 +19,7 @@ pub(super) const TURN_SCOPED_SERVER_METHODS: &[&str] = &[
     "item/permissions/requestApproval",
     "item/tool/requestUserInput",
     "tool/requestUserInput",
+    "item/tool/call",
     "item/started",
     "item/agentMessage/delta",
     "item/plan/delta",
@@ -54,6 +55,7 @@ pub(super) fn is_defined_server_method(method: &str) -> bool {
             | "item/permissions/requestApproval"
             | "item/tool/requestUserInput"
             | "tool/requestUserInput"
+            | "item/tool/call"
             | "serverRequest/resolved"
             | "item/started"
             | "item/agentMessage/delta"
@@ -180,4 +182,19 @@ pub(super) fn is_integrated_server_request_method(method: &str) -> bool {
             | "item/permissions/requestApproval"
             | "mcpServer/elicitation/request"
     )
+}
+
+/// Server requests this phase answers with a method-specific controlled reply,
+/// keeping the connection and the turn. `item/tool/call` additionally follows
+/// the turn-scoped routing and ownership rules; the rest are answered directly
+/// under their original id.
+pub(super) fn is_controlled_server_request_method(method: &str) -> bool {
+    super::approvals::LEGACY_APPROVAL_METHODS.contains(&method)
+        || matches!(
+            method,
+            super::client_tools::TOOL_CALL_METHOD
+                | super::server_requests::CURRENT_TIME_READ_METHOD
+                | super::server_requests::AUTH_TOKENS_REFRESH_METHOD
+                | super::server_requests::ATTESTATION_GENERATE_METHOD
+        )
 }

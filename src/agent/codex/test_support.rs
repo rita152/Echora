@@ -530,7 +530,12 @@ pub(super) fn wait_for_response(
                 "Codex 模型目录连接收到需要可见 UI 承接的通知 `{method}`，但该连接没有 turn 事件流"
             );
         }
-        ensure_server_method_is_defined(&message)?;
+        // Requests are answered under their original id and never end the
+        // connection; only notifications stay under the strict notification
+        // policy.
+        if message.get("id").is_none() {
+            ensure_server_method_is_defined(&message)?;
+        }
         if message.get("id").and_then(Value::as_u64) != Some(expected_id) {
             continue;
         }
@@ -584,7 +589,11 @@ pub(super) fn wait_for_session_response<R: BufRead, W: Write + Send + 'static>(
             respond_to_server_request_on_session(session, &message, events)?;
             handle_server_request_resolved(session, &message, events)?;
             forward_agent_notification(&message, events)?;
-            ensure_server_method_is_defined(&message)?;
+            // Requests are answered under their original id by the session;
+            // only notifications stay under the strict notification policy.
+            if message.get("id").is_none() {
+                ensure_server_method_is_defined(&message)?;
+            }
         }
     }
 }
@@ -625,17 +634,25 @@ pub(super) fn respond_to_server_request(writer: &mut impl Write, message: &Value
     let Some(id) = message.get("id") else {
         return Ok(());
     };
-    if message.get("method").is_none() {
+    let Some(method) = message.get("method").and_then(Value::as_str) else {
         return Ok(());
-    }
+    };
+    // Same policy as the connection: answer under the original id and keep
+    // reading. Short-lived harness connections cannot present an interactive
+    // request, so those take the fallback reply here.
+    let reply = match super::server_requests::reply_to_controlled_server_request(
+        method,
+        message,
+        &super::client_tools::ClientToolRegistry::builtin(),
+    ) {
+        Ok(reply) => reply,
+        Err(_error) => {
+            let request_id = super::requests::request_id_from_value(id)?;
+            super::server_requests::invalid_params_reply(method, message, request_id)
+        }
+    };
     send(
         writer,
-        json!({
-            "id": id,
-            "error": {
-                "code": -32601,
-                "message": "This minimal client does not implement server-initiated requests"
-            }
-        }),
+        super::server_requests::controlled_reply_message(&reply),
     )
 }

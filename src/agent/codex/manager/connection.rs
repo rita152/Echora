@@ -12,6 +12,7 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use async_channel::{Receiver, Sender};
 use serde_json::{Value, json};
 
+use super::super::server_requests::ServerRequestDiagnostic;
 use super::{
     super::TurnOutcome,
     ManagerInner,
@@ -47,6 +48,28 @@ pub(super) struct TurnKey {
     pub(super) turn_id: String,
 }
 
+/// Which responder a turn-scoped server request belongs to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ServerRequestResponder {
+    /// The turn session holds an interactive responder (approval cards, user
+    /// input, permissions). `serverRequest/resolved` reaches it.
+    Interactive,
+    /// The client answered immediately under the original id (`item/tool/call`).
+    /// Only the ownership record remains, so resolution just releases it.
+    ControlledReply,
+}
+
+/// One server request owned by a turn until `serverRequest/resolved` arrives or
+/// the turn ends.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct ServerRequestOwner {
+    pub(super) key: TurnKey,
+    pub(super) responder: ServerRequestResponder,
+}
+
+/// Upper bound of the generation-scoped controlled-reply diagnostic record.
+pub(super) const SERVER_REQUEST_DIAGNOSTIC_LIMIT: usize = 256;
+
 pub(super) enum ThreadLifecycleKind {
     Start,
     Resume(String),
@@ -69,9 +92,18 @@ pub(super) struct ConnectionState {
     pub(super) turns: HashMap<TurnKey, Arc<ManagedTurn>>,
     // A late informational event must never bind to a newer starting turn.
     pub(super) finished_turns: HashSet<TurnKey>,
-    pub(super) server_request_owners: HashMap<AgentServerRequestId, TurnKey>,
+    pub(super) server_request_owners: HashMap<AgentServerRequestId, ServerRequestOwner>,
     resolved_server_requests: HashMap<AgentServerRequestId, String>,
     resolved_server_request_order: VecDeque<AgentServerRequestId>,
+    /// Server requests answered with a controlled reply that has no interactive
+    /// responder. Retained so a late or duplicate `serverRequest/resolved` stays
+    /// idempotent instead of failing the generation.
+    controlled_server_requests: HashMap<AgentServerRequestId, ()>,
+    controlled_server_request_order: VecDeque<AgentServerRequestId>,
+    /// Capped record of every controlled reply this generation wrote. This
+    /// replaces the old "disconnect to raise attention" guardrail: nothing is
+    /// answered silently, and nothing kills the connection to become visible.
+    server_request_diagnostics: VecDeque<ServerRequestDiagnostic>,
     pub(super) pending_mcp_elicitations: HashMap<AgentServerRequestId, PendingMcpElicitation>,
     resolved_mcp_elicitations: HashMap<AgentServerRequestId, String>,
     resolved_mcp_elicitation_order: VecDeque<AgentServerRequestId>,
@@ -125,6 +157,41 @@ impl ConnectionState {
             if let Some(id) = self.resolved_mcp_elicitation_order.pop_front() {
                 self.resolved_mcp_elicitations.remove(&id);
             }
+        }
+    }
+
+    /// Registers one controlled reply. A wire id may only identify one live or
+    /// answered server request, so a collision stays a protocol error instead of
+    /// two requests sharing the same responder.
+    fn remember_controlled_server_request(
+        &mut self,
+        request_id: AgentServerRequestId,
+    ) -> Result<()> {
+        const CONTROLLED_SERVER_REQUEST_LIMIT: usize = 4096;
+        if self.server_request_owners.contains_key(&request_id)
+            || self.resolved_server_requests.contains_key(&request_id)
+            || self.pending_mcp_elicitations.contains_key(&request_id)
+            || self.resolved_mcp_elicitations.contains_key(&request_id)
+            || self
+                .controlled_server_requests
+                .insert(request_id.clone(), ())
+                .is_some()
+        {
+            bail!("收到重复的 Codex server request id {request_id:?}");
+        }
+        self.controlled_server_request_order.push_back(request_id);
+        while self.controlled_server_request_order.len() > CONTROLLED_SERVER_REQUEST_LIMIT {
+            if let Some(id) = self.controlled_server_request_order.pop_front() {
+                self.controlled_server_requests.remove(&id);
+            }
+        }
+        Ok(())
+    }
+
+    fn remember_server_request_diagnostic(&mut self, diagnostic: ServerRequestDiagnostic) {
+        self.server_request_diagnostics.push_back(diagnostic);
+        while self.server_request_diagnostics.len() > SERVER_REQUEST_DIAGNOSTIC_LIMIT {
+            self.server_request_diagnostics.pop_front();
         }
     }
 
@@ -528,6 +595,7 @@ impl Connection {
         &self,
         request_id: AgentServerRequestId,
         key: TurnKey,
+        responder: ServerRequestResponder,
     ) -> Result<()> {
         let mut state = self
             .state
@@ -536,16 +604,21 @@ impl Connection {
         if state.resolved_server_requests.contains_key(&request_id) {
             bail!("Codex server request id {request_id:?} 已经 resolved，拒绝重复请求");
         }
+        if state.controlled_server_requests.contains_key(&request_id) {
+            bail!("Codex server request id {request_id:?} 已经收到受控回执，拒绝重复请求");
+        }
         if let Some(existing) = state.server_request_owners.get(&request_id)
-            && existing != &key
+            && existing.key != key
         {
             bail!(
                 "Codex server request id {request_id:?} 已属于其他 turn `{}`/`{}`",
-                existing.thread_id,
-                existing.turn_id
+                existing.key.thread_id,
+                existing.key.turn_id
             );
         }
-        state.server_request_owners.insert(request_id, key);
+        state
+            .server_request_owners
+            .insert(request_id, ServerRequestOwner { key, responder });
         Ok(())
     }
 
@@ -553,7 +626,7 @@ impl Connection {
         &self,
         request_id: &AgentServerRequestId,
         thread_id: &str,
-    ) -> Result<Option<TurnKey>> {
+    ) -> Result<Option<ServerRequestOwner>> {
         let mut state = self
             .state
             .lock()
@@ -561,7 +634,7 @@ impl Connection {
         let owner = state.server_request_owners.get(request_id).cloned();
         let expected_thread = owner
             .as_ref()
-            .map(|owner| &owner.thread_id)
+            .map(|owner| &owner.key.thread_id)
             .or_else(|| state.resolved_server_requests.get(request_id))
             .with_context(|| format!("serverRequest/resolved 引用了未知 request {request_id:?}"))?;
         if expected_thread != thread_id {
@@ -574,6 +647,49 @@ impl Connection {
             state.remember_resolved_request(request_id.clone(), thread_id.to_owned());
         }
         Ok(owner)
+    }
+
+    /// Whether this generation already answered a server request under this id
+    /// with a controlled reply. Such a request has no responder left to release,
+    /// so a late or duplicate resolution is inert.
+    pub(super) fn knows_controlled_server_request(
+        &self,
+        request_id: &AgentServerRequestId,
+    ) -> Result<bool> {
+        Ok(self
+            .state
+            .lock()
+            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?
+            .controlled_server_requests
+            .contains_key(request_id))
+    }
+
+    /// Records a server request this connection answered itself, under its
+    /// original id, without an interactive responder.
+    pub(super) fn record_controlled_server_request(
+        &self,
+        request_id: &AgentServerRequestId,
+    ) -> Result<()> {
+        self.state
+            .lock()
+            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?
+            .remember_controlled_server_request(request_id.clone())
+    }
+
+    /// Records one controlled reply in the generation-scoped diagnostic trail.
+    pub(super) fn record_server_request_diagnostic(&self, diagnostic: ServerRequestDiagnostic) {
+        if let Ok(mut state) = self.state.lock() {
+            state.remember_server_request_diagnostic(diagnostic);
+        }
+    }
+
+    /// The controlled replies this generation wrote, oldest first.
+    #[cfg(test)]
+    pub(super) fn server_request_diagnostics(&self) -> Vec<ServerRequestDiagnostic> {
+        self.state
+            .lock()
+            .map(|state| state.server_request_diagnostics.iter().cloned().collect())
+            .unwrap_or_default()
     }
 
     pub(super) fn finish_turn(&self, turn: &Arc<ManagedTurn>, result: Result<TurnOutcome>) {
@@ -615,12 +731,12 @@ impl Connection {
             let owned_keys = state
                 .server_request_owners
                 .iter()
-                .filter_map(|(request_id, key)| {
-                    (key.thread_id == turn.thread_id
+                .filter_map(|(request_id, owner)| {
+                    (owner.key.thread_id == turn.thread_id
                         && turn
                             .turn_id()
                             .as_ref()
-                            .is_some_and(|turn_id| turn_id == &key.turn_id))
+                            .is_some_and(|turn_id| turn_id == &owner.key.turn_id))
                     .then_some(request_id.clone())
                 })
                 .collect::<Vec<_>>();
@@ -648,6 +764,7 @@ impl Connection {
             || state.resolved_mcp_elicitations.contains_key(&request_id)
             || state.server_request_owners.contains_key(&request_id)
             || state.resolved_server_requests.contains_key(&request_id)
+            || state.controlled_server_requests.contains_key(&request_id)
         {
             bail!("收到重复的 Codex server request id {request_id:?}");
         }
@@ -825,6 +942,8 @@ impl Connection {
                 state.server_request_owners.clear();
                 state.resolved_server_requests.clear();
                 state.resolved_server_request_order.clear();
+                state.controlled_server_requests.clear();
+                state.controlled_server_request_order.clear();
                 let settings_waiters = std::mem::take(&mut state.settings_waiters);
                 (turns, settings_waiters, elicitations)
             })

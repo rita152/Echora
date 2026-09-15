@@ -264,13 +264,25 @@ pub(super) fn respond_to_server_request_on_session<W: Write + Send + 'static>(
         }
         return Ok(());
     }
-    session.send(json!({
-        "id": id,
-        "error": {
-            "code": -32601,
-            "message": "This minimal client does not implement server-initiated requests"
-        }
-    }))
+    // Server requests without an interactive responder: dynamic tool calls, the
+    // legacy approval protocols, this client's clock, methods it deliberately
+    // does not integrate, and the unknown-method fallback. None of them may fail
+    // the connection or the turn, so a payload this client cannot decode is
+    // answered `-32602` under the original id and the session keeps running.
+    let reply = match super::server_requests::reply_to_controlled_server_request(
+        method,
+        message,
+        &super::client_tools::ClientToolRegistry::builtin(),
+    ) {
+        Ok(reply) => reply,
+        Err(_error) => match request_id_from_value(id) {
+            Ok(request_id) => {
+                super::server_requests::invalid_params_reply(method, message, request_id)
+            }
+            Err(error) => return Err(error).context("server request id 无法解析，无法回执"),
+        },
+    };
+    session.send(super::server_requests::controlled_reply_message(&reply))
 }
 
 pub(super) fn reject_server_request<W: Write + Send>(

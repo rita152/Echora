@@ -16,8 +16,8 @@ use super::{
         validate_user_message,
     },
     methods::{
-        ensure_server_method_is_defined, is_integrated_server_request_method,
-        undefined_server_method_error,
+        ensure_server_method_is_defined, is_controlled_server_request_method,
+        is_integrated_server_request_method, undefined_server_method_error,
     },
     notifications::{
         forward_agent_notification, required_notification_i64, required_notification_index,
@@ -45,7 +45,10 @@ pub(super) fn process_turn_message<W: Write + Send + 'static>(
             && message
                 .get("method")
                 .and_then(Value::as_str)
-                .is_some_and(is_integrated_server_request_method)
+                .is_some_and(|method| {
+                    is_integrated_server_request_method(method)
+                        || is_controlled_server_request_method(method)
+                })
         {
             return reject_server_request(
                 session,
@@ -67,6 +70,13 @@ pub(super) fn process_turn_message<W: Write + Send + 'static>(
     respond_to_server_request_on_session(session, message, events)?;
     handle_server_request_resolved(session, message, events)?;
     forward_agent_notification(message, events)?;
+    // Requests are answered under their original id by the request path above
+    // (in production the manager answers them before a turn ever sees them), so
+    // only notifications stay under the strict notification policy: an unknown
+    // request can no longer fail the turn.
+    if message.get("id").is_some() {
+        return Ok(None);
+    }
     ensure_server_method_is_defined(message)?;
 
     match message.get("method").and_then(Value::as_str) {
@@ -578,6 +588,7 @@ pub(super) fn process_turn_message<W: Write + Send + 'static>(
             | "item/permissions/requestApproval"
             | "item/tool/requestUserInput"
             | "tool/requestUserInput"
+            | "item/tool/call"
             | "serverRequest/resolved"
             | "remoteControl/status/changed"
             | "mcpServer/startupStatus/updated"
