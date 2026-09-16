@@ -673,7 +673,12 @@ impl ComposerView {
     fn extra_permission_profiles(&self) -> Vec<&crate::agent::AgentPermissionProfile> {
         self.permission_profiles
             .iter()
-            .filter(|profile| !matches!(profile.id.as_str(), ":workspace" | ":danger-full-access"))
+            .filter(|profile| {
+                !matches!(
+                    profile.id.as_str(),
+                    ":read-only" | ":workspace" | ":danger-full-access"
+                )
+            })
             .collect()
     }
     fn permission_menu_count(&self) -> usize {
@@ -858,37 +863,6 @@ impl ComposerView {
                                     .child(detail),
                             )
                     }),
-            )
-            .child(
-                div()
-                    .px(px(8.))
-                    .py(px(6.))
-                    .text_size(px(11.))
-                    .text_color(theme.text_tertiary)
-                    .child("已有聊天的修改用于后续轮次"),
-            )
-            .child(
-                div()
-                    .id("permission-reload")
-                    .aria_label("重新读取权限配置")
-                    .role(gpui::Role::Button)
-                    .focusable()
-                    .tab_stop(true)
-                    .px(px(8.))
-                    .py(px(6.))
-                    .cursor_pointer()
-                    .child("重新读取权限配置")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.load_permission_catalog(cx);
-                        cx.notify();
-                    }))
-                    .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
-                        if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                            this.load_permission_catalog(cx);
-                            cx.stop_propagation();
-                            cx.notify();
-                        }
-                    })),
             )
     }
 }

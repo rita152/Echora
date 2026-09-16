@@ -26,16 +26,16 @@ use super::{
     RESPONSE_ACTION_FOOTER_ELECTRON_SHIFT, RESPONSE_ACTION_FOOTER_HEIGHT,
     RESPONSE_ACTION_FOOTER_OFFSET, RESPONSE_ACTION_GAP, RESPONSE_ACTION_ICON_SIZE,
     RESPONSE_TIME_LINE_HEIGHT, RESPONSE_TIME_MARGIN, RESPONSE_TIME_SIZE, RetryImageGeneration,
-    SUGGESTION_PRESSED_SCALE, THINKING_SHIMMER_DURATION, THINKING_SHIMMER_FRAME_INTERVAL,
-    THINKING_SHIMMER_STEPS, THINKING_SHIMMER_WIDTH, TOOL_GROUP_BODY_MAX_HEIGHT,
-    TOOL_GROUP_CHEVRON_SIZE, TOOL_GROUP_EDGE_FADE_DISTANCE, TOOL_GROUP_HEADER_CHEVRON_GAP,
-    TOOL_GROUP_HEADER_HEIGHT, TOOL_GROUP_ICON_SIZE, TOOL_GROUP_ICON_TEXT_GAP, TOOL_GROUP_ITEM_GAP,
-    TOOL_GROUP_LINE_HEIGHT, TOOL_GROUP_TEXT_SIZE, TOOL_GROUP_TRANSITION_DURATION,
-    USER_MESSAGE_BUBBLE_RADIUS, USER_MESSAGE_BUBBLE_SUPERELLIPSE, USER_MESSAGE_FOOTER_GAP,
-    USER_MESSAGE_FOOTER_HEIGHT, USER_MESSAGE_FOOTER_OFFSET, USER_MESSAGE_FOOTER_SIDE_MARGIN,
-    USER_MESSAGE_HORIZONTAL_PADDING, USER_MESSAGE_LINE_HEIGHT, USER_MESSAGE_MAX_WIDTH_RATIO,
-    USER_MESSAGE_PARAGRAPH_GAP, USER_MESSAGE_TEXT_SIZE, USER_MESSAGE_TIME_LINE_HEIGHT,
-    USER_MESSAGE_TIME_SIZE, USER_MESSAGE_VERTICAL_PADDING,
+    THINKING_SHIMMER_DURATION, THINKING_SHIMMER_FRAME_INTERVAL, THINKING_SHIMMER_STEPS,
+    THINKING_SHIMMER_WIDTH, TOOL_GROUP_BODY_MAX_HEIGHT, TOOL_GROUP_CHEVRON_SIZE,
+    TOOL_GROUP_EDGE_FADE_DISTANCE, TOOL_GROUP_HEADER_CHEVRON_GAP, TOOL_GROUP_HEADER_HEIGHT,
+    TOOL_GROUP_ICON_SIZE, TOOL_GROUP_ICON_TEXT_GAP, TOOL_GROUP_ITEM_GAP, TOOL_GROUP_LINE_HEIGHT,
+    TOOL_GROUP_TEXT_SIZE, TOOL_GROUP_TRANSITION_DURATION, USER_MESSAGE_BUBBLE_RADIUS,
+    USER_MESSAGE_BUBBLE_SUPERELLIPSE, USER_MESSAGE_FOOTER_GAP, USER_MESSAGE_FOOTER_HEIGHT,
+    USER_MESSAGE_FOOTER_OFFSET, USER_MESSAGE_FOOTER_SIDE_MARGIN, USER_MESSAGE_HORIZONTAL_PADDING,
+    USER_MESSAGE_LINE_HEIGHT, USER_MESSAGE_MAX_WIDTH_RATIO, USER_MESSAGE_PARAGRAPH_GAP,
+    USER_MESSAGE_TEXT_SIZE, USER_MESSAGE_TIME_LINE_HEIGHT, USER_MESSAGE_TIME_SIZE,
+    USER_MESSAGE_VERTICAL_PADDING,
     animation::{
         reasoning_transition_ease, thinking_shimmer_alpha, thinking_shimmer_band_left,
         thinking_shimmer_progress, thinking_shimmer_step, tool_group_chevron_transition_ease,
@@ -1202,41 +1202,6 @@ fn dense_resumed_tool_group_preserves_row_height_and_scrolls_instead_of_overlapp
         // inset produce 500px of content in the captured 224px viewport.
         assert_eq!(f32::from(scroll.max_offset().y), 276.0);
     });
-}
-
-#[test]
-fn suggestion_press_uses_the_reference_scale_and_interruptible_transition() {
-    let mut app = TestApp::new();
-    let mut window = app.open_window_with_options(
-        WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(Bounds {
-                origin: point(px(0.0), px(0.0)),
-                size: size(px(900.0), px(700.0)),
-            })),
-            ..Default::default()
-        },
-        |_, cx| HomeView::new(ThemeMode::Dark, cx),
-    );
-
-    window.update(|home, window, cx| {
-        home.set_suggestion_pressed(0, true, window, cx);
-    });
-    simulate_next_frame(&mut app, &window, 75);
-    let pressed_midpoint = window.read(|home, _| home.suggestion_scale[0]);
-    assert!(pressed_midpoint > SUGGESTION_PRESSED_SCALE && pressed_midpoint < 1.0);
-
-    // Releasing halfway through must reverse from the rendered value,
-    // rather than jumping to either endpoint.
-    window.update(|home, window, cx| {
-        home.set_suggestion_pressed(0, false, window, cx);
-    });
-    assert_eq!(
-        window.read(|home, _| home.suggestion_scale[0]),
-        pressed_midpoint
-    );
-    simulate_next_frame(&mut app, &window, 150);
-    assert_eq!(window.read(|home, _| home.suggestion_scale[0]), 1.0);
-    assert!(!window.read(|home, _| home.suggestion_animation_running));
 }
 
 #[test]

@@ -31,8 +31,8 @@ use std::{
 };
 
 use gpui::{
-    Context, Div, Entity, FocusHandle, Focusable, KeyDownEvent, ListState, MouseButton, Render,
-    ScrollHandle, Window, div, point, prelude::*, px, relative,
+    Context, Entity, FocusHandle, Focusable, KeyDownEvent, ListState, Render, ScrollHandle, Window,
+    point, prelude::*, px,
 };
 
 pub struct OpenHookSettings;
@@ -47,7 +47,6 @@ use crate::{
         },
         file_change::{DiffReviewPresentation, FileApprovalEvent, FileChangeActivityEvent},
         file_editor::FileEditor,
-        icons::suggestion_icon,
         permissions_approval::PermissionApprovalEvent,
         user_input_request::UserInputRequestEvent,
     },
@@ -59,8 +58,7 @@ use context::{
 };
 
 use animation::{
-    reasoning_transition_ease, suggestion_transition_ease, thinking_shimmer_progress,
-    tool_group_chevron_transition_ease,
+    reasoning_transition_ease, thinking_shimmer_progress, tool_group_chevron_transition_ease,
 };
 use conversation::{
     conversation_list_state, scroll_should_follow_output, subagent_conversation,
@@ -84,12 +82,6 @@ pub struct HomeView {
     /// newest user message is being edited.
     message_edit_input: Option<Entity<crate::components::prompt_input::PromptInput>>,
     message_edit_focus_pending: bool,
-    suggestion_scale: [f32; 2],
-    suggestion_animation_from: [f32; 2],
-    suggestion_animation_to: [f32; 2],
-    suggestion_animation_started_at: [Option<Instant>; 2],
-    suggestion_animation_duration: [Duration; 2],
-    suggestion_animation_running: bool,
     thinking_shimmer_progress: f32,
     thinking_shimmer_cycle: u64,
     thinking_shimmer_running: bool,
@@ -158,8 +150,6 @@ impl gpui::EventEmitter<OpenSubAgentPanel> for HomeView {}
 pub struct RetryImageGeneration;
 impl gpui::EventEmitter<RetryImageGeneration> for HomeView {}
 
-const SUGGESTION_PRESSED_SCALE: f32 = 0.99;
-const SUGGESTION_TRANSITION_DURATION: Duration = Duration::from_millis(150);
 const THINKING_SHIMMER_DURATION: Duration = Duration::from_secs(1);
 const THINKING_SHIMMER_STEPS: f32 = 48.0;
 const THINKING_SHIMMER_FRAME_INTERVAL: Duration = Duration::from_micros(20_833);
@@ -367,12 +357,6 @@ impl HomeView {
             presentation,
             composer: composer.clone(),
             observed_composers: Vec::new(),
-            suggestion_scale: [1.0; 2],
-            suggestion_animation_from: [1.0; 2],
-            suggestion_animation_to: [1.0; 2],
-            suggestion_animation_started_at: [None; 2],
-            suggestion_animation_duration: [Duration::ZERO; 2],
-            suggestion_animation_running: false,
             thinking_shimmer_progress: 0.0,
             thinking_shimmer_cycle: 0,
             thinking_shimmer_running: false,
@@ -1120,87 +1104,6 @@ impl HomeView {
         });
     }
 
-    fn set_suggestion_pressed(
-        &mut self,
-        index: usize,
-        pressed: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let target = if pressed {
-            SUGGESTION_PRESSED_SCALE
-        } else {
-            1.0
-        };
-
-        if cx.reduce_motion() || (target - self.suggestion_scale[index]).abs() <= f32::EPSILON {
-            self.suggestion_scale[index] = target;
-            self.suggestion_animation_from[index] = target;
-            self.suggestion_animation_to[index] = target;
-            self.suggestion_animation_started_at[index] = None;
-            self.suggestion_animation_duration[index] = Duration::ZERO;
-            cx.notify();
-            return;
-        }
-
-        self.suggestion_animation_from[index] = self.suggestion_scale[index];
-        self.suggestion_animation_to[index] = target;
-        self.suggestion_animation_started_at[index] = Some(cx.background_executor().now());
-        self.suggestion_animation_duration[index] = Duration::from_secs_f32(
-            SUGGESTION_TRANSITION_DURATION.as_secs_f32()
-                * (target - self.suggestion_scale[index]).abs()
-                / (1.0 - SUGGESTION_PRESSED_SCALE),
-        );
-
-        let was_running = self.suggestion_animation_running;
-        self.suggestion_animation_running = true;
-        cx.notify();
-        if !was_running {
-            cx.on_next_frame(window, |this, window, cx| {
-                this.advance_suggestion_animations(window, cx)
-            });
-        }
-    }
-
-    fn advance_suggestion_animations(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.suggestion_animation_running {
-            return;
-        }
-
-        let now = cx.background_executor().now();
-        let mut still_running = false;
-        for index in 0..self.suggestion_scale.len() {
-            let Some(started_at) = self.suggestion_animation_started_at[index] else {
-                continue;
-            };
-            let duration = self.suggestion_animation_duration[index];
-            let progress = if duration.is_zero() {
-                1.0
-            } else {
-                now.saturating_duration_since(started_at).as_secs_f32() / duration.as_secs_f32()
-            }
-            .clamp(0.0, 1.0);
-            self.suggestion_scale[index] = self.suggestion_animation_from[index]
-                + (self.suggestion_animation_to[index] - self.suggestion_animation_from[index])
-                    * suggestion_transition_ease(progress);
-
-            if progress >= 1.0 || cx.reduce_motion() {
-                self.suggestion_scale[index] = self.suggestion_animation_to[index];
-                self.suggestion_animation_started_at[index] = None;
-            } else {
-                still_running = true;
-            }
-        }
-
-        self.suggestion_animation_running = still_running;
-        cx.notify();
-        if still_running {
-            cx.on_next_frame(window, |this, window, cx| {
-                this.advance_suggestion_animations(window, cx)
-            });
-        }
-    }
-
     fn sync_reasoning_disclosure_transitions(
         &mut self,
         units: &[ActivityStreamUnit],
@@ -1420,73 +1323,6 @@ impl HomeView {
                 this.advance_tool_group_disclosure_transitions(window, cx)
             });
         }
-    }
-
-    fn suggestion(
-        &self,
-        index: usize,
-        label: &'static str,
-        theme: Theme,
-        cx: &mut Context<Self>,
-    ) -> gpui::Stateful<Div> {
-        let hover_group = format!("home-suggestion-{index}");
-        let scale = self.suggestion_scale[index];
-
-        div()
-            .id(("home-suggestion-hit-area", index))
-            .relative()
-            .top(px(-11.0))
-            .left(px(7.0))
-            .h(px(40.0))
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, _, window, cx| {
-                    this.set_suggestion_pressed(index, true, window, cx);
-                }),
-            )
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(move |this, _, window, cx| {
-                    this.set_suggestion_pressed(index, false, window, cx);
-                }),
-            )
-            .on_mouse_up_out(
-                MouseButton::Left,
-                cx.listener(move |this, _, window, cx| {
-                    this.set_suggestion_pressed(index, false, window, cx);
-                }),
-            )
-            .child(
-                div()
-                    .id(("home-suggestion", index))
-                    .group(hover_group.clone())
-                    // GPUI does not expose a transform for arbitrary elements,
-                    // so scale the same geometry around a fixed 40px hit area.
-                    // The hit target therefore never moves while the rendered
-                    // row matches the reference's active:scale-[0.99].
-                    .w(relative(scale))
-                    .h(px(40.0 * scale))
-                    .px(px(6.0 * scale))
-                    .rounded(px(8.0 * scale))
-                    .flex()
-                    .items_center()
-                    .gap(px(7.0 * scale))
-                    .text_size(px(13.0 * scale))
-                    .font_weight(gpui::FontWeight::NORMAL)
-                    .text_color(theme.text_tertiary)
-                    .hover(move |style| style.text_color(theme.text))
-                    .child(
-                        suggestion_icon(theme.text_tertiary.into())
-                            .w(px(14.0 * scale))
-                            .h(px(12.0 * scale))
-                            .group_hover(hover_group, move |style| style.text_color(theme.text)),
-                    )
-                    .child(label),
-            )
     }
 }
 
@@ -1785,18 +1621,6 @@ impl Render for HomeView {
                     activities: conversation_activity,
                     list: self.conversation_list.clone(),
                 },
-                self.suggestion(
-                    0,
-                    "Prove plugin upgrades never mutate an active run",
-                    theme,
-                    cx,
-                ),
-                self.suggestion(
-                    1,
-                    "Verify the full /plugins lifecycle in the interactive terminal",
-                    theme,
-                    cx,
-                ),
             ),
             HomePresentation::Subagent => subagent_conversation(
                 ConversationRenderContext {

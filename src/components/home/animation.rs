@@ -39,30 +39,6 @@ pub(super) fn thinking_shimmer_alpha(position: f32) -> f32 {
     }
 }
 
-pub(super) fn suggestion_transition_ease(progress: f32) -> f32 {
-    fn bezier(t: f32, first: f32, second: f32) -> f32 {
-        let inverse = 1.0 - t;
-        3.0 * inverse * inverse * t * first + 3.0 * inverse * t * t * second + t * t * t
-    }
-
-    let progress = progress.clamp(0.0, 1.0);
-    if progress == 0.0 || progress == 1.0 {
-        return progress;
-    }
-
-    // chat-reference: --ease-enter-snappy: cubic-bezier(.23, 1, .32, 1)
-    let (mut lower, mut upper) = (0.0, 1.0);
-    for _ in 0..12 {
-        let parameter = (lower + upper) * 0.5;
-        if bezier(parameter, 0.23, 0.32) < progress {
-            lower = parameter;
-        } else {
-            upper = parameter;
-        }
-    }
-    bezier((lower + upper) * 0.5, 1.0, 1.0)
-}
-
 pub(super) fn reasoning_transition_ease(progress: f32) -> f32 {
     cubic_bezier_ease(progress, 0.19, 1.0, 0.22, 1.0)
 }

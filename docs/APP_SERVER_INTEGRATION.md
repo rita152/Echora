@@ -68,7 +68,7 @@ node scripts/scan_reference_rpc_methods.mjs /Applications/ChatGPT.app/Contents/R
 
 读取、编辑、保存回执和线程有效权限分别建模。草稿按工作目录保存在内存；关闭设置再打开可以继续。冲突保留 edits，须重新读取并显式核对后再提交新版本；读取失败、连接变化和结果未知均阻止沿用旧版本保存。校验失败保留草稿；写入后回执缺失明确显示结果未知，不自动重试。配置 RPC 超时终止旧 generation，后续显式读取才重建。配置真源始终是 app-server，UI preferences 不持久化这些配置。
 
-`permissionProfile/list` 按 cwd 遍历 nextCursor，拒绝循环游标与重复 id。当前列表 schema 有 `id`、`allowed`、nullable `description`，没有 `extends`；解码兼容服务端可选 extends 扩展，继承关系也从有效配置的 `permissions.<id>.extends` 和 `ActivePermissionProfile.extends` 读取，缺失时不伪造。菜单显示服务端 profile 和禁用原因，提交前再校验 allowed。固定入口的映射如下：
+`permissionProfile/list` 按 cwd 遍历 nextCursor，拒绝循环游标与重复 id。当前列表 schema 有 `id`、`allowed`、nullable `description`，没有 `extends`；解码兼容服务端可选 extends 扩展，继承关系也从有效配置的 `permissions.<id>.extends` 和 `ActivePermissionProfile.extends` 读取，缺失时不伪造。菜单显示服务端 profile 和禁用原因，内置 `:read-only` 不作为额外选项展示；不显示后续轮次提示和手动重新读取入口。提交前再校验 allowed。固定入口的映射如下：
 
 | 入口 | 请求权限 |
 |---|---|

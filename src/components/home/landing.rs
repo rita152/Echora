@@ -25,8 +25,6 @@ pub(super) fn home(
     composer: Entity<ComposerView>,
     user_input_other: Entity<PromptInput>,
     snapshot: MainConversationSnapshot,
-    first_suggestion: impl IntoElement,
-    second_suggestion: impl IntoElement,
 ) -> Div {
     let home_entity = render.home_entity.clone();
     let theme = render.theme;
@@ -305,21 +303,6 @@ pub(super) fn home(
                 .flex_col()
                 .justify_end()
                 .gap(px(8.0))
-                .when(
-                    phase == ConversationPhase::Empty && !side_chat,
-                    |container| {
-                        container.child(
-                            div()
-                                .min_h(px(80.0))
-                                .px(px(19.0))
-                                .flex()
-                                .flex_col()
-                                .justify_end()
-                                .child(first_suggestion)
-                                .child(second_suggestion),
-                        )
-                    },
-                )
                 .when_some(
                     turn_plan.filter(|_| {
                         !blocking_request_pending
