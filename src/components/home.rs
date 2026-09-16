@@ -14,6 +14,7 @@ mod mcp;
 mod media;
 mod messages;
 mod notices;
+pub(crate) use notices::thread_owner_warning;
 mod progress;
 mod reasoning;
 mod requests;

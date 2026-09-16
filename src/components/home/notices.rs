@@ -164,6 +164,22 @@ pub(super) fn notice_activity(
         })
 }
 
+/// The same warning card as timeline notices, mounted by the composer instead.
+pub(crate) fn thread_owner_warning(theme: Theme) -> impl IntoElement {
+    notice_activity(
+        NoticePresentation {
+            summary: "此会话正由另一个 app-server 使用，请释放后重试。".into(),
+            details: None,
+            file: None,
+            accessible_kind: "Codex 警告",
+            outer_gap: super::NOTICE_WARNING_GAP,
+            content_gap: super::NOTICE_WARNING_CONTENT_GAP,
+        },
+        0,
+        theme,
+    )
+}
+
 pub(super) fn web_search_activity(
     search: crate::agent::AgentWebSearch,
     theme: Theme,

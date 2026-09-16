@@ -3,6 +3,13 @@ use super::ComposerView;
 use crate::{conversation::SubmissionStatus, theme::Theme};
 use gpui::{Context, Div, SharedString, div, prelude::*, px};
 impl ComposerView {
+    fn thread_owner_warning_visible(&self) -> bool {
+        self.conversation
+            .permission_error
+            .as_deref()
+            .is_some_and(|error| error.contains("already has an active writer"))
+    }
+
     pub(super) fn submission_feedback_height(&self) -> f32 {
         let count = self
             .conversation
@@ -18,9 +25,17 @@ impl ComposerView {
             .count();
         ((count
             + usize::from(self.submission_error.is_some())
-            + usize::from(self.conversation.permission_error.is_some())) as f32
+            + usize::from(
+                self.conversation.permission_error.is_some()
+                    && !self.thread_owner_warning_visible(),
+            )) as f32
             * 32.0)
             .min(128.0)
+            + if self.thread_owner_warning_visible() {
+                44.0
+            } else {
+                0.0
+            }
     }
     pub(super) fn submission_feedback(&self, theme: Theme, cx: &mut Context<Self>) -> Div {
         let mut view = div()
@@ -33,7 +48,9 @@ impl ComposerView {
             .gap(px(0.0))
             .text_size(px(14.0))
             .text_color(theme.text);
-        if let Some(error) = &self.conversation.permission_error {
+        if let Some(error) = &self.conversation.permission_error
+            && !self.thread_owner_warning_visible()
+        {
             view = view.child(
                 div()
                     .id("permission-update-error")
@@ -128,6 +145,21 @@ impl ComposerView {
                     ),
             );
         }
-        div().child(view)
+        div()
+            .w_full()
+            .flex_none()
+            .flex()
+            .flex_col()
+            .child(view)
+            .when(self.thread_owner_warning_visible(), |feedback| {
+                feedback.child(
+                    div()
+                        .id("thread-owner-warning")
+                        .w_full()
+                        .flex_none()
+                        .mb(px(8.0))
+                        .child(crate::components::home::thread_owner_warning(theme)),
+                )
+            })
     }
 }
