@@ -598,9 +598,16 @@ fn drives_one_complete_prompt_and_normalizes_stream_events() {
             },
             AgentEvent::AssistantMessageStarted {
                 item_id: "msg_1".into(),
+                phase: None,
             },
-            AgentEvent::TextDelta("你好".into()),
-            AgentEvent::TextDelta("！".into()),
+            AgentEvent::TextDelta {
+                item_id: "msg_1".into(),
+                delta: "你好".into()
+            },
+            AgentEvent::TextDelta {
+                item_id: "msg_1".into(),
+                delta: "！".into()
+            },
             AgentEvent::CommandStarted(super::CommandExecution {
                 id: "exec_1".into(),
                 command: "pwd".into(),
@@ -799,7 +806,10 @@ fn existing_thread_resumes_before_turn_start() {
         events,
         vec![
             AgentEvent::Started,
-            AgentEvent::TextDelta("继续".into()),
+            AgentEvent::TextDelta {
+                item_id: "msg_next".into(),
+                delta: "继续".into()
+            },
             AgentEvent::Completed,
         ]
     );
@@ -1279,7 +1289,10 @@ fn completed_turn_can_finish_before_turn_start_response() {
                 thread_id: "thr_fast".into()
             },
             AgentEvent::Started,
-            AgentEvent::TextDelta("完成".into()),
+            AgentEvent::TextDelta {
+                item_id: "msg_fast".into(),
+                delta: "完成".into()
+            },
             AgentEvent::Completed,
         ]
     );
@@ -5246,16 +5259,22 @@ fn agent_message_completion_is_explicit_with_and_without_streaming() {
         drop(tx);
 
         let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
-        assert_eq!(
-            events,
-            vec![
-                AgentEvent::AssistantMessageStarted {
-                    item_id: "msg_1".into()
-                },
-                AgentEvent::TextDelta("hello".into()),
-            ],
-            "streamed={streamed}"
-        );
+        let mut expected = vec![AgentEvent::AssistantMessageStarted {
+            item_id: "msg_1".into(),
+            phase: None,
+        }];
+        if streamed {
+            expected.push(AgentEvent::TextDelta {
+                item_id: "msg_1".into(),
+                delta: "hello".into(),
+            });
+        }
+        expected.push(AgentEvent::AssistantMessageCompleted {
+            item_id: "msg_1".into(),
+            text: "hello".into(),
+            phase: None,
+        });
+        assert_eq!(events, expected, "streamed={streamed}");
     }
 }
 
@@ -5499,7 +5518,7 @@ fn continued_turn_accepts_a_later_assistant_item_without_deltas_once() {
     }
     let received = std::iter::from_fn(|| rx.try_recv().ok())
         .filter_map(|e| {
-            if let AgentEvent::TextDelta(t) = e {
+            if let AgentEvent::AssistantMessageCompleted { text: t, .. } = e {
                 Some(t)
             } else {
                 None
@@ -5507,4 +5526,35 @@ fn continued_turn_accepts_a_later_assistant_item_without_deltas_once() {
         })
         .collect::<Vec<_>>();
     assert_eq!(received, vec!["before", "after"]);
+}
+
+#[test]
+fn completed_assistant_snapshot_corrects_partial_deltas_and_preserves_phase_once() {
+    let session = Arc::new(CodexTurnSession::new(Vec::new(), None));
+    let (tx, rx) = async_channel::unbounded();
+    let mut streamed = false;
+    let completed = turn_item_message(
+        "item/completed",
+        json!({"type":"agentMessage","id":"answer","text":"complete **answer**","phase":"final_answer"}),
+    );
+    let delta = json!({"method":"item/agentMessage/delta","params":{"threadId":"thr_1","turnId":"turn_1","itemId":"answer","delta":"partial"}});
+    for message in [&delta, &completed, &completed, &delta] {
+        super::process_turn_message(&session, message, "thr_1", "turn_1", &tx, &mut streamed)
+            .unwrap();
+    }
+    let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert_eq!(
+        events,
+        vec![
+            AgentEvent::TextDelta {
+                item_id: "answer".into(),
+                delta: "partial".into()
+            },
+            AgentEvent::AssistantMessageCompleted {
+                item_id: "answer".into(),
+                text: "complete **answer**".into(),
+                phase: Some("final_answer".into())
+            },
+        ]
+    );
 }

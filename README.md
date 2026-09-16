@@ -103,7 +103,7 @@ The Cargo package and executable are still named `gpui-chat-clone`, so the exist
 <summary>Behavior and current boundaries</summary>
 
 - **Active-turn input:** additional input uses `turn/steer`. It is sent immediately to the active turn; there is no server-side message queue. Failed submissions can be restored with their attachments and review comments, without overwriting newer drafts or automatically starting another turn.
-- **History:** completed turns collapse intermediate messages before the final answer. Added user messages retain their position and attachments. File changes are grouped by path while retaining the original patch. History comes from app-server; missing timing, plan snapshots, and automatic-review history are not invented.
+- **Live output and history:** live and restored completed turns use the same final-answer selection, work disclosure, response actions, and file summary. Text deltas retain their item identity; completed message snapshots reconcile the displayed text. Adjacent deltas are batched over 8 ms, and code highlighting reuses completed lines while reparsing the unfinished line. Completed turns collapse intermediate messages before the final answer. Added user messages retain their position and attachments. File changes are grouped by path while retaining the original patch. History comes from app-server; missing timing, plan snapshots, and automatic-review history are not invented.
 - **Approvals:** concurrent requests appear in order, and a submitted card waits for server resolution. A failed response is visible and cannot be submitted twice. Inspect the original requested patch or expand and copy long commands. Keyboard navigation uses Tab/arrows, Enter, and Esc; `Shift+Esc` rejects a file request and stops the turn.
 - **Permissions:** profiles are read across all backend pages and show unavailable choices with reasons. The menu hides the built-in `:read-only` profile and omits the subsequent-turn hint and manual reload action. Existing-thread changes become effective only after RPC success and a matching settings notification, and affect subsequent turns. Full access requires an in-app confirmation; side chats maintain independent settings. If another app-server holds the thread, a warning card stays above the composer while the conversation scrolls.
 - **Account and quota:** the account menu, the sign-in flow, and the billing page are driven by the connection's account snapshot. A missing plan, balance, or quota is reported as unknown rather than zero, a pending login keeps its server-issued id until the completion notification arrives, and signing out is confirmed before the request is sent. Only the Codex-managed ChatGPT login is exposed; API-key, external-token, and Bedrock variants report an explicit error. See the integration table for the exact protocol coverage.
@@ -191,6 +191,8 @@ GPUI_CAPTURE_OUTPUT="$PWD/artifacts/frame.png" \
 
 Enumerate apps in Computer Use, connect to **GPUI Capture**, inspect the accessibility tree and screenshot, and then navigate. Press `Cmd+Shift+F12` to save an unscaled PNG with a `.render.json` sidecar while the app keeps running. Close only the dedicated instance you started.
 
+For a real live-turn capture, launch with `--capture-live-turn="$PWD/artifacts/live.png"` and submit a prompt in the capture app. It saves the completed live view before history reload, a `.json` sidecar with thread identity, activity data, then exits. It fails on interruption, turn failure or a five-minute timeout.
+
 For automatic capture of a saved thread, append `--resume-thread=THREAD_ID --screenshot="$PWD/artifacts/resumed-thread.png"`. IDs accept a UUID or `local:<uuid>`. Optional `--resume-scroll-from-bottom=3200` sets the scroll distance; omission captures the bottom. The app waits for history, sidebar, model catalog, and three stable frames, then exits; failures and timeouts return a nonzero status. Use a thread that is not held by another active writer.
 
 Window sizes are logical pixels; PNG resolution depends on the display's DPR. Compare the same theme, content, dimensions, DPR, and scroll position, without scaling or translating images. The older `scripts/compare_all.sh` rescales captures and is not a pixel-acceptance entry point. Keep raw captures, logs, and comparison output in `artifacts/`; curated README images live in `docs/images/`.
@@ -251,6 +253,10 @@ python3 scripts/compare_typography.py \
   artifacts/typography/electron-1x.png artifacts/typography/gpui-1x.png \
   --output=artifacts/typography/comparison-1x.json
 ```
+
+`cargo test live_conversation_stream_timings -- --ignored --nocapture` measures 500 live conversation updates plus GPUI layout and verifies that scrolling up stays anchored during subsequent output.
+
+`cargo test streaming_highlight_timings -- --ignored --nocapture` compares incremental syntax highlighting with a full parse for 500 growing Rust-code updates and checks exact span equality.
 
 Scrolling benchmarks measure event/layout time in a GPUI test window, not screen FPS. Typography comparison counts glyph pixels only. For 2×, set the CDP scale to `2`, use a real Retina display for GPUI, and compare with `--dpr=2`. Save translucent captures separately: add `--translucent` to CDP/comparison scripts and `--typography-translucent` to GPUI. The comparison composites both alpha encodings onto the same background.
 

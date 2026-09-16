@@ -27,6 +27,8 @@ use crate::{
     theme::{Theme, UI_MONOSPACE_FONT_FAMILY, ui_font},
 };
 
+mod highlight;
+use highlight::highlighted_code_spans;
 mod preview;
 mod selection;
 pub use preview::MarkdownPreview;
@@ -1931,56 +1933,6 @@ fn push_code_span(spans: &mut Vec<CodeHighlightSpan>, range: Range<usize>, style
     } else {
         spans.push(CodeHighlightSpan { range, style });
     }
-}
-
-fn highlighted_code_spans(code: &str, language: Option<&str>) -> Option<Vec<CodeHighlightSpan>> {
-    if code.len() > MAX_HIGHLIGHTED_CODE_BYTES {
-        return None;
-    }
-    let syntax = code_syntax(language)?;
-    let syntax_set = code_syntax_set();
-    let mut parse_state = ParseState::new(syntax);
-    let mut scope_stack = ScopeStack::new();
-    let mut spans = Vec::new();
-    let mut line_base = 0;
-
-    for line in LinesWithEndings::from(code) {
-        if line.len() > MAX_HIGHLIGHTED_LINE_BYTES {
-            return None;
-        }
-        let operations = parse_state.parse_line(line, syntax_set).ok()?;
-        let mut line_cursor = 0;
-        for (segment, operation) in ScopeRegionIterator::new(&operations, line) {
-            scope_stack.apply(operation).ok()?;
-            let start = line_base + line_cursor;
-            line_cursor += segment.len();
-            push_code_span(
-                &mut spans,
-                start..line_base + line_cursor,
-                code_scope_style(&scope_stack),
-            );
-        }
-        if line_cursor != line.len() {
-            return None;
-        }
-        line_base += line.len();
-    }
-
-    if line_base != code.len()
-        || spans.iter().any(|span| {
-            !code.is_char_boundary(span.range.start) || !code.is_char_boundary(span.range.end)
-        })
-        || spans
-            .windows(2)
-            .any(|spans| spans[0].range.end != spans[1].range.start)
-        || spans.first().is_some_and(|span| span.range.start != 0)
-        || spans
-            .last()
-            .is_some_and(|span| span.range.end != code.len())
-    {
-        return None;
-    }
-    Some(spans)
 }
 
 fn highlighted_code_text(

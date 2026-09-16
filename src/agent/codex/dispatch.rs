@@ -101,7 +101,7 @@ pub(super) fn process_turn_message<W: Write + Send + 'static>(
                         .map_err(|error| turn_item_protocol_error(message, error))?;
                 }
                 "agentMessage" => {
-                    let (item_id, _text) = parse_agent_message(item)
+                    let (item_id, text) = parse_agent_message(item)
                         .map_err(|error| turn_item_protocol_error(message, error))?;
                     let mut messages = session
                         .agent_messages
@@ -113,10 +113,24 @@ pub(super) fn process_turn_message<W: Write + Send + 'static>(
                         *streamed_text = false;
                         send_turn_event(
                             events,
-                            AgentEvent::AssistantMessageStarted { item_id },
+                            AgentEvent::AssistantMessageStarted {
+                                item_id: item_id.clone(),
+                                phase: agent_message_phase(item)
+                                    .map_err(|error| turn_item_protocol_error(message, error))?,
+                            },
                             "item/started agentMessage",
                         )
                         .map_err(|error| turn_item_protocol_error(message, error))?;
+                        if !text.is_empty() {
+                            send_turn_event(
+                                events,
+                                AgentEvent::TextDelta {
+                                    item_id,
+                                    delta: text,
+                                },
+                                "item/started agentMessage text",
+                            )?;
+                        }
                     }
                 }
                 "reasoning" => {
@@ -279,15 +293,14 @@ pub(super) fn process_turn_message<W: Write + Send + 'static>(
                 .agent_messages
                 .lock()
                 .map_err(|_| anyhow!("助手消息注册表锁不可用"))?;
-            let progress = messages.entry(item_id).or_default();
+            let progress = messages.entry(item_id.clone()).or_default();
             if progress.completed {
                 return Ok(None);
             }
-            progress.has_output = true;
             drop(messages);
             send_turn_event(
                 events,
-                AgentEvent::TextDelta(delta),
+                AgentEvent::TextDelta { item_id, delta },
                 "item/agentMessage/delta",
             )?;
             *streamed_text = true;
@@ -417,16 +430,20 @@ pub(super) fn process_turn_message<W: Write + Send + 'static>(
                         .agent_messages
                         .lock()
                         .map_err(|_| anyhow!("助手消息注册表锁不可用"))?;
-                    let progress = messages.entry(item_id).or_default();
-                    if !progress.has_output && !progress.completed {
+                    let progress = messages.entry(item_id.clone()).or_default();
+                    if !progress.completed {
                         send_turn_event(
                             events,
-                            AgentEvent::TextDelta(text),
+                            AgentEvent::AssistantMessageCompleted {
+                                item_id,
+                                text,
+                                phase: agent_message_phase(item)
+                                    .map_err(|error| turn_item_protocol_error(message, error))?,
+                            },
                             "item/completed agentMessage",
                         )
                         .map_err(|error| turn_item_protocol_error(message, error))?;
                     }
-                    progress.has_output = true;
                     progress.completed = true;
                     *streamed_text = true;
                 }
@@ -566,7 +583,36 @@ pub(super) fn process_turn_message<W: Write + Send + 'static>(
                 }
             }
         }
-        Some("turn/completed") => {
+        Some("turn/started" | "turn/completed") => {
+            let turn = message
+                .pointer("/params/turn")
+                .context("turn notification 缺少 params.turn")?;
+            let optional = |key: &str| -> Result<Option<i64>> {
+                match turn.get(key) {
+                    None | Some(Value::Null) => Ok(None),
+                    Some(value) => value
+                        .as_i64()
+                        .map(Some)
+                        .with_context(|| format!("turn.{key} 必须是 int64 或 null")),
+                }
+            };
+            let started_at = optional("startedAt")?;
+            let completed_at = optional("completedAt")?;
+            let duration_ms = optional("durationMs")?;
+            if started_at.is_some() || completed_at.is_some() || duration_ms.is_some() {
+                send_turn_event(
+                    events,
+                    AgentEvent::TurnTimingUpdated {
+                        started_at,
+                        completed_at,
+                        duration_ms,
+                    },
+                    "turn timing",
+                )?;
+            }
+            if message.get("method").and_then(Value::as_str) == Some("turn/started") {
+                return Ok(None);
+            }
             let status = message
                 .pointer("/params/turn/status")
                 .and_then(Value::as_str)
@@ -603,7 +649,6 @@ pub(super) fn process_turn_message<W: Write + Send + 'static>(
             | "thread/tokenUsage/updated"
             | "account/rateLimits/updated"
             | "thread/started"
-            | "turn/started"
             | "error"
             | "thread/settings/updated"
             | "warning"
@@ -664,4 +709,12 @@ fn forward_user_message<W: Write + Send + 'static>(
         )?;
     }
     Ok(())
+}
+
+fn agent_message_phase(item: &serde_json::Map<String, Value>) -> Result<Option<String>> {
+    match item.get("phase") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(phase)) => Ok(Some(phase.clone())),
+        Some(_) => bail!("agentMessage item.phase 必须是字符串或 null"),
+    }
 }

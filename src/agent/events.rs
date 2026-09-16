@@ -55,6 +55,7 @@ pub enum AgentConnectionEvent {
     /// own login id.
     McpOauthLoginCompleted(Box<super::mcp::AgentMcpOauthCompletion>),
     ThreadStatusChanged(AgentThreadStatus),
+    ThreadTokenUsageUpdated(AgentThreadTokenUsage),
     ThreadSettingsUpdated {
         thread_id: String,
         generation: u64,
@@ -150,8 +151,22 @@ pub enum AgentEvent {
     ThreadTokenUsageUpdated(AgentThreadTokenUsage),
     AssistantMessageStarted {
         item_id: String,
+        phase: Option<String>,
     },
-    TextDelta(String),
+    TextDelta {
+        item_id: String,
+        delta: String,
+    },
+    AssistantMessageCompleted {
+        item_id: String,
+        text: String,
+        phase: Option<String>,
+    },
+    TurnTimingUpdated {
+        started_at: Option<i64>,
+        completed_at: Option<i64>,
+        duration_ms: Option<i64>,
+    },
     ReasoningStarted {
         reasoning: AgentReasoning,
         started_at_ms: i64,

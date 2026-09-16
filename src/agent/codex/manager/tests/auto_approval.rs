@@ -64,7 +64,10 @@ fn auto_approval_early_interleaved_reviews_keep_two_turn_streams_independent() {
                 .all(|r| r.key.thread_id == thread)
         );
     }
-    assert!(a.contains(&AgentEvent::TextDelta("Still working".into())));
+    assert!(a.contains(&AgentEvent::TextDelta {
+        item_id: "answer".into(),
+        delta: "Still working".into()
+    }));
     assert_eq!(a.last(), Some(&AgentEvent::Completed));
     assert!(!a.iter().chain(&b).any(|e| matches!(
         e,

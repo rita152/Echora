@@ -311,7 +311,10 @@ fn permission_confirmation_and_runtime_events_share_connection_without_cross_tal
     endpoint.send(json!({"method":"item/agentMessage/delta","params":{"threadId":"side","turnId":"side-turn","itemId":"answer","delta":"Side remains active"}}));
     complete(&endpoint, "side", "side-turn", "completed");
     let side = collect_terminal(&side_events);
-    assert!(side.contains(&AgentEvent::TextDelta("Side remains active".into())));
+    assert!(side.contains(&AgentEvent::TextDelta {
+        item_id: "answer".into(),
+        delta: "Side remains active".into()
+    }));
     assert_eq!(side.last(), Some(&AgentEvent::Completed));
     assert_empty(&pending);
     endpoint.respond(&change, json!({}));

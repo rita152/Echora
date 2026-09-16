@@ -71,38 +71,25 @@ pub(crate) fn resumed_question_replies(text: &str) -> Option<Vec<(String, String
 }
 
 pub(crate) fn resumed_final_message_ids(items: &[ThreadHistoryItem]) -> Vec<String> {
-    // A clarification can itself be marked final_answer within a continued
-    // persisted turn. The last final answer terminates the work disclosure;
-    // using the first one exposes all later tool activity by default.
-    let explicit: Vec<_> = items
-        .iter()
+    final_message_ids(items.iter().filter_map(|item| match item {
+        ThreadHistoryItem::AssistantMessage { item_id, phase, .. } => {
+            Some((item_id.as_str(), phase.as_deref()))
+        }
+        _ => None,
+    }))
+}
+
+fn final_message_ids<'a>(
+    messages: impl DoubleEndedIterator<Item = (&'a str, Option<&'a str>)> + Clone,
+) -> Vec<String> {
+    // Continued turns may contain earlier final answers. Only the last explicit
+    // answer ends the work disclosure; phase-less rollouts use their last item.
+    messages
+        .clone()
         .rev()
-        .filter_map(|item| match item {
-            ThreadHistoryItem::AssistantMessage {
-                item_id,
-                phase: Some(phase),
-                ..
-            } if phase == "final_answer" => Some(item_id.clone()),
-            _ => None,
-        })
-        .take(1)
-        .collect();
-    if !explicit.is_empty() {
-        return explicit;
-    }
-    // Older rollouts predate `phase`. Only their last assistant item can be
-    // treated as a final answer; earlier commentary remains in the disclosure.
-    items
-        .iter()
-        .rev()
-        .find_map(|item| match item {
-            ThreadHistoryItem::AssistantMessage {
-                item_id,
-                phase: None,
-                ..
-            } => Some(vec![item_id.clone()]),
-            _ => None,
-        })
+        .find(|(_, phase)| *phase == Some("final_answer"))
+        .or_else(|| messages.rev().find(|(_, phase)| phase.is_none()))
+        .map(|(id, _)| vec![id.to_owned()])
         .unwrap_or_default()
 }
 
@@ -131,6 +118,38 @@ pub(crate) fn history_time_label(timestamp: Option<i64>) -> Option<String> {
 }
 
 impl ConversationState {
+    pub(crate) fn refresh_assistant_answer(&mut self) {
+        let ids = final_message_ids(self.activities.iter().filter_map(|activity| {
+            match activity {
+                ConversationActivity::AssistantMessage { item_id, .. } => Some((
+                    item_id.as_str(),
+                    self.assistant_message_phases
+                        .get(item_id)
+                        .and_then(|p| p.as_deref()),
+                )),
+                _ => None,
+            }
+        }));
+        if let Some(turn) = &mut self.resumed_turn {
+            turn.final_message_ids = ids.clone();
+        }
+        let messages: Vec<_> = self
+            .activities
+            .iter()
+            .filter_map(|activity| match activity {
+                ConversationActivity::AssistantMessage { item_id, text }
+                    if ids.is_empty() || ids.contains(item_id) =>
+                {
+                    Some(text.as_str())
+                }
+                _ => None,
+            })
+            .collect();
+        if !messages.is_empty() {
+            self.assistant_message = messages.join("\n\n");
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn conversation_snapshot(
         &self,
@@ -296,6 +315,18 @@ impl ConversationState {
         self.project_id = history.thread.project_id.clone();
         self.history_loading = false;
         self.history_error = None;
+        self.assistant_message_phases = history
+            .turns
+            .last()
+            .into_iter()
+            .flat_map(|turn| turn.items.iter())
+            .filter_map(|item| match item {
+                ThreadHistoryItem::AssistantMessage { item_id, phase, .. } => {
+                    Some((item_id.clone(), phase.clone()))
+                }
+                _ => None,
+            })
+            .collect();
         self.transcript = history
             .turns
             .iter()

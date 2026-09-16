@@ -93,7 +93,7 @@ fn steer_early_duplicate_events_out_of_order_and_late_responses_do_not_restart_t
     assert!(
         received
             .iter()
-            .any(|e| matches!(e,AgentEvent::TextDelta(t) if t == "continued"))
+            .any(|e| matches!(e,AgentEvent::TextDelta { delta: t, .. } if t == "continued"))
     );
     endpoint.respond(&a, json!({"turnId":"r"}));
     assert!(wait_value(&first).is_ok());
@@ -458,7 +458,10 @@ fn steer_with_progress_and_both_approval_paths_preserves_cleanup_and_isolation()
     endpoint.send(json!({"method":"item/agentMessage/delta","params":{"threadId":"b","turnId":"rb","itemId":"answer","delta":"other keeps running"}}));
     complete(&endpoint, "b", "rb", "completed");
     let remaining = collect_terminal(&other);
-    assert!(remaining.contains(&AgentEvent::TextDelta("other keeps running".into())));
+    assert!(remaining.contains(&AgentEvent::TextDelta {
+        item_id: "answer".into(),
+        delta: "other keeps running".into()
+    }));
     assert_eq!(remaining.last(), Some(&AgentEvent::Completed));
     assert_eq!(spawner.spawn_count.load(Ordering::Acquire), 1);
     manager.shutdown();

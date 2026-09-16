@@ -146,7 +146,7 @@ Composer 在运行中有草稿时显示“追加输入”，无草稿时显示�
 |---|---|---|
 | `userMessage` | 校验 text/image/localImage/audio/localAudio/skill/mention；文本统一换行、解码显示转义并移除附件包络；从本应用路径包络及类型元数据恢复文件上下文，保留图片顺序（localImage 历史转换为 data URL 时也不重复生成文件卡） | 按 item.id/clientId 关联提交并去重；后续用户消息保留在当前 turn 的原始事件位置，历史不再合并到首条气泡 |
 | `hookPrompt` | 独立于 Hook 运行记录；fragments 逐项保留 hookRunId/text 及原始顺序。实时开始／完成按 thread/turn/item 原位更新；历史只使用服务端返回的 item，完成标记为未知 | 带“钩子反馈”链接的只读文本气泡，支持长文本展开、正文选择、整段复制和打开现有钩子设置；不创建用户提交、助手最终答复或审批 responder |
-| `agentMessage` | 实时按 item.id 记录流式／完成状态，后续无 delta 的完整消息仍显示；已完成 item 的重复完成或迟到 delta 不追加文本。历史保留 phase；最终答复优先取最后一条 final_answer，旧历史回退到最后一条未标注消息 | 仅已完成且可识别最终答复的轮次折叠过程前缀 |
+| `agentMessage` | 实时增量全程保留 item.id，按同一 item 合并，完成快照原位校正文本（含缺失 delta、无 started）；已完成 item 的重复完成或迟到 delta 不追加文本。实时与历史均保留 phase，共用最终答复规则：优先取最后一条 final_answer，旧数据回退到最后一条未标注消息。实时完成后使用相同的过程折叠、答复操作与文件汇总 | 仅已完成且可识别最终答复的轮次折叠过程前缀 |
 | `reasoning` | 按 item.id 与 summaryIndex/contentIndex 保存稀疏增量，保留开始／完成时间；不跨 item/index 合并 | 展示 summary，缺省时展示 content；完成后显示耗时 |
 | `commandExecution` | 保留 command、cwd、exitCode、commandActions；旧历史缺少 actions/cwd 时用空列表／线程目录 | 读取、搜索、列目录与 shell 分别显示，输出归属对应命令 |
 | `fileChange` | 保留 path、kind、diff；实时接受 patchUpdated 和 turn 聚合 diff；历史按路径汇总 | 文件卡及固定历史差异使用原始 patch；本机 Git 面板另由 Git/gh 提供工作区数据 |
@@ -387,7 +387,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `guardianWarning` | 默认 | 已接入 | 线程级 message，允许无活动轮次；同一当前轮次去重，通用消息保留原文，反复拒绝提示显示状态分隔行。schema 无 turnId/reviewId，不推定归属或终态。 | `auto_approval`、`manager/dispatch` |
 | `hook/completed` | 默认 | 部分接入 | 同一 run.id 原位收敛，保留 running/completed/failed/blocked/stopped 原始状态与实际收到 completed 的标记，不由方法名推断成功。匹配已结束轮次且存在回复操作栏时显示钩子图标和运行详情浮层；无 turnId 或没有对应回复操作栏的展示路径未完成。 | `agent/runtime/state`、`home/runtime` |
 | `hook/started` | 默认 | 部分接入 | 按 generation/threadId/run.id 和实际提供的 optional/nullable turnId 建模，保留完整运行身份、来源、事件、执行模式、状态、输出及时间。支持无活动 turn；不抢占 pending turn/start。运行中的独立提示在 ChatGPT 参考中不可见；无 turnId 记录目前只有运行时状态。 | `runtime`、`manager/dispatch` |
-| `item/agentMessage/delta` | 默认 | 已接入 | 按 thread/turn/item 追加 delta，进入所属会话的文本流。 | `notifications` |
+| `item/agentMessage/delta` | 默认 | 已接入 | 按 thread/turn/item 追加 delta，进入所属消息；8 ms 批次只合并相邻同 item 的文本，保留生命周期边界。 | `notifications` |
 | `item/autoApprovalReview/completed` | 默认 | 已接入 | 以 threadId/turnId/reviewId 原位更新；保留完整 action、nullable targetItemId/rationale/riskLevel/userAuthorization、startedAtMs/completedAtMs 与 decisionSource=agent。处理 approved/denied/timedOut/aborted，不替代 turn/completed。 | `auto_approval`、`notifications`、`manager/dispatch` |
 | `item/autoApprovalReview/started` | 默认 | 已接入 | 支持 command/execve/writeStdin/applyPatch/networkAccess/mcpToolCall/requestPermissions 七类动作及共享的五种状态；targetItemId 可缺失或为 null。开始通知不得覆盖已完成结果。 | `auto_approval`、`notifications`、`manager/dispatch` |
 | `item/commandExecution/outputDelta` | 默认 | 已接入 | 按 itemId 追加命令输出 delta。 | `dispatch` |
@@ -441,9 +441,9 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/settings/updated` | 默认 | 已接入 | 按原 threadId／generation 同步 model/effort/serviceTier/cwd 与有效权限；匹配本次期望值才满足 waiter，处理响应前通知、重复／已知迟到回执及关闭临时线程。 | `manager/dispatch`、`manager/settings`、`notifications` |
 | `thread/started` | 默认 | 已接入 | 校验 params.thread.id，关联当前 start/resume/fork；RPC 响应是最终 id 来源。已加载线程的迟到通知不得绑定到下一次生命周期请求。 | `manager/dispatch` |
 | `thread/status/changed` | 默认 | 已接入 | 按 threadId 保存 notLoaded/idle/systemError/active；active 仅接受 waitingOnApproval/waitingOnUserInput，不替代 turn 终态。 | `manager/dispatch`、`notifications` |
-| `thread/tokenUsage/updated` | 默认 | 已接入 | 按 threadId/turnId 保存 tokenUsage.total/last 与可选 context window；不创建活动或结束轮次。 | `notifications` |
+| `thread/tokenUsage/updated` | 默认 | 已接入 | 连接级分发，允许 resume 响应前上报已结束轮次的用量；按 threadId/turnId 保存 tokenUsage.total/last 与可选 context window，不绑定运行轮次、不创建活动或结束轮次。 | `notifications` |
 | `thread/unarchived` | 默认 | 已接入 | 从归档移除，刷新最近及项目列表；覆盖迟到快照。 | `manager/dispatch` |
-| `turn/completed` | 默认 | 已接入 | 接受 completed/interrupted/failed；失败读取 message/details。每轮只发送一个终态并清理自身请求，其他轮次及共享连接继续存活。 | `dispatch`、`manager/connection` |
+| `turn/completed` | 默认 | 已接入 | 接受 completed/interrupted/failed；失败读取 message/details。保留服务端可选 startedAt、completedAt、durationMs，实时完成沿用历史的时间标签与用时；缺失时不推算用时。每轮只发送一个终态并清理自身请求，其他轮次及共享连接继续存活。 | `dispatch`、`manager/connection` |
 | `turn/diff/updated` | 默认 | 已接入 | 所属轮次最新聚合 unified diff；保留原始 patch，刷新文件卡与“上一轮”范围；空 diff 不清除已有 item changes。 | `dispatch` |
 | `turn/moderationMetadata` | 默认 | 兼容退订 | 完整方法名退订；metadata 为任意 JSON，当前无消费路径。保留 error、model/safetyBuffering/updated、model/verification 等已接入状态，不用 metadata 推定成功或终态。 | `runtime::OPT_OUT_NOTIFICATION_METHODS` |
 | `turn/plan/updated` | 默认 | 已接入 | 独立 turn 步骤快照与 explanation；输入框上方显示步骤进度，悬停／点击／键盘查看步骤。 | `progress`、`dispatch` |

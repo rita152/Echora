@@ -259,8 +259,12 @@ mod tests {
         s.apply_agent_event_batch(vec![
             AgentEvent::AssistantMessageStarted {
                 item_id: "a".into(),
+                phase: None,
             },
-            AgentEvent::TextDelta("before".into()),
+            AgentEvent::TextDelta {
+                item_id: "a".into(),
+                delta: "before".into(),
+            },
         ]);
         let first = submit(&mut s, "same");
         let second = submit(&mut s, "same");
@@ -275,8 +279,12 @@ mod tests {
         s.apply_agent_event_batch(vec![
             AgentEvent::AssistantMessageStarted {
                 item_id: "b".into(),
+                phase: None,
             },
-            AgentEvent::TextDelta("after".into()),
+            AgentEvent::TextDelta {
+                item_id: "b".into(),
+                delta: "after".into(),
+            },
         ]);
         s.receive_user_message("u2".into(), Some(second.clone()), "same".into(), vec![]);
         s.resolve_submission(&second, Ok(()));
@@ -358,7 +366,10 @@ mod tests {
         })]);
         assert!(s.steer_target().is_ok());
         s.apply_agent_event_batch(vec![
-            AgentEvent::TextDelta("stream".into()),
+            AgentEvent::TextDelta {
+                item_id: "b".into(),
+                delta: "stream".into(),
+            },
             AgentEvent::Started,
         ]);
         assert_eq!(s.phase, ConversationPhase::Streaming);

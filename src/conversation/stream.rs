@@ -28,11 +28,16 @@ pub(crate) fn push_coalesced_agent_event(batch: &mut Vec<AgentEvent>, event: Age
                 batch.push(AgentEvent::PlanDelta { item_id, delta });
             }
         }
-        AgentEvent::TextDelta(delta) => {
-            if let Some(AgentEvent::TextDelta(buffered)) = batch.last_mut() {
+        AgentEvent::TextDelta { item_id, delta } => {
+            if let Some(AgentEvent::TextDelta {
+                item_id: buffered_id,
+                delta: buffered,
+            }) = batch.last_mut()
+                && buffered_id == &item_id
+            {
                 buffered.push_str(&delta);
             } else {
-                batch.push(AgentEvent::TextDelta(delta));
+                batch.push(AgentEvent::TextDelta { item_id, delta });
             }
         }
         AgentEvent::CommandOutputDelta { item_id, delta } => {
@@ -124,5 +129,41 @@ pub(crate) fn ensure_closed_batch_is_terminal(batch: &mut Vec<AgentEvent>) {
         )
     }) {
         batch.push(AgentEvent::Failed(STREAM_DISCONNECTED_MESSAGE.to_owned()));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn different_message_ids_and_authoritative_snapshots_are_batch_boundaries() {
+        let delta = |id: &str, text: &str| AgentEvent::TextDelta {
+            item_id: id.into(),
+            delta: text.into(),
+        };
+        let completed = AgentEvent::AssistantMessageCompleted {
+            item_id: "a".into(),
+            text: "final".into(),
+            phase: Some("final_answer".into()),
+        };
+        let mut batch = Vec::new();
+        for event in [
+            delta("a", "one"),
+            delta("a", "two"),
+            delta("b", "three"),
+            completed.clone(),
+            delta("b", "four"),
+        ] {
+            push_coalesced_agent_event(&mut batch, event);
+        }
+        assert_eq!(
+            batch,
+            vec![
+                delta("a", "onetwo"),
+                delta("b", "three"),
+                completed,
+                delta("b", "four")
+            ]
+        );
     }
 }

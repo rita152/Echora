@@ -684,6 +684,48 @@ fn assert_workspace_request(endpoint: &mut FakeEndpoint, method: &str) -> Value 
 }
 
 #[test]
+fn saved_turn_usage_before_resume_response_does_not_require_an_active_turn() {
+    let (manager, spawner) = manager_with_fake();
+    let events = manager.subscribe_connection_events();
+    let projects = manager.list_projects(PageRequest {
+        cursor: None,
+        limit: 25,
+    });
+    let mut endpoint = spawner.next_endpoint();
+    handshake(&mut endpoint);
+    let request = assert_workspace_request(&mut endpoint, "project/list");
+    let usage = json!({"totalTokens": 42, "inputTokens": 30, "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 0, "outputTokens": 12, "reasoningOutputTokens": 0});
+    endpoint.send(json!({
+        "method": "thread/tokenUsage/updated",
+        "params": {"threadId": "saved-thread", "turnId": "finished-turn",
+            "tokenUsage": {"total": usage, "last": usage, "modelContextWindow": 258400}}
+    }));
+    endpoint.respond(&request, json!({"data": [], "nextCursor": null}));
+    assert!(wait_value(&projects).is_ok());
+    let event = std::iter::from_fn(|| Some(wait_value(&events)))
+        .find(|event| !matches!(event, AgentConnectionEvent::Runtime(_)))
+        .unwrap();
+    assert!(
+        matches!(&event, AgentConnectionEvent::ThreadTokenUsageUpdated(usage)
+        if usage.thread_id == "saved-thread" && usage.turn_id == "finished-turn")
+    );
+    let mut state = crate::conversation::ConversationState {
+        thread_id: Some("saved-thread".to_owned()),
+        ..Default::default()
+    };
+    let phase = state.phase;
+    assert!(state.apply_connection_event(event));
+    assert_eq!(state.phase, phase);
+    assert!(state.turn_id.is_none());
+    assert!(state.activities.is_empty());
+    assert_eq!(
+        state.thread_token_usages["saved-thread"].total.total_tokens,
+        42
+    );
+}
+
+#[test]
 fn workspace_notifications_can_precede_their_response_without_failing_the_connection() {
     let (manager, spawner) = manager_with_fake();
     let events = manager.subscribe_connection_events();
@@ -1162,7 +1204,10 @@ fn one_new_conversation_runs_two_turns_on_one_initialized_process() {
         event,
         AgentEvent::ThreadCreated { thread_id } if thread_id == "thr_shared"
     )));
-    assert!(first_events.contains(&AgentEvent::TextDelta("one".to_owned())));
+    assert!(first_events.contains(&AgentEvent::TextDelta {
+        item_id: "msg_1".into(),
+        delta: "one".to_owned()
+    }));
     assert_eq!(first_events.last(), Some(&AgentEvent::Completed));
     drop(interrupt);
     assert!(endpoint.process.is_alive());
@@ -1424,11 +1469,23 @@ fn interleaved_threads_route_events_and_one_failed_turn_does_not_stop_the_other(
 
     let alpha = collect_terminal(&events_a);
     let beta = collect_terminal(&events_b);
-    assert!(alpha.contains(&AgentEvent::TextDelta("A".to_owned())));
-    assert!(alpha.contains(&AgentEvent::TextDelta("2".to_owned())));
-    assert!(!alpha.contains(&AgentEvent::TextDelta("B".to_owned())));
+    assert!(alpha.contains(&AgentEvent::TextDelta {
+        item_id: "a".into(),
+        delta: "A".to_owned()
+    }));
+    assert!(alpha.contains(&AgentEvent::TextDelta {
+        item_id: "a".into(),
+        delta: "2".to_owned()
+    }));
+    assert!(!alpha.contains(&AgentEvent::TextDelta {
+        item_id: "b".into(),
+        delta: "B".to_owned()
+    }));
     assert_eq!(alpha.last(), Some(&AgentEvent::Completed));
-    assert!(beta.contains(&AgentEvent::TextDelta("B".to_owned())));
+    assert!(beta.contains(&AgentEvent::TextDelta {
+        item_id: "b".into(),
+        delta: "B".to_owned()
+    }));
     assert!(
         matches!(beta.last(), Some(AgentEvent::Failed(message)) if message.contains("fixture turn failed"))
     );

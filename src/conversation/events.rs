@@ -79,6 +79,7 @@ impl ConversationState {
             | AgentConnectionEvent::ExternalAgentImportStatus(_)
             | AgentConnectionEvent::McpOauthLoginCompleted(_) => return false,
             AgentConnectionEvent::ThreadStatusChanged(status) => Some(status.thread_id.as_str()),
+            AgentConnectionEvent::ThreadTokenUsageUpdated(usage) => Some(usage.thread_id.as_str()),
             AgentConnectionEvent::ThreadSettingsUpdated { thread_id, .. } => {
                 Some(thread_id.as_str())
             }
@@ -153,6 +154,7 @@ impl ConversationState {
             AgentConnectionEvent::ThreadStatusChanged(status) => {
                 AgentEvent::ThreadStatusChanged(status)
             }
+            AgentConnectionEvent::ThreadTokenUsageUpdated(usage) => AgentEvent::ThreadTokenUsageUpdated(usage),
             AgentConnectionEvent::ThreadSettingsUpdated { settings, .. } => {
                 AgentEvent::ThreadSettingsUpdated(settings)
             }
@@ -243,6 +245,12 @@ impl ConversationState {
                 AgentEvent::TurnReady(identity) => {
                     if self.thread_id.as_deref() == Some(identity.thread_id.as_str()) {
                         self.turn_id = Some(identity.turn_id.clone());
+                        self.resumed_turn
+                            .get_or_insert_with(|| super::ResumedTurnPresentation {
+                                id: identity.turn_id.clone(),
+                                duration_ms: None,
+                                final_message_ids: Vec::new(),
+                            });
                         self.turn_identity = Some(identity.clone());
                         self.sync_runtime_prompts();
                         self.replay_pending_reviews();
@@ -348,7 +356,10 @@ impl ConversationState {
                     self.thread_token_usages
                         .insert(usage.thread_id.clone(), usage);
                 }
-                AgentEvent::AssistantMessageStarted { item_id } => {
+                AgentEvent::AssistantMessageStarted { item_id, phase } => {
+                    self.assistant_message_phases
+                        .entry(item_id.clone())
+                        .or_insert(phase);
                     if !self.activities.iter().any(|activity| {
                         matches!(
                             activity,
@@ -365,17 +376,50 @@ impl ConversationState {
                             });
                     }
                 }
-                AgentEvent::TextDelta(delta) => {
+                AgentEvent::TextDelta { item_id, delta } => {
                     self.assistant_message.push_str(&delta);
                     if let Some(ConversationActivity::AssistantMessage { text, .. }) =
                         self.activities.iter_mut().rev().find(|activity| {
-                            matches!(activity, ConversationActivity::AssistantMessage { .. })
+                            matches!(activity, ConversationActivity::AssistantMessage { item_id: id, .. } if id == &item_id)
                         })
                     {
                         text.push_str(&delta);
+                    } else {
+                        self.activities.push(ConversationActivity::AssistantMessage { item_id, text: delta });
                     }
                     if self.phase != ConversationPhase::Stopping {
                         self.phase = ConversationPhase::Streaming;
+                    }
+                }
+                AgentEvent::AssistantMessageCompleted {
+                    item_id,
+                    text,
+                    phase,
+                } => {
+                    self.assistant_message_phases.insert(item_id.clone(), phase);
+                    if let Some(ConversationActivity::AssistantMessage { text: existing, .. }) = self.activities.iter_mut().find(|a| matches!(a, ConversationActivity::AssistantMessage { item_id: id, .. } if id == &item_id)) {
+                        *existing = text;
+                    } else {
+                        self.activities.push(ConversationActivity::AssistantMessage { item_id, text });
+                    }
+                    self.refresh_assistant_answer();
+                    if self.phase != ConversationPhase::Stopping {
+                        self.phase = ConversationPhase::Streaming;
+                    }
+                }
+                AgentEvent::TurnTimingUpdated {
+                    started_at,
+                    completed_at,
+                    duration_ms,
+                } => {
+                    if let Some(time) = super::transcript::history_time_label(started_at) {
+                        self.user_message_time = Some(time);
+                    }
+                    if let Some(time) = super::transcript::history_time_label(completed_at) {
+                        self.assistant_message_time = Some(time);
+                    }
+                    if let Some(turn) = &mut self.resumed_turn {
+                        turn.duration_ms = duration_ms.or(turn.duration_ms);
                     }
                 }
                 AgentEvent::ReasoningStarted {
@@ -919,7 +963,8 @@ impl ConversationState {
                     self.assistant_message = error.clone();
                     self.activities
                         .push(ConversationActivity::Error { message: error });
-                    self.assistant_message_time = Some(current_local_time_label());
+                    self.assistant_message_time
+                        .get_or_insert_with(current_local_time_label);
                     self.phase = ConversationPhase::Failed;
                     self.model_status = Some("需要账户验证".to_owned());
                     self.safety_buffering = false;
@@ -960,25 +1005,14 @@ impl ConversationState {
                         &mut self.activities,
                         crate::agent::AgentActivityStatus::Completed,
                     );
-                    if self
-                        .submissions
-                        .iter()
-                        .any(|s| s.cycle == self.cycle && !s.initial && s.item_id.is_some())
-                        && let Some(text) = self.activities.iter().rev().find_map(|a| match a {
-                            ConversationActivity::AssistantMessage { text, .. } => {
-                                Some(text.clone())
-                            }
-                            _ => None,
-                        })
-                    {
-                        self.assistant_message = text;
-                    }
+                    self.refresh_assistant_answer();
                     remove_unfinished_image_generations(&mut self.activities);
                     if self.safety_buffering {
                         self.model_status = None;
                         self.safety_buffering = false;
                     }
-                    self.assistant_message_time = Some(current_local_time_label());
+                    self.assistant_message_time
+                        .get_or_insert_with(current_local_time_label);
                     self.phase = ConversationPhase::Complete;
                     finished = true;
                     continue;
@@ -990,7 +1024,8 @@ impl ConversationState {
                         crate::agent::AgentActivityStatus::Interrupted,
                     );
                     remove_unfinished_image_generations(&mut self.activities);
-                    self.assistant_message_time = Some(current_local_time_label());
+                    self.assistant_message_time
+                        .get_or_insert_with(current_local_time_label);
                     self.phase = ConversationPhase::Stopped;
                     self.safety_buffering = false;
                     finished = true;
@@ -1018,7 +1053,8 @@ impl ConversationState {
                         self.activities
                             .push(ConversationActivity::Error { message: error });
                     }
-                    self.assistant_message_time = Some(current_local_time_label());
+                    self.assistant_message_time
+                        .get_or_insert_with(current_local_time_label);
                     self.phase = ConversationPhase::Failed;
                     self.safety_buffering = false;
                     finished = true;

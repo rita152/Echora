@@ -194,6 +194,9 @@ pub(super) fn connection_event_key(event: &AgentConnectionEvent) -> String {
         AgentConnectionEvent::ThreadStatusChanged(status) => {
             format!("thread-status:{}", status.thread_id)
         }
+        AgentConnectionEvent::ThreadTokenUsageUpdated(usage) => {
+            format!("thread-token-usage:{}", usage.thread_id)
+        }
         AgentConnectionEvent::ThreadSettingsUpdated { thread_id, .. } => {
             format!("thread-settings:{thread_id}")
         }

@@ -21,6 +21,20 @@ use crate::{
 
 impl ChatApp {
     #[cfg(feature = "screenshot")]
+    pub(crate) fn live_capture_status(
+        &self,
+        cx: &gpui::App,
+    ) -> (crate::conversation::ConversationPhase, Option<String>) {
+        let composer = self.conversation_hosts[&self.active_conversation]
+            .composer
+            .read(cx);
+        (
+            composer.conversation_phase(),
+            composer.thread_id().map(str::to_owned),
+        )
+    }
+
+    #[cfg(feature = "screenshot")]
     pub fn replay_approvals(&mut self, path: &std::path::Path, cx: &mut Context<Self>) {
         match crate::agent::CodexAppServerBackend::replay_approvals(path) {
             Ok(capture) => {

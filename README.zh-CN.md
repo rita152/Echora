@@ -102,7 +102,7 @@ Cargo 包和可执行文件目前仍名为 `gpui-chat-clone`，现有构建与�
 <summary>行为细节与当前边界</summary>
 
 - **运行中追加输入：** 使用 `turn/steer` 立即发送到活动轮次，不提供服务端消息队列。失败输入可连同附件与审查评论恢复，不覆盖后续新草稿，也不自动改发为新轮次。
-- **历史：** 已完成轮次折叠最终答复之前的过程消息，追加的用户消息保留原有位置与附件。文件变更按路径汇总并保留原始 patch。历史由 app-server 提供，不伪造缺失的时间、计划步骤快照或自动复核历史。
+- **实时输出与历史：** 实时与恢复后的已完成轮次共用最终答复选择、工作过程折叠、答复操作与文件汇总。文本增量保留 item 身份，完成消息快照校正显示内容；相邻增量以 8 ms 窗口批处理，代码高亮复用已完成行，仅重解析未结束行。已完成轮次折叠最终答复之前的过程消息，追加的用户消息保留原有位置与附件。文件变更按路径汇总并保留原始 patch。历史由 app-server 提供，不伪造缺失的时间、计划步骤快照或自动复核历史。
 - **审批：** 并发请求依次显示，提交后等待服务端释放。响应失败可见且不可重复提交。可查看原始请求补丁，展开、选择和复制长命令。使用 Tab / 方向键导航、Enter 激活、Esc 关闭或拒绝；文件审批的 `Shift+Esc` 拒绝并停止轮次。
 - **权限：** 读取服务端 profile 全部页面，展示禁用选项及原因。菜单隐藏内置 `:read-only` profile，不显示后续轮次提示和手动重新读取入口。已有线程等待 RPC 成功与匹配的设置通知后才显示生效，更新影响后续轮次。完整访问权限需要应用内确认，侧边聊天独立管理权限。线程被另一个 app-server 占用时，警告卡片固定在输入框上方，不随会话滚动。
 - **配置：** 使用带版本的 `config/batchWrite` 保存并回读，项目层与受管层只读。冲突保留草稿，结果未知时不自动重试。保存的模型、推理强度、服务等级与个性默认值用于后续线程，不热更新已打开的线程。
@@ -191,6 +191,8 @@ Computer Use 先枚举应用，连接 **GPUI Capture**，读取可访问性树�
 
 自动恢复会话截图可追加 `--resume-thread=THREAD_ID --screenshot="$PWD/artifacts/resumed-thread.png"`。ID 接受原始 UUID 或 `local:<uuid>`。可选 `--resume-scroll-from-bottom=3200` 指定距底部的滚动距离，省略则停在底部。应用等待历史、侧栏、模型目录与三个稳定绘制帧后截图退出，失败或超时返回非零状态。请选择未被其他活动写入进程占用的线程。
 
+真实实时轮次采集：启动时传入 `--capture-live-turn="$PWD/artifacts/live.png"`，再在验收实例输入提示词。完成后保存尚未重新加载历史的实时画面，以及包含线程身份、活动数据的 `.json` 侧文件，然后退出。中断、失败或超过五分钟返回失败。
+
 窗口尺寸为逻辑像素，PNG 分辨率取决于显示器 DPR。对照使用相同主题、内容、窗口尺寸、DPR 与滚动位置，不得缩放或平移图片。旧 `scripts/compare_all.sh` 会缩放截图，不作为像素验收入口。原始截图、日志和对比数据留在 `artifacts/`，README 展示图片放在 `docs/images/`。
 
 <details>
@@ -249,6 +251,10 @@ python3 scripts/compare_typography.py \
   artifacts/typography/electron-1x.png artifacts/typography/gpui-1x.png \
   --output=artifacts/typography/comparison-1x.json
 ```
+
+`cargo test live_conversation_stream_timings -- --ignored --nocapture` 测量 500 次实时会话更新与 GPUI 布局耗时，并验证向上滚动后继续输出不会移动阅读位置。
+
+`cargo test streaming_highlight_timings -- --ignored --nocapture` 对比 500 次逐步增长的 Rust 代码更新在增量高亮与完整解析下的耗时，并校验高亮区间完全相等。
 
 滚动基准测量 GPUI 测试窗口的事件与布局耗时，不代表屏幕 FPS。字体比较只统计字形像素。2× 验证将 CDP 参数改为 `2`，GPUI 使用真实 Retina 显示器，比较传 `--dpr=2`。半透明对照另存目录：CDP 和比较脚本加 `--translucent`，GPUI 加 `--typography-translucent`，比较工具将两端不同的 alpha 编码合成到同一底色。
 

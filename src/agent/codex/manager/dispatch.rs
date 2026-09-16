@@ -567,6 +567,17 @@ impl ManagerInner {
                 }
                 Ok(())
             }
+            "thread/tokenUsage/updated" => {
+                // Resume can publish the saved turn's usage before its RPC
+                // response, without any locally running ManagedTurn.
+                let Some(AgentEvent::ThreadTokenUsageUpdated(usage)) =
+                    parse_agent_notification(message)?
+                else {
+                    bail!("thread/tokenUsage/updated 未映射为 token usage");
+                };
+                self.publish_connection_event(AgentConnectionEvent::ThreadTokenUsageUpdated(usage));
+                Ok(())
+            }
             "thread/status/changed" => {
                 self.publish_connection_event(AgentConnectionEvent::ThreadStatusChanged(
                     parse_thread_status_changed(message)?,

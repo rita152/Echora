@@ -45,7 +45,6 @@ pub(super) struct TurnSessionState {
 #[derive(Default)]
 pub(super) struct AgentMessageProgress {
     pub(super) started: bool,
-    pub(super) has_output: bool,
     pub(super) completed: bool,
 }
 

@@ -2313,3 +2313,76 @@ fn user_input_other_is_a_native_editor_and_tab_returns_to_form_navigation() {
         ));
     });
 }
+
+#[test]
+#[ignore = "manual live conversation update/layout timing benchmark"]
+fn live_conversation_stream_timings() {
+    use crate::agent::{AgentEvent as E, AgentTurnIdentity};
+    use std::time::Instant;
+    let mut app = TestApp::new();
+    let mut window = app.open_window_with_options(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                point(px(0.), px(0.)),
+                size(px(1440.), px(900.)),
+            ))),
+            ..Default::default()
+        },
+        |_, cx| HomeView::new(ThemeMode::Dark, cx),
+    );
+    window.update(|home,_,cx| home.composer.update(cx, |composer,cx| {
+        composer.submit_prompt_for_capture("Stream a long code example", cx);
+        composer.apply_events_for_capture(vec![
+            E::ThreadCreated { thread_id:"timing".into() },
+            E::TurnReady(AgentTurnIdentity { generation:1,thread_id:"timing".into(),turn_id:"turn".into() }),
+            E::AssistantMessageStarted { item_id:"answer".into(),phase:Some("final_answer".into()) },
+            E::TextDelta { item_id:"answer".into(),delta:"# Streaming\n\n**Bold** and 你好.\n\n| A | B |\n|---|---|\n| one | two |\n\n```rust\nfn main() {\n".into() },
+        ], cx);
+    }));
+    window.draw();
+    let mut timings = Vec::new();
+    for index in 0..500 {
+        let start = Instant::now();
+        window.update(|home, _, cx| {
+            home.composer.update(cx, |composer, cx| {
+                composer.apply_events_for_capture(
+                    vec![E::TextDelta {
+                        item_id: "answer".into(),
+                        delta: format!("    println!(\"你好 {index}\");\n"),
+                    }],
+                    cx,
+                );
+            })
+        });
+        window.draw();
+        timings.push(start.elapsed().as_secs_f64() * 1000.);
+    }
+    assert!(window.read(|home, _| home.conversation_list.is_following_tail()));
+    window.simulate_scroll(point(px(20.), px(300.)), point(px(0.), px(150.)));
+    window.draw();
+    let before = window.read(|home, _| home.conversation_list.logical_scroll_top());
+    window.update(|home, _, cx| {
+        home.composer.update(cx, |composer, cx| {
+            composer.apply_events_for_capture(
+                vec![E::TextDelta {
+                    item_id: "answer".into(),
+                    delta: "}\n```".into(),
+                }],
+                cx,
+            );
+        })
+    });
+    window.draw();
+    let after = window.read(|home, _| home.conversation_list.logical_scroll_top());
+    assert_eq!(before.item_ix, after.item_ix);
+    assert_eq!(before.offset_in_item, after.offset_in_item);
+    assert!(!window.read(|home, _| home.conversation_list.is_following_tail()));
+    timings.sort_by(f64::total_cmp);
+    eprintln!(
+        "live_conversation_update_layout: samples={} p50_ms={:.3} p95_ms={:.3} max_ms={:.3}",
+        timings.len(),
+        timings[250],
+        timings[475],
+        timings[499]
+    );
+}

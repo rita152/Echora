@@ -418,6 +418,7 @@ impl WorkspaceStore {
             | AgentConnectionEvent::AppListUpdated { .. }
             | AgentConnectionEvent::ExternalAgentImportStatus(_)
             | AgentConnectionEvent::McpOauthLoginCompleted(_)
+            | AgentConnectionEvent::ThreadTokenUsageUpdated(_)
             | AgentConnectionEvent::ThreadSettingsUpdated { .. }
             | AgentConnectionEvent::AccountUpdated(_)
             | AgentConnectionEvent::AccountLoginUpdated(_)

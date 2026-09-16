@@ -47,6 +47,17 @@ use crate::{
 };
 
 impl ComposerView {
+    #[cfg(test)]
+    pub(crate) fn apply_events_for_capture(
+        &mut self,
+        events: Vec<crate::agent::AgentEvent>,
+        cx: &mut Context<Self>,
+    ) {
+        self.apply_agent_event_batch(events);
+        cx.emit(ConversationChanged);
+        cx.notify();
+    }
+
     #[cfg(feature = "screenshot")]
     pub fn replay_approvals(
         &mut self,

@@ -396,8 +396,12 @@ fn transcript_keeps_prior_turns_and_first_start_uses_workspace_context() {
         AgentEvent::Started,
         AgentEvent::AssistantMessageStarted {
             item_id: "message-first".to_owned(),
+            phase: None,
         },
-        AgentEvent::TextDelta("first response".to_owned()),
+        AgentEvent::TextDelta {
+            item_id: "message-first".to_owned(),
+            delta: "first response".to_owned(),
+        },
         AgentEvent::Completed,
     ] {
         backend.send_run_event(0, event);
@@ -757,7 +761,10 @@ fn live_command_approval_sends_cancel_and_waits_for_server_terminal() {
                     kind: AgentServerRequestKind::CommandApproval,
                 },
             },
-            AgentEvent::TextDelta("命令未执行，继续当前回合".into()),
+            AgentEvent::TextDelta {
+                item_id: "assistant".into(),
+                delta: "命令未执行，继续当前回合".into(),
+            },
             AgentEvent::Completed,
         ]);
         assert_eq!(composer.conversation.phase, ConversationPhase::Complete);
@@ -1365,9 +1372,16 @@ fn adjacent_stream_deltas_are_coalesced_without_reordering_boundaries() {
         AgentEvent::Started,
         AgentEvent::AssistantMessageStarted {
             item_id: "message_1".into(),
+            phase: None,
         },
-        AgentEvent::TextDelta("你".into()),
-        AgentEvent::TextDelta("好".into()),
+        AgentEvent::TextDelta {
+            item_id: "message_1".into(),
+            delta: "你".into(),
+        },
+        AgentEvent::TextDelta {
+            item_id: "message_1".into(),
+            delta: "好".into(),
+        },
         AgentEvent::CommandOutputDelta {
             item_id: "command_1".into(),
             delta: "hel".into(),
@@ -1376,7 +1390,10 @@ fn adjacent_stream_deltas_are_coalesced_without_reordering_boundaries() {
             item_id: "command_1".into(),
             delta: "lo\n".into(),
         },
-        AgentEvent::TextDelta("世界".into()),
+        AgentEvent::TextDelta {
+            item_id: "message_1".into(),
+            delta: "世界".into(),
+        },
     ] {
         push_coalesced_agent_event(&mut batch, event);
     }
@@ -1387,13 +1404,20 @@ fn adjacent_stream_deltas_are_coalesced_without_reordering_boundaries() {
             AgentEvent::Started,
             AgentEvent::AssistantMessageStarted {
                 item_id: "message_1".into(),
+                phase: None,
             },
-            AgentEvent::TextDelta("你好".into()),
+            AgentEvent::TextDelta {
+                item_id: "message_1".into(),
+                delta: "你好".into()
+            },
             AgentEvent::CommandOutputDelta {
                 item_id: "command_1".into(),
                 delta: "hello\n".into(),
             },
-            AgentEvent::TextDelta("世界".into()),
+            AgentEvent::TextDelta {
+                item_id: "message_1".into(),
+                delta: "世界".into()
+            },
         ]
     );
 }
@@ -1420,9 +1444,16 @@ fn live_stream_commits_one_change_for_an_entire_protocol_burst() {
         AgentEvent::Started,
         AgentEvent::AssistantMessageStarted {
             item_id: "message_1".into(),
+            phase: None,
         },
-        AgentEvent::TextDelta("平滑".into()),
-        AgentEvent::TextDelta("输出".into()),
+        AgentEvent::TextDelta {
+            item_id: "message_1".into(),
+            delta: "平滑".into(),
+        },
+        AgentEvent::TextDelta {
+            item_id: "message_1".into(),
+            delta: "输出".into(),
+        },
     ] {
         sender.send_blocking(event).unwrap();
     }
@@ -1659,11 +1690,21 @@ fn a_stream_batch_applies_all_text_before_its_terminal_event() {
             AgentEvent::Started,
             AgentEvent::AssistantMessageStarted {
                 item_id: "message_1".into(),
+                phase: None,
             },
-            AgentEvent::TextDelta("流式".into()),
-            AgentEvent::TextDelta("内容".into()),
+            AgentEvent::TextDelta {
+                item_id: "message_1".into(),
+                delta: "流式".into()
+            },
+            AgentEvent::TextDelta {
+                item_id: "message_1".into(),
+                delta: "内容".into()
+            },
             AgentEvent::Completed,
-            AgentEvent::TextDelta("不应越过终止事件".into()),
+            AgentEvent::TextDelta {
+                item_id: "message_1".into(),
+                delta: "不应越过终止事件".into()
+            },
         ]));
     });
 
@@ -1792,7 +1833,10 @@ fn stream_batch_limit_defers_excess_events_without_losing_text() {
     let (sender, receiver) = async_channel::unbounded();
     for _ in 0..=STREAM_EVENTS_PER_UPDATE {
         sender
-            .send_blocking(AgentEvent::TextDelta("x".into()))
+            .send_blocking(AgentEvent::TextDelta {
+                item_id: "assistant".into(),
+                delta: "x".into(),
+            })
             .unwrap();
     }
     sender.send_blocking(AgentEvent::Completed).unwrap();
@@ -1803,7 +1847,10 @@ fn stream_batch_limit_defers_excess_events_without_losing_text() {
     assert!(!first_closed);
     assert_eq!(
         first_batch,
-        vec![AgentEvent::TextDelta("x".repeat(STREAM_EVENTS_PER_UPDATE))]
+        vec![AgentEvent::TextDelta {
+            item_id: "assistant".into(),
+            delta: "x".repeat(STREAM_EVENTS_PER_UPDATE)
+        }]
     );
 
     let first_event = receiver.try_recv().unwrap();
@@ -1828,8 +1875,12 @@ fn a_closed_stream_without_a_terminal_event_becomes_failed() {
     let mut batch = vec![
         AgentEvent::AssistantMessageStarted {
             item_id: "message_1".into(),
+            phase: None,
         },
-        AgentEvent::TextDelta("partial".into()),
+        AgentEvent::TextDelta {
+            item_id: "message_1".into(),
+            delta: "partial".into(),
+        },
     ];
     ensure_closed_batch_is_terminal(&mut batch);
 
@@ -1866,8 +1917,12 @@ fn render_snapshot_only_copies_the_aggregate_when_the_view_needs_it() {
         composer.apply_agent_event_batch(vec![
             AgentEvent::AssistantMessageStarted {
                 item_id: "message_1".into(),
+                phase: None,
             },
-            AgentEvent::TextDelta("正在流式输出".into()),
+            AgentEvent::TextDelta {
+                item_id: "message_1".into(),
+                delta: "正在流式输出".into(),
+            },
         ]);
     });
 

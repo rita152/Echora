@@ -253,7 +253,10 @@ fn nullable_target_and_post_terminal_batch_updates_do_not_create_a_new_turn() {
     s.apply_auto_approval_review(started);
     s.apply_agent_event_batch(vec![
         AgentEvent::Interrupted,
-        AgentEvent::TextDelta("must not resume".into()),
+        AgentEvent::TextDelta {
+            item_id: "assistant".into(),
+            delta: "must not resume".into(),
+        },
         AgentEvent::AutoApprovalReviewUpdated(Box::new(review(
             "a",
             "turn",

@@ -175,8 +175,12 @@ impl ComposerView {
                 self.conversation.apply_agent_event_batch(vec![
                     AgentEvent::AssistantMessageStarted {
                         item_id: "answer".into(),
+                        phase: None,
                     },
-                    AgentEvent::TextDelta("Runtime check complete.".into()),
+                    AgentEvent::TextDelta {
+                        item_id: "answer".into(),
+                        delta: "Runtime check complete.".into(),
+                    },
                     AgentEvent::Completed,
                 ]);
             }

@@ -76,7 +76,10 @@ fn runtime_notifications_before_start_and_after_completion_do_not_steal_or_end_t
     let events_b = collect_terminal(&b);
     assert_eq!(events_a.last(), Some(&AgentEvent::Interrupted));
     assert_eq!(events_b.last(), Some(&AgentEvent::Completed));
-    assert!(events_b.contains(&AgentEvent::TextDelta("B is still running".into())));
+    assert!(events_b.contains(&AgentEvent::TextDelta {
+        item_id: "answer".into(),
+        delta: "B is still running".into()
+    }));
     let mut states = [
         crate::conversation::ConversationState {
             thread_id: Some("a".into()),

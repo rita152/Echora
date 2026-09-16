@@ -12,6 +12,8 @@ impl ConversationState {
     pub(crate) fn begin_prompt(&mut self, prompt: &str) -> u64 {
         self.commit_current_turn();
         self.turn_id = None;
+        self.resumed_turn = None;
+        self.assistant_message_phases.clear();
         self.turn_identity = None;
         self.seen_user_items.clear();
         self.history_loading = false;

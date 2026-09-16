@@ -11,6 +11,8 @@ mod media;
 mod plugins;
 mod settings;
 mod skills;
+#[cfg(feature = "screenshot")]
+mod stream_capture;
 mod theme;
 mod typography;
 mod workspace;
@@ -1174,6 +1176,13 @@ fn main() {
                         }
                         app
                     });
+                    #[cfg(feature = "screenshot")]
+                    if let Some(path) = args
+                        .iter()
+                        .find_map(|arg| arg.strip_prefix("--capture-live-turn="))
+                    {
+                        crate::stream_capture::schedule(window, app.clone(), path.to_owned(), cx);
+                    }
                     let closing_app = app.downgrade();
                     window.on_window_should_close(cx, move |window, cx| {
                         closing_app

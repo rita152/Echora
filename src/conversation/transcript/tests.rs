@@ -361,3 +361,142 @@ fn history_function_call_output_and_review_mode_keep_no_row_like_live() {
         "these items must not degrade into an unsupported warning"
     );
 }
+
+#[test]
+fn live_completion_and_resumed_history_produce_identical_turn_presentation() {
+    use crate::agent::{AgentEvent as E, AgentTurnIdentity};
+    for phases in [
+        [Some("commentary"), Some("final_answer")],
+        [None, None],
+        [Some("commentary"), Some("commentary")],
+    ] {
+        let mut history = progress_history(
+            HistoryTurnStatus::Completed,
+            vec![
+                ThreadHistoryItem::UserMessage {
+                    item_id: "user".into(),
+                    client_message_id: None,
+                    text: "prompt".into(),
+                    images: vec![],
+                },
+                ThreadHistoryItem::AssistantMessage {
+                    item_id: "progress".into(),
+                    text: "Checking **formatting**.".into(),
+                    phase: phases[0].map(str::to_owned),
+                },
+                ThreadHistoryItem::AssistantMessage {
+                    item_id: "answer".into(),
+                    text: "## Done\n\nUnicode 你好 and `code`.".into(),
+                    phase: phases[1].map(str::to_owned),
+                },
+            ],
+        );
+        history.turns[0].started_at = Some(1_789_575_127);
+        history.turns[0].completed_at = Some(1_789_575_147);
+        history.turns[0].duration_ms = Some(20_000);
+        let mut restored = ConversationState::default();
+        restored.hydrate_history(history);
+        let mut live = ConversationState::default();
+        live.begin_prompt("prompt");
+        live.apply_agent_event_batch(vec![
+            E::ThreadCreated {
+                thread_id: "history".into(),
+            },
+            E::TurnReady(AgentTurnIdentity {
+                generation: 1,
+                thread_id: "history".into(),
+                turn_id: "turn".into(),
+            }),
+            E::AssistantMessageStarted {
+                item_id: "progress".into(),
+                phase: phases[0].map(str::to_owned),
+            },
+            E::TextDelta {
+                item_id: "progress".into(),
+                delta: "Checking".into(),
+            },
+            E::AssistantMessageCompleted {
+                item_id: "progress".into(),
+                text: "Checking **formatting**.".into(),
+                phase: phases[0].map(str::to_owned),
+            },
+            E::AssistantMessageStarted {
+                item_id: "answer".into(),
+                phase: phases[1].map(str::to_owned),
+            },
+            E::TextDelta {
+                item_id: "answer".into(),
+                delta: "## Incomplete".into(),
+            },
+            E::AssistantMessageCompleted {
+                item_id: "answer".into(),
+                text: "## Done\n\nUnicode 你好 and `code`.".into(),
+                phase: phases[1].map(str::to_owned),
+            },
+            E::TurnTimingUpdated {
+                started_at: Some(1_789_575_127),
+                completed_at: Some(1_789_575_147),
+                duration_ms: Some(20_000),
+            },
+            E::Completed,
+        ]);
+        assert_eq!(
+            live.conversation_render_snapshot(),
+            restored.conversation_render_snapshot()
+        );
+        assert_eq!(live.resumed_turn(), restored.resumed_turn());
+        live.begin_prompt("follow up");
+        restored.begin_prompt("follow up");
+        assert_eq!(live.transcript, restored.transcript);
+        assert!(live.resumed_turn.is_none());
+    }
+}
+
+#[test]
+fn interleaved_text_deltas_and_completion_snapshots_keep_their_message_identity() {
+    use crate::agent::AgentEvent as E;
+    let mut state = ConversationState::default();
+    state.begin_prompt("prompt");
+    state.apply_agent_event_batch(vec![
+        E::AssistantMessageStarted {
+            item_id: "a".into(),
+            phase: Some("commentary".into()),
+        },
+        E::AssistantMessageStarted {
+            item_id: "b".into(),
+            phase: Some("final_answer".into()),
+        },
+        E::TextDelta {
+            item_id: "a".into(),
+            delta: "progress".into(),
+        },
+        E::TextDelta {
+            item_id: "b".into(),
+            delta: "partial".into(),
+        },
+        E::TextDelta {
+            item_id: "a".into(),
+            delta: " continued".into(),
+        },
+        E::AssistantMessageCompleted {
+            item_id: "b".into(),
+            text: "authoritative answer".into(),
+            phase: Some("final_answer".into()),
+        },
+        E::Completed,
+    ]);
+    assert_eq!(state.assistant_message, "authoritative answer");
+    assert_eq!(
+        state.activities,
+        vec![
+            ConversationActivity::AssistantMessage {
+                item_id: "a".into(),
+                text: "progress continued".into()
+            },
+            ConversationActivity::AssistantMessage {
+                item_id: "b".into(),
+                text: "authoritative answer".into()
+            },
+        ]
+    );
+}
