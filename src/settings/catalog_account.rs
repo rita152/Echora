@@ -242,74 +242,6 @@ const SHORTCUTS: &[SectionSpec] = &[
     SectionSpec::new("全局、浏览器与语音", "", SHORTCUT_GLOBAL),
 ];
 
-const USAGE: &[SectionSpec] = &[
-    SectionSpec::new(
-        "当前套餐",
-        "",
-        &[RowSpec::new(
-            "Pro 套餐",
-            "₱9,990/月",
-            ControlSpec::Button("查看套餐"),
-        )],
-    ),
-    SectionSpec::new(
-        "额度余额",
-        "购买额度或启用自动充值，达到限额后仍可继续使用 Codex。了解更多",
-        &[
-            RowSpec::new("PHP 0", "当前余额", ControlSpec::Button("购买额度")),
-            RowSpec::new(
-                "自动充值",
-                "达到上限后仍可继续工作 · 最高可享 40% 折扣",
-                ControlSpec::Switch(false),
-            ),
-            RowSpec::new("为他人购买额度", "", ControlSpec::Button("赠送额度")),
-        ],
-    ),
-    SectionSpec::new(
-        "通用使用限额",
-        "",
-        &[RowSpec::new(
-            "每周使用限额",
-            "重置时间：2026年9月1日 22:15",
-            ControlSpec::Value("剩余 81%"),
-        )],
-    ),
-    SectionSpec::new(
-        "GPT-5.3-Codex-Spark 使用限额",
-        "",
-        &[
-            RowSpec::new(
-                "5 小时使用限额",
-                "重置时间：03:29",
-                ControlSpec::Value("剩余 100%"),
-            ),
-            RowSpec::new(
-                "每周使用限额",
-                "重置时间：2026年9月2日 22:29",
-                ControlSpec::Value("剩余 100%"),
-            ),
-        ],
-    ),
-    SectionSpec::new(
-        "使用限额重置",
-        "",
-        &[RowSpec::new(
-            "完全重置",
-            "将于 9/21 GMT+8 08:24 到期",
-            ControlSpec::Button("使用重置额度"),
-        )],
-    ),
-    SectionSpec::new(
-        "取消套餐",
-        "",
-        &[RowSpec::new(
-            "您的订阅由 ChatGPT 管理。",
-            "如需取消套餐，请前往账单操作。",
-            ControlSpec::None,
-        )],
-    ),
-];
-
 const COMPUTER_USE: &[SectionSpec] = &[
     SectionSpec::new(
         "控制",
@@ -476,13 +408,6 @@ pub const PAGES: &[PageSpec] = &[
         "",
         PageKind::KeyboardShortcuts,
         SHORTCUTS,
-    ),
-    PageSpec::new(
-        "usage",
-        "使用情况和计费",
-        "如需查看发票、更改付款方式或进行其他操作，请前往网页版设置",
-        PageKind::Usage,
-        USAGE,
     ),
     PageSpec::new(
         "computer-use",

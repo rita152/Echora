@@ -4,7 +4,7 @@ use gpui::{Context, IntoElement, div, prelude::*, px, svg};
 
 use super::SettingsView;
 use crate::{
-    settings::{ControlSpec, PageKind, PageSpec, RowSpec, SectionSpec},
+    settings::{ControlSpec, PageSpec, RowSpec, SectionSpec},
     theme::{Theme, ThemeMode},
 };
 
@@ -121,31 +121,7 @@ impl SettingsView {
             ControlSpec::Switch(checked) => div()
                 .flex()
                 .items_center()
-                .gap(px(if key.0 == "usage" && key.1 == 1 && key.2 == 1 {
-                    8.0
-                } else {
-                    10.0
-                }))
-                .when(key.0 == "usage" && key.1 == 1 && key.2 == 1, |group| {
-                    group.child(
-                        div()
-                            .h(px(24.0))
-                            .px(px(10.0))
-                            .rounded_full()
-                            .bg(if theme.surface == gpui::rgba(0x181818ff) {
-                                gpui::rgba(0x2d2934ff)
-                            } else {
-                                gpui::rgba(0xf0eafaff)
-                            })
-                            .flex()
-                            .items_center()
-                            .text_size(px(13.0))
-                            .line_height(px(13.0))
-                            .font_weight(gpui::FontWeight(500.0))
-                            .text_color(theme.effort)
-                            .child("最高可享 40% 折扣"),
-                    )
-                })
+                .gap(px(10.0))
                 .child(self.switch_control(checked, key, theme, cx))
                 .into_any_element(),
             ControlSpec::Button(label) if key.0 == "voice" && key.1 == 3 && key.2 == 0 => div()
@@ -410,18 +386,6 @@ impl SettingsView {
                 }))
                 .flex_none()
             })
-            .when(slug == "usage", |node| {
-                node.h(px(match section_index {
-                    0 => 60.0,
-                    2 | 4 => 61.0,
-                    3 if row_index == 1 => 60.0,
-                    3 => 61.0,
-                    1 if row_index == 2 => 51.0,
-                    1 => 61.0,
-                    _ => 61.0,
-                }))
-                .flex_none()
-            })
             .when(slug == "voice" && section_index == 1, |node| {
                 node.h(px(61.0)).flex_none()
             })
@@ -432,10 +396,6 @@ impl SettingsView {
                 }))
                 .flex_none()
             })
-            .when(
-                slug == "usage" && section_index == 1 && row_index == 2,
-                |node| node.min_h(px(0.0)),
-            )
             .px(px(16.0))
             .py(px(12.0))
             .relative()
@@ -473,7 +433,7 @@ impl SettingsView {
                             .line_height(px(18.5))
                             .font_weight(gpui::FontWeight(if matches!(
                                 slug,
-                                "general-settings" | "voice" | "usage"
+                                "general-settings" | "voice"
                             ) {
                                 500.0
                             } else {
@@ -560,9 +520,7 @@ impl SettingsView {
                                     } else {
                                         theme.text_tertiary
                                     }
-                                } else if slug == "voice" || (slug == "usage"
-                                    && theme.surface != gpui::rgba(0x181818ff))
-                                {
+                                } else if slug == "voice" {
                                     theme.text_tertiary
                                 } else {
                                     theme.settings_description
@@ -579,13 +537,7 @@ impl SettingsView {
                                         && row_index == 7,
                                     |subtitle| subtitle.relative().left(px(-1.0)),
                                 )
-                                .child(
-                                    if slug == "usage" && section_index == 1 && row_index == 1 {
-                                        "达到上限后仍可继续工作"
-                                    } else {
-                                        row.subtitle
-                                    },
-                                ),
+                                .child(row.subtitle),
                         )
                     },
                     ),
@@ -598,21 +550,6 @@ impl SettingsView {
                         slug == "voice" && matches!(section_index, 2 | 3),
                         |control| control.relative().top(px(-1.0)),
                     )
-                    .when(slug == "usage" && section_index == 3, |control| {
-                        control.relative().top(px(2.0))
-                    })
-                    .when(slug == "usage" && section_index == 0, |control| {
-                        control.relative().left(px(1.0))
-                    })
-                    .when(slug == "usage" && section_index == 1, |control| {
-                        control
-                            .relative()
-                            .left(px(1.0))
-                            .top(px(if row_index == 0 { 1.0 } else { 0.0 }))
-                    })
-                    .when(slug == "usage" && section_index == 2, |control| {
-                        control.relative().top(px(1.0))
-                    })
                     .when(
                         slug == "general-settings" && section_index == 1,
                         |control| {
@@ -667,26 +604,18 @@ impl SettingsView {
             ));
         }
         let has_header = !section.title.is_empty() || !section.subtitle.is_empty();
-        let usage_balance = slug == "usage" && section_index == 1;
         let voice_expanded_card = slug == "voice" && matches!(section_index, 1 | 2);
         div()
             .w_full()
             .flex()
             .flex_col()
             .when(has_header, |container| {
-                container.gap(px(if usage_balance {
-                    12.0
-                } else if voice_expanded_card {
-                    14.0
-                } else {
-                    16.0
-                }))
+                container.gap(px(if voice_expanded_card { 14.0 } else { 16.0 }))
             })
             .when(has_header, |container| {
                 container.child(
                     div()
                         .min_h(px(32.0))
-                        .when(usage_balance, |header| header.h(px(45.0)).flex_none())
                         .flex()
                         .flex_col()
                         .justify_end()
@@ -694,12 +623,7 @@ impl SettingsView {
                         .child(
                             div()
                                 .relative()
-                                .left(px(if slug == "usage" && section_index == 3 {
-                                    -4.0
-                                } else if matches!(
-                                    slug,
-                                    "general-settings" | "voice" | "usage"
-                                ) {
+                                .left(px(if matches!(slug, "general-settings" | "voice") {
                                     0.0
                                 } else {
                                     1.0
@@ -708,57 +632,32 @@ impl SettingsView {
                                     -2.0
                                 } else if slug == "voice" && section_index > 0 {
                                     -1.0
-                                } else if slug == "usage" && section_index == 2 {
-                                    1.0
                                 } else {
                                     0.0
                                 }))
-                                .text_size(px(if usage_balance { 16.0 } else { 14.0 }))
-                                .line_height(px(if usage_balance { 24.875 } else { 21.0 }))
-                                .font_weight(gpui::FontWeight(if usage_balance
-                                    || matches!(
-                                        slug,
-                                        "general-settings" | "voice" | "usage"
-                                    ) {
-                                    500.0
-                                } else {
-                                    400.0
-                                }))
+                                .text_size(px(14.0))
+                                .line_height(px(21.0))
+                                .font_weight(gpui::FontWeight(
+                                    if matches!(slug, "general-settings" | "voice") {
+                                        500.0
+                                    } else {
+                                        400.0
+                                    },
+                                ))
                                 .text_color(theme.text)
                                 .child(section.title),
                         )
                         .when(!section.subtitle.is_empty(), |header| {
                             header.child(
                                 div()
-                                    .text_size(px(if usage_balance { 13.0 } else { 12.0 }))
-                                    .line_height(px(if usage_balance { 18.0 } else { 16.0 }))
-                                    .text_color(if matches!(slug, "general-settings" | "voice") || (slug == "usage"
-                                        && theme.surface != gpui::rgba(0x181818ff))
-                                    {
+                                    .text_size(px(12.0))
+                                    .line_height(px(16.0))
+                                    .text_color(if matches!(slug, "general-settings" | "voice") {
                                         theme.text_tertiary
                                     } else {
                                         theme.settings_description
                                     })
-                                    .when(usage_balance, |subtitle| {
-                                        subtitle.flex().child(
-                                            "购买额度或启用自动充值，达到限额后仍可继续使用 Codex。",
-                                        )
-                                        .child(
-                                            div()
-                                                .ml(px(4.0))
-                                                .text_color(if theme.surface
-                                                    == gpui::rgba(0x181818ff)
-                                                {
-                                                    gpui::rgba(0x99ceffff)
-                                                } else {
-                                                    gpui::rgba(0x339cffff)
-                                                })
-                                                .child("了解更多"),
-                                        )
-                                    })
-                                    .when(!usage_balance, |subtitle| {
-                                        subtitle.child(section.subtitle)
-                                    }),
+                                    .child(section.subtitle),
                             )
                         }),
                 )
@@ -788,17 +687,9 @@ impl SettingsView {
                     .child(
                         div()
                             .relative()
-                            .top(px(if page.kind == PageKind::Usage {
-                                2.0
-                            } else {
-                                1.0
-                            }))
+                            .top(px(1.0))
                             .text_size(px(24.0))
-                            .line_height(px(if page.kind == PageKind::Usage {
-                                28.8
-                            } else {
-                                31.0
-                            }))
+                            .line_height(px(31.0))
                             .font_weight(gpui::FontWeight::NORMAL)
                             .text_color(theme.text)
                             .child(page.label),
@@ -806,49 +697,10 @@ impl SettingsView {
                     .when(!page.intro.is_empty(), |header| {
                         header.child(
                             div()
-                                .when(page.kind == PageKind::Usage, |intro| {
-                                    intro.relative().top(px(2.0))
-                                })
-                                .text_size(px(if page.kind == PageKind::Usage {
-                                    14.0
-                                } else {
-                                    13.0
-                                }))
-                                .line_height(px(if page.kind == PageKind::Usage {
-                                    21.0
-                                } else {
-                                    19.0
-                                }))
-                                .text_color(if page.kind == PageKind::Usage {
-                                    if theme.surface == gpui::rgba(0x181818ff) {
-                                        theme.settings_description
-                                    } else {
-                                        theme.text_tertiary
-                                    }
-                                } else {
-                                    theme.text_secondary
-                                })
-                                .when(page.kind == PageKind::Usage, |intro| {
-                                    intro
-                                        .flex()
-                                        .child(
-                                            "如需查看发票、更改付款方式或进行其他操作，请前往网页版",
-                                        )
-                                        .child(
-                                            div()
-                                                .text_color(if theme.surface
-                                                    == gpui::rgba(0x181818ff)
-                                                {
-                                                    gpui::rgba(0x99ceffff)
-                                                } else {
-                                                    gpui::rgba(0x339cffff)
-                                                })
-                                                .child("设置"),
-                                        )
-                                })
-                                .when(page.kind != PageKind::Usage, |intro| {
-                                    intro.child(page.intro)
-                                }),
+                                .text_size(px(13.0))
+                                .line_height(px(19.0))
+                                .text_color(theme.text_secondary)
+                                .child(page.intro),
                         )
                     }),
             );
@@ -861,15 +713,6 @@ impl SettingsView {
                         } else {
                             10.0
                         }))
-                    })
-                    .when(page.kind == PageKind::Usage && section_index == 1, |item| {
-                        item.mt(px(12.0))
-                    })
-                    .when(page.kind == PageKind::Usage && section_index >= 2, |item| {
-                        item.mt(px(8.0))
-                    })
-                    .when(page.kind == PageKind::Usage && section_index == 0, |item| {
-                        item.relative().top(px(2.0))
                     })
                     .when(page.slug == "voice" && section_index == 3, |item| {
                         item.mt(px(-24.0))

@@ -18,7 +18,6 @@ const EXPECTED_PANELS = [
   ["agent", "配置"],
   ["personalization", "个性化"],
   ["keyboard-shortcuts", "键盘快捷键"],
-  ["usage", "使用情况和计费"],
   ["computer-use", "电脑操控"],
   ["chronicle", "计算机历史记录"],
   ["appshots", "应用快照"],
@@ -293,7 +292,7 @@ body{max-width:900px;margin:48px auto;padding:0 24px}table{width:100%;border-col
 th,td{text-align:left;padding:10px 12px;border-bottom:1px solid color-mix(in srgb,currentColor 18%,transparent)}
 a{color:#339cff}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 </style></head><body><h1>ChatGPT 设置页 CDP 快照</h1>
-<p>共 19 个独立设置子页；“账户”页已排除。每页分别提供 light / dark 静态 HTML。</p>
+<p>共 18 个独立设置子页；“账户”页已排除。每页分别提供 light / dark 静态 HTML。</p>
 <table><thead><tr><th>页面</th><th>slug</th><th>浅色</th><th>深色</th></tr></thead><tbody>${rows}
 </tbody></table></body></html>\n`;
   fs.writeFileSync(path.join(OUTPUT, "index.html"), html);
@@ -393,7 +392,7 @@ button,a,input,select,textarea,[contenteditable]{pointer-events:none!important}
     });
     fs.writeFileSync(path.join(OUTPUT, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
     writeIndex(EXPECTED_PANELS.map(([slug, label]) => ({ slug, label })));
-    console.log(`Wrote 38 HTML snapshots plus index and CSS to ${OUTPUT}`);
+    console.log(`Wrote 36 HTML snapshots plus index and CSS to ${OUTPUT}`);
   } finally {
     cdp.close();
   }

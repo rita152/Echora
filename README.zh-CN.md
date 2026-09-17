@@ -55,8 +55,8 @@
 | **审查与交付** | 查看 Git diff、逐行评论、暂存、还原、提交、创建分支、推送，并通过本机 `gh` 创建 PR。 |
 | **侧边探索** | 从主会话派生临时对话，分别控制输入、模型、权限与停止操作。 |
 | **配置 Codex** | 读取有效配置与来源，查看受管限制，编辑已支持的用户层设置，并通过后端回读核验保存结果。 |
-| **账户与额度** | 账户菜单、登录流程与计费页都由连接级账户快照驱动：缺失的套餐、余额或额度显示为未知而不是 0；登录保留服务端返回的 `loginId` 直到完成通知到达；退出登录先确认再发请求。只提供 Codex 管理的 ChatGPT 登录，API key、外部 token 与 Bedrock 变体返回明确错误。 |
-| **管理账户** | 在账户菜单查看当前 ChatGPT 账户、套餐与剩余额度；通过 Codex 管理的 ChatGPT 登录、取消进行中的登录，并在确认后退出登录。计费页读取账户真实配额桶，不再显示示例数值。 |
+| **账户** | 账户菜单与登录流程都由连接级账户快照驱动：缺失的套餐显示为未知而不是杜撰；登录保留服务端返回的 `loginId` 直到完成通知到达；退出登录先确认再发请求。只提供 Codex 管理的 ChatGPT 登录，API key、外部 token 与 Bedrock 变体返回明确错误。 |
+| **管理账户** | 在账户菜单查看当前 ChatGPT 账户与套餐；通过 Codex 管理的 ChatGPT 登录、取消进行中的登录，并在确认后退出登录。 |
 | **管理技能与 MCP** | 读取技能目录并按技能启用／禁用并核验回执；列出 MCP 服务器的状态、认证、工具与服务端扩展字段；重新加载服务器；完成 OAuth 登录并区分等待、成功、失败、取消与断连状态。 |
 | **管理插件与应用** | 从后端读取插件目录与已安装子集，跨 marketplace 搜索，打开插件自身详情（描述、技能、MCP 服务器），经确认后安装／卸载，管理 marketplace（添加、更新、移除），读取已共享的插件与插件技能内容。目录行、分段徽标与计数一律使用服务端返回值；服务端没有提供图标或描述的插件就按原样呈现，不伪造占位内容。 |
 
@@ -225,13 +225,13 @@ export CHATGPT_CDP_HTTP="http://127.0.0.1:${CAPTURE_CDP_PORT:?Set a dedicated de
 | 真实线程双主题 | `python3 scripts/capture_resume_reference.py --endpoint "$CHATGPT_CDP_HTTP" --manifest /path/to/manifest.json`；`python3 scripts/capture_resume_gpui.py --manifest /path/to/manifest.json --output artifacts/resume-alignment/actual` |
 | 终端 / 文件 | `node scripts/cdp_capture_terminal.mjs artifacts/terminal`；`node scripts/cdp_capture_file_panel.mjs artifacts/file-panel` |
 | 审查 / 侧边聊天 | `node scripts/cdp_capture_review.mjs artifacts/review-reference`；`node scripts/cdp_capture_side_chat.mjs artifacts/side-chat reference` |
-| 账户菜单、退出登录、计费页 | `node scripts/cdp_capture_account.mjs --output artifacts/account-phase/chatgpt-reference --theme=light`；`scripts/capture_account_gpui.sh`；`python3 scripts/compare_account_phase.py` |
+| 账户菜单、退出登录 | `node scripts/cdp_capture_account.mjs --output artifacts/account-phase/chatgpt-reference --theme=light`；`scripts/capture_account_gpui.sh`；`python3 scripts/compare_account_phase.py` |
 | 设置矩阵 | `./node_modules/.bin/electron scripts/verify_chatgpt_settings.cjs`；`REFRESH_SETTINGS_REFERENCES=1 scripts/capture_settings_matrix.sh`；`python3 scripts/verify_settings_matrix.py` |
 | 已合并 Phase 1–4 局部组件门禁 | `python3 scripts/stage4/compare_merge_gate.py`（需要 `artifacts/merge-four-worktrees/` 下的专用 ChatGPT/GPUI 截图；每个局部组件阈值为 99%） |
 | 图像生成 | `python3 scripts/compare_image_generation_component.py --help`，传入实测等尺寸裁切范围和 DPR。 |
 | 历史诊断 | `python3 scripts/audit_resume_rendering.py --help`；rollout 仅用于离线诊断。 |
 
-线程 manifest 是包含 `id`、`title`、`slug` 的 JSON 数组。线程 / 设置对照在 1× 显示器使用 1440×900、DPR 1；设置矩阵覆盖 22 页的两种主题。已合并的 Phase 1–4 门禁在固定局部组件范围内，先执行一次有记录的 2×→1× BOX 归一化，再输出裁切图、差异图和分数到 `artifacts/merge-four-worktrees/visual/final-report/`。Git 写操作验收使用临时仓库与本机 bare remote，PR 命令链使用 `gh` 测试替身。
+线程 manifest 是包含 `id`、`title`、`slug` 的 JSON 数组。线程 / 设置对照在 1× 显示器使用 1440×900、DPR 1；设置矩阵覆盖 18 页的两种主题。已合并的 Phase 1–4 门禁在固定局部组件范围内，先执行一次有记录的 2×→1× BOX 归一化，再输出裁切图、差异图和分数到 `artifacts/merge-four-worktrees/visual/final-report/`。Git 写操作验收使用临时仓库与本机 bare remote，PR 命令链使用 `gh` 测试替身。
 
 ```bash
 GPUI_MARKDOWN_BENCH_FILE=docs/APP_SERVER_INTEGRATION.md \

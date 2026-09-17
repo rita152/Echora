@@ -8,7 +8,7 @@ refresh="${REFRESH_SETTINGS_REFERENCES:-0}"
 manifest="chat-reference/settings/manifest.json"
 canonical_slugs='[
   "general-settings", "profile", "appearance", "voice", "agent",
-  "personalization", "keyboard-shortcuts", "usage", "computer-use",
+  "personalization", "keyboard-shortcuts", "computer-use",
   "chronicle", "appshots", "plugins-settings", "browser-use", "hooks-settings",
   "connections", "git-settings", "local-environments", "worktrees", "data-controls"
 ]'
@@ -52,10 +52,10 @@ capture_electron_reference() {
 if ! jq -e --argjson expected "$canonical_slugs" '
   ([.[] | select(type == "object" and has("slug")) | .slug]) as $slugs
   | $slugs == $expected
-    and (.[-1].panelCount == 19)
+    and (.[-1].panelCount == 18)
     and (.[-1].themes == ["light", "dark"])
 ' "$manifest" >/dev/null; then
-  echo "invalid settings manifest: expected the canonical ordered 19 slugs and light/dark metadata" >&2
+  echo "invalid settings manifest: expected the canonical ordered 18 slugs and light/dark metadata" >&2
   exit 2
 fi
 

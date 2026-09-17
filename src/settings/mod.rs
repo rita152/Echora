@@ -5,7 +5,7 @@ mod spec;
 mod view;
 
 pub use spec::{ControlSpec, PageKind, PageSpec, RowSpec, SectionSpec};
-pub use view::{ChangeTheme, CloseSettings, ConfigSaveFinished, RefreshAccount, SettingsView};
+pub use view::{ChangeTheme, CloseSettings, ConfigSaveFinished, SettingsView};
 
 pub fn pages() -> impl Iterator<Item = &'static PageSpec> {
     catalog_personal::PAGES
@@ -37,7 +37,6 @@ mod tests {
                 "agent",
                 "personalization",
                 "keyboard-shortcuts",
-                "usage",
                 "computer-use",
                 "chronicle",
                 "appshots",
@@ -51,7 +50,7 @@ mod tests {
                 "data-controls",
             ]
         );
-        assert_eq!(actual.iter().copied().collect::<HashSet<_>>().len(), 19);
+        assert_eq!(actual.iter().copied().collect::<HashSet<_>>().len(), 18);
         assert!(pages().all(|page| !page.sections.is_empty()));
     }
 }

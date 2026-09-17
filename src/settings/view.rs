@@ -21,7 +21,6 @@ mod plugins_catalog;
 mod plugins_mcp;
 mod plugins_skills;
 mod profile;
-mod usage;
 mod worktrees;
 
 use std::collections::HashMap;
@@ -35,8 +34,6 @@ use super::{PageKind, PageSpec, page, pages};
 use crate::theme::{Theme, ThemeMode, UI_FONT_FAMILY};
 
 pub struct CloseSettings;
-/// The billing page asks the application to re-read the account and quota.
-pub struct RefreshAccount;
 pub struct ChangeTheme(pub ThemeMode);
 pub struct ConfigSaveFinished;
 
@@ -78,8 +75,6 @@ pub struct SettingsView {
     config_advanced_open: bool,
     config_custom_key: Option<String>,
     config_input: gpui::Entity<crate::components::prompt_input::PromptInput>,
-    /// Connection-scoped account snapshot rendered by the usage page.
-    account: crate::components::account::AccountView,
     plugins_segment: PluginSegment,
     /// Catalog and install lifecycle of the plugins segment.
     plugins_catalog: plugins_catalog::PluginsPanel,
@@ -104,24 +99,10 @@ pub struct SettingsView {
 }
 
 impl EventEmitter<CloseSettings> for SettingsView {}
-impl EventEmitter<RefreshAccount> for SettingsView {}
 impl EventEmitter<ChangeTheme> for SettingsView {}
 impl EventEmitter<ConfigSaveFinished> for SettingsView {}
 
 impl SettingsView {
-    /// Account surfaces render the connection snapshot; the settings view does
-    /// not own or cache a separate copy of the account.
-    pub fn set_account_view(
-        &mut self,
-        account: crate::components::account::AccountView,
-        cx: &mut Context<Self>,
-    ) {
-        if self.account != account {
-            self.account = account;
-            cx.notify();
-        }
-    }
-
     pub fn new(
         mode: ThemeMode,
         backend: std::sync::Arc<dyn crate::agent::AgentBackend>,
@@ -266,7 +247,6 @@ impl SettingsView {
             plugin_search_input,
             marketplace_source_input,
             apps_generation: 0,
-            account: Default::default(),
             plugins_segment: PluginSegment::Plugins,
             mcp: plugins_mcp::McpPanel::default(),
             skills: plugins_skills::SkillsPanel::default(),
@@ -402,7 +382,6 @@ impl SettingsView {
             _ if page.slug == "local-environments" => self.local_environments_content(page, theme),
             _ if page.slug == "worktrees" => self.worktrees_content(page, theme, cx),
             _ if page.slug == "data-controls" => self.data_controls_content(page, theme),
-            PageKind::Usage => self.usage_content(page, theme, cx),
             PageKind::Standard => self.standard_content(page, theme, cx).into_any_element(),
         }
     }
@@ -586,7 +565,6 @@ impl Render for SettingsView {
                                     "agent",
                                     "personalization",
                                     "keyboard-shortcuts",
-                                    "usage",
                                 ],
                                 theme,
                                 cx,

@@ -87,7 +87,8 @@ fn account_read_and_quota_read_publish_snapshots_that_new_subscribers_replay() {
                 assert_eq!(state.buckets.len(), 2);
                 assert_eq!(
                     state
-                        .bucket("gpt-5-spark")
+                        .buckets
+                        .get("gpt-5-spark")
                         .and_then(|bucket| bucket.limit_name.as_deref()),
                     Some("GPT-5 Spark")
                 );
@@ -136,7 +137,7 @@ fn account_notifications_merge_per_bucket_and_keep_nullable_values() {
     }));
     wait_for_account_event(
         &events,
-        |event| matches!(event, AgentConnectionEvent::AccountRateLimitsUpdated(state) if state.bucket("codex").is_some()),
+        |event| matches!(event, AgentConnectionEvent::AccountRateLimitsUpdated(state) if state.buckets.contains_key("codex")),
     );
 
     // A rolling update for another bucket must not touch the first one, and a
@@ -147,15 +148,15 @@ fn account_notifications_merge_per_bucket_and_keep_nullable_values() {
     }));
     let state = wait_for_account_event(
         &events,
-        |event| matches!(event, AgentConnectionEvent::AccountRateLimitsUpdated(state) if state.bucket("gpt-5-spark").is_some()),
+        |event| matches!(event, AgentConnectionEvent::AccountRateLimitsUpdated(state) if state.buckets.contains_key("gpt-5-spark")),
     );
     let AgentConnectionEvent::AccountRateLimitsUpdated(state) = state else {
         unreachable!()
     };
-    let codex = state.bucket("codex").expect("codex bucket");
+    let codex = state.buckets.get("codex").expect("codex bucket");
     assert_eq!(codex.primary.as_ref().unwrap().used_percent, 25);
     assert_eq!(codex.limit_name.as_deref(), Some("Codex"));
-    let spark = state.bucket("gpt-5-spark").expect("spark bucket");
+    let spark = state.buckets.get("gpt-5-spark").expect("spark bucket");
     assert_eq!(spark.primary.as_ref().unwrap().used_percent, 40);
     assert!(spark.limit_name.is_none());
     assert_eq!(
@@ -321,7 +322,8 @@ fn successful_login_completion_refreshes_account_and_quota_state() {
     };
     assert_eq!(
         state
-            .bucket("codex")
+            .buckets
+            .get("codex")
             .and_then(|bucket| bucket.primary.as_ref())
             .map(|window| window.used_percent),
         Some(12)

@@ -1429,7 +1429,7 @@ fn account_dialogs_follow_explicit_requests_and_keyboard_intents() {
         |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
     );
 
-    window.update(|chat, _window, cx| {
+    window.update(|chat, _window, _cx| {
         chat.account.state.account = AgentAccountSnapshot {
             requires_openai_auth: true,
             account: AgentAccountPresence::Account(AgentAccount::Chatgpt {
@@ -1440,9 +1440,6 @@ fn account_dialogs_follow_explicit_requests_and_keyboard_intents() {
             plan_type: Some(AgentAccountPlanType::Pro),
         };
         chat.account.status = AccountLoadStatus::Loaded;
-        // Opening the usage page is a view change, not an RPC.
-        chat.handle_account_intent(AccountIntent::OpenUsageSettings, cx);
-        assert!(chat.showing_settings);
     });
 
     // The logout confirmation opens on request and only then offers the
@@ -1565,8 +1562,7 @@ fn account_events_drive_the_account_surface_without_touching_conversations() {
         assert!(!chat.account.account_unknown());
         assert_eq!(chat.account.account_label().as_deref(), Some("rita"));
         assert_eq!(chat.account.plan_label(), Some("Pro"));
-        assert_eq!(chat.account.remaining_percent(), Some(73));
-        assert_eq!(chat.account.usage_summary(), "剩余 73%");
+        assert!(chat.account.state.rate_limits.buckets.contains_key("codex"));
         // The account surfaces never carry turn activity: the conversation
         // state is untouched by these connection events.
         let host = chat

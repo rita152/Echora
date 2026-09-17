@@ -14,10 +14,9 @@ from pathlib import Path
 
 from PIL import Image, ImageChops
 
-# name: (reference rect, GPUI rect) inside the 1440x900 captures. The account
-# menu and the logout confirmation share one rect because both applications
-# place those surfaces at the same coordinates; the billing card sits lower in
-# the GPUI settings layout, so each side measures its own card band.
+# name: (reference rect, GPUI rect) inside the 1440x900 captures. Both
+# applications place these surfaces at the same coordinates, so the reference
+# rect stays null when the capture is already cropped to the surface.
 REGIONS: dict[str, dict[str, object]] = {
     "account_menu": {
         # The reference menu capture is already cropped to the menu band.
@@ -32,12 +31,6 @@ REGIONS: dict[str, dict[str, object]] = {
         "actual_rect": (506, 341, 934, 559),
         "reference_file": "logout-confirm-{theme}.png",
         "actual_file": "logout-confirm-{theme}.png",
-    },
-    "usage_quota_card": {
-        "reference_rect": (440, 556, 1230, 634),
-        "actual_rect": (440, 496, 1230, 574),
-        "reference_file": "settings-usage-{theme}.png",
-        "actual_file": "usage-{theme}.png",
     },
 }
 

@@ -1123,16 +1123,7 @@ fn main() {
                             app.set_turn_diff_for_capture(state, cx);
                         }
                         if let Some(slug) = settings_page {
-                            // The billing page renders live account and quota
-                            // data, so its capture waits for that read instead
-                            // of photographing the startup gate.
-                            if slug == "usage" {
-                                app.complete_startup_for_capture(cx);
-                            }
                             app.open_settings_page(slug, cx);
-                            if slug == "usage" {
-                                account_ready_capture = true;
-                            }
                         } else if settings_open {
                             app.open_settings(cx);
                         }

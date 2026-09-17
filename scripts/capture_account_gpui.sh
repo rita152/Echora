@@ -1,10 +1,10 @@
 #!/bin/zsh
 # Capture the GPUI account surfaces for phase-two validation.
 #
-# The account menu, the logout confirmation, and the billing page are captured
-# from the real application against the local Codex app-server, in both themes,
-# at a fixed 1440x900 logical window with DPR 1. Each state waits for the real
-# account read before the frame is saved.
+# The account menu and the logout confirmation are captured from the real
+# application against the local Codex app-server, in both themes, at a fixed
+# 1440x900 logical window with DPR 1. Each state waits for the real account read
+# before the frame is saved.
 set -euo pipefail
 
 root="${0:A:h:h}"
@@ -40,12 +40,11 @@ capture() {
 for theme in light dark; do
   capture "account-menu-$theme" "--theme=$theme" --profile-menu-open
   capture "logout-confirm-$theme" "--theme=$theme" --account-dialog=logout
-  capture "usage-$theme" "--theme=$theme" --settings-page=usage
 done
 
 count=$(find "$output" -maxdepth 1 -name '*.png' | wc -l | tr -d ' ')
-if (( count < 6 )); then
-  echo "expected six account captures, found $count" >&2
+if (( count < 4 )); then
+  echo "expected four account captures, found $count" >&2
   exit 2
 fi
-echo "captured the account menu, logout confirmation, and billing page in both themes"
+echo "captured the account menu and logout confirmation in both themes"
