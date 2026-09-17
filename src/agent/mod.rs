@@ -10,7 +10,6 @@ mod catalog;
 mod codex;
 mod config;
 mod events;
-mod external_agent_config;
 mod file_search;
 mod mcp;
 mod message;
@@ -71,17 +70,6 @@ pub use config::{
     AgentConfigSnapshot, AgentConfigSource, AgentConfigWrite, config_value,
 };
 pub use events::{AgentConnectionEvent, AgentEvent};
-pub use external_agent_config::{
-    AgentExternalAgentConfigError, AgentExternalAgentConfigErrorKind,
-    AgentExternalAgentConnectorSource, AgentExternalAgentDetectRequest,
-    AgentExternalAgentDetectResult, AgentExternalAgentDetectedConnector, AgentExternalAgentFailure,
-    AgentExternalAgentHistoryRecordRequest, AgentExternalAgentImportHistories,
-    AgentExternalAgentImportHistory, AgentExternalAgentImportReceipt,
-    AgentExternalAgentImportRequest, AgentExternalAgentImportStatus,
-    AgentExternalAgentImportedConnector, AgentExternalAgentImportedConnectorSource,
-    AgentExternalAgentItemType, AgentExternalAgentMigrationItem, AgentExternalAgentSuccess,
-    AgentExternalAgentTypeResult,
-};
 pub(crate) use file_search::AgentFileSearchSessionControl;
 pub use file_search::{
     AgentFileMatchType, AgentFileSearchRequest, AgentFileSearchResult, AgentFileSearchSession,

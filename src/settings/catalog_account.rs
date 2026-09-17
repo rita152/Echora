@@ -6,79 +6,6 @@ macro_rules! key {
     };
 }
 
-const PETS: &[SectionSpec] = &[
-    SectionSpec::new(
-        "选择宠物",
-        "宠物会管理对话串，并突出显示需要关注的事项",
-        &[
-            RowSpec::new("创建", "收起宠物", ControlSpec::Button("创建")),
-            RowSpec::new(
-                "Codex",
-                "The original Codex companion.",
-                ControlSpec::Value("已选"),
-            ),
-            RowSpec::new(
-                "Dewey",
-                "A calm companion for focused workspace days",
-                ControlSpec::Button("选择"),
-            ),
-            RowSpec::new(
-                "Fireball",
-                "Hot path energy for fast iteration.",
-                ControlSpec::Button("选择"),
-            ),
-            RowSpec::new(
-                "Hoots",
-                "A sharp-eyed owl for polished work in a blink.",
-                ControlSpec::Button("选择"),
-            ),
-            RowSpec::new(
-                "Rocky",
-                "A steady rock when the diff gets large.",
-                ControlSpec::Button("选择"),
-            ),
-            RowSpec::new(
-                "Seedy",
-                "Small green shoots for new ideas.",
-                ControlSpec::Button("选择"),
-            ),
-            RowSpec::new(
-                "Stacky",
-                "A balanced stack for deep work.",
-                ControlSpec::Button("选择"),
-            ),
-            RowSpec::new(
-                "BSOD",
-                "A tiny blue-screen gremlin.",
-                ControlSpec::Button("选择"),
-            ),
-            RowSpec::new(
-                "Null Signal",
-                "Quiet signal from the void.",
-                ControlSpec::Button("选择"),
-            ),
-        ],
-    ),
-    SectionSpec::new(
-        "自定义宠物",
-        "",
-        &[RowSpec::new(
-            "/Users/zp/.codex/pets",
-            "",
-            ControlSpec::Button("打开文件夹"),
-        )],
-    ),
-    SectionSpec::new(
-        "外观",
-        "",
-        &[RowSpec::new(
-            "宠物大小",
-            "调整宠物大小",
-            ControlSpec::Value("112"),
-        )],
-    ),
-];
-
 const SHORTCUT_CHAT: &[RowSpec] = &[
     key!("新聊天", "开始新聊天", "⌘N · ⇧⌘O"),
     key!(
@@ -544,7 +471,6 @@ const PLUGINS: &[SectionSpec] = &[
 ];
 
 pub const PAGES: &[PageSpec] = &[
-    PageSpec::new("pets", "宠物", "", PageKind::Pets, PETS),
     PageSpec::new(
         "keyboard-shortcuts",
         "键盘快捷键",
@@ -558,16 +484,6 @@ pub const PAGES: &[PageSpec] = &[
         "如需查看发票、更改付款方式或进行其他操作，请前往网页版设置",
         PageKind::Usage,
         USAGE,
-    ),
-    // ChatGPT exposes this navigation entry even though the app-server does
-    // not currently provide an analytics payload. Keep a real, inert page so
-    // keyboard and pointer navigation have the same target as the client.
-    PageSpec::new(
-        "analysis",
-        "分析",
-        "",
-        PageKind::Standard,
-        &[SectionSpec::new("", "", &[]), SectionSpec::new("", "", &[])],
     ),
     PageSpec::new(
         "computer-use",

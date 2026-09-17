@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate and compare the 42 Electron/GPUI settings screenshot pairs."""
+"""Validate and compare the 38 Electron/GPUI settings screenshot pairs."""
 
 from __future__ import annotations
 
@@ -15,13 +15,11 @@ from settings_layout_compare import compare
 THEMES = ("light", "dark")
 EXPECTED_SLUGS = (
     "general-settings",
-    "import",
     "profile",
     "appearance",
     "voice",
     "agent",
     "personalization",
-    "pets",
     "keyboard-shortcuts",
     "usage",
     "computer-use",
@@ -61,7 +59,7 @@ def load_manifest_slugs(manifest_path: Path) -> list[str]:
     errors = []
     if tuple(slugs) != EXPECTED_SLUGS:
         errors.append(
-            "manifest slugs must exactly match the canonical ordered 21-page settings set"
+            "manifest slugs must exactly match the canonical ordered 19-page settings set"
         )
     if any(not isinstance(slug, str) or not slug for slug in slugs):
         errors.append("every manifest slug must be a non-empty string")

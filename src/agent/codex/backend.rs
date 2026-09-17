@@ -295,53 +295,6 @@ impl AgentBackend for CodexAppServerBackend {
         self.manager.upgrade_marketplaces(request)
     }
 
-    fn detect_external_agent_config(
-        &self,
-        request: crate::agent::AgentExternalAgentDetectRequest,
-    ) -> Receiver<
-        Result<
-            crate::agent::AgentExternalAgentDetectResult,
-            crate::agent::AgentExternalAgentConfigError,
-        >,
-    > {
-        self.manager.detect_external_agent_config(request)
-    }
-
-    fn import_external_agent_config(
-        &self,
-        request: crate::agent::AgentExternalAgentImportRequest,
-    ) -> Receiver<
-        Result<
-            crate::agent::AgentExternalAgentImportReceipt,
-            crate::agent::AgentExternalAgentConfigError,
-        >,
-    > {
-        self.manager.import_external_agent_config(request)
-    }
-
-    fn read_external_agent_import_histories(
-        &self,
-    ) -> Receiver<
-        Result<
-            crate::agent::AgentExternalAgentImportHistories,
-            crate::agent::AgentExternalAgentConfigError,
-        >,
-    > {
-        self.manager.read_external_agent_import_histories()
-    }
-
-    fn record_external_agent_import_history(
-        &self,
-        request: crate::agent::AgentExternalAgentHistoryRecordRequest,
-    ) -> Receiver<
-        Result<
-            crate::agent::AgentExternalAgentImportReceipt,
-            crate::agent::AgentExternalAgentConfigError,
-        >,
-    > {
-        self.manager.record_external_agent_import_history(request)
-    }
-
     fn list_projects(&self, page: PageRequest) -> Receiver<WorkspaceResult<Page<Project>>> {
         self.manager.list_projects(page)
     }

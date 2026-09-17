@@ -57,7 +57,6 @@ pub enum AgentCapability {
     PluginInstall,
     PluginShare,
     MarketplaceManagement,
-    ExternalAgentImport,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -587,43 +586,6 @@ pub trait AgentBackend: Send + Sync {
         receiver
     }
 
-    /// Lists the configuration found in other coding agents.
-    fn detect_external_agent_config(
-        &self,
-        _request: super::AgentExternalAgentDetectRequest,
-    ) -> Receiver<Result<super::AgentExternalAgentDetectResult, super::AgentExternalAgentConfigError>>
-    {
-        unsupported_external_agent_receiver("从其他应用导入")
-    }
-
-    /// Starts one import. The import id it returns is what closes the operation
-    /// through `externalAgentConfig/import/progress` and `.../completed`.
-    fn import_external_agent_config(
-        &self,
-        _request: super::AgentExternalAgentImportRequest,
-    ) -> Receiver<
-        Result<super::AgentExternalAgentImportReceipt, super::AgentExternalAgentConfigError>,
-    > {
-        unsupported_external_agent_receiver("从其他应用导入")
-    }
-
-    fn read_external_agent_import_histories(
-        &self,
-    ) -> Receiver<
-        Result<super::AgentExternalAgentImportHistories, super::AgentExternalAgentConfigError>,
-    > {
-        unsupported_external_agent_receiver("导入历史")
-    }
-
-    fn record_external_agent_import_history(
-        &self,
-        _request: super::AgentExternalAgentHistoryRecordRequest,
-    ) -> Receiver<
-        Result<super::AgentExternalAgentImportReceipt, super::AgentExternalAgentConfigError>,
-    > {
-        unsupported_external_agent_receiver("导入历史")
-    }
-
     fn read_config(
         &self,
         _cwd: PathBuf,
@@ -844,18 +806,5 @@ fn unsupported_plugin_operation(
             data: None,
         },
     });
-    receiver
-}
-
-fn unsupported_external_agent_receiver<T: Send + 'static>(
-    action: &str,
-) -> Receiver<Result<T, super::AgentExternalAgentConfigError>> {
-    let (sender, receiver) = async_channel::bounded(1);
-    let _ = sender.send_blocking(Err(super::AgentExternalAgentConfigError {
-        kind: super::AgentExternalAgentConfigErrorKind::Unsupported,
-        message: format!("当前 coding agent 不支持{action}"),
-        data: None,
-        outcome_unknown: false,
-    }));
     receiver
 }

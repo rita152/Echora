@@ -5,7 +5,6 @@ mod components;
 mod configuration;
 mod conversation;
 mod git_review;
-mod imports;
 mod mcp;
 mod media;
 mod plugins;
@@ -228,14 +227,9 @@ fn schedule_manage_screenshot(
     path: String,
     deadline: Instant,
     stable_frames_remaining: usize,
-    import_page: bool,
 ) {
     window.on_next_frame(move |window, cx| {
-        let ready = if import_page {
-            app.read(cx).import_capture_ready(cx)
-        } else {
-            app.read(cx).manage_capture_ready(cx)
-        };
+        let ready = app.read(cx).manage_capture_ready(cx);
         if ready {
             if stable_frames_remaining > 0 {
                 window.refresh();
@@ -245,7 +239,6 @@ fn schedule_manage_screenshot(
                     path,
                     deadline,
                     stable_frames_remaining - 1,
-                    import_page,
                 );
                 return;
             }
@@ -274,14 +267,7 @@ fn schedule_manage_screenshot(
             return;
         }
         window.refresh();
-        schedule_manage_screenshot(
-            window,
-            app,
-            path,
-            deadline,
-            stable_frames_remaining,
-            import_page,
-        );
+        schedule_manage_screenshot(window, app, path, deadline, stable_frames_remaining);
     });
 }
 
@@ -1198,7 +1184,6 @@ fn main() {
                                 path,
                                 Instant::now() + Duration::from_secs(45),
                                 RESUMED_THREAD_STABLE_FRAMES,
-                                false,
                             );
                         } else if args.iter().any(|a| a.starts_with("--review-root=")) {
                             schedule_review_screenshot(
@@ -1207,15 +1192,6 @@ fn main() {
                                 path,
                                 Instant::now() + Duration::from_secs(60),
                                 3,
-                            );
-                        } else if settings_page == Some("import") {
-                            schedule_manage_screenshot(
-                                window,
-                                app.clone(),
-                                path,
-                                Instant::now() + Duration::from_secs(45),
-                                RESUMED_THREAD_STABLE_FRAMES,
-                                true,
                             );
                         } else if profile_menu_open || account_ready_capture {
                             schedule_account_screenshot(

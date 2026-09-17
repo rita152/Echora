@@ -8,7 +8,6 @@ mod config;
 mod connection;
 mod dispatch;
 mod events;
-mod external_agent_config;
 mod file_search;
 mod mcp;
 mod plugins;
@@ -437,7 +436,6 @@ impl CodexAppServerManager {
             AgentCapability::PluginInstall,
             AgentCapability::PluginShare,
             AgentCapability::MarketplaceManagement,
-            AgentCapability::ExternalAgentImport,
         ])
     }
 }

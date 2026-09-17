@@ -52,7 +52,6 @@ impl SectionSpec {
 pub enum PageKind {
     Standard,
     Profile,
-    Pets,
     KeyboardShortcuts,
     Usage,
 }

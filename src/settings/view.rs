@@ -12,12 +12,9 @@ mod data_controls;
 mod environments;
 mod git;
 mod hooks;
-mod import;
-mod import_actions;
 mod keyboard;
 mod navigation;
 mod personalization;
-mod pets;
 mod plugins;
 mod plugins_actions;
 mod plugins_catalog;
@@ -90,14 +87,10 @@ pub struct SettingsView {
     apps: plugins_catalog::AppsPanel,
     /// Working directory the directory reads are scoped to.
     plugins_cwd: Option<std::path::PathBuf>,
-    /// External agent import page state.
-    imports: crate::imports::ExternalAgentImportState,
     /// Search field of the plugins segment; its submitted text is the query.
     plugin_search_input: gpui::Entity<crate::components::prompt_input::PromptInput>,
     /// Marketplace source field of the add sheet.
     marketplace_source_input: gpui::Entity<crate::components::prompt_input::PromptInput>,
-    /// Import page history disclosure state.
-    import_history_open: bool,
     /// Connection generation the catalog and app reads belong to.
     plugins_generation: u64,
     apps_generation: u64,
@@ -236,14 +229,6 @@ impl SettingsView {
                             this.apply_app_list_updated(cx);
                             true
                         }
-                        // Import progress belongs to the import page; the
-                        // status is matched against the import this client
-                        // started, by its own import id.
-                        crate::agent::AgentConnectionEvent::ExternalAgentImportStatus(status) => {
-                            this.imports.generation = status.generation;
-                            this.apply_import_status(status, cx);
-                            true
-                        }
                         _ => true,
                     })
                     .is_ok();
@@ -278,10 +263,8 @@ impl SettingsView {
             apps: Default::default(),
             plugins_cwd: None,
             plugins_generation: 0,
-            imports: Default::default(),
             plugin_search_input,
             marketplace_source_input,
-            import_history_open: true,
             apps_generation: 0,
             account: Default::default(),
             plugins_segment: PluginSegment::Plugins,
@@ -307,12 +290,6 @@ impl SettingsView {
         }
         self.content_scroll.set_offset(point(px(0.0), px(0.0)));
         self.ensure_plugins_segment_loaded(cx);
-        if slug == "import" && !self.imports.detected() {
-            // The import page reads what the backend can detect every time it
-            // becomes visible; a cached answer would misreport a source that
-            // changed since the last visit.
-            self.refresh_external_agent_imports(cx);
-        }
         cx.notify();
     }
 
@@ -379,14 +356,6 @@ impl SettingsView {
         }
     }
 
-    /// True once the import page has finished both its provider detection sweep
-    /// and its import-history read. Captures wait for this gate so they never
-    /// encode the transient empty/loading state shown while the page starts.
-    #[cfg(feature = "screenshot")]
-    pub fn import_capture_ready(&self) -> bool {
-        self.imports.detected() && !self.imports.histories_loading
-    }
-
     pub(super) fn select_plugins_segment(
         &mut self,
         segment: PluginSegment,
@@ -418,7 +387,6 @@ impl SettingsView {
     ) -> gpui::AnyElement {
         match page.kind {
             PageKind::Profile => self.profile_content(theme, viewport_width),
-            PageKind::Pets => self.pets_content(page, theme, cx),
             PageKind::KeyboardShortcuts => self.keyboard_content(page, theme, cx),
             _ if page.slug == "appearance" => self.appearance_content(page, theme, cx),
             _ if page.slug == "appshots" => self.appshots_content(page, theme, cx),
@@ -429,7 +397,6 @@ impl SettingsView {
             _ if page.slug == "hooks-settings" => self.hooks_content(page, theme),
             _ if page.slug == "connections" => self.connections_content(page, theme, cx),
             _ if page.slug == "browser-use" => self.browser_content(page, theme, cx),
-            _ if page.slug == "import" => self.import_content(page, theme, cx),
             _ if page.slug == "agent" => self.agent_content(page, theme, cx),
             _ if page.slug == "git-settings" => self.git_content(page, theme, cx),
             _ if page.slug == "local-environments" => self.local_environments_content(page, theme),
@@ -613,17 +580,13 @@ impl Render for SettingsView {
                                 "个人",
                                 &[
                                     "general-settings",
-                                    "import",
                                     "profile",
                                     "appearance",
                                     "voice",
                                     "agent",
                                     "personalization",
-                                    "pets",
                                     "keyboard-shortcuts",
                                     "usage",
-                                    "analysis",
-                                    "account",
                                 ],
                                 theme,
                                 cx,

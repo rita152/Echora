@@ -31,16 +31,13 @@ mod tests {
             actual,
             [
                 "general-settings",
-                "import",
                 "profile",
                 "appearance",
                 "voice",
                 "agent",
                 "personalization",
-                "pets",
                 "keyboard-shortcuts",
                 "usage",
-                "analysis",
                 "computer-use",
                 "chronicle",
                 "appshots",
@@ -54,7 +51,7 @@ mod tests {
                 "data-controls",
             ]
         );
-        assert_eq!(actual.iter().copied().collect::<HashSet<_>>().len(), 22);
+        assert_eq!(actual.iter().copied().collect::<HashSet<_>>().len(), 19);
         assert!(pages().all(|page| !page.sections.is_empty()));
     }
 }

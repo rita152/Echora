@@ -22,11 +22,11 @@ node scripts/scan_reference_rpc_methods.mjs /Applications/ChatGPT.app/Contents/R
 
 | 状态 | 数量 | 判定 |
 |---|---|---|
-| 已接入 | 124 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
+| 已接入 | 118 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
 | 后端已接入 | 4 | 已实现读取或校验，尚无对应可见 UI 调用方或展示 |
 | 部分接入 | 3 | 只支持部分类型、有效变体或限定生命周期窗口 |
 | 兼容退订 | 5 | initialize 按完整方法名退订；不代表对应产品能力已接入；保留明确的兼容窗口 |
-| 未接入 | 112 | 客户端不发送；服务端请求按原 id 回复 `-32601` 并保持 generation 与共享连接；仅 EOF、崩溃、写失败或致命协议错误终止连接；服务端通知仍按严格协议校验处理 |
+| 未接入 | 118 | 客户端不发送；服务端请求按原 id 回复 `-32601` 并保持 generation 与共享连接；仅 EOF、崩溃、写失败或致命协议错误终止连接；服务端通知仍按严格协议校验处理 |
 
 未接入行的“—”沿用上述规则。`tool/requestUserInput` 是兼容别名，不计入本版本 schema 的 248 项。
 
@@ -217,10 +217,10 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `environment/status` | 实验 | 未接入 | — | — |
 | `experimentalFeature/enablement/set` | 默认 | 未接入 | — | — |
 | `experimentalFeature/list` | 默认 | 未接入 | — | — |
-| `externalAgentConfig/detect` | 默认 | 已接入 | 按源发送 includeHome 与可选 cwds/maxSessions/maxSessionAgeDays；`migrationSource` 仅对 Cursor 发送（与参考客户端一致）；保留 items 的 details 原文、connectors 缺失与空数组的区别；未知 itemType 报协议错误。 | `manager/external_agent_config`、`imports` |
-| `externalAgentConfig/import` | 默认 | 已接入 | migrationItems（逐字段回显 detect 的 itemType/description/cwd/details）、providerId、source=`app`；返回的 importId 是进度与完成通知的唯一关联键；未选中任何项时不发送。 | `manager/external_agent_config`、`imports` |
-| `externalAgentConfig/import/readHistories` | 默认 | 已接入 | 无参数；保留 providerId 可空、successes/failures 逐条字段与 connectors；导入页历史卡片按 completedAtMs 取最新一条并展开 itemType。 | `manager/external_agent_config`、`imports` |
-| `externalAgentConfig/import/recordHistory` | 默认 | 已接入 | providerId + itemTypeResults；仅在完成通知的 importId 不在 readHistories 结果中时补记（参考客户端只在自身本地 provider 路径使用该方法），避免与服务端自身的记录重复。 | `manager/external_agent_config`、`imports` |
+| `externalAgentConfig/detect` | 默认 | 未接入 | — | — |
+| `externalAgentConfig/import` | 默认 | 未接入 | — | — |
+| `externalAgentConfig/import/readHistories` | 默认 | 未接入 | — | — |
+| `externalAgentConfig/import/recordHistory` | 默认 | 未接入 | — | — |
 | `feedback/upload` | 默认 | 未接入 | — | — |
 | `fs/copy` | 默认 | 未接入 | — | — |
 | `fs/createDirectory` | 默认 | 未接入 | — | — |
@@ -379,8 +379,8 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `configWarning` | 默认 | 已接入 | 应用级 summary 及可选 details/path/range；无活动轮次仍显示配置警告。 | `manager/dispatch`、`notifications` |
 | `deprecationNotice` | 默认 | 后端已接入 | 应用级 summary 与 optional/nullable details；无活动线程也接收、去重并向新订阅者重放。独立于会话内容保存。当前 ChatGPT 接收并保存该通知，未观察到首页／会话页可见提示；GPUI 不新增无参考的提示卡。 | `runtime`、`manager/events` |
 | `error` | 默认 | 已接入 | 定向轮次的 error.message、details、willRetry；显示错误信息，终态仍等待 turn/completed。 | `notifications` |
-| `externalAgentConfig/import/completed` | 默认 | 已接入 | 按 importId 与本次导入关联并收束进度；成功后重读 readHistories 与插件目录；importId 不匹配的通知保持惰性。 | `manager/dispatch`、`imports` |
-| `externalAgentConfig/import/progress` | 默认 | 已接入 | 与完成通知共用同一结构，只更新同 importId 的运行中导入计数（成功/失败项数），不改变尚未收到的完成状态。 | `manager/dispatch`、`imports` |
+| `externalAgentConfig/import/completed` | 默认 | 未接入 | — | — |
+| `externalAgentConfig/import/progress` | 默认 | 未接入 | — | — |
 | `fs/changed` | 默认 | 未接入 | — | — |
 | `fuzzyFileSearch/sessionCompleted` | 默认 | 已接入 | 标记当前查询结果结束。 | `manager` |
 | `fuzzyFileSearch/sessionUpdated` | 默认 | 已接入 | 按 sessionId 路由到拥有该会话的弹窗；未知会话报协议错误，已退休的会话忽略。 | `manager` |

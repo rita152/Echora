@@ -66,13 +66,6 @@ pub(super) fn required_bool(
         .with_context(|| format!("{context} 缺少布尔字段 {field}"))
 }
 
-pub(super) fn required_i64(object: &Map<String, Value>, field: &str, context: &str) -> Result<i64> {
-    object
-        .get(field)
-        .and_then(Value::as_i64)
-        .with_context(|| format!("{context} 缺少整数字段 {field}"))
-}
-
 /// An optional field where a missing key and an explicit null are the same
 /// absence, as the schema's `type: [X, null]` declares.
 pub(super) fn optional_string(

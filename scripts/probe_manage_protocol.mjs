@@ -82,29 +82,11 @@ const calls = [
   ["plugin/list", {}],
   ["plugin/installed", {}],
   ["plugin/share/list", {}],
-  ["externalAgentConfig/import/readHistories", undefined],
-  ["externalAgentConfig/detect", { includeHome: true }],
-  // The reference client stamps a provider id locally and, for Cursor alone,
-  // sends migrationSource with the detect call. Probing each variant records
-  // what the server itself reports per source.
-  ["externalAgentConfig/detect", { includeHome: true, migrationSource: "cursor" }],
-  ["externalAgentConfig/detect", { includeHome: true, migrationSource: "claude-code" }],
-  ["externalAgentConfig/detect", { includeHome: true, migrationSource: "claude-cowork" }],
-  ["externalAgentConfig/detect", { includeHome: false, maxSessions: 3 }],
 ];
-if (cwd) {
-  calls.push(["externalAgentConfig/detect", { includeHome: true, cwds: [cwd] }]);
-}
 
 const responses = {};
 for (const [method, params] of calls) {
-  const key = params?.cwds
-    ? method + ":cwds"
-    : params?.migrationSource
-      ? method + ":" + params.migrationSource
-      : params?.maxSessions
-        ? method + ":maxSessions"
-        : method;
+  const key = method;
   const response = await send(method, params);
   responses[key] = response;
   console.log(key, response.error ? "ERROR" : "ok");

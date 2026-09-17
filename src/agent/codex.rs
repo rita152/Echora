@@ -12,7 +12,6 @@ mod client_tools;
 mod config;
 mod dispatch;
 mod elicitation;
-mod external_agent_config;
 mod file_search;
 mod input;
 mod items;

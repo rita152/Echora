@@ -166,42 +166,6 @@ impl SettingsView {
         for slug in slugs {
             if let Some(item) = page(slug) {
                 group = group.child(self.nav_row(item, theme, cx));
-            } else if *slug == "account" {
-                let nav_text = if theme.surface == gpui::rgba(0x181818ff) {
-                    gpui::rgba(0xb4b4b4ff)
-                } else {
-                    gpui::rgba(0x363636ff)
-                };
-                group = group.child(
-                    div()
-                        .id("settings-account")
-                        .h(px(30.0))
-                        .flex_none()
-                        .px(px(8.0))
-                        .rounded(px(12.5))
-                        .flex()
-                        .items_center()
-                        .gap(px(8.0))
-                        .text_size(px(14.0))
-                        .line_height(px(21.0))
-                        .text_color(nav_text)
-                        .when(!cfg!(feature = "screenshot"), |row| {
-                            row.hover(move |style| style.bg(theme.sidebar_hover))
-                        })
-                        .child(
-                            svg()
-                                .path("icons/settings-account.svg")
-                                .size(px(16.0))
-                                .text_color(theme.text),
-                        )
-                        .child(div().flex_1().child("账户"))
-                        .child(
-                            svg()
-                                .path("icons/settings-external.svg")
-                                .size(px(12.0))
-                                .text_color(theme.text_tertiary),
-                        ),
-                );
             }
         }
         group

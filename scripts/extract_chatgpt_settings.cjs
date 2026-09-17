@@ -12,13 +12,11 @@ const CSS_DIR = path.join(OUTPUT, "css");
 
 const EXPECTED_PANELS = [
   ["general-settings", "常规"],
-  ["import", "导入"],
   ["profile", "个人资料"],
   ["appearance", "外观"],
   ["voice", "语音"],
   ["agent", "配置"],
   ["personalization", "个性化"],
-  ["pets", "智能伙伴"],
   ["keyboard-shortcuts", "键盘快捷键"],
   ["usage", "使用情况和计费"],
   ["computer-use", "电脑操控"],
@@ -295,7 +293,7 @@ body{max-width:900px;margin:48px auto;padding:0 24px}table{width:100%;border-col
 th,td{text-align:left;padding:10px 12px;border-bottom:1px solid color-mix(in srgb,currentColor 18%,transparent)}
 a{color:#339cff}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 </style></head><body><h1>ChatGPT 设置页 CDP 快照</h1>
-<p>共 21 个独立设置子页；“账户”页已排除。每页分别提供 light / dark 静态 HTML。</p>
+<p>共 19 个独立设置子页；“账户”页已排除。每页分别提供 light / dark 静态 HTML。</p>
 <table><thead><tr><th>页面</th><th>slug</th><th>浅色</th><th>深色</th></tr></thead><tbody>${rows}
 </tbody></table></body></html>\n`;
   fs.writeFileSync(path.join(OUTPUT, "index.html"), html);
@@ -327,7 +325,9 @@ async function main() {
     const captures = [];
     const manifest = [];
     for (const [slug, label] of EXPECTED_PANELS) {
-      process.stdout.write(`[${captures.length + 1}/21] ${label} (${slug}) ... `);
+      process.stdout.write(
+        `[${captures.length + 1}/${EXPECTED_PANELS.length}] ${label} (${slug}) ... `,
+      );
       const clicked = await cdp.evaluate(`(() => {
         const button = document.querySelector('[data-settings-panel-slug=${JSON.stringify(slug)}]');
         if (!button) return false;
@@ -393,7 +393,7 @@ button,a,input,select,textarea,[contenteditable]{pointer-events:none!important}
     });
     fs.writeFileSync(path.join(OUTPUT, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
     writeIndex(EXPECTED_PANELS.map(([slug, label]) => ({ slug, label })));
-    console.log(`Wrote 42 HTML snapshots plus index and CSS to ${OUTPUT}`);
+    console.log(`Wrote 38 HTML snapshots plus index and CSS to ${OUTPUT}`);
   } finally {
     cdp.close();
   }

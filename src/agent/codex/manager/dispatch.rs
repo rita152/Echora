@@ -536,26 +536,6 @@ impl ManagerInner {
                 });
                 Ok(())
             }
-            "externalAgentConfig/import/progress" => {
-                let status = super::super::external_agent_config::decode_progress(
-                    connection.generation,
-                    message,
-                )?;
-                self.publish_connection_event(AgentConnectionEvent::ExternalAgentImportStatus(
-                    Box::new(status),
-                ));
-                Ok(())
-            }
-            "externalAgentConfig/import/completed" => {
-                let status = super::super::external_agent_config::decode_completed(
-                    connection.generation,
-                    message,
-                )?;
-                self.publish_connection_event(AgentConnectionEvent::ExternalAgentImportStatus(
-                    Box::new(status),
-                ));
-                Ok(())
-            }
             "mcpServer/oauthLogin/completed" => {
                 let notification = super::super::mcp::parse_oauth_completed(message)?;
                 // A `None` result means the completion is late, superseded, or

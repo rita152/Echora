@@ -47,10 +47,6 @@ pub enum AgentConnectionEvent {
     AppListUpdated {
         generation: u64,
     },
-    /// Progress or completion of an external agent import. The status carries
-    /// the server's own import id, which is what makes a late notification for
-    /// a finished import inert.
-    ExternalAgentImportStatus(Box<super::external_agent_config::AgentExternalAgentImportStatus>),
     /// Result of an OAuth login this client started, correlated to the client's
     /// own login id.
     McpOauthLoginCompleted(Box<super::mcp::AgentMcpOauthCompletion>),

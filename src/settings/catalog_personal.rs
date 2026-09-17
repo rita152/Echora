@@ -125,34 +125,6 @@ const GENERAL_SECTIONS: &[SectionSpec] = &[
     SectionSpec::new("通知", "", GENERAL_NOTIFICATION_ROWS),
 ];
 
-const IMPORT_SYNC_ROWS: &[RowSpec] = &[RowSpec::new(
-    "保持导入同步",
-    "自动同步已连接来源中的新增和更新内容",
-    ControlSpec::Switch(false),
-)];
-
-const IMPORT_SOURCE_ROWS: &[RowSpec] = &[
-    RowSpec::new("Claude Code", "", ControlSpec::Button("导入")),
-    RowSpec::new("Claude Cowork", "", ControlSpec::Button("导入")),
-    RowSpec::new("Cursor", "", ControlSpec::Button("导入")),
-];
-
-const IMPORT_HISTORY_ROWS: &[RowSpec] = &[RowSpec::new(
-    "2026年7月12日 14:08",
-    "已导入 1 项",
-    ControlSpec::Value("MCP 服务器  ·  已导入 1 项"),
-)];
-
-const IMPORT_SECTIONS: &[SectionSpec] = &[
-    SectionSpec::new("开启自动同步", "", IMPORT_SYNC_ROWS),
-    SectionSpec::new(
-        "从其他 AI 应用导入",
-        "检测到可添加到 ChatGPT 的配置",
-        IMPORT_SOURCE_ROWS,
-    ),
-    SectionSpec::new("导入历史", "", IMPORT_HISTORY_ROWS),
-];
-
 const PROFILE_IDENTITY_ROWS: &[RowSpec] = &[
     RowSpec::new("rita", "@zb3242957365  ·  Pro", ControlSpec::Button("编辑")),
     RowSpec::new("可见性", "私有", ControlSpec::Button("分享")),
@@ -461,13 +433,6 @@ pub const PAGES: &[PageSpec] = &[
         "",
         PageKind::Standard,
         GENERAL_SECTIONS,
-    ),
-    PageSpec::new(
-        "import",
-        "导入",
-        "将其他 AI 应用的设置、项目和聊天导入 ChatGPT",
-        PageKind::Standard,
-        IMPORT_SECTIONS,
     ),
     PageSpec::new(
         "profile",

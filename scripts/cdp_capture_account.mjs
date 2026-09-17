@@ -339,25 +339,6 @@ if (want('settings')) {
   }
 }
 
-if (want('settings-account')) {
-  const clicked = await clickByText('button,a,[role="menuitem"],div[role="button"]', '账户', 'settings-nav-account');
-  if (clicked) {
-    await sleep(1800);
-    const state = await probe();
-    fs.writeFileSync(path.join(output, 'settings-account-' + theme + '.json'), JSON.stringify(state, null, 2));
-    await screenshot('settings-account-' + theme);
-    const detail = await json('(() => {' +
-      '  const main = document.querySelector("main") || document.body;' +
-      '  const nodes = [...main.querySelectorAll(\'button,[role="switch"],[role="combobox"],a,img\')].filter(element => {' +
-      '    const box = element.getBoundingClientRect(); return box.width > 0 && box.height > 0; });' +
-      '  return { text: main.innerText.slice(0, 1500), controls: nodes.slice(0, 40).map(element => ({' +
-      '    tag: element.tagName, role: element.getAttribute("role"), label: element.getAttribute("aria-label"),' +
-      '    text: element.innerText.slice(0, 80), src: element.getAttribute("src"), rect: element.getBoundingClientRect().toJSON() })) };' +
-      '})()');
-    fs.writeFileSync(path.join(output, 'settings-account-controls-' + theme + '.json'), JSON.stringify(detail, null, 2));
-  }
-}
-
 if (want('settings-usage')) {
   const clicked = await clickByText('button,a,[role="menuitem"],div[role="button"]', '使用情况和计费', 'settings-nav-usage');
   if (clicked) {
