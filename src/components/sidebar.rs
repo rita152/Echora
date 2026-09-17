@@ -2460,14 +2460,6 @@ impl SidebarView {
                 })),
             );
             menu = menu.child(account_menu_row(
-                "profile-pet",
-                "显示宠物",
-                "profile-pet",
-                Some("⌥Space".to_owned()),
-                theme,
-                false,
-            ));
-            menu = menu.child(account_menu_row(
                 "profile-invite",
                 "邀请好友",
                 "profile-invite",

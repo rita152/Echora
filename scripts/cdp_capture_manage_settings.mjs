@@ -1,5 +1,5 @@
-// Capture the ChatGPT plugin / app / import management surfaces from one
-// dedicated debug instance.
+// Capture the ChatGPT plugin / app management surfaces from one dedicated
+// debug instance.
 //
 // Usage:
 //   CHATGPT_CDP_HTTP=http://127.0.0.1:9334 node scripts/cdp_capture_manage_settings.mjs \
@@ -218,24 +218,6 @@ if (surface === 'all' || surface === 'plugins') {
     await screenshot('plugins-' + segment + '-' + theme);
     record('segment', { segment, clicked });
   }
-}
-
-if (surface === 'all' || surface === 'import') {
-  if (!(await json('document.body.innerText.includes("插件")'))) {
-    await enterSettings();
-  }
-  await clickByEither(
-    'button,a,[role="menuitem"],div[role="button"]',
-    ['导入', 'Import'],
-    'settings-nav-import',
-  );
-  await sleep(3000);
-  const dump = await dumpSurface();
-  fs.writeFileSync(
-    path.join(output, 'import-' + theme + '.json'),
-    JSON.stringify(dump, null, 2),
-  );
-  await screenshot('import-' + theme);
 }
 
 fs.writeFileSync(
