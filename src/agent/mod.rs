@@ -21,15 +21,19 @@ mod status;
 mod thread;
 
 pub use account::{
-    ACCOUNT_WIDE_LIMIT_ID, AGENT_DEFAULT_RATE_LIMIT_ID, AgentAccount, AgentAccountAuthMode,
-    AgentAccountLoginPhase, AgentAccountLoginState, AgentAccountPlanType, AgentAccountPresence,
-    AgentAccountRateLimitsState, AgentAccountSnapshot, AgentAccountState, AgentAccountUpdate,
-    AgentCreditsSnapshot, AgentLoginCancelOutcome, AgentLoginChallenge, AgentLoginCompletion,
-    AgentLoginStart, AgentLogoutOutcome, AgentRateLimitBucket, AgentRateLimitPatch,
-    AgentRateLimitReachedType, AgentRateLimitResetCredit, AgentRateLimitResetCreditStatus,
-    AgentRateLimitResetCredits, AgentRateLimitResetType, AgentRateLimitWindow, AgentRateLimitsRead,
-    AgentSpendControlLimit,
+    AgentAccount, AgentAccountAuthMode, AgentAccountLoginPhase, AgentAccountLoginState,
+    AgentAccountPlanType, AgentAccountPresence, AgentAccountRateLimitsState, AgentAccountSnapshot,
+    AgentAccountState, AgentAccountUpdate, AgentCreditsSnapshot, AgentLoginCancelOutcome,
+    AgentLoginChallenge, AgentLoginCompletion, AgentLoginStart, AgentLogoutOutcome,
+    AgentRateLimitPatch, AgentRateLimitReachedType, AgentRateLimitResetCredit,
+    AgentRateLimitResetCreditStatus, AgentRateLimitResetCredits, AgentRateLimitResetType,
+    AgentRateLimitWindow, AgentRateLimitsRead, AgentSpendControlLimit,
 };
+
+// Construction helpers the account tests use to build protocol snapshots; the
+// application itself only reads these values while reducing connection events.
+#[cfg(test)]
+pub use account::{AGENT_DEFAULT_RATE_LIMIT_ID, AgentRateLimitBucket};
 pub use activity::{
     AgentActivityStatus, AgentCollaboration, AgentCollaborationStatus, AgentCollaborationTool,
     AgentCollaboratorState, AgentCollaboratorStatus, AgentContextCompaction, AgentDynamicToolCall,

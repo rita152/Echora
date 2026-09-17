@@ -11,10 +11,6 @@ use std::collections::BTreeMap;
 /// metered backend id such as "codex".
 pub const AGENT_DEFAULT_RATE_LIMIT_ID: &str = "default";
 
-/// The account-wide metered limit the backend reports for the shared quota.
-/// It renders as the general usage limit rather than a model-specific one.
-pub const ACCOUNT_WIDE_LIMIT_ID: &str = "codex";
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AgentAccountPlanType {
     Free,
@@ -79,11 +75,6 @@ impl AgentAccountPlanType {
             Self::Edu | Self::EduPlus | Self::EduPro => "Edu",
             Self::Unknown => return None,
         })
-    }
-
-    /// Plan row title used by the billing settings page.
-    pub fn settings_label(self) -> Option<String> {
-        self.short_label().map(|label| format!("{label} 套餐"))
     }
 }
 
@@ -496,18 +487,6 @@ pub struct AgentAccountRateLimitsState {
 }
 
 impl AgentAccountRateLimitsState {
-    pub fn bucket(&self, key: &str) -> Option<&AgentRateLimitBucket> {
-        self.buckets.get(key)
-    }
-
-    /// The legacy single-bucket view the account menu reads for its remaining
-    /// percentage, in the same precedence the backend uses.
-    pub fn preferred_bucket(&self) -> Option<&AgentRateLimitBucket> {
-        self.buckets
-            .get(AGENT_DEFAULT_RATE_LIMIT_ID)
-            .or_else(|| self.buckets.values().next())
-    }
-
     fn forget_other_accounts(&mut self, account_id: Option<&str>) -> bool {
         if self.account_id.as_deref() == account_id {
             return false;
@@ -864,7 +843,8 @@ mod tests {
         assert!(state.apply_rate_limits_read(read));
         let bucket = state
             .rate_limits
-            .bucket(AGENT_DEFAULT_RATE_LIMIT_ID)
+            .buckets
+            .get(AGENT_DEFAULT_RATE_LIMIT_ID)
             .expect("legacy bucket");
         assert_eq!(bucket.primary.as_ref().unwrap().used_percent, 20);
         assert_eq!(state.rate_limits.account_id.as_deref(), Some("acct_1"));
@@ -895,7 +875,11 @@ mod tests {
             })),
             ..AgentRateLimitPatch::default()
         }));
-        let codex = state.rate_limits.bucket("codex").expect("codex bucket");
+        let codex = state
+            .rate_limits
+            .buckets
+            .get("codex")
+            .expect("codex bucket");
         assert_eq!(codex.primary.as_ref().unwrap().used_percent, 15);
         assert_eq!(
             codex.primary.as_ref().unwrap().window_duration_mins,
@@ -904,7 +888,8 @@ mod tests {
         assert!(codex.credits.is_none());
         let spark = state
             .rate_limits
-            .bucket("gpt-5-spark")
+            .buckets
+            .get("gpt-5-spark")
             .expect("spark bucket");
         assert_eq!(spark.primary.as_ref().unwrap().used_percent, 55);
         assert_eq!(
@@ -939,7 +924,7 @@ mod tests {
             primary: Some(None),
             ..AgentRateLimitPatch::default()
         }));
-        let bucket = state.rate_limits.bucket("codex").expect("bucket");
+        let bucket = state.rate_limits.buckets.get("codex").expect("bucket");
         assert_eq!(bucket.limit_name.as_deref(), Some("Codex"));
         assert_eq!(bucket.plan_type, Some(AgentAccountPlanType::Pro));
         assert_eq!(bucket.primary.as_ref().unwrap().used_percent, 15);
@@ -963,8 +948,8 @@ mod tests {
             patches: vec![patch(Some("spark"), 5)],
         });
         assert_eq!(state.rate_limits.account_id.as_deref(), Some("acct_2"));
-        assert!(state.rate_limits.bucket("codex").is_none());
-        assert!(state.rate_limits.bucket("spark").is_some());
+        assert!(!state.rate_limits.buckets.contains_key("codex"));
+        assert!(state.rate_limits.buckets.contains_key("spark"));
         assert!(state.rate_limits.ordinary_usage_allowed.is_none());
     }
 

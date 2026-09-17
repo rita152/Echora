@@ -41,8 +41,6 @@ pub enum AccountIntent {
     CancelLogin(String),
     /// Opens the logout confirmation.
     RequestLogout,
-    /// Opens the usage and billing settings page.
-    OpenUsageSettings,
     /// Opens a backend-provided URL in the system browser.
     OpenExternalUrl(String),
 }
@@ -2444,21 +2442,6 @@ impl SidebarView {
                 })),
             );
         } else {
-            menu = menu.child(
-                account_menu_row(
-                    "profile-usage",
-                    "使用情况",
-                    "profile-usage",
-                    Some(self.account.usage_summary()),
-                    theme,
-                    true,
-                )
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.profile_menu_open = false;
-                    cx.emit(AccountAction(AccountIntent::OpenUsageSettings));
-                    cx.notify();
-                })),
-            );
             menu = menu.child(account_menu_row(
                 "profile-invite",
                 "邀请好友",

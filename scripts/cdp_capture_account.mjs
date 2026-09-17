@@ -214,7 +214,7 @@ record('viewport', { viewport });
 
 // "all" is the product capture set; the appearance dump and the theme switch
 // are explicit preparation surfaces.
-const META_SURFACES = ['appearance-dump', 'set-theme', 'usage-dump'];
+const META_SURFACES = ['appearance-dump', 'set-theme'];
 const want = name => surface === 'all'
   ? !META_SURFACES.includes(name)
   : surface.split(',').includes(name);
@@ -240,30 +240,6 @@ if (want('appearance-dump')) {
     '})()');
   fs.writeFileSync(path.join(output, 'appearance-dump-' + theme + '.json'), JSON.stringify(detail, null, 2));
   console.log(JSON.stringify({ surface: 'appearance-dump', controls: detail.controls.length }));
-  fs.writeFileSync(path.join(output, 'actions-' + theme + '-' + surface + '.jsonl'), actions.map(item => JSON.stringify(item)).join('\n') + '\n');
-  socket.close();
-  process.exit(0);
-}
-
-if (want('usage-dump')) {
-  await enterSettings();
-  await clickByText('button,a,[role="menuitem"],div[role="button"]', '使用情况和计费', 'settings-nav-usage');
-  await sleep(1800);
-  const detail = await json('(() => {' +
-    '  const rows = [...document.querySelectorAll("div")].filter(element => {' +
-    '    const box = element.getBoundingClientRect(); return box.width > 300 && box.height > 8 && box.height < 200; });' +
-    '  const texts = [...document.querySelectorAll("div,span,p,h1,h2,h3,button")].filter(element => {' +
-    '    const box = element.getBoundingClientRect();' +
-    '    return element.children.length === 0 && box.width > 0 && box.height > 0 && element.textContent.trim().length > 0; });' +
-    '  return { text: document.body.innerText.slice(0, 3000),' +
-    '    leaves: texts.slice(0, 120).map(element => ({ tag: element.tagName, text: element.textContent.trim().slice(0, 60),' +
-    '      rect: element.getBoundingClientRect().toJSON(),' +
-    '      style: (() => { const computed = getComputedStyle(element); return { fontSize: computed.fontSize, fontWeight: computed.fontWeight, lineHeight: computed.lineHeight, color: computed.color, fontFamily: computed.fontFamily }; })() })),' +
-    '    blocks: rows.slice(0, 40).map(element => ({ rect: element.getBoundingClientRect().toJSON(), cls: (element.className || "").toString().slice(0, 120) })) };' +
-    '})()');
-  fs.writeFileSync(path.join(output, 'usage-dump-' + theme + '.json'), JSON.stringify(detail, null, 2));
-  await screenshot('usage-page-' + theme);
-  console.log(JSON.stringify({ surface: 'usage-dump', leaves: detail.leaves.length }));
   fs.writeFileSync(path.join(output, 'actions-' + theme + '-' + surface + '.jsonl'), actions.map(item => JSON.stringify(item)).join('\n') + '\n');
   socket.close();
   process.exit(0);
@@ -313,20 +289,6 @@ if (want('menu')) {
   await closeMenus();
 }
 
-if (want('usage-menu')) {
-  await openProfileMenu();
-  const usage = await menuItem('使用情况');
-  record('menu-usage-item', { rect: usage });
-  if (usage) {
-    await clickRect(usage, 'menu-usage');
-    await sleep(1800);
-    const state = await probe();
-    fs.writeFileSync(path.join(output, 'usage-panel-' + theme + '.json'), JSON.stringify(state, null, 2));
-    await screenshot('usage-panel-' + theme);
-  }
-  await closeMenus();
-}
-
 if (want('settings')) {
   await openProfileMenu();
   const settings = await menuItem('设置');
@@ -336,18 +298,6 @@ if (want('settings')) {
     await sleep(2000);
     const url = await evaluate('location.href');
     record('settings-route', { url });
-  }
-}
-
-if (want('settings-usage')) {
-  const clicked = await clickByText('button,a,[role="menuitem"],div[role="button"]', '使用情况和计费', 'settings-nav-usage');
-  if (clicked) {
-    await sleep(2000);
-    const state = await probe();
-    fs.writeFileSync(path.join(output, 'settings-usage-' + theme + '.json'), JSON.stringify(state, null, 2));
-    await screenshot('settings-usage-' + theme);
-    const detail = await json('(() => { const main = document.querySelector("main") || document.body; return { text: main.innerText.slice(0, 2500) }; })()');
-    fs.writeFileSync(path.join(output, 'settings-usage-text-' + theme + '.json'), JSON.stringify(detail, null, 2));
   }
 }
 

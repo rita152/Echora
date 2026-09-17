@@ -53,7 +53,6 @@ pub enum PageKind {
     Standard,
     Profile,
     KeyboardShortcuts,
-    Usage,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

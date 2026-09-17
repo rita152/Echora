@@ -265,13 +265,6 @@ impl ChatApp {
             this.start_draft(event.project_id.clone(), event.cwd.clone(), cx);
         })
         .detach();
-        cx.subscribe(
-            &settings,
-            |this, _, _: &crate::settings::RefreshAccount, cx| {
-                this.refresh_account(cx);
-            },
-        )
-        .detach();
         cx.subscribe(&settings, |this, _, _: &CloseSettings, cx| {
             this.showing_settings = false;
             if let Some(host) = this.conversation_hosts.get(&this.active_conversation) {
@@ -495,8 +488,6 @@ impl ChatApp {
         let view = self.account.clone();
         self.sidebar
             .update(cx, |sidebar, cx| sidebar.set_account_view(view.clone(), cx));
-        self.settings
-            .update(cx, |settings, cx| settings.set_account_view(view, cx));
         cx.notify();
     }
 
@@ -540,10 +531,6 @@ impl ChatApp {
                 self.account_choice = 0;
                 self.account_focus_pending = true;
                 self.sync_account_view(cx);
-            }
-            AccountIntent::OpenUsageSettings => {
-                self.open_settings_page("usage", cx);
-                self.refresh_account(cx);
             }
             AccountIntent::OpenExternalUrl(url) => cx.open_url(&url),
         }

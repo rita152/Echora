@@ -101,9 +101,9 @@ node scripts/scan_reference_rpc_methods.mjs /Applications/ChatGPT.app/Contents/R
 
 generation 变化、账户切换与登出都会清理旧快照；`fail_generation` 会移除该 generation 的账户快照并向订阅者发布空状态，旧回调不能污染新连接。新订阅者收到的连接快照包含当前账户、登录状态与完整配额桶。
 
-UI 由真实后端状态驱动：侧边栏账户菜单显示账户标签、套餐、当前剩余额度（打开菜单即 `account/read → account/rateLimits/read`），退出登录先显示确认对话框，登录入口、登录中、device code/授权 URL、失败重试都在同一套状态上渲染；设置页"使用情况和计费"显示套餐、余额、按 `limitId` 拆分的额度卡片（含参考实现的剩余额度进度条）、重置额度与后端 upsell 文本。未知、加载中与失败状态分别渲染，不显示硬编码的账户、套餐、Token、余额或连续天数；账户显示名取自后端返回的邮箱本地部分，协议不提供昵称时不会杜撰。
+UI 由真实后端状态驱动：侧边栏账户菜单显示账户标签与套餐（打开菜单即 `account/read → account/rateLimits/read`），退出登录先显示确认对话框，登录入口、登录中、device code/授权 URL、失败重试都在同一套状态上渲染。未知、加载中与失败状态分别渲染，不显示硬编码的账户、套餐、Token、余额或连续天数；账户显示名取自后端返回的邮箱本地部分，协议不提供昵称时不会杜撰。
 
-本阶段不接入 `account/usage/read`、`account/rateLimitResetCredit/consume`、`account/chatgptAuthTokens/refresh`、Amazon Bedrock 登录、`mcpServer/elicitation/request`、Skills/MCP 管理以及 realtime/queue/remoteControl/environment 方法；这些入口不显示或明确标注不可用。参考采集脚本为 `scripts/cdp_capture_account.mjs`，GPUI 采集脚本为 `scripts/capture_account_gpui.sh`，像素比较脚本为 `scripts/compare_account_phase.py`；原始截图、动作日志、CDP 脚本与相似度报告保存在 `artifacts/account-phase/`。当前对比分数见该目录的报告：账户菜单、退出确认与额度卡片在两种主题下为 90.7%–97.3%（相对 ChatGPT 参考；差异主要来自字形栅格化、半透明表面的底层内容不同，以及协议不提供的账户显示名）。Computer Use 在本机无法附加到 `GPUI Capture.app`（多次 `timeoutReached`），因此交互验收改用应用自身的采集入口与真实事件驱动的 UI 测试，细节见 `artifacts/account-phase/ui-validation/computer-use-report.json`。
+本阶段不接入 `account/usage/read`、`account/rateLimitResetCredit/consume`、`account/chatgptAuthTokens/refresh`、Amazon Bedrock 登录、`mcpServer/elicitation/request`、Skills/MCP 管理以及 realtime/queue/remoteControl/environment 方法；这些入口不显示或明确标注不可用，设置页也不再提供「使用情况和计费」页。参考采集脚本为 `scripts/cdp_capture_account.mjs`，GPUI 采集脚本为 `scripts/capture_account_gpui.sh`，像素比较脚本为 `scripts/compare_account_phase.py`；原始截图、动作日志、CDP 脚本与相似度报告保存在 `artifacts/account-phase/`，覆盖账户菜单与退出确认两种主题下的对比分数（差异主要来自字形栅格化、半透明表面的底层内容不同，以及协议不提供的账户显示名）。Computer Use 在本机无法附加到 `GPUI Capture.app`（多次 `timeoutReached`），因此交互验收改用应用自身的采集入口与真实事件驱动的 UI 测试，细节见 `artifacts/account-phase/ui-validation/computer-use-report.json`。
 
 ### 技能与 MCP 管理
 
