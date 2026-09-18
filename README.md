@@ -63,7 +63,7 @@ The exact protocol coverage and compatibility rules live in [the app-server inte
 
 ## Get started
 
-The current development and verification platform is **macOS**. Install the Rust toolchain pinned in [rust-toolchain.toml](rust-toolchain.toml), the macOS build tools, and a logged-in Codex CLI available on `PATH`. The current integration baseline is `codex-cli 0.153.0`; see the integration table before changing CLI versions.
+The current development and verification platform is **macOS**. Install the Rust toolchain pinned in [rust-toolchain.toml](rust-toolchain.toml), the macOS build tools, and a logged-in Codex CLI available on `PATH`. The current integration baseline is `codex-cli 0.154.0`; see the integration table before changing CLI versions.
 
 ```bash
 git clone https://github.com/rita152/Echora.git

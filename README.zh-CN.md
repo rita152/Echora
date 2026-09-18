@@ -64,7 +64,7 @@
 
 ## 快速开始
 
-当前开发与验收平台为 **macOS**。需要 [rust-toolchain.toml](rust-toolchain.toml) 固定的 Rust 工具链、macOS 构建工具，以及已安装、已登录且位于 `PATH` 的 Codex CLI。当前接入基线为 `codex-cli 0.153.0`，更换 CLI 版本前请核对接入总表。
+当前开发与验收平台为 **macOS**。需要 [rust-toolchain.toml](rust-toolchain.toml) 固定的 Rust 工具链、macOS 构建工具，以及已安装、已登录且位于 `PATH` 的 Codex CLI。当前接入基线为 `codex-cli 0.154.0`，更换 CLI 版本前请核对接入总表。
 
 ```bash
 git clone https://github.com/rita152/Echora.git
