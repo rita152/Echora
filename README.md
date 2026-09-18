@@ -170,6 +170,12 @@ python3 scripts/verify_config_permissions.py --output artifacts/config-permissio
 
 This uses the local CLI with an isolated configuration home and Git project under the output directory. It verifies real reads, writes, overrides, version conflicts, invalid values, null deletion, profile pagination, thread-setting receipts, and process restart. It sends no model requests and does not change the user's existing configuration.
 
+The integration table itself is checked against the CLI schema: method sets, the default/experimental column, status counts, and the opt-out list in `src/agent/codex/runtime.rs` are re-derived, and a temporary schema export is generated when `artifacts/` is empty.
+
+```bash
+node scripts/verify_integration_table.mjs
+```
+
 ### Capture the native app
 
 Follow the dedicated-instance rules in [AGENTS.md](AGENTS.md). Build the latest executable, package it with the separate capture bundle ID, and launch that instance:

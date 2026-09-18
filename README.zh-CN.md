@@ -169,6 +169,12 @@ python3 scripts/verify_config_permissions.py --output artifacts/config-permissio
 
 该入口使用本机 CLI，以及输出目录内的独立配置 home 和 Git 项目，验证真实读取、写入、覆盖、版本冲突、非法值、null 删除、profile 分页、线程设置回执与进程重启。不发送模型请求，也不修改用户现有配置。
 
+接入总表本身也由脚本核对：方法集合、默认／实验归属、状态统计与 `src/agent/codex/runtime.rs` 的退订名单都从 CLI schema 重新推导，`artifacts/` 为空时会先生成临时 schema 副本。
+
+```bash
+node scripts/verify_integration_table.mjs
+```
+
 ### 截取原生界面
 
 遵循 [AGENTS.md](AGENTS.md) 的专用实例约定：先构建最新可执行文件，使用独立截图 bundle ID 打包，再启动该实例。

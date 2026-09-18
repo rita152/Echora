@@ -30,7 +30,7 @@ node scripts/scan_reference_rpc_methods.mjs /Applications/ChatGPT.app/Contents/R
 | 兼容退订 | 5 | initialize 按完整方法名退订；不代表对应产品能力已接入；保留明确的兼容窗口 |
 | 未接入 | 116 | 客户端不发送；服务端请求按原 id 回受控回执并保持 generation 与共享连接，同时登记连接级诊断；仅 EOF、崩溃、写失败或致命协议错误终止连接；服务端通知仍按严格协议校验处理 |
 
-未接入行的“—”沿用上述规则。`tool/requestUserInput` 是兼容别名，不计入本版本 schema 的 252 项。
+未接入行的“—”沿用上述规则；带受控回执的服务端请求会另外列出入口，见下段。`tool/requestUserInput` 是兼容别名，不计入本版本 schema 的 252 项。
 
 服务端请求不再以断开连接暴露覆盖缺口：不会转成交互请求的服务端请求一律按原 id 回受控回执，并记录连接级诊断（方法、请求 id、thread／turn、处置，以及脱敏且截断的 params 形状），连接、共享 pending RPC 与活动轮次全部继续存活。旧版审批协议（`applyPatchApproval`、`execCommandApproval`）校验载荷后回显式拒绝结果，并说明本客户端不为旧版协议提供审批 UI；`currentTime/read` 回本机时钟的 Unix 整秒；本阶段不集成或未知的方法回 `-32601`；已知方法的载荷无法解码时回 `-32602`。动态工具调用见 `item/tool/call`。
 
@@ -464,7 +464,10 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 
 修改方法、有效变体、兼容别名或失败处理时，同步更新本表与对应测试；升级 CLI 时核对四个 schema union（ClientRequest、ServerRequest、ClientNotification、ServerNotification），保持方法唯一、方向／API 分类和状态统计一致。只有形成表中声明的产品路径后才标记“已接入”。
 
+`scripts/verify_integration_table.mjs` 直接用 CLI schema 重新推导方法集合、默认／实验归属、方法唯一性、口径表统计、合计行与 `runtime::OPT_OUT_NOTIFICATION_METHODS`，发现任何结构性不一致都以非零状态退出；`artifacts/app-server-schema` 缺失时会先用本机 `codex` 生成临时副本，因此可在干净检出上直接运行。
+
 ```bash
+node scripts/verify_integration_table.mjs
 cargo test agent::codex
 cargo test workspace::
 cargo test conversation::
