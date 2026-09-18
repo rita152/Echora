@@ -2,7 +2,7 @@
 
 ## 基线与口径
 
-核对基线：`codex-cli 0.153.0`（2026-09-10）；本机复核版本为 `codex-cli 0.154.0`，账号相关方法以本机 0.154.0 生成的 default/experimental schema 为准。方法与字段来自该 CLI 生成的 schema，接入状态来自仓库实现。schema 随 CLI 版本生成，见[官方协议说明](https://learn.chatgpt.com/docs/app-server#message-schema)；升级时重新导出并核对：
+核对基线：`codex-cli 0.154.0`（2026-09-18 本机复核）。方法与字段来自该 CLI 生成的 default/experimental schema，接入状态来自仓库实现；应用运行时启动的 `PATH` 上的 `codex app-server --stdio` 即该版本。schema 随 CLI 版本生成，见[官方协议说明](https://learn.chatgpt.com/docs/app-server#message-schema)；升级时重新导出并核对：
 
 ```bash
 codex --version
@@ -10,25 +10,29 @@ codex app-server generate-json-schema --out artifacts/app-server-schema/default
 codex app-server generate-json-schema --experimental --out artifacts/app-server-schema/experimental
 ```
 
-参考客户端的方法封装面可用只读扫描核对，不启动参考应用、不触碰运行中的实例：
+参考客户端的方法封装面可用只读扫描核对，不启动参考应用、不触碰运行中的实例；脚本以本表基线的 experimental schema 为方法全集：
 
 ```bash
-node scripts/scan_reference_rpc_methods.mjs /Applications/ChatGPT.app/Contents/Resources/app.asar artifacts/app-server-reference-methods-20260914
+node scripts/scan_reference_rpc_methods.mjs /Applications/ChatGPT.app/Contents/Resources/app.asar artifacts/app-server-reference-methods-20260918
 ```
 
-当前扫描：参考 bundle 内嵌 248 个方法名中的 233 个，未出现的 15 个均为客户端请求，明细见 `artifacts/app-server-reference-methods-20260914/reference-method-scan.json`。方法名出现只代表参考客户端包含对应协议封装，不等于该产品流程已启用；未出现也不排除运行时动态拼接方法名。
+当前扫描：参考 bundle 内嵌 252 个方法名中的 238 个，未出现的 14 个均为客户端请求，明细见 `artifacts/app-server-reference-methods-20260918/reference-method-scan.json`。方法名出现只代表参考客户端包含对应协议封装，不等于该产品流程已启用；未出现也不排除运行时动态拼接方法名。
 
-共 **248** 个方法：155 个客户端请求、11 个服务端请求、1 个客户端通知、81 个服务端通知。表中“默认”表示方法出现在默认 schema，“实验”表示仅出现在 experimental schema；字段以 experimental schema 为准。运行时启用 `experimentalApi=true`。
+参考 bundle 自身已先行到 `codex-cli 0.155.0-alpha.2.6`，多出尚未进入本表基线的 `userVerification/cancel`、`memory/status`、`thread/attachment/add|list|remove` 与通知 `thread/attachment/updated`；这些方法本机基线不发送，也不在总表内，若服务端主动下发会按未知方法报致命协议错误。
+
+共 **252** 个方法：159 个客户端请求、11 个服务端请求、1 个客户端通知、81 个服务端通知。表中“默认”表示方法出现在默认 schema，“实验”表示仅出现在 experimental schema；字段以 experimental schema 为准。运行时启用 `experimentalApi=true`。
 
 | 状态 | 数量 | 判定 |
 |---|---|---|
-| 已接入 | 118 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
+| 已接入 | 122 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
 | 后端已接入 | 4 | 已实现读取或校验，尚无对应可见 UI 调用方或展示 |
-| 部分接入 | 3 | 只支持部分类型、有效变体或限定生命周期窗口 |
+| 部分接入 | 5 | 只支持部分类型、有效变体或限定生命周期窗口 |
 | 兼容退订 | 5 | initialize 按完整方法名退订；不代表对应产品能力已接入；保留明确的兼容窗口 |
-| 未接入 | 118 | 客户端不发送；服务端请求按原 id 回复 `-32601` 并保持 generation 与共享连接；仅 EOF、崩溃、写失败或致命协议错误终止连接；服务端通知仍按严格协议校验处理 |
+| 未接入 | 116 | 客户端不发送；服务端请求按原 id 回受控回执并保持 generation 与共享连接，同时登记连接级诊断；仅 EOF、崩溃、写失败或致命协议错误终止连接；服务端通知仍按严格协议校验处理 |
 
-未接入行的“—”沿用上述规则。`tool/requestUserInput` 是兼容别名，不计入本版本 schema 的 248 项。
+未接入行的“—”沿用上述规则；带受控回执的服务端请求会另外列出入口，见下段。`tool/requestUserInput` 是兼容别名，不计入本版本 schema 的 252 项。
+
+服务端请求不再以断开连接暴露覆盖缺口：不会转成交互请求的服务端请求一律按原 id 回受控回执，并记录连接级诊断（方法、请求 id、thread／turn、处置，以及脱敏且截断的 params 形状），连接、共享 pending RPC 与活动轮次全部继续存活。旧版审批协议（`applyPatchApproval`、`execCommandApproval`）校验载荷后回显式拒绝结果，并说明本客户端不为旧版协议提供审批 UI；`currentTime/read` 回本机时钟的 Unix 整秒；本阶段不集成或未知的方法回 `-32601`；已知方法的载荷无法解码时回 `-32602`。动态工具调用见 `item/tool/call`。
 
 ## 连接与状态
 
@@ -103,7 +107,7 @@ generation 变化、账户切换与登出都会清理旧快照；`fail_generatio
 
 UI 由真实后端状态驱动：侧边栏账户菜单显示账户标签与套餐（打开菜单即 `account/read → account/rateLimits/read`），退出登录先显示确认对话框，登录入口、登录中、device code/授权 URL、失败重试都在同一套状态上渲染。未知、加载中与失败状态分别渲染，不显示硬编码的账户、套餐、Token、余额或连续天数；账户显示名取自后端返回的邮箱本地部分，协议不提供昵称时不会杜撰。
 
-本阶段不接入 `account/usage/read`、`account/rateLimitResetCredit/consume`、`account/chatgptAuthTokens/refresh`、Amazon Bedrock 登录、`mcpServer/elicitation/request`、Skills/MCP 管理以及 realtime/queue/remoteControl/environment 方法；这些入口不显示或明确标注不可用，设置页也不再提供「使用情况和计费」页。参考采集脚本为 `scripts/cdp_capture_account.mjs`，GPUI 采集脚本为 `scripts/capture_account_gpui.sh`，像素比较脚本为 `scripts/compare_account_phase.py`；原始截图、动作日志、CDP 脚本与相似度报告保存在 `artifacts/account-phase/`，覆盖账户菜单与退出确认两种主题下的对比分数（差异主要来自字形栅格化、半透明表面的底层内容不同，以及协议不提供的账户显示名）。Computer Use 在本机无法附加到 `GPUI Capture.app`（多次 `timeoutReached`），因此交互验收改用应用自身的采集入口与真实事件驱动的 UI 测试，细节见 `artifacts/account-phase/ui-validation/computer-use-report.json`。
+本阶段不接入 `account/usage/read`、`account/rateLimitResetCredit/consume`、`account/sendAddCreditsNudgeEmail`、`account/workspaceMessages/read`、`account/chatgptAuthTokens/refresh`、Amazon Bedrock 登录，以及 realtime／queue／remoteControl 客户端请求与 environment 方法（`remoteControl/status/changed` 通知只保存连接快照，无 Composer UI）；这些入口不显示或明确标注不可用，设置页也不再提供「使用情况和计费」页。`mcpServer/elicitation/request` 与 Skills／MCP 管理已各自接入，边界见对应小节与总表。参考采集脚本为 `scripts/cdp_capture_account.mjs`，GPUI 采集脚本为 `scripts/capture_account_gpui.sh`，像素比较脚本为 `scripts/compare_account_phase.py`；原始截图、动作日志、CDP 脚本与相似度报告保存在 `artifacts/account-phase/`，覆盖账户菜单与退出确认两种主题下的对比分数（差异主要来自字形栅格化、半透明表面的底层内容不同，以及协议不提供的账户显示名）。Computer Use 在本机无法附加到 `GPUI Capture.app`（多次 `timeoutReached`），因此交互验收改用应用自身的采集入口与真实事件驱动的 UI 测试，细节见 `artifacts/account-phase/ui-validation/computer-use-report.json`。
 
 ### 技能与 MCP 管理
 
@@ -172,7 +176,7 @@ Composer 在运行中有草稿时显示“追加输入”，无草稿时显示�
 
 ## 运行时观察与能力协商
 
-初始化保持 `experimentalApi=true`、`requestAttestation=false`，发送精确的 `optOutNotificationMethods` 五项：`thread/goal/updated`、`thread/goal/cleared`、`thread/queue/changed`、`turn/moderationMetadata`、`thread/compacted`。`skills/changed` 与 `app/list/updated` 不在退订名单中：设置页分别把它们当作技能目录与应用目录的失效信号。默认 schema 与 experimental schema 均包含这些通知方法；逐项理由见总表。退订只作用于通知，不能屏蔽请求、响应或错误；未实现的服务端请求按原 id 回复 `-32601` 并保持 generation 与共享连接；只有 EOF、崩溃、写失败或致命协议错误才进入连接失败处理。不会退订 item/started 或 item/completed，也不会忽略未知方法。
+初始化保持 `experimentalApi=true`、`requestAttestation=false`，发送精确的 `optOutNotificationMethods` 五项：`thread/goal/updated`、`thread/goal/cleared`、`thread/queue/changed`、`turn/moderationMetadata`、`thread/compacted`。`skills/changed` 与 `app/list/updated` 不在退订名单中：设置页分别把它们当作技能目录与应用目录的失效信号。默认 schema 与 experimental schema 均包含这些通知方法；逐项理由见总表。退订只作用于通知，不能屏蔽请求、响应或错误；未实现或未知的服务端请求按原 id 回受控回执（方法特定结果、`-32601` 或 `-32602`）并保持 generation 与共享连接，处置登记在连接级诊断中；只有 EOF、崩溃、写失败或致命协议错误才进入连接失败处理。不会退订 item/started 或 item/completed，也不会忽略未知方法。
 
 Hook、认证恢复和 hookPrompt 快照通过带 generation 的观察通道交付。Hook 以 threadId/optional turnId/run.id 区分身份；缺省与 null 共同使用独立的无轮次键，同一 run.id 可以跨轮次存在，不把无 turnId 的记录迁移到前台或已知轮次。认证恢复以 threadId/turnId/provider 区分身份。两者可以早于 turn/start 响应，也可以晚于 turn/completed；不会建立或结束 turn。重复事件原位更新；服务端完成、终态 status 和较新完成时间不会被迟到 started 回退。turn 完成／中断／失败只收束该 turn 的本地等待；无 turnId 的 Hook 继续独立存在，在线程关闭或连接失效时本地收束。原始 status、message、output、时间和是否实际收到 completed 始终保留。
 
@@ -184,7 +188,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 
 ## 方法总表
 
-### 客户端请求（155）
+### 客户端请求（159）
 
 | 方法 | API | 状态 | 已实现行为与限制 | 入口 |
 |---|---|---|---|---|
@@ -292,7 +296,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/backgroundTerminals/clean` | 实验 | 未接入 | — | — |
 | `thread/backgroundTerminals/list` | 实验 | 未接入 | — | — |
 | `thread/backgroundTerminals/terminate` | 实验 | 未接入 | — | — |
-| `thread/compact/start` | 默认 | 未接入 | — | — |
+| `thread/compact/start` | 默认 | 已接入 | 手动压缩；composer 的 `/compact` 命令触发，只发送 threadId 并要求响应 result 为对象。压缩按不可 steer 的轮次运行，期间追加输入按 `activeTurnNotSteerable{turnKind:compact}` 如实展示为提交失败，完成经既有 turn／item 事件与 contextCompaction 活动收束。 | `manager/compact`、`components/composer` |
 | `thread/decrement_elicitation` | 实验 | 未接入 | — | — |
 | `thread/delete` | 默认 | 已接入 | 按 threadId 删除；从所有侧栏集合移除。 | `manager/workspace` |
 | `thread/fork` | 默认 | 已接入 | 仅用于临时侧边聊天：ephemeral=true、excludeTurns=true、threadSource=user，携带 cwd、说明及可选 model/effort/serviceTier。验证新 id、ephemeral 和先到的 thread/started；无持久化分叉 UI。 | `manager/side_conversation` |
@@ -321,7 +325,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/realtime/start` | 实验 | 未接入 | — | — |
 | `thread/realtime/stop` | 实验 | 未接入 | — | — |
 | `thread/resume` | 默认 | 已接入 | threadId、excludeTurns=true；当前 generation 未加载时执行一次，返回 id 必须匹配；失败不回退为新建。 | `manager/turn` |
-| `thread/revert` | 默认 | 未接入 | — | — |
+| `thread/revert` | 默认 | 已接入 | 改写最新用户消息时按 beforeTurnId 传该轮 id：把持久化历史替换为该轮之前的前缀，随后仍走 thread/read 与分页路径重载；响应是历史权威来源，校验返回 thread 与请求 threadId 一致并保留可选 turnsBackwardsCursor／itemsBackwardsCursor，不回退本地文件改动。先到的 `thread/reverted` 记为该请求的确认。 | `manager/revert`、`components/composer` |
 | `thread/rollback` | 默认 | 未接入 | — | — |
 | `thread/search` | 实验 | 已接入 | 非空 searchTerm、archived、分页和排序；返回 thread 与 snippet。历史会话搜索弹窗用它检索会话；空查询改用 `threadSection/list` 的置顶分区与 `thread/list`（recency 倒序）拼出前九行。参考实现的弹窗还会合并 ChatGPT 云端会话，app-server 无对应数据。 | `manager/workspace` |
 | `thread/searchOccurrences` | 实验 | 未接入 | — | — |
@@ -341,6 +345,10 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `turn/settings/update` | 实验 | 未接入 | — | — |
 | `turn/start` | 默认 | 已接入 | 文本及 localImage 输入、路径上下文、model/effort/serviceTier、可选 plan/default collaborationMode；新线程首轮附权限字段。可选 clientUserMessageId；以 result.turn.id 建立轮次归属。 | `manager/turn`、`input` |
 | `turn/steer` | 默认 | 已接入 | 主会话／临时侧边聊天运行中即时追加：threadId、expectedTurnId、input、clientUserMessageId；校验 result.turnId。复用文本、localImage、文件路径上下文及审查评论编码；不传 model/cwd/权限等轮次覆盖字段。 | `manager/steer`、`input` |
+| `userVerification/delete` | 实验 | 未接入 | — | — |
+| `userVerification/enroll` | 实验 | 未接入 | — | — |
+| `userVerification/status` | 实验 | 未接入 | — | — |
+| `userVerification/verify` | 实验 | 未接入 | — | — |
 | `windowsSandbox/readiness` | 默认 | 未接入 | — | — |
 | `windowsSandbox/setupStart` | 默认 | 未接入 | — | — |
 
@@ -354,11 +362,11 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 
 | 方法 | API | 状态 | 已实现行为与限制 | 入口 |
 |---|---|---|---|---|
-| `account/chatgptAuthTokens/refresh` | 默认 | 未接入 | — | — |
-| `applyPatchApproval` | 默认 | 未接入 | 旧版文件审批；不由现有展示组件接管。 | — |
-| `attestation/generate` | 默认 | 未接入 | — | — |
-| `currentTime/read` | 实验 | 未接入 | — | — |
-| `execCommandApproval` | 默认 | 未接入 | 旧版命令审批；不与 v2 item 请求混用。 | — |
+| `account/chatgptAuthTokens/refresh` | 默认 | 未接入 | 只校验收到的 previousAccountId／reason（当前仅 unauthorized），随后按原 id 回 `-32601` 错误、保持连接并记录诊断：本客户端只做 Codex 托管登录，没有可刷新的外部令牌，不伪造 accessToken／chatgptAccountId。 | `server_requests`、`manager/dispatch` |
+| `applyPatchApproval` | 默认 | 部分接入 | 旧版文件审批：校验 callId／conversationId／fileChanges（add／delete／update 变体）后立即回 `{decision:{denied:{rejection}}}`，文案说明本客户端不为旧版协议提供审批 UI；不进 v2 展示与审批队列、无卡片，诊断记录登记方法、id 与 conversationId。 | `approvals`、`server_requests`、`manager/dispatch` |
+| `attestation/generate` | 默认 | 未接入 | initialize 一直发送 requestAttestation=false；若到达则校验 params 为对象后按原 id 回 `-32601`、保持连接并记录诊断，不伪造 attestation token。 | `server_requests`、`manager/dispatch` |
+| `currentTime/read` | 实验 | 已接入 | 校验字符串 params.threadId 后回 `{currentTimeAt}`，取本机时钟的 Unix 整秒；schema 未要求线程已加载，因此不做加载校验，也不缓存或伪造时间。 | `server_requests`、`manager/dispatch` |
+| `execCommandApproval` | 默认 | 部分接入 | 旧版命令审批：校验 callId／command[]／conversationId／cwd／parsedCmd[]（read／list_files／search／unknown）后立即回 denied 回执；不复用 v2 命令审批卡片或决策队列，诊断记录登记方法、id 与 conversationId。 | `approvals`、`server_requests`、`manager/dispatch` |
 | `item/commandExecution/requestApproval` | 默认 | 已接入 | kind 缺省为 command，支持 writeStdin；保留 approvalId、startedAtMs、nullable environmentId/cwd/command/reason、网络 host/protocol 与 additionalPermissions。availableDecisions 缺省／null 使用历史决策及服务端建议；显式空列表显示错误。按有序决策及完整策略载荷校验 accept、acceptForSession、decline、cancel、execpolicy 和网络 allow/deny，拒绝未提供的决策；cancel 不改写为 decline。 | `approvals`、`requests`、`registry` |
 | `item/fileChange/requestApproval` | 默认 | 已接入 | 校验 threadId/turnId/itemId/startedAtMs，保留 nullable reason/grantRoot。原始 item changes 到达前仅允许拒绝；支持 accept、acceptForSession、decline、cancel，原 id 回传并等待 resolved。文件行打开对应原始补丁；grantRoot 是 schema 标注的不稳定提示，不由客户端自行扩大写入权限。 | `approvals`、`requests`、`registry`、`dispatch` |
 | `item/permissions/requestApproval` | 默认 | 已接入 | 校验 thread/turn/item、cwd、startedAtMs、nullable environmentId/reason；保留 read/write、entries、glob 深度、path/glob/special path 与 nullable network。允许只返回请求子集及 turn/session scope，拒绝返回空权限。 | `requests`、`permissions`、`registry` |
@@ -437,7 +445,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/realtime/started` | 默认 | 未接入 | — | — |
 | `thread/realtime/transcript/delta` | 默认 | 未接入 | — | — |
 | `thread/realtime/transcript/done` | 默认 | 未接入 | — | — |
-| `thread/reverted` | 默认 | 未接入 | — | — |
+| `thread/reverted` | 默认 | 已接入 | 仅 threadId；可先于 thread/revert 响应到达，按“通知先于 RPC 响应”暂存为该请求的确认。非本客户端发起的回退作为连接事件发布，令所属会话把已归约历史标记为过期并按分页路径重载，不改变侧栏条目身份。 | `manager/dispatch`、`manager/revert`、`manager/connection` |
 | `thread/settings/updated` | 默认 | 已接入 | 按原 threadId／generation 同步 model/effort/serviceTier/cwd 与有效权限；匹配本次期望值才满足 waiter，处理响应前通知、重复／已知迟到回执及关闭临时线程。 | `manager/dispatch`、`manager/settings`、`notifications` |
 | `thread/started` | 默认 | 已接入 | 校验 params.thread.id，关联当前 start/resume/fork；RPC 响应是最终 id 来源。已加载线程的迟到通知不得绑定到下一次生命周期请求。 | `manager/dispatch` |
 | `thread/status/changed` | 默认 | 已接入 | 按 threadId 保存 notLoaded/idle/systemError/active；active 仅接受 waitingOnApproval/waitingOnUserInput，不替代 turn 终态。 | `manager/dispatch`、`notifications` |
@@ -456,7 +464,10 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 
 修改方法、有效变体、兼容别名或失败处理时，同步更新本表与对应测试；升级 CLI 时核对四个 schema union（ClientRequest、ServerRequest、ClientNotification、ServerNotification），保持方法唯一、方向／API 分类和状态统计一致。只有形成表中声明的产品路径后才标记“已接入”。
 
+`scripts/verify_integration_table.mjs` 直接用 CLI schema 重新推导方法集合、默认／实验归属、方法唯一性、口径表统计、合计行与 `runtime::OPT_OUT_NOTIFICATION_METHODS`，发现任何结构性不一致都以非零状态退出；`artifacts/app-server-schema` 缺失时会先用本机 `codex` 生成临时副本，因此可在干净检出上直接运行。
+
 ```bash
+node scripts/verify_integration_table.mjs
 cargo test agent::codex
 cargo test workspace::
 cargo test conversation::
