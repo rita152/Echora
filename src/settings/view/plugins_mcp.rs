@@ -222,7 +222,7 @@ impl SettingsView {
                             this.mcp.directory.loading = false;
                             this.mcp.directory.error = Some(AgentMcpError {
                                 kind: AgentMcpErrorKind::Connection,
-                                message: "MCP 列表连接已关闭".into(),
+                                message: crate::i18n::text("MCP 列表连接已关闭").into(),
                                 data: None,
                                 outcome_unknown: false,
                             });
@@ -254,7 +254,7 @@ impl SettingsView {
                 this.mcp.directory.loading = false;
                 this.mcp.directory.error = Some(AgentMcpError {
                     kind: AgentMcpErrorKind::Protocol,
-                    message: format!("mcpServerStatus/list 分页超过 {MAX_MCP_PAGES} 页，已中止"),
+                    message: crate::i18n::format!("mcpServerStatus/list 分页超过 {MAX_MCP_PAGES} 页，已中止" => "mcpServerStatus/list exceeded {MAX_MCP_PAGES} pages and was stopped"),
                     data: None,
                     outcome_unknown: false,
                 });
@@ -293,7 +293,7 @@ impl SettingsView {
                         this.mcp.directory.reloading = false;
                         this.mcp.directory.error = Some(AgentMcpError {
                             kind: AgentMcpErrorKind::Connection,
-                            message: "重新加载连接已关闭，结果未确认".into(),
+                            message: crate::i18n::text("重新加载连接已关闭，结果未确认").into(),
                             data: None,
                             outcome_unknown: true,
                         });
@@ -338,7 +338,7 @@ impl SettingsView {
                     Err(_) => {
                         this.mcp.directory.error = Some(AgentMcpError {
                             kind: AgentMcpErrorKind::Connection,
-                            message: "登录连接已关闭".into(),
+                            message: crate::i18n::text("登录连接已关闭").into(),
                             data: None,
                             outcome_unknown: false,
                         });
@@ -462,9 +462,11 @@ impl SettingsView {
             let phase = match state {
                 "waiting" => McpLoginPhase::Waiting,
                 "success" => McpLoginPhase::Succeeded,
-                "failure" => McpLoginPhase::Failed("OAuth 提供方返回 access_denied".into()),
+                "failure" => McpLoginPhase::Failed(
+                    crate::i18n::text("OAuth 提供方返回 access_denied").into(),
+                ),
                 "cancelled" => McpLoginPhase::Cancelled,
-                "interrupted" => McpLoginPhase::Interrupted("连接已断开".into()),
+                "interrupted" => McpLoginPhase::Interrupted(crate::i18n::text("连接已断开").into()),
                 _ => McpLoginPhase::Waiting,
             };
             self.mcp
@@ -482,14 +484,14 @@ impl SettingsView {
             let outcome = match state {
                 "ok" => AgentMcpReloadOutcome::Reloaded,
                 "failed" => AgentMcpReloadOutcome::Failed {
-                    message: "MCP 服务器重新加载失败".into(),
+                    message: crate::i18n::text("MCP 服务器重新加载失败").into(),
                     data: None,
                 },
                 "timeout" => AgentMcpReloadOutcome::TimedOut {
-                    message: "`config/mcpServer/reload` 等待响应超时".into(),
+                    message: crate::i18n::text("`config/mcpServer/reload` 等待响应超时").into(),
                 },
                 _ => AgentMcpReloadOutcome::Unknown {
-                    message: "重新加载结果未知".into(),
+                    message: crate::i18n::text("重新加载结果未知").into(),
                 },
             };
             self.mcp.directory.reload = Some(crate::agent::AgentMcpReloadResult {
@@ -567,7 +569,7 @@ impl SettingsView {
                         theme.text_tertiary
                     })
                     .child(if unknown {
-                        format!("{message}（结果未知）")
+                        crate::i18n::format!("{message}（结果未知）" => "{message} (result unknown)")
                     } else {
                         message.to_owned()
                     }),
@@ -611,19 +613,20 @@ impl SettingsView {
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.refresh_mcp_servers(AgentMcpStatusDetail::Full, cx)
                             }))
-                            .child("重试"),
+                            .child(crate::i18n::text("重试")),
                     ),
             );
         }
 
         let servers = self.mcp.visible_servers();
         if self.mcp.directory.loading && self.mcp.directory.servers.is_empty() {
-            body = body.child(self.manage_state_card("正在读取 MCP 服务器…", theme));
+            body = body
+                .child(self.manage_state_card(crate::i18n::text("正在读取 MCP 服务器…"), theme));
         } else if servers.is_empty() && self.mcp.directory.error.is_none() {
             let message = if self.mcp.query.trim().is_empty() {
-                "没有配置 MCP 服务器"
+                crate::i18n::text("没有配置 MCP 服务器")
             } else {
-                "没有匹配的 MCP 服务器"
+                crate::i18n::text("没有匹配的 MCP 服务器")
             };
             body = body.child(self.manage_state_card(message, theme));
         }
@@ -633,10 +636,16 @@ impl SettingsView {
             .partition(|server| server.plugin_id.is_none());
 
         if !configured.is_empty() {
-            body = body.child(self.mcp_section("服务器", &configured, theme, cx));
+            body =
+                body.child(self.mcp_section(crate::i18n::text("服务器"), &configured, theme, cx));
         }
         if !plugin_owned.is_empty() {
-            body = body.child(self.mcp_section("来自插件", &plugin_owned, theme, cx));
+            body = body.child(self.mcp_section(
+                crate::i18n::text("来自插件"),
+                &plugin_owned,
+                theme,
+                cx,
+            ));
         }
         body.into_any_element()
     }
@@ -666,9 +675,9 @@ impl SettingsView {
                     }))
                     .child(svg().path("icons/settings-refresh.svg").size(px(14.0)))
                     .child(if self.mcp.directory.loading {
-                        "刷新中…"
+                        crate::i18n::text("刷新中…")
                     } else {
-                        "刷新"
+                        crate::i18n::text("刷新")
                     }),
             )
             .child(
@@ -688,9 +697,9 @@ impl SettingsView {
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| this.reload_mcp_servers(cx)))
                     .child(if self.mcp.directory.reloading {
-                        "重新加载中…"
+                        crate::i18n::text("重新加载中…")
                     } else {
-                        "重新加载"
+                        crate::i18n::text("重新加载")
                     }),
             )
     }
@@ -745,8 +754,8 @@ impl SettingsView {
                 AgentMcpServerConnectionStatus::Connected
                 | AgentMcpServerConnectionStatus::NotStarted
                 | AgentMcpServerConnectionStatus::Disabled => None,
-                other => Some(format!(
-                    "{} · {} 个工具 · {}",
+                other => Some(crate::i18n::format!(
+                    "{} · {} 个工具 · {}" => "{} · {} tools · {}",
                     other.label(),
                     server.tools.len(),
                     auth.label()
@@ -847,7 +856,7 @@ impl SettingsView {
                                 div()
                                     .id(("mcp-detail", index))
                                     .role(gpui::Role::Button)
-                                    .aria_label("设置")
+                                    .aria_label(crate::i18n::text("设置"))
                                     .size(px(28.0))
                                     .flex_none()
                                     .rounded(px(14.0))
@@ -905,7 +914,11 @@ impl SettingsView {
         div()
             .id(("mcp-switch", index))
             .role(gpui::Role::Switch)
-            .aria_label(if checked { "停用" } else { "启用" })
+            .aria_label(if checked {
+                crate::i18n::text("停用")
+            } else {
+                crate::i18n::text("启用")
+            })
             .aria_toggled(if checked {
                 gpui::Toggled::True
             } else {
@@ -958,7 +971,7 @@ impl SettingsView {
         let Some(server) = self.mcp.directory.servers.get(name) else {
             return div()
                 .mt(px(44.0))
-                .child(self.manage_state_card("该服务器已不在列表中", theme))
+                .child(self.manage_state_card(crate::i18n::text("该服务器已不在列表中"), theme))
                 .into_any_element();
         };
         let startup = self
@@ -972,11 +985,15 @@ impl SettingsView {
         let login = self.mcp.login_for(name);
 
         let mut rows = div().flex().flex_col().gap(px(6.0));
-        rows = rows.child(self.mcp_field("状态", status.label(), theme));
-        rows = rows.child(self.mcp_field("认证", server.auth_status.label(), theme));
+        rows = rows.child(self.mcp_field(crate::i18n::text("状态"), status.label(), theme));
+        rows = rows.child(self.mcp_field(
+            crate::i18n::text("认证"),
+            server.auth_status.label(),
+            theme,
+        ));
         if let Some(info) = &server.server_info {
             rows = rows.child(self.mcp_field(
-                "服务",
+                crate::i18n::text("服务"),
                 &format!(
                     "{} {}",
                     info.title.clone().unwrap_or_else(|| info.name.clone()),
@@ -985,19 +1002,19 @@ impl SettingsView {
                 theme,
             ));
             if let Some(website) = &info.website_url {
-                rows = rows.child(self.mcp_field("网站", website, theme));
+                rows = rows.child(self.mcp_field(crate::i18n::text("网站"), website, theme));
             }
         }
         if let Some(startup) = startup
             && let Some(error) = &startup.error
         {
-            rows = rows.child(self.mcp_field("错误", error, theme));
+            rows = rows.child(self.mcp_field(crate::i18n::text("错误"), error, theme));
         }
         if let Some(plugin) = &server.plugin_id {
-            rows = rows.child(self.mcp_field("来自插件", plugin, theme));
+            rows = rows.child(self.mcp_field(crate::i18n::text("来自插件"), plugin, theme));
         }
         if let Some(tools_error) = &server.tools_error {
-            rows = rows.child(self.mcp_field("工具发现", tools_error, theme));
+            rows = rows.child(self.mcp_field(crate::i18n::text("工具发现"), tools_error, theme));
         }
 
         let mut tools = div().flex().flex_col().gap(px(4.0));
@@ -1061,7 +1078,7 @@ impl SettingsView {
                 .line_height(px(18.0))
                 .cursor_pointer()
                 .on_click(cx.listener(|this, _, _, cx| this.reload_mcp_servers(cx)))
-                .child("重新加载"),
+                .child(crate::i18n::text("重新加载")),
         );
         if server.auth_status.can_start_login()
             || matches!(server.auth_status, AgentMcpAuthStatus::OAuth)
@@ -1089,7 +1106,7 @@ impl SettingsView {
                             this.mcp.registration = mode;
                             cx.notify();
                         }))
-                        .child(label),
+                        .child(crate::i18n::text(label)),
                 );
             }
             actions = actions.child(modes);
@@ -1112,9 +1129,9 @@ impl SettingsView {
                         cx.listener(move |this, _, _, cx| this.start_mcp_login(name.clone(), cx)),
                     )
                     .child(if matches!(server.auth_status, AgentMcpAuthStatus::OAuth) {
-                        "重新登录"
+                        crate::i18n::text("重新登录")
                     } else {
-                        "登录"
+                        crate::i18n::text("登录")
                     }),
             );
         }
@@ -1150,7 +1167,7 @@ impl SettingsView {
                                 div()
                                     .text_size(px(13.0))
                                     .line_height(px(18.0))
-                                    .child("返回"),
+                                    .child(crate::i18n::text("返回")),
                             ),
                     )
                     .child(
@@ -1170,7 +1187,7 @@ impl SettingsView {
                             .text_size(px(14.0))
                             .line_height(px(21.0))
                             .font_weight(gpui::FontWeight(500.0))
-                            .child("工具"),
+                            .child(crate::i18n::text("工具")),
                     )
                     .child(tools)
             })
@@ -1183,7 +1200,7 @@ impl SettingsView {
                                 .text_size(px(14.0))
                                 .line_height(px(21.0))
                                 .font_weight(gpui::FontWeight(500.0))
-                                .child("资源"),
+                                .child(crate::i18n::text("资源")),
                         )
                         .child(resources)
                 },
@@ -1195,7 +1212,7 @@ impl SettingsView {
                             .text_size(px(14.0))
                             .line_height(px(21.0))
                             .font_weight(gpui::FontWeight(500.0))
-                            .child("服务端扩展字段"),
+                            .child(crate::i18n::text("服务端扩展字段")),
                     )
                     .child(extensions)
             })
@@ -1248,21 +1265,21 @@ impl SettingsView {
         let url = login.authorization_url.clone();
         let (title, detail, tone) = match &login.phase {
             McpLoginPhase::Waiting => (
-                format!("连接 {server_name}"),
-                "请在浏览器中完成授权，然后返回这里。".to_owned(),
+                crate::i18n::format!("连接 {server_name}" => "Connect {server_name}"),
+                crate::i18n::text("请在浏览器中完成授权，然后返回这里。").to_owned(),
                 theme.text_tertiary,
             ),
             McpLoginPhase::Succeeded => (
-                format!("{server_name} 已连接"),
-                "授权已完成，服务器状态正在刷新。".to_owned(),
+                crate::i18n::format!("{server_name} 已连接" => "{server_name} connected"),
+                crate::i18n::text("授权已完成，服务器状态正在刷新。").to_owned(),
                 theme.text_tertiary,
             ),
             McpLoginPhase::Failed(error) => {
                 (login.phase.label().to_owned(), error.clone(), theme.warning)
             }
             McpLoginPhase::Cancelled => (
-                "已取消登录".to_owned(),
-                "未完成授权，服务器保持未登录状态。".to_owned(),
+                crate::i18n::text("已取消登录").to_owned(),
+                crate::i18n::text("未完成授权，服务器保持未登录状态。").to_owned(),
                 theme.text_tertiary,
             ),
             McpLoginPhase::Interrupted(error) => {
@@ -1333,7 +1350,7 @@ impl SettingsView {
                                         .on_click(cx.listener(move |_, _, _, cx| {
                                             cx.open_url(&url);
                                         }))
-                                        .child("打开授权地址"),
+                                        .child(crate::i18n::text("打开授权地址")),
                                 )
                                 .child(
                                     div()
@@ -1349,7 +1366,11 @@ impl SettingsView {
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             this.cancel_mcp_login(login_id, cx)
                                         }))
-                                        .child(if waiting { "取消登录" } else { "关闭" }),
+                                        .child(if waiting {
+                                            crate::i18n::text("取消登录")
+                                        } else {
+                                            crate::i18n::text("关闭")
+                                        }),
                                 ),
                         ),
                 )

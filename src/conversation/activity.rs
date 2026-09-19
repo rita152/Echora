@@ -403,8 +403,11 @@ pub(crate) fn upsert_file_change_activity(
     change: AgentFileChange,
     cwd: &std::path::Path,
 ) {
-    let presentation =
-        FileChangeActivityPresentation::from_agent_change(&change, "上一轮", Some(cwd));
+    let presentation = FileChangeActivityPresentation::from_agent_change(
+        &change,
+        crate::i18n::text("上一轮"),
+        Some(cwd),
+    );
     if let Some(existing) = activities.iter_mut().find_map(|activity| match activity {
         ConversationActivity::FileChange(existing) if existing.item_id == change.id => {
             Some(existing)

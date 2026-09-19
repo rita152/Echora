@@ -12,21 +12,21 @@ use gpui::{
 
 pub(super) fn sleep_label(sleep: &AgentSleep) -> String {
     let duration = if sleep.duration_ms.is_multiple_of(1000) {
-        format!("{} 秒", sleep.duration_ms / 1000)
+        crate::i18n::format!("{} 秒" => "{} s", sleep.duration_ms / 1000)
     } else {
-        format!("{} 毫秒", sleep.duration_ms)
+        crate::i18n::format!("{} 毫秒" => "{} ms", sleep.duration_ms)
     };
     let verb = match sleep.status {
-        AgentActivityStatus::InProgress => "正在等待",
-        AgentActivityStatus::Completed => "已等待",
-        AgentActivityStatus::Interrupted => "等待已中断",
-        AgentActivityStatus::Failed => "等待失败",
+        AgentActivityStatus::InProgress => crate::i18n::text("正在等待"),
+        AgentActivityStatus::Completed => crate::i18n::text("已等待"),
+        AgentActivityStatus::Interrupted => crate::i18n::text("等待已中断"),
+        AgentActivityStatus::Failed => crate::i18n::text("等待失败"),
     };
     if matches!(
         sleep.status,
         AgentActivityStatus::Interrupted | AgentActivityStatus::Failed
     ) {
-        format!("{verb} · 原定 {duration}")
+        crate::i18n::format!("{verb} · 原定 {duration}" => "{verb} · Planned {duration}")
     } else {
         format!("{verb} · {duration}")
     }
@@ -132,7 +132,7 @@ pub(super) fn plan_activity(
             card.focusable()
                 .tab_stop(true)
                 .role(Role::Button)
-                .aria_label("打开计划")
+                .aria_label(crate::i18n::text("打开计划"))
                 .cursor_pointer()
                 .on_click(move |event, _, cx| {
                     if let gpui::ClickEvent::Mouse(mouse) = event
@@ -172,13 +172,13 @@ pub(super) fn plan_activity(
                         .child(icon("plan", theme.markdown_text.alpha(0.4).into()).size(px(16.0)))
                         .when(active, |header| {
                             header.child(super::animation::shimmer_label(
-                                "编写计划",
+                                crate::i18n::text("编写计划"),
                                 56.0,
                                 theme,
                                 shimmer_progress,
                             ))
                         })
-                        .when(!active, |header| header.child("套餐")),
+                        .when(!active, |header| header.child(crate::i18n::text("套餐"))),
                 )
                 .when(!active, |header| {
                     header.child(
@@ -190,7 +190,7 @@ pub(super) fn plan_activity(
                                 actions
                                     .child(plan_button(
                                         format!("plan-download-{id}"),
-                                        "下载计划",
+                                        crate::i18n::text("下载计划"),
                                         "plan-download",
                                         theme,
                                         move |cx| {
@@ -201,7 +201,7 @@ pub(super) fn plan_activity(
                                     ))
                                     .child(plan_button(
                                         format!("plan-copy-{id}"),
-                                        "复制计划",
+                                        crate::i18n::text("复制计划"),
                                         "plan-copy",
                                         theme,
                                         move |cx| {
@@ -212,7 +212,7 @@ pub(super) fn plan_activity(
                                     ))
                                     .child(plan_button(
                                         format!("plan-feedback-{id}"),
-                                        "评价回复",
+                                        crate::i18n::text("评价回复"),
                                         "plan-feedback",
                                         theme,
                                         move |cx| toggle_plan(&feedback_home, &feedback_key, cx),
@@ -220,7 +220,7 @@ pub(super) fn plan_activity(
                             })
                             .child(plan_button(
                                 format!("plan-open-{id}"),
-                                "在侧边面板中打开计划",
+                                crate::i18n::text("在侧边面板中打开计划"),
                                 "plan-open",
                                 theme,
                                 open,
@@ -272,8 +272,8 @@ pub(super) fn plan_activity(
                     .gap(px(4.0))
                     .children(
                         [
-                            (1, "赞", "message-thumb-up"),
-                            (-1, "踩", "message-thumb-down"),
+                            (1, crate::i18n::text("赞"), "message-thumb-up"),
+                            (-1, crate::i18n::text("踩"), "message-thumb-down"),
                         ]
                         .into_iter()
                         .map(|(value, label, glyph)| {
@@ -310,9 +310,9 @@ pub(super) fn turn_plan_label(plan: &AgentTurnPlan) -> String {
         .filter(|s| s.status == AgentPlanStepStatus::Completed)
         .count();
     if completed == plan.steps.len() {
-        format!("已完成 {} 个步骤", completed)
+        crate::i18n::format!("已完成 {} 个步骤" => "Completed {} steps", completed)
     } else {
-        format!("第 {} / {} 步", completed + 1, plan.steps.len())
+        crate::i18n::format!("第 {} / {} 步" => "Step {} of {}", completed + 1, plan.steps.len())
     }
 }
 struct PlanTooltip {
@@ -328,7 +328,7 @@ fn step_details(plan: &AgentTurnPlan, theme: Theme) -> gpui::Stateful<Div> {
     div()
         .id(SharedString::from(format!("plan-steps-{}", plan.turn_id)))
         .role(Role::List)
-        .aria_label("计划步骤")
+        .aria_label(crate::i18n::text("计划步骤"))
         .max_w(px(336.0))
         .p(px(8.0))
         .rounded(px(12.0))
@@ -345,9 +345,9 @@ fn step_details(plan: &AgentTurnPlan, theme: Theme) -> gpui::Stateful<Div> {
                 .aria_label(format!(
                     "{}：{}",
                     match step.status {
-                        AgentPlanStepStatus::Pending => "待开始",
-                        AgentPlanStepStatus::InProgress => "进行中",
-                        AgentPlanStepStatus::Completed => "已完成",
+                        AgentPlanStepStatus::Pending => crate::i18n::text("待开始"),
+                        AgentPlanStepStatus::InProgress => crate::i18n::text("进行中"),
+                        AgentPlanStepStatus::Completed => crate::i18n::text("已完成"),
                     },
                     step.step
                 ))

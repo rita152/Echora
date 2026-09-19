@@ -105,13 +105,13 @@ pub(crate) fn history_time_label(timestamp: Option<i64>) -> Option<String> {
         Some(time.to_string())
     } else {
         let weekday = [
-            "星期一",
-            "星期二",
-            "星期三",
-            "星期四",
-            "星期五",
-            "星期六",
-            "星期日",
+            crate::i18n::text("星期一"),
+            crate::i18n::text("星期二"),
+            crate::i18n::text("星期三"),
+            crate::i18n::text("星期四"),
+            crate::i18n::text("星期五"),
+            crate::i18n::text("星期六"),
+            crate::i18n::text("星期日"),
         ][date.weekday().num_days_from_monday() as usize];
         Some(format!("{weekday}{time}"))
     }
@@ -288,7 +288,7 @@ impl ConversationState {
     pub(crate) fn set_history_error(&mut self, error: String) {
         self.history_loading = false;
         self.history_error = Some(error.clone());
-        self.user_message = Some("无法加载聊天历史".to_owned());
+        self.user_message = Some(crate::i18n::text("无法加载聊天历史").to_owned());
         self.user_message_time = None;
         self.assistant_message = error.clone();
         self.assistant_message_time = None;
@@ -411,7 +411,7 @@ impl ConversationState {
                             activities.push(ConversationActivity::FileChange(
                                 FileChangeActivityPresentation::from_agent_change(
                                     change,
-                                    "上一轮",
+                                    crate::i18n::text("上一轮"),
                                     Some(&history.thread.cwd),
                                 ),
                             ));
@@ -472,7 +472,7 @@ impl ConversationState {
                         }
                         ThreadHistoryItem::Unsupported { kind, .. } => {
                             activities.push(ConversationActivity::Warning {
-                                message: format!("历史包含当前 UI 尚未呈现的 {kind} 项"),
+                                message: crate::i18n::format!("历史包含当前 UI 尚未呈现的 {kind} 项" => "History contains a {kind} item not yet supported by this UI"),
                             });
                         }
                         // A restored dynamic tool call keeps the same row the

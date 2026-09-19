@@ -17,7 +17,7 @@ pub(super) fn receive<T>(
 ) -> WorkspaceResult<T> {
     receiver
         .recv_blocking()
-        .map_err(|_| WorkspaceError::backend(format!("{label}响应通道提前关闭")))?
+        .map_err(|_| WorkspaceError::backend(crate::i18n::format!("{label}响应通道提前关闭" => "{label} response connection closed early")))?
 }
 
 pub(super) fn load_all_projects(backend: &dyn AgentBackend) -> WorkspaceResult<Vec<Project>> {
@@ -70,7 +70,7 @@ pub(super) fn load_all_turns(
     backend: &dyn AgentBackend,
     thread_id: ThreadId,
 ) -> WorkspaceResult<Page<ThreadTurn>> {
-    collect_pages("会话历史", |cursor| {
+    collect_pages(crate::i18n::text("会话历史"), |cursor| {
         let mut page = receive(
             backend.list_thread_turns(
                 thread_id.clone(),
@@ -80,7 +80,7 @@ pub(super) fn load_all_turns(
                 },
                 HistoryItemDetail::Full,
             ),
-            "读取会话历史",
+            crate::i18n::text("读取会话历史"),
         )?;
         for turn in &mut page.data {
             if turn.items_view != HistoryItemDetail::Full {
@@ -111,7 +111,7 @@ fn load_all_pages<T>(
     mut request: impl FnMut(Option<String>) -> Receiver<WorkspaceResult<Page<T>>>,
 ) -> WorkspaceResult<Vec<T>> {
     collect_pages("workspace ", |cursor| {
-        receive(request(cursor), "加载 workspace 分页")
+        receive(request(cursor), crate::i18n::text("加载 workspace 分页"))
     })
     .map(|page| page.data)
 }
@@ -138,8 +138,8 @@ fn collect_pages<T>(
             });
         };
         if !seen.insert(next.clone()) {
-            return Err(WorkspaceError::backend(format!(
-                "{label}返回了重复分页 cursor `{next}`"
+            return Err(WorkspaceError::backend(crate::i18n::format!(
+                "{label}返回了重复分页 cursor `{next}`" => "{label} returned a repeated pagination cursor `{next}`"
             )));
         }
         cursor = Some(next);

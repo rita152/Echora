@@ -44,17 +44,17 @@ pub(super) fn hook_runs(activities: &[ConversationActivity]) -> Vec<AgentHookRun
 
 fn source_label(source: &str) -> &'static str {
     match source {
-        "user" => "用户",
-        "project" => "项目",
-        "plugin" => "插件",
-        "sessionFlags" => "会话",
+        "user" => crate::i18n::text("用户"),
+        "project" => crate::i18n::text("项目"),
+        "plugin" => crate::i18n::text("插件"),
+        "sessionFlags" => crate::i18n::text("会话"),
         "system"
         | "mdm"
         | "cloudRequirements"
         | "cloudManagedConfig"
         | "legacyManagedConfigFile"
-        | "legacyManagedConfigMdm" => "管理员",
-        _ => "未知",
+        | "legacyManagedConfigMdm" => crate::i18n::text("管理员"),
+        _ => crate::i18n::text("未知"),
     }
 }
 
@@ -92,7 +92,11 @@ impl Render for HookTooltip {
             .flex()
             .flex_col()
             .gap(px(8.))
-            .child(div().font_weight(FontWeight::MEDIUM).child("钩子"))
+            .child(
+                div()
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(crate::i18n::text("钩子")),
+            )
             .child(
                 div()
                     .flex()
@@ -188,7 +192,7 @@ pub(super) fn hook_button(
     div()
         .id(SharedString::from(id.clone()))
         .role(Role::Button)
-        .aria_label("钩子")
+        .aria_label(crate::i18n::text("钩子"))
         .aria_description(description)
         .track_focus(&focus)
         .tab_stop(true)
@@ -381,7 +385,7 @@ impl RenderOnce for HookPromptBubble {
         div()
             .id(SharedString::from(id.clone()))
             .role(Role::Group)
-            .aria_label("钩子反馈")
+            .aria_label(crate::i18n::text("钩子反馈"))
             .w_full()
             .flex()
             .flex_col()
@@ -426,9 +430,9 @@ impl RenderOnce for HookPromptBubble {
                                     .role(Role::Button)
                                     .aria_expanded(expanded)
                                     .aria_label(if expanded {
-                                        "显示更少"
+                                        crate::i18n::text("显示更少")
                                     } else {
-                                        "显示更多"
+                                        crate::i18n::text("显示更多")
                                     })
                                     .mt(px(10.))
                                     .flex()
@@ -439,9 +443,9 @@ impl RenderOnce for HookPromptBubble {
                                     .focus_visible(|v| v.bg(theme.sidebar_hover))
                                     .text_color(theme.text_tertiary)
                                     .child(if expanded {
-                                        "显示更少"
+                                        crate::i18n::text("显示更少")
                                     } else {
-                                        "显示更多"
+                                        crate::i18n::text("显示更多")
                                     })
                                     .child(
                                         icon(
@@ -497,7 +501,7 @@ impl RenderOnce for HookPromptBubble {
                                     copy_focus.focus(window, cx)
                                 })
                                 .role(Role::Button)
-                                .aria_label("复制钩子反馈")
+                                .aria_label(crate::i18n::text("复制钩子反馈"))
                                 .size(px(26.))
                                 .rounded(px(10.))
                                 .flex()
@@ -538,7 +542,7 @@ impl RenderOnce for HookPromptBubble {
                                     settings_focus.focus(window, cx)
                                 })
                                 .role(Role::Link)
-                                .aria_label("钩子反馈，打开钩子设置")
+                                .aria_label(crate::i18n::text("钩子反馈，打开钩子设置"))
                                 .px(px(4.))
                                 .py(px(2.))
                                 .rounded(px(6.))
@@ -562,7 +566,7 @@ impl RenderOnce for HookPromptBubble {
                                     }
                                 })
                                 .child(icon("hook", theme.text_tertiary.into()).size(px(14.)))
-                                .child("钩子反馈"),
+                                .child(crate::i18n::text("钩子反馈")),
                         ),
                 )
             })

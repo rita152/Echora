@@ -36,12 +36,12 @@ pub enum Scope {
 impl Scope {
     pub fn label(&self) -> &str {
         match self {
-            Self::LastTurn => "上一轮",
-            Self::Uncommitted => "未提交",
-            Self::Unstaged => "未暂存",
-            Self::Staged => "已暂存",
-            Self::Commit(_) => "已提交",
-            Self::Branch(_) => "分支",
+            Self::LastTurn => crate::i18n::text("上一轮"),
+            Self::Uncommitted => crate::i18n::text("未提交"),
+            Self::Unstaged => crate::i18n::text("未暂存"),
+            Self::Staged => crate::i18n::text("已暂存"),
+            Self::Commit(_) => crate::i18n::text("已提交"),
+            Self::Branch(_) => crate::i18n::text("分支"),
         }
     }
     pub fn editable(&self) -> bool {
@@ -189,7 +189,7 @@ fn create_pull_request(
             None,
             Duration::from_secs(30),
         )
-        .context("创建 PR 需要已登录的 GitHub CLI（gh）")?,
+        .context(crate::i18n::text("创建 PR 需要已登录的 GitHub CLI（gh）"))?,
     )?;
     if options.branch.is_none()
         && let Some(url) = existing_pull_request(root)
@@ -210,14 +210,14 @@ fn create_pull_request(
         )?;
     } else if let Some(branch) = &options.branch {
         if branch.starts_with('-') || branch == "codex/" {
-            bail!("请输入有效的分支名称");
+            bail!(crate::i18n::text("请输入有效的分支名称"));
         }
         git(root, &["check-ref-format", "--branch", branch])?;
         git(root, &["switch", "-c", branch])?;
     }
     let fresh = load(root, &Scope::Uncommitted, false, false)?;
     apply(&fresh, &Scope::Uncommitted, &Mutation::Push)
-        .context("推送分支失败；已完成的本地提交会保留")?;
+        .context(crate::i18n::text("推送分支失败；已完成的本地提交会保留"))?;
     let mut options = options.clone();
     if options.title.trim().is_empty() {
         options.title = git(root, &["log", "-1", "--format=%s"])?.trim().into();
@@ -233,12 +233,12 @@ fn create_pull_request(
         None,
         Duration::from_secs(120),
     )?)
-    .context("分支已推送，但创建 PR 失败")?;
+    .context(crate::i18n::text("分支已推送，但创建 PR 失败"))?;
     String::from_utf8(output)?
         .lines()
         .find(|s| s.starts_with("https://"))
         .map(str::to_owned)
-        .context("GitHub CLI 未返回 PR 地址")
+        .context(crate::i18n::text("GitHub CLI 未返回 PR 地址"))
 }
 
 fn command(root: &Path) -> Command {
@@ -259,7 +259,7 @@ fn output(root: &Path, args: &[&str]) -> Result<Output> {
     } else {
         Duration::from_secs(15)
     };
-    process::run(command(root).args(args), None, timeout).context("无法运行 Git")
+    process::run(command(root).args(args), None, timeout).context(crate::i18n::text("无法运行 Git"))
 }
 
 fn checked(out: Output) -> Result<Vec<u8>> {
@@ -270,20 +270,21 @@ fn checked(out: Output) -> Result<Vec<u8>> {
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<String> {
-    String::from_utf8(checked(output(root, args)?)?).context("Git 输出不是 UTF-8 文本")
+    String::from_utf8(checked(output(root, args)?)?)
+        .context(crate::i18n::text("Git 输出不是 UTF-8 文本"))
 }
 
 fn safe_path(path: &str) -> Result<&Path> {
     let p = Path::new(path);
     if path.is_empty() || p.components().any(|c| !matches!(c, Component::Normal(_))) {
-        bail!("无效的仓库相对路径");
+        bail!(crate::i18n::text("无效的仓库相对路径"));
     }
     Ok(p)
 }
 
 fn resolve(root: &Path, rev: &str) -> Result<String> {
     if rev.is_empty() || rev.starts_with('-') || rev.contains(['\0', '\n', '\r']) {
-        bail!("无效的 Git 引用");
+        bail!(crate::i18n::text("无效的 Git 引用"));
     }
     Ok(git(
         root,
@@ -315,13 +316,17 @@ fn status(root: &Path) -> Result<Vec<StatusEntry>> {
     let mut entries = Vec::new();
     while let Some(part) = parts.next() {
         if part.len() < 4 {
-            bail!("无法解析 Git 文件状态");
+            bail!(crate::i18n::text("无法解析 Git 文件状态"));
         }
-        let path = String::from_utf8(part[3..].to_vec()).context("不支持非 UTF-8 文件名")?;
+        let path = String::from_utf8(part[3..].to_vec())
+            .context(crate::i18n::text("不支持非 UTF-8 文件名"))?;
         safe_path(&path)?;
         let old_path = if [part[0], part[1]].iter().any(|c| *c == b'R' || *c == b'C') {
             Some(String::from_utf8(
-                parts.next().context("重命名状态缺少原路径")?.to_vec(),
+                parts
+                    .next()
+                    .context(crate::i18n::text("重命名状态缺少原路径"))?
+                    .to_vec(),
             )?)
         } else {
             None
@@ -420,7 +425,7 @@ pub fn load_with_options(
 ) -> Result<Snapshot> {
     let root = PathBuf::from(
         git(cwd, &["rev-parse", "--show-toplevel"])
-            .context("此目录不是 Git 仓库")?
+            .context(crate::i18n::text("此目录不是 Git 仓库"))?
             .trim(),
     );
     let initial_fingerprint = stamp(&root)?;
@@ -553,11 +558,15 @@ pub fn load_with_options(
         let raw = git(&root, &names.iter().map(String::as_str).collect::<Vec<_>>())?;
         let mut parts = raw.split('\0').filter(|s| !s.is_empty());
         while let Some(kind) = parts.next() {
-            let first = parts.next().context("Git 差异缺少文件名")?;
+            let first = parts
+                .next()
+                .context(crate::i18n::text("Git 差异缺少文件名"))?;
             let (old_path, path) = if kind.starts_with(['R', 'C']) {
                 (
                     Some(first.to_owned()),
-                    parts.next().context("Git 重命名差异缺少目标文件名")?,
+                    parts
+                        .next()
+                        .context(crate::i18n::text("Git 重命名差异缺少目标文件名"))?,
                 )
             } else {
                 (None, first)
@@ -617,7 +626,7 @@ pub fn load_with_options(
                             "--full-index",
                             "--",
                             "/dev/null",
-                            path.to_str().context("无效路径")?,
+                            path.to_str().context(crate::i18n::text("无效路径"))?,
                         ],
                     )?;
                     if out.status.code() != Some(1) && !out.status.success() {
@@ -653,7 +662,7 @@ pub fn load_with_options(
     result.files.sort_by(|a, b| a.path.cmp(&b.path));
     result.fingerprint = stamp(&root)?;
     if result.fingerprint != initial_fingerprint {
-        bail!("文件正在更改，请稍后刷新。");
+        bail!(crate::i18n::text("文件正在更改，请稍后刷新。"));
     }
     Ok(result)
 }
@@ -792,7 +801,7 @@ pub fn parse_unified(diff: &str) -> Vec<FileDiff> {
                 .find_map(|l| l.strip_prefix("+++ ").filter(|p| *p != "/dev/null"))
                 .or_else(|| patch.lines().find_map(|l| l.strip_prefix("--- ")))
                 .map(unquote_path)
-                .unwrap_or_else(|| "变更".into());
+                .unwrap_or_else(|| crate::i18n::text("变更").into());
             let path = path
                 .strip_prefix("b/")
                 .or_else(|| path.strip_prefix("a/"))
@@ -847,7 +856,9 @@ fn unquote_path(path: &str) -> String {
 pub fn apply(snapshot: &Snapshot, scope: &Scope, mutation: &Mutation) -> Result<String> {
     let root = &snapshot.root;
     if stamp(root)? != snapshot.fingerprint {
-        bail!("文件已在其他位置更改，请刷新差异后重试。");
+        bail!(crate::i18n::text(
+            "文件已在其他位置更改，请刷新差异后重试。"
+        ));
     }
     let paths = |requested: &Option<String>| -> Result<Vec<String>> {
         match requested {
@@ -857,7 +868,7 @@ pub fn apply(snapshot: &Snapshot, scope: &Scope, mutation: &Mutation) -> Result<
                     .files
                     .iter()
                     .find(|f| &f.path == path)
-                    .context("文件不在当前审查中")?;
+                    .context(crate::i18n::text("文件不在当前审查中"))?;
                 Ok(file
                     .old_path
                     .iter()
@@ -929,11 +940,14 @@ pub fn apply(snapshot: &Snapshot, scope: &Scope, mutation: &Mutation) -> Result<
                 .files
                 .iter()
                 .find(|f| &f.path == path)
-                .context("找不到文件")?;
+                .context(crate::i18n::text("找不到文件"))?;
             if !scope.editable() || file.status != 'M' {
-                bail!("此更改需要按文件暂存或取消暂存");
+                bail!(crate::i18n::text("此更改需要按文件暂存或取消暂存"));
             }
-            let hunk = file.hunks.get(*index).context("找不到差异块")?;
+            let hunk = file
+                .hunks
+                .get(*index)
+                .context(crate::i18n::text("找不到差异块"))?;
             let mut args = vec!["apply", "--cached", "--whitespace=nowarn"];
             if *reverse {
                 args.push("--reverse");
@@ -950,12 +964,12 @@ pub fn apply(snapshot: &Snapshot, scope: &Scope, mutation: &Mutation) -> Result<
         } => {
             if let Some(branch) = branch {
                 if branch == "codex/" || branch.starts_with('-') {
-                    bail!("请输入有效的分支名称");
+                    bail!(crate::i18n::text("请输入有效的分支名称"));
                 }
                 git(root, &["check-ref-format", "--branch", branch])?;
                 git(root, &["switch", "-c", branch])?;
             } else if snapshot.detached {
-                bail!("请先为此次提交填写新分支名称");
+                bail!(crate::i18n::text("请先为此次提交填写新分支名称"));
             }
             if *stage_all {
                 run_paths(&["add"], stage_paths(&None)?)?;
@@ -991,15 +1005,15 @@ pub fn apply(snapshot: &Snapshot, scope: &Scope, mutation: &Mutation) -> Result<
                 git(root, &["push"])?;
             } else {
                 let branch = git(root, &["symbolic-ref", "--short", "HEAD"])
-                    .context("请先创建分支再推送")?;
+                    .context(crate::i18n::text("请先创建分支再推送"))?;
                 git(root, &["push", "--set-upstream", "origin", branch.trim()])?;
             }
         }
     }
     Ok(match mutation {
-        Mutation::Push => "推送完成",
-        Mutation::Commit { .. } => "提交完成",
-        _ => "已更新更改",
+        Mutation::Push => crate::i18n::text("推送完成"),
+        Mutation::Commit { .. } => crate::i18n::text("提交完成"),
+        _ => crate::i18n::text("已更新更改"),
     }
     .into())
 }
@@ -1015,14 +1029,14 @@ fn apply_stdin(root: &Path, args: &[&str], patch: &str) -> Result<()> {
 
 fn discard(snapshot: &Snapshot, scope: &Scope, path: &str) -> Result<()> {
     if !scope.editable() {
-        bail!("历史差异不能撤销当前文件");
+        bail!(crate::i18n::text("历史差异不能撤销当前文件"));
     }
     safe_path(path)?;
     let root = &snapshot.root;
     let state = status(root)?
         .into_iter()
         .find(|e| e.path == path)
-        .context("文件状态已变化")?;
+        .context(crate::i18n::text("文件状态已变化"))?;
     if state.x == '?' || (state.x == 'A' && !matches!(scope, Scope::Unstaged)) {
         let target = root.join(path);
         if state.x == 'A' {
@@ -1037,7 +1051,7 @@ fn discard(snapshot: &Snapshot, scope: &Scope, path: &str) -> Result<()> {
             .join("gpui-discarded")
             .join(stamp.to_string())
             .join(path);
-        std::fs::create_dir_all(dest.parent().context("无效备份路径")?)?;
+        std::fs::create_dir_all(dest.parent().context(crate::i18n::text("无效备份路径"))?)?;
         if let Err(error) = std::fs::rename(&target, &dest) {
             if error.kind() != std::io::ErrorKind::CrossesDevices {
                 return Err(error.into());

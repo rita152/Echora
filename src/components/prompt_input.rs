@@ -733,7 +733,7 @@ impl Element for PromptTextElement {
         let input = self.input.read(cx);
         let empty = input.content.is_empty();
         let text: SharedString = if empty {
-            input.placeholder.clone()
+            crate::i18n::text(&input.placeholder).to_owned().into()
         } else {
             input.display_text()
         };
@@ -905,9 +905,9 @@ impl PromptInput {
             .when_some(self.accessible_name.clone(), |input, name| {
                 input
                     .role(gpui::Role::TextInput)
-                    .aria_label(name)
+                    .aria_label(crate::i18n::text(&name).to_owned())
                     .aria_value(self.content.clone())
-                    .aria_placeholder(self.placeholder.clone())
+                    .aria_placeholder(crate::i18n::text(&self.placeholder).to_owned())
             })
             .key_context("PromptInput")
             .track_focus(&self.focus_handle(cx))

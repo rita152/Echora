@@ -676,7 +676,7 @@ impl AgentAccountState {
                 completion
                     .error
                     .filter(|message| !message.trim().is_empty())
-                    .unwrap_or_else(|| "登录失败，请重试".to_owned()),
+                    .unwrap_or_else(|| crate::i18n::text("登录失败，请重试").to_owned()),
             ),
         };
         true

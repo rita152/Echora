@@ -59,7 +59,10 @@ impl ConfigEditor {
                 if !self.edits.is_empty() && changed {
                     self.needs_review = true;
                     self.feedback = Some(
-                        "已读取最新配置，草稿已保留。请核对来源与有效值，然后确认草稿。".into(),
+                        crate::i18n::text(
+                            "已读取最新配置，草稿已保留。请核对来源与有效值，然后确认草稿。",
+                        )
+                        .into(),
                     );
                 }
                 if self
@@ -81,16 +84,16 @@ impl ConfigEditor {
 
     pub fn select_target(&mut self, path: PathBuf) -> Result<(), String> {
         if self.busy() {
-            return Err("正在读取或保存配置".into());
+            return Err(crate::i18n::text("正在读取或保存配置").into());
         }
         if !self.edits.is_empty() {
-            return Err("请先保存或放弃当前文件的修改".into());
+            return Err(crate::i18n::text("请先保存或放弃当前文件的修改").into());
         }
         let layer = self
             .snapshot
             .as_ref()
             .and_then(|snapshot| snapshot.layer(&path))
-            .ok_or("配置层不可写")?;
+            .ok_or(crate::i18n::text("配置层不可写"))?;
         if let Some(reason) = &layer.disabled_reason {
             return Err(reason.clone());
         }
@@ -132,15 +135,22 @@ impl ConfigEditor {
             ConfigOperation::Ready | ConfigOperation::Failed(_) | ConfigOperation::ReadFailed(_)
         ) || self.snapshot.is_none()
         {
-            return Err("配置尚未就绪".into());
+            return Err(crate::i18n::text("配置尚未就绪").into());
         }
         if let Some(reason) = self.restriction(key, &value) {
             return Err(reason);
         }
-        let snapshot = self.snapshot.as_ref().ok_or("请先读取配置")?;
+        let snapshot = self
+            .snapshot
+            .as_ref()
+            .ok_or(crate::i18n::text("请先读取配置"))?;
         let layer = snapshot
-            .layer(self.target.as_ref().ok_or("请选择可写配置文件")?)
-            .ok_or("配置文件不可写")?;
+            .layer(
+                self.target
+                    .as_ref()
+                    .ok_or(crate::i18n::text("请选择可写配置文件"))?,
+            )
+            .ok_or(crate::i18n::text("配置文件不可写"))?;
         let original = config_value(&layer.config, key).unwrap_or(&Value::Null);
         if original == &value {
             self.edits.remove(key);
@@ -173,28 +183,34 @@ impl ConfigEditor {
         fields: &[crate::agent::AgentConfigChoiceSet],
     ) -> Result<(u64, AgentConfigWrite), String> {
         if matches!(self.operation, ConfigOperation::ReadFailed(_)) {
-            return Err("读取失败后需要先成功重新读取配置，才能保存草稿".into());
+            return Err(crate::i18n::text("读取失败后需要先成功重新读取配置，才能保存草稿").into());
         }
         if self.busy() || self.needs_review {
-            return Err("请等待配置就绪并核对草稿".into());
+            return Err(crate::i18n::text("请等待配置就绪并核对草稿").into());
         }
         if let ConfigOperation::Failed(error) = &self.operation
             && (error.kind == AgentConfigErrorKind::Conflict
                 || error.outcome_unknown
                 || error.kind == AgentConfigErrorKind::Connection)
         {
-            return Err("请重新读取配置并核对草稿，保存不会自动重试".into());
+            return Err(crate::i18n::text("请重新读取配置并核对草稿，保存不会自动重试").into());
         }
-        let snapshot = self.snapshot.as_ref().ok_or("请先读取配置")?;
-        let file_path = self.target.clone().ok_or("没有可写配置文件")?;
+        let snapshot = self
+            .snapshot
+            .as_ref()
+            .ok_or(crate::i18n::text("请先读取配置"))?;
+        let file_path = self
+            .target
+            .clone()
+            .ok_or(crate::i18n::text("没有可写配置文件"))?;
         let layer = snapshot
             .layer(&file_path)
-            .ok_or("配置层缺少版本，无法安全保存")?;
+            .ok_or(crate::i18n::text("配置层缺少版本，无法安全保存"))?;
         if let Some(reason) = &layer.disabled_reason {
             return Err(reason.clone());
         }
         if self.edits.is_empty() {
-            return Err("没有待保存的修改".into());
+            return Err(crate::i18n::text("没有待保存的修改").into());
         }
         for (key, value) in &self.edits {
             if let Some(reason) = snapshot.restriction(key, value) {
@@ -247,7 +263,10 @@ impl ConfigEditor {
                 match result.readback {
                     Err(error) => {
                         self.feedback = Some(
-                            "已写入文件，但有效配置回读失败。草稿已保留，请重新读取后核对。".into(),
+                            crate::i18n::text(
+                                "已写入文件，但有效配置回读失败。草稿已保留，请重新读取后核对。",
+                            )
+                            .into(),
                         );
                         self.needs_review = true;
                         self.operation = ConfigOperation::Failed(error);
@@ -260,7 +279,10 @@ impl ConfigEditor {
                         if written_layer
                             .is_none_or(|layer| layer.source.version != result.receipt.version)
                         {
-                            different.push("文件版本（写入后发生变化或配置层不可见）".into());
+                            different.push(
+                                crate::i18n::text("文件版本（写入后发生变化或配置层不可见）")
+                                    .into(),
+                            );
                         }
                         for (key, value) in &self.edits {
                             let stored =
@@ -273,7 +295,9 @@ impl ConfigEditor {
                                 && stored
                                     .is_none_or(|stored| !snapshot.equivalent(key, value, stored))
                             {
-                                different.push(format!("{key}（文件值）"));
+                                different.push(
+                                    crate::i18n::format!("{key}（文件值）" => "{key} (file value)"),
+                                );
                             }
                             if !value.is_null()
                                 && effective.is_none_or(|effective| {
@@ -291,19 +315,19 @@ impl ConfigEditor {
                                 }
                             }
                         }
-                        let mut feedback = format!("已写入 {}，并回读有效配置。", target.display());
+                        let mut feedback = crate::i18n::format!("已写入 {}，并回读有效配置。" => "Wrote {} and read back effective configuration.", target.display());
                         if result.receipt.status == "okOverridden" || !overridden.is_empty() {
-                            feedback.push_str(&format!(
-                                " 部分设置被更高优先级配置覆盖：{}。",
+                            feedback.push_str(&crate::i18n::format!(
+                                " 部分设置被更高优先级配置覆盖：{}。" => " Some settings are overridden by higher-priority configuration: {}.",
                                 overridden.join("、")
                             ));
                         } else if result.receipt.status != "ok" {
                             feedback
-                                .push_str(&format!(" 服务端返回状态：{}。", result.receipt.status));
+                                .push_str(&crate::i18n::format!(" 服务端返回状态：{}。" => " Server status: {}.", result.receipt.status));
                         }
                         if !different.is_empty() {
-                            feedback.push_str(&format!(
-                                " 回读与草稿不同：{}；请核对。",
+                            feedback.push_str(&crate::i18n::format!(
+                                " 回读与草稿不同：{}；请核对。" => " Readback differs from the draft: {}; please verify.",
                                 different.join("、")
                             ));
                             self.needs_review = true;
@@ -311,7 +335,7 @@ impl ConfigEditor {
                             self.edits.clear();
                             self.needs_review = false;
                         }
-                        feedback.push_str(" 模型、推理强度、Plan 推理强度、服务等级和个性默认值仅用于新会话；当前轮次权限不随配置保存改变。");
+                        feedback.push_str(crate::i18n::text(" 模型、推理强度、Plan 推理强度、服务等级和个性默认值仅用于新会话；当前轮次权限不随配置保存改变。"));
                         self.feedback = Some(feedback);
                         self.snapshot = Some(snapshot);
                         self.target = Some(target.clone());

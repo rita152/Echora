@@ -567,7 +567,9 @@ impl SidebarView {
     #[cfg(feature = "screenshot")]
     pub fn resumed_thread_ready_for_capture(&self, thread_id: &str) -> Result<bool, String> {
         if let Some(error) = &self.snapshot.error {
-            return Err(format!("侧栏数据加载失败：{error}"));
+            return Err(
+                crate::i18n::format!("侧栏数据加载失败：{error}" => "Could not load sidebar: {error}"),
+            );
         }
         Ok(self.selected_thread_id.as_deref() == Some(thread_id)
             && (cfg!(test) || self.snapshot.thread(thread_id).is_some())
@@ -643,7 +645,7 @@ impl SidebarView {
         let result = Command::new("xdg-open").arg(path).spawn();
         self.local_error = result
             .err()
-            .map(|error| format!("无法在 Finder 中显示：{error}"));
+            .map(|error| crate::i18n::format!("无法在 Finder 中显示：{error}" => "Could not reveal in Finder: {error}"));
         self.project_menu_id = None;
         cx.notify();
     }
@@ -762,7 +764,12 @@ impl SidebarView {
                 view.update(cx, |_, cx| cx.emit(OpenPullRequests));
             })
             .child(icon("pull-request", theme.sidebar_text.into()))
-            .child(div().relative().left(px(0.25)).child("拉取请求"))
+            .child(
+                div()
+                    .relative()
+                    .left(px(0.25))
+                    .child(crate::i18n::text("拉取请求")),
+            )
             .child(div().flex_1())
     }
 
@@ -815,10 +822,10 @@ impl SidebarView {
                 }
                 cx.notify();
             }))
-            .on_click(cx.listener(move |this, _, _, _| match label {
-                "置顶" => this.store.set_section_collapsed("pinned", !collapsed),
-                "项目" => this.store.set_section_collapsed("projects", !collapsed),
-                "最近" => this.store.set_section_collapsed("recent", !collapsed),
+            .on_click(cx.listener(move |this, _, _, _| match id {
+                "pinned-heading" => this.store.set_section_collapsed("pinned", !collapsed),
+                "projects-heading" => this.store.set_section_collapsed("projects", !collapsed),
+                "recent-heading" => this.store.set_section_collapsed("recent", !collapsed),
                 _ => {}
             }))
     }
@@ -876,7 +883,7 @@ impl SidebarView {
                     .cursor_pointer()
                     .text_color(theme.sidebar_text)
                     .hover(move |style| style.bg(theme.sidebar_hover))
-                    .child("重试")
+                    .child(crate::i18n::text("重试"))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         if let Some(query) = &search_query {
                             this.store.search(query.clone());
@@ -1343,7 +1350,11 @@ impl SidebarView {
                         .text_color(theme.sidebar_text_muted)
                         .cursor_pointer()
                         .hover(move |style| style.text_color(theme.sidebar_text))
-                        .child(if show_all { "收起" } else { "展开显示" })
+                        .child(if show_all {
+                            crate::i18n::text("收起")
+                        } else {
+                            crate::i18n::text("展开显示")
+                        })
                         .on_click(cx.listener(move |this, _, _, cx| {
                             if !this.show_all_projects.insert(show_id.clone()) {
                                 this.show_all_projects.remove(&show_id);
@@ -1368,12 +1379,22 @@ impl SidebarView {
             .pt(px(10.0))
             .flex()
             .flex_col()
-            .child(self.section_header("pinned-heading", "置顶", collapsed, theme, cx));
+            .child(self.section_header(
+                "pinned-heading",
+                crate::i18n::text("置顶"),
+                collapsed,
+                theme,
+                cx,
+            ));
         if collapsed {
             return section;
         }
         if self.snapshot.loading.pinned && self.snapshot.pinned_threads.is_empty() {
-            return section.child(self.status_row("pinned-loading", "正在加载…", theme));
+            return section.child(self.status_row(
+                "pinned-loading",
+                crate::i18n::text("正在加载…"),
+                theme,
+            ));
         }
         for thread in &self.snapshot.pinned_threads {
             section = section.child(self.thread_row(
@@ -1445,7 +1466,7 @@ impl SidebarView {
                         .items_center()
                         .gap(px(4.0))
                         .cursor_pointer()
-                        .child("项目")
+                        .child(crate::i18n::text("项目"))
                         .child(
                             icon("section-chevron", theme.sidebar_icon_muted.into())
                                 .size(px(14.0))
@@ -1484,7 +1505,11 @@ impl SidebarView {
             return section;
         }
         if self.snapshot.loading.projects && self.snapshot.projects.is_empty() {
-            return section.child(self.status_row("projects-loading", "正在加载…", theme));
+            return section.child(self.status_row(
+                "projects-loading",
+                crate::i18n::text("正在加载…"),
+                theme,
+            ));
         }
         let creating = self.snapshot.pending.iter().any(|operation| {
             matches!(
@@ -1496,9 +1521,9 @@ impl SidebarView {
             return section.child(self.status_row(
                 "projects-empty",
                 if creating {
-                    "正在创建项目…"
+                    crate::i18n::text("正在创建项目…")
                 } else {
-                    "暂无项目"
+                    crate::i18n::text("暂无项目")
                 },
                 theme,
             ));
@@ -1509,7 +1534,11 @@ impl SidebarView {
         }
         section = section.child(projects);
         if creating {
-            section = section.child(self.status_row("project-creating", "正在创建项目…", theme));
+            section = section.child(self.status_row(
+                "project-creating",
+                crate::i18n::text("正在创建项目…"),
+                theme,
+            ));
         }
         section
     }
@@ -1543,15 +1572,29 @@ impl SidebarView {
             .pb(px(12.0))
             .flex()
             .flex_col()
-            .child(self.section_header("recent-heading", "最近", collapsed, theme, cx));
+            .child(self.section_header(
+                "recent-heading",
+                crate::i18n::text("最近"),
+                collapsed,
+                theme,
+                cx,
+            ));
         if collapsed {
             return section;
         }
         if self.snapshot.loading.recent && self.snapshot.recent_threads.is_empty() {
-            return section.child(self.status_row("recent-loading", "正在加载…", theme));
+            return section.child(self.status_row(
+                "recent-loading",
+                crate::i18n::text("正在加载…"),
+                theme,
+            ));
         }
         if threads.is_empty() {
-            return section.child(self.status_row("recent-empty", "暂无最近聊天", theme));
+            return section.child(self.status_row(
+                "recent-empty",
+                crate::i18n::text("暂无最近聊天"),
+                theme,
+            ));
         }
         for thread in threads {
             section = section.child(self.thread_row(
@@ -1605,7 +1648,7 @@ impl SidebarView {
                     .text_size(px(14.0))
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.sidebar_text_muted)
-                    .child("活动"),
+                    .child(crate::i18n::text("活动")),
             );
         if let Some(error) = self.snapshot.error.clone() {
             return content.child(self.retryable_error_row(
@@ -1617,10 +1660,18 @@ impl SidebarView {
             ));
         }
         if (self.snapshot.loading.recent || self.snapshot.loading.pinned) && active.is_empty() {
-            return content.child(self.status_row("activity-loading", "正在加载…", theme));
+            return content.child(self.status_row(
+                "activity-loading",
+                crate::i18n::text("正在加载…"),
+                theme,
+            ));
         }
         if active.is_empty() {
-            return content.child(self.status_row("activity-empty", "暂无进行中的聊天", theme));
+            return content.child(self.status_row(
+                "activity-empty",
+                crate::i18n::text("暂无进行中的聊天"),
+                theme,
+            ));
         }
         for thread in active {
             content = content.child(self.thread_row(
@@ -1660,7 +1711,7 @@ impl SidebarView {
                     .text_size(px(14.0))
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.sidebar_text_muted)
-                    .child("已归档"),
+                    .child(crate::i18n::text("已归档")),
             );
         if let Some(error) = self.snapshot.error.clone() {
             return content.child(self.retryable_error_row(
@@ -1672,10 +1723,18 @@ impl SidebarView {
             ));
         }
         if self.snapshot.loading.archived && self.snapshot.archived_threads.is_empty() {
-            return content.child(self.status_row("archived-loading", "正在加载…", theme));
+            return content.child(self.status_row(
+                "archived-loading",
+                crate::i18n::text("正在加载…"),
+                theme,
+            ));
         }
         if self.snapshot.archived_threads.is_empty() {
-            return content.child(self.status_row("archived-empty", "暂无已归档聊天", theme));
+            return content.child(self.status_row(
+                "archived-empty",
+                crate::i18n::text("暂无已归档聊天"),
+                theme,
+            ));
         }
         for thread in &self.snapshot.archived_threads {
             content = content.child(self.thread_row(
@@ -1731,7 +1790,7 @@ impl SidebarView {
                             .id("workspace-retry")
                             .text_color(theme.sidebar_text)
                             .cursor_pointer()
-                            .child("重试")
+                            .child(crate::i18n::text("重试"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.local_error = None;
                                 this.store.retry();
@@ -1750,19 +1809,19 @@ impl SidebarView {
                     .child(self.pull_requests_nav_row(theme, self.pull_requests_open, cx))
                     .child(Self::static_nav_row(
                         "sidebar-sites",
-                        "站点",
+                        crate::i18n::text("站点"),
                         "sites",
                         theme,
                     ))
                     .child(Self::static_nav_row(
                         "sidebar-scheduled",
-                        "已安排",
+                        crate::i18n::text("已安排"),
                         "scheduled",
                         theme,
                     ))
                     .child(Self::static_nav_row(
                         "sidebar-plugins",
-                        "插件",
+                        crate::i18n::text("插件"),
                         "plugins",
                         theme,
                     )),
@@ -1889,7 +1948,7 @@ impl SidebarView {
             .child(
                 Self::menu_item(
                     format!("project-rename-{project_id}"),
-                    "重命名",
+                    crate::i18n::text("重命名"),
                     "settings-edit",
                     theme,
                     can_update,
@@ -1908,7 +1967,7 @@ impl SidebarView {
             menu = menu.child(
                 Self::menu_item(
                     format!("project-finder-{project_id}"),
-                    "在 Finder 中显示",
+                    crate::i18n::text("在 Finder 中显示"),
                     "project-reveal",
                     theme,
                     true,
@@ -1923,7 +1982,7 @@ impl SidebarView {
             .child(
                 Self::menu_item(
                     format!("project-up-{project_id}"),
-                    "上移",
+                    crate::i18n::text("上移"),
                     "settings-chevron-up",
                     theme,
                     can_move && can_move_up,
@@ -1939,7 +1998,7 @@ impl SidebarView {
             .child(
                 Self::menu_item(
                     format!("project-down-{project_id}"),
-                    "下移",
+                    crate::i18n::text("下移"),
                     "chevron-down",
                     theme,
                     can_move && can_move_down,
@@ -1957,9 +2016,9 @@ impl SidebarView {
                 Self::menu_item(
                     format!("project-delete-{project_id}"),
                     if deleting {
-                        "再次点击以移除"
+                        crate::i18n::text("再次点击以移除")
                     } else {
-                        "移除项目"
+                        crate::i18n::text("移除项目")
                     },
                     "close-dialog",
                     theme,
@@ -2033,7 +2092,7 @@ impl SidebarView {
             .child(
                 Self::menu_item(
                     format!("thread-rename-{thread_id}"),
-                    "重命名",
+                    crate::i18n::text("重命名"),
                     "settings-edit",
                     theme,
                     can_rename,
@@ -2051,7 +2110,11 @@ impl SidebarView {
             .child(
                 Self::menu_item(
                     format!("thread-context-pin-{thread_id}"),
-                    if pinned { "取消置顶" } else { "置顶" },
+                    if pinned {
+                        crate::i18n::text("取消置顶")
+                    } else {
+                        crate::i18n::text("置顶")
+                    },
                     "pin",
                     theme,
                     can_pin,
@@ -2066,7 +2129,11 @@ impl SidebarView {
             .child(
                 Self::menu_item(
                     format!("thread-context-archive-{thread_id}"),
-                    if archived { "取消归档" } else { "归档" },
+                    if archived {
+                        crate::i18n::text("取消归档")
+                    } else {
+                        crate::i18n::text("归档")
+                    },
                     "archive",
                     theme,
                     can_archive,
@@ -2086,7 +2153,7 @@ impl SidebarView {
             .child(
                 Self::menu_item(
                     format!("thread-unassign-{thread_id}"),
-                    "移至“无项目”",
+                    crate::i18n::text("移至“无项目”"),
                     "folder",
                     theme,
                     can_move && thread.project_id.is_some(),
@@ -2106,7 +2173,7 @@ impl SidebarView {
             menu = menu.child(
                 Self::menu_item(
                     format!("thread-move-{thread_id}-{project_id}"),
-                    format!("移至“{}”", project.name),
+                    crate::i18n::format!("移至“{}”" => "Move to “{}”", project.name),
                     "folder",
                     theme,
                     enabled,
@@ -2124,9 +2191,9 @@ impl SidebarView {
             Self::menu_item(
                 format!("thread-delete-{thread_id}"),
                 if deleting {
-                    "再次点击以删除"
+                    crate::i18n::text("再次点击以删除")
                 } else {
-                    "删除聊天"
+                    crate::i18n::text("删除聊天")
                 },
                 "close-dialog",
                 theme,
@@ -2147,16 +2214,22 @@ impl SidebarView {
             .supports(AgentCapability::ThreadList);
         self.menu_shell("projects-options-menu", 176.0, theme)
             .child(
-                Self::menu_item("projects-refresh", "刷新", "settings-refresh", theme, true)
-                    .on_click(cx.listener(|this, _, _, _| {
-                        this.store.refresh_all();
-                        this.projects_section_menu_open = false;
-                    })),
+                Self::menu_item(
+                    "projects-refresh",
+                    crate::i18n::text("刷新"),
+                    "settings-refresh",
+                    theme,
+                    true,
+                )
+                .on_click(cx.listener(|this, _, _, _| {
+                    this.store.refresh_all();
+                    this.projects_section_menu_open = false;
+                })),
             )
             .child(
                 Self::menu_item(
                     "projects-archived",
-                    "已归档聊天",
+                    crate::i18n::text("已归档聊天"),
                     "archive",
                     theme,
                     can_list_threads,
@@ -2205,7 +2278,7 @@ impl SidebarView {
             .text_color(theme.sidebar_text)
             .hover(move |style| style.bg(theme.sidebar_hover))
             .child(icon("new-chat", theme.sidebar_text.into()))
-            .child(div().flex_1().child("新对话"))
+            .child(div().flex_1().child(crate::i18n::text("新对话")))
             .child(icon("quick-chat", theme.sidebar_text_muted.into()))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.new_conversation(new_project.as_ref(), cx);
@@ -2307,14 +2380,14 @@ impl SidebarView {
             .account_label()
             .or_else(|| {
                 if self.account.is_signed_in() {
-                    Some("已登录".to_owned())
+                    Some(crate::i18n::text("已登录").to_owned())
                 } else if self.account.needs_login() {
-                    Some("登录".to_owned())
+                    Some(crate::i18n::text("登录").to_owned())
                 } else {
                     None
                 }
             })
-            .unwrap_or_else(|| "账户".to_owned());
+            .unwrap_or_else(|| crate::i18n::text("账户").to_owned());
         let initials = self.account.account_initials();
         div()
             .id("sidebar-profile")
@@ -2356,7 +2429,7 @@ impl SidebarView {
         let title = self
             .account
             .account_label()
-            .unwrap_or_else(|| "已登录".to_owned());
+            .unwrap_or_else(|| crate::i18n::text("已登录").to_owned());
         let plan = self.account.plan_label().unwrap_or("").to_owned();
         div()
             .h(px(ACCOUNT_HEADER_HEIGHT))
@@ -2424,7 +2497,7 @@ impl SidebarView {
         if self.account.login_pending() {
             menu = menu.child(account_menu_row(
                 "account-login-pending",
-                "登录中…",
+                crate::i18n::text("登录中…"),
                 "profile-lock",
                 None,
                 theme,
@@ -2434,7 +2507,7 @@ impl SidebarView {
                 menu = menu.child(
                     account_menu_row(
                         "account-login-cancel",
-                        "取消登录",
+                        crate::i18n::text("取消登录"),
                         "close-dialog",
                         None,
                         theme,
@@ -2451,7 +2524,7 @@ impl SidebarView {
             menu = menu.child(
                 account_menu_row(
                     "account-sign-in",
-                    "使用 ChatGPT 登录",
+                    crate::i18n::text("使用 ChatGPT 登录"),
                     "profile-lock",
                     None,
                     theme,
@@ -2468,7 +2541,7 @@ impl SidebarView {
             // guessed account or a fabricated quota.
             menu = menu.child(account_menu_row(
                 "account-unknown",
-                "账户状态未知",
+                crate::i18n::text("账户状态未知"),
                 "profile-lock",
                 None,
                 theme,
@@ -2477,7 +2550,7 @@ impl SidebarView {
             menu = menu.child(
                 account_menu_row(
                     "account-retry",
-                    "读取账户状态",
+                    crate::i18n::text("读取账户状态"),
                     "settings-refresh",
                     None,
                     theme,
@@ -2492,7 +2565,7 @@ impl SidebarView {
         } else {
             menu = menu.child(account_menu_row(
                 "profile-invite",
-                "邀请好友",
+                crate::i18n::text("邀请好友"),
                 "profile-invite",
                 None,
                 theme,
@@ -2502,7 +2575,7 @@ impl SidebarView {
         menu = menu.child(
             account_menu_row(
                 "profile-settings",
-                "设置",
+                crate::i18n::text("设置"),
                 "profile-settings",
                 Some("⌘,".to_owned()),
                 theme,
@@ -2518,7 +2591,7 @@ impl SidebarView {
             menu = menu.child(
                 account_menu_row(
                     "profile-logout",
-                    "退出登录",
+                    crate::i18n::text("退出登录"),
                     "profile-logout",
                     None,
                     theme,
@@ -2561,11 +2634,11 @@ impl Render for SidebarView {
             .text_color(theme.sidebar_text);
         if self.activity_open {
             sidebar = sidebar
-                .child(self.subpage_header("活动", theme, cx))
+                .child(self.subpage_header(crate::i18n::text("活动"), theme, cx))
                 .child(self.activity_content(theme, window, cx));
         } else if self.archived_open {
             sidebar = sidebar
-                .child(self.subpage_header("已归档", theme, cx))
+                .child(self.subpage_header(crate::i18n::text("已归档"), theme, cx))
                 .child(self.archived_content(theme, window, cx));
         } else {
             sidebar = sidebar

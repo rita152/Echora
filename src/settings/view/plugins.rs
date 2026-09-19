@@ -54,7 +54,7 @@ impl SettingsView {
                                     .text_size(px(24.0))
                                     .line_height(px(31.0))
                                     .font_weight(gpui::FontWeight::NORMAL)
-                                    .child(page.label),
+                                    .child(crate::i18n::text(page.label)),
                             )
                             .child(
                                 div()
@@ -62,7 +62,7 @@ impl SettingsView {
                                     .text_size(px(14.0))
                                     .line_height(px(21.0))
                                     .text_color(theme.text_tertiary)
-                                    .child(page.sections[0].title),
+                                    .child(crate::i18n::text(page.sections[0].title)),
                             ),
                     )
                     .child(
@@ -87,7 +87,7 @@ impl SettingsView {
                                     .justify_center()
                                     .text_size(px(14.0))
                                     .line_height(px(18.0))
-                                    .child("浏览目录"),
+                                    .child(crate::i18n::text("浏览目录")),
                             )
                             .child(
                                 div()
@@ -110,7 +110,7 @@ impl SettingsView {
                                     .text_size(px(14.0))
                                     .line_height(px(18.0))
                                     .text_color(theme.surface)
-                                    .child("添加")
+                                    .child(crate::i18n::text("添加"))
                                     .child(
                                         svg()
                                             .path("icons/chevron-down.svg")
@@ -194,8 +194,16 @@ impl SettingsView {
     /// plugin and app badges report what the directories actually returned.
     fn plugins_segment_counts(&self) -> [(&'static str, usize, PluginSegment); 4] {
         [
-            ("插件", self.live_plugin_count(), PluginSegment::Plugins),
-            ("应用", self.live_app_count(), PluginSegment::Apps),
+            (
+                crate::i18n::text("插件"),
+                self.live_plugin_count(),
+                PluginSegment::Plugins,
+            ),
+            (
+                crate::i18n::text("应用"),
+                self.live_app_count(),
+                PluginSegment::Apps,
+            ),
             // Plugin-provided servers are shown in their own section and are
             // not included in the MCP badge.  The live directory keeps
             // both kinds of entries so the UI can preserve that grouping.
@@ -209,7 +217,11 @@ impl SettingsView {
                     .count(),
                 PluginSegment::Mcp,
             ),
-            ("技能", self.skills.skill_count(), PluginSegment::Skills),
+            (
+                crate::i18n::text("技能"),
+                self.skills.skill_count(),
+                PluginSegment::Skills,
+            ),
         ]
     }
 }

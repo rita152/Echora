@@ -47,11 +47,26 @@ impl SettingsView {
             .flex()
             .items_center();
         for (index, (value, label)) in [
-            ("157亿", "累计 Token 数"),
-            ("13.6亿", "峰值 Token 数"),
-            ("10 小时 28 分", "最长聊天时长"),
-            ("28 天", "当前连续天数"),
-            ("28 天", "最长连续天数"),
+            (
+                crate::i18n::text("157亿"),
+                crate::i18n::text("累计 Token 数"),
+            ),
+            (
+                crate::i18n::text("13.6亿"),
+                crate::i18n::text("峰值 Token 数"),
+            ),
+            (
+                crate::i18n::text("10 小时 28 分"),
+                crate::i18n::text("最长聊天时长"),
+            ),
+            (
+                crate::i18n::text("28 天"),
+                crate::i18n::text("当前连续天数"),
+            ),
+            (
+                crate::i18n::text("28 天"),
+                crate::i18n::text("最长连续天数"),
+            ),
         ]
         .iter()
         .enumerate()
@@ -83,7 +98,7 @@ impl SettingsView {
                             .text_size(px(14.0))
                             .line_height(px(20.0))
                             .text_color(theme.settings_description)
-                            .child(*label),
+                            .child(crate::i18n::text(label)),
                     ),
             );
         }
@@ -131,18 +146,21 @@ impl SettingsView {
         }
 
         let insight_rows = [
-            ("快速模式", "17%"),
-            ("最常用的推理强度", "最高 · 91%"),
-            ("已探索的技能", "53"),
-            ("使用的技能总数", "962"),
-            ("聊天总数", "1,806"),
+            (crate::i18n::text("快速模式"), "17%"),
+            (
+                crate::i18n::text("最常用的推理强度"),
+                crate::i18n::text("最高 · 91%"),
+            ),
+            (crate::i18n::text("已探索的技能"), "53"),
+            (crate::i18n::text("使用的技能总数"), "962"),
+            (crate::i18n::text("聊天总数"), "1,806"),
         ];
         let plugin_rows = [
-            ("$git-commit-message", "156 次运行"),
-            ("$codebase-design", "127 次运行"),
-            ("$openai-docs", "123 次运行"),
-            ("$tdd", "68 次运行"),
-            ("$ui-ux-pro-max", "64 次运行"),
+            ("$git-commit-message", crate::i18n::text("156 次运行")),
+            ("$codebase-design", crate::i18n::text("127 次运行")),
+            ("$openai-docs", crate::i18n::text("123 次运行")),
+            ("$tdd", crate::i18n::text("68 次运行")),
+            ("$ui-ux-pro-max", crate::i18n::text("64 次运行")),
         ];
         let list = |title: &'static str, rows: &[(&'static str, &'static str)], plugins: bool| {
             let mut row_list = div().flex().flex_col().gap(px(8.0));
@@ -177,9 +195,16 @@ impl SettingsView {
                                     )
                                 }),
                         )
-                        .child(div().min_w(px(0.0)).text_color(theme.text).child(*label))
+                        .child(
+                            div()
+                                .min_w(px(0.0))
+                                .text_color(theme.text)
+                                .child(crate::i18n::text(label)),
+                        )
                 } else {
-                    div().text_color(theme.settings_description).child(*label)
+                    div()
+                        .text_color(theme.settings_description)
+                        .child(crate::i18n::text(label))
                 };
                 row_list = row_list.child(
                     div()
@@ -216,7 +241,7 @@ impl SettingsView {
                         .text_size(px(14.0))
                         .line_height(px(20.0))
                         .font_weight(gpui::FontWeight(500.0))
-                        .child(title),
+                        .child(crate::i18n::text(title)),
                 )
                 .child(row_list)
         };
@@ -234,7 +259,7 @@ impl SettingsView {
                     } else {
                         theme.text
                     }))
-                    .child(label)
+                    .child(crate::i18n::text(label))
             };
 
         div()
@@ -259,34 +284,39 @@ impl SettingsView {
                     .justify_between()
                     .text_size(px(14.0))
                     .line_height(px(21.0))
-                    .child(div().relative().left(px(1.0)).child("个人资料"))
+                    .child(
+                        div()
+                            .relative()
+                            .left(px(1.0))
+                            .child(crate::i18n::text("个人资料")),
+                    )
                     .child(
                         div()
                             .flex()
                             .gap(px(8.0))
                             .child(header_action(
-                                "邀请好友",
+                                crate::i18n::text("邀请好友"),
                                 "icons/profile-invite.svg",
                                 16.0,
                                 4.0,
                                 false,
                             ))
                             .child(header_action(
-                                "分享",
+                                crate::i18n::text("分享"),
                                 "icons/profile-share.svg",
                                 20.0,
                                 4.0,
                                 false,
                             ))
                             .child(header_action(
-                                "私有",
+                                crate::i18n::text("私有"),
                                 "icons/profile-lock.svg",
                                 18.0,
                                 6.0,
                                 true,
                             ))
                             .child(header_action(
-                                "编辑",
+                                crate::i18n::text("编辑"),
                                 "icons/settings-edit.svg",
                                 21.0,
                                 4.0,
@@ -370,16 +400,25 @@ impl SettingsView {
                     .text_size(px(14.0))
                     .line_height(px(20.0))
                     .font_weight(gpui::FontWeight(500.0))
-                    .child(div().relative().left(px(1.0)).child("Token 活动"))
+                    .child(
+                        div()
+                            .relative()
+                            .left(px(1.0))
+                            .child(crate::i18n::text("Token 活动")),
+                    )
                     .child(
                         div()
                             .flex()
                             .gap(px(12.0))
                             .font_weight(normal_weight)
                             .text_color(profile_tertiary)
-                            .child(div().text_color(theme.text).child("每日"))
-                            .child("每周")
-                            .child("累计"),
+                            .child(
+                                div()
+                                    .text_color(theme.text)
+                                    .child(crate::i18n::text("每日")),
+                            )
+                            .child(crate::i18n::text("每周"))
+                            .child(crate::i18n::text("累计")),
                     ),
             )
             .child(div().mt(px(11.0)).relative().top(px(11.0)).child(heatmap))
@@ -394,8 +433,18 @@ impl SettingsView {
                     .line_height(px(16.0))
                     .text_color(profile_tertiary)
                     .children([
-                        "9月", "10月", "11月", "12月", "1月", "2月", "3月", "4月", "5月", "6月",
-                        "7月", "8月",
+                        crate::i18n::text("9月"),
+                        crate::i18n::text("10月"),
+                        crate::i18n::text("11月"),
+                        crate::i18n::text("12月"),
+                        crate::i18n::text("1月"),
+                        crate::i18n::text("2月"),
+                        crate::i18n::text("3月"),
+                        crate::i18n::text("4月"),
+                        crate::i18n::text("5月"),
+                        crate::i18n::text("6月"),
+                        crate::i18n::text("7月"),
+                        crate::i18n::text("8月"),
                     ]),
             )
             .child(
@@ -405,8 +454,8 @@ impl SettingsView {
                     .top(px(14.0))
                     .flex()
                     .gap(px(40.0))
-                    .child(list("活动洞察", &insight_rows, false))
-                    .child(list("最常用的插件", &plugin_rows, true)),
+                    .child(list(crate::i18n::text("活动洞察"), &insight_rows, false))
+                    .child(list(crate::i18n::text("最常用的插件"), &plugin_rows, true)),
             )
             .into_any_element()
     }

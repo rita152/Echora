@@ -225,7 +225,7 @@ pub(super) fn user_message_images(
                             .p(px(6.0))
                             .text_size(px(11.0))
                             .text_color(theme.text_tertiary)
-                            .child("图片不可用")
+                            .child(crate::i18n::text("图片不可用"))
                             .into_any_element()
                     } else {
                         let source: gpui::ImageSource = match &image {
@@ -261,9 +261,9 @@ pub(super) fn user_message_images(
                             element
                                 .role(Role::Button)
                                 .aria_label(if let UserMessageAttachment::File(path) = &image {
-                                    format!("打开文件 {}", path.display())
+                                    crate::i18n::format!("打开文件 {}" => "Open file {}", path.display())
                                 } else {
-                                    format!("打开图片 {}", index + 1)
+                                    crate::i18n::format!("打开图片 {}" => "Open image {}", index + 1)
                                 })
                                 .focusable()
                                 .tab_stop(true)
@@ -403,7 +403,7 @@ pub(super) fn current_user_message(
                             div()
                                 .id("user-message-copy")
                                 .role(Role::Button)
-                                .aria_label("复制消息")
+                                .aria_label(crate::i18n::text("复制消息"))
                                 .focusable()
                                 .tab_stop(true)
                                 .focus_visible(|s| s.opacity(1.0))
@@ -445,7 +445,7 @@ pub(super) fn current_user_message(
                                 div()
                                     .id("user-message-edit")
                                     .role(Role::Button)
-                                    .aria_label("编辑消息")
+                                    .aria_label(crate::i18n::text("编辑消息"))
                                     .focusable()
                                     .tab_stop(true)
                                     .focus_visible(|s| s.opacity(1.0))
@@ -648,7 +648,7 @@ pub(super) fn current_response_footer(
                         .items_center()
                         .justify_center()
                         .role(Role::Button)
-                        .aria_label("评价回复")
+                        .aria_label(crate::i18n::text("评价回复"))
                         .cursor_pointer()
                         .hover(move |button| button.bg(theme.sidebar_hover))
                         .on_click(move |_, _, cx| {
@@ -740,10 +740,10 @@ pub(super) fn message_action(
         .id(id)
         .role(Role::Button)
         .aria_label(match action {
-            0 => "复制",
-            1 => "赞",
-            2 => "踩",
-            _ => "从此处分叉",
+            0 => crate::i18n::text("复制"),
+            1 => crate::i18n::text("赞"),
+            2 => crate::i18n::text("踩"),
+            _ => crate::i18n::text("从此处分叉"),
         })
         .focusable()
         .tab_stop(true)

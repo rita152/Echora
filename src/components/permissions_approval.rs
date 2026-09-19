@@ -219,9 +219,9 @@ impl PermissionApprovalPresentation {
 
     pub fn title(&self) -> &'static str {
         if self.network_enabled && self.visible_file_paths().is_empty() {
-            "互联网访问"
+            crate::i18n::text("互联网访问")
         } else {
-            "权限"
+            crate::i18n::text("权限")
         }
     }
 
@@ -298,28 +298,30 @@ impl PermissionApprovalPresentation {
     pub fn question_parts(&self) -> Vec<PermissionQuestionPart> {
         let actions = self.actions();
         if actions.is_empty() {
-            return vec![PermissionQuestionPart::text(
+            return vec![PermissionQuestionPart::text(crate::i18n::text(
                 "Codex 未请求额外文件或网络权限，是否继续？",
-            )];
+            ))];
         }
         if actions.len() == 1 {
             return single_action_question(&actions[0]);
         }
 
-        let mut parts = vec![PermissionQuestionPart::text("允许 ChatGPT ")];
+        let mut parts = vec![PermissionQuestionPart::text(crate::i18n::text(
+            "允许 ChatGPT ",
+        ))];
         for (index, action) in actions.iter().enumerate() {
             if index > 0 {
                 parts.push(PermissionQuestionPart::text(
                     if index + 1 == actions.len() {
-                        "和"
+                        crate::i18n::text("和")
                     } else {
-                        "、"
+                        crate::i18n::text("、")
                     },
                 ));
             }
             append_action_phrase(&mut parts, action);
         }
-        parts.push(PermissionQuestionPart::text("？"));
+        parts.push(PermissionQuestionPart::text(crate::i18n::text("？")));
         parts
     }
 
@@ -464,16 +466,20 @@ fn permission_path_label(path: &str) -> String {
 fn single_action_question(action: &PermissionActionPresentation) -> Vec<PermissionQuestionPart> {
     match action {
         PermissionActionPresentation::Network => {
-            vec![PermissionQuestionPart::text("允许 ChatGPT 连接互联网？")]
+            vec![PermissionQuestionPart::text(crate::i18n::text(
+                "允许 ChatGPT 连接互联网？",
+            ))]
         }
         PermissionActionPresentation::FileSystem { access, paths } => {
             let mut parts = vec![PermissionQuestionPart::text(match access {
-                PermissionFileAccess::Read => "允许 ChatGPT 查看 ",
-                PermissionFileAccess::Write => "允许 ChatGPT 编辑 ",
-                PermissionFileAccess::ReadWrite => "允许 ChatGPT 查看和编辑 ",
+                PermissionFileAccess::Read => crate::i18n::text("允许 ChatGPT 查看 "),
+                PermissionFileAccess::Write => crate::i18n::text("允许 ChatGPT 编辑 "),
+                PermissionFileAccess::ReadWrite => crate::i18n::text("允许 ChatGPT 查看和编辑 "),
             })];
             append_paths(&mut parts, paths);
-            parts.push(PermissionQuestionPart::text(" 的内容吗？"));
+            parts.push(PermissionQuestionPart::text(crate::i18n::text(
+                " 的内容吗？",
+            )));
             parts
         }
     }
@@ -485,16 +491,18 @@ fn append_action_phrase(
 ) {
     match action {
         PermissionActionPresentation::Network => {
-            parts.push(PermissionQuestionPart::text("连接到互联网"));
+            parts.push(PermissionQuestionPart::text(crate::i18n::text(
+                "连接到互联网",
+            )));
         }
         PermissionActionPresentation::FileSystem { access, paths } => {
             parts.push(PermissionQuestionPart::text(match access {
-                PermissionFileAccess::Read => "查看 ",
-                PermissionFileAccess::Write => "编辑 ",
-                PermissionFileAccess::ReadWrite => "查看和编辑 ",
+                PermissionFileAccess::Read => crate::i18n::text("查看 "),
+                PermissionFileAccess::Write => crate::i18n::text("编辑 "),
+                PermissionFileAccess::ReadWrite => crate::i18n::text("查看和编辑 "),
             }));
             append_paths(parts, paths);
-            parts.push(PermissionQuestionPart::text(" 的内容"));
+            parts.push(PermissionQuestionPart::text(crate::i18n::text(" 的内容")));
         }
     }
 }
@@ -503,9 +511,9 @@ fn append_paths(parts: &mut Vec<PermissionQuestionPart>, paths: &[String]) {
     for (index, path) in paths.iter().enumerate() {
         if index > 0 {
             parts.push(PermissionQuestionPart::text(if index + 1 == paths.len() {
-                " 和 "
+                crate::i18n::text(" 和 ")
             } else {
-                "、"
+                crate::i18n::text("、")
             }));
         }
         parts.push(PermissionQuestionPart::path(path));
@@ -704,7 +712,7 @@ pub fn render_permissions_approval(
                             .line_height(px(19.5))
                             .font_weight(FontWeight::NORMAL)
                             .text_color(palette.description)
-                            .child(format!("工作目录：{cwd}")),
+                            .child(crate::i18n::format!("工作目录：{cwd}" => "Working directory: {cwd}")),
                     )
                 }),
         );
@@ -715,7 +723,7 @@ pub fn render_permissions_approval(
     let decline = div()
         .id(element_id("permissions-decline", &model.request_id))
         .role(Role::Button)
-        .aria_label("拒绝")
+        .aria_label(crate::i18n::text("拒绝"))
         .h(px(PERMISSIONS_BUTTON_HEIGHT))
         .w(px(PERMISSIONS_DECLINE_WIDTH))
         .px(px(8.0))
@@ -761,7 +769,7 @@ pub fn render_permissions_approval(
                 cx,
             );
         })
-        .child("拒绝")
+        .child(crate::i18n::text("拒绝"))
         .child(keycap(
             "Esc",
             if palette.mode == ThemeMode::Dark {
@@ -785,7 +793,7 @@ pub fn render_permissions_approval(
     let approve = div()
         .id(element_id("permissions-allow-once", &model.request_id))
         .role(Role::Button)
-        .aria_label("允许一次")
+        .aria_label(crate::i18n::text("允许一次"))
         .h(px(PERMISSIONS_BUTTON_HEIGHT))
         .w(px(PERMISSIONS_ALLOW_ONCE_WIDTH))
         .pl(px(8.0))
@@ -826,7 +834,7 @@ pub fn render_permissions_approval(
                 cx,
             );
         })
-        .child("允许一次")
+        .child(crate::i18n::text("允许一次"))
         .child(keycap("⏎", palette.approve_text));
 
     let toggle_focused = model.keyboard_focus == Some(PermissionApprovalKeyboardFocus::MenuToggle);
@@ -834,7 +842,7 @@ pub fn render_permissions_approval(
     let toggle = div()
         .id(element_id("permissions-menu-toggle", &model.request_id))
         .role(Role::Button)
-        .aria_label("审批选项")
+        .aria_label(crate::i18n::text("审批选项"))
         .h(px(PERMISSIONS_BUTTON_HEIGHT))
         .w(px(PERMISSIONS_MENU_TOGGLE_WIDTH))
         .pl(px(2.0))
@@ -924,12 +932,12 @@ fn render_permissions_status(
 ) -> Stateful<Div> {
     let palette = PermissionPalette::for_theme(theme);
     let status = match model.status {
-        PermissionApprovalStatus::Cancelled => "权限请求已取消",
-        PermissionApprovalStatus::Failed => "权限请求失败",
-        PermissionApprovalStatus::Pending => "等待审批",
-        PermissionApprovalStatus::Approved => "已允许",
-        PermissionApprovalStatus::Declined => "已拒绝",
-        PermissionApprovalStatus::Resolved => "已完成",
+        PermissionApprovalStatus::Cancelled => crate::i18n::text("权限请求已取消"),
+        PermissionApprovalStatus::Failed => crate::i18n::text("权限请求失败"),
+        PermissionApprovalStatus::Pending => crate::i18n::text("等待审批"),
+        PermissionApprovalStatus::Approved => crate::i18n::text("已允许"),
+        PermissionApprovalStatus::Declined => crate::i18n::text("已拒绝"),
+        PermissionApprovalStatus::Resolved => crate::i18n::text("已完成"),
     };
     div()
         .id(element_id("permissions-card", &model.request_id))
@@ -1026,7 +1034,7 @@ fn render_menu(
     div()
         .id(element_id("permissions-menu", request_id))
         .role(Role::Menu)
-        .aria_label("审批选项")
+        .aria_label(crate::i18n::text("审批选项"))
         .absolute()
         .top(px(top))
         .right(px(16.0))
@@ -1042,7 +1050,7 @@ fn render_menu(
         .shadow(palette.menu_shadows())
         .child(menu_row(
             element_id("permissions-menu-once", request_id),
-            "允许一次",
+            crate::i18n::text("允许一次"),
             PermissionApprovalMenuItem::AllowOnce,
             focused == Some(PermissionApprovalMenuItem::AllowOnce),
             palette,
@@ -1050,7 +1058,7 @@ fn render_menu(
         ))
         .child(menu_row(
             element_id("permissions-menu-conversation", request_id),
-            "允许此对话",
+            crate::i18n::text("允许此对话"),
             PermissionApprovalMenuItem::AllowForConversation,
             focused == Some(PermissionApprovalMenuItem::AllowForConversation),
             palette,

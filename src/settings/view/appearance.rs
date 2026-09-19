@@ -82,6 +82,11 @@ impl SettingsView {
             };
             div()
                 .w(px(width))
+                .when(crate::i18n::is_english(), |control| {
+                    control.w_auto().min_w(px(width))
+                })
+                .flex_none()
+                .whitespace_nowrap()
                 .h(px(28.0))
                 .px(px(12.0))
                 .rounded(px(12.5))
@@ -99,7 +104,7 @@ impl SettingsView {
                 } else {
                     theme.text
                 })
-                .child(label)
+                .child(crate::i18n::text(label))
                 .child(chevron())
         };
         let color_field = |label: &'static str, fill: gpui::Rgba, ink: gpui::Rgba| {
@@ -122,7 +127,7 @@ impl SettingsView {
                         gpui::rgba(0xffffff33)
                     },
                 ))
-                .child(label)
+                .child(crate::i18n::text(label))
         };
         let theme_row =
             |title: &'static str, height: f32, last: bool, control: gpui::AnyElement| {
@@ -149,7 +154,7 @@ impl SettingsView {
                             .text_size(px(13.0))
                             .line_height(px(18.5714))
                             .font_weight(gpui::FontWeight(500.0))
-                            .child(title),
+                            .child(crate::i18n::text(title)),
                     )
                     .child(control)
             };
@@ -189,20 +194,24 @@ impl SettingsView {
                                 .text_size(px(13.0))
                                 .line_height(px(18.5714))
                                 .font_weight(gpui::FontWeight(500.0))
-                                .child(title),
+                                .child(crate::i18n::text(title)),
                         )
                         .child(
                             div()
                                 .text_size(px(12.0))
                                 .line_height(px(16.0))
                                 .text_color(theme.text_tertiary)
-                                .child(subtitle),
+                                .child(crate::i18n::text(subtitle)),
                         ),
                 )
                 .child(control)
         };
 
-        let labels = ["系统", "浅色", "深色"];
+        let labels = [
+            crate::i18n::text("系统"),
+            crate::i18n::text("浅色"),
+            crate::i18n::text("深色"),
+        ];
         let mut previews = div().w_full().mt(px(18.5)).flex().gap(px(12.0));
         for (index, label) in labels.iter().enumerate() {
             let selected = self.appearance_theme == index;
@@ -242,7 +251,7 @@ impl SettingsView {
                         cx.notify();
                     }))
                     .child(self.appearance_preview(index, selected, theme))
-                    .child(*label),
+                    .child(crate::i18n::text(label)),
             );
         }
 
@@ -263,7 +272,7 @@ impl SettingsView {
                     .text_size(px(13.0))
                     .line_height(px(18.0))
                     .text_color(theme.text_tertiary)
-                    .child("导入"),
+                    .child(crate::i18n::text("导入")),
             )
             .child(
                 div()
@@ -276,7 +285,7 @@ impl SettingsView {
                     .text_size(px(13.0))
                     .line_height(px(18.0))
                     .text_color(theme.text_tertiary)
-                    .child("复制主题"),
+                    .child(crate::i18n::text("复制主题")),
             )
             .child(
                 div()
@@ -298,10 +307,11 @@ impl SettingsView {
         let font_controls = || {
             div()
                 .w(px(168.0))
+                .when(crate::i18n::is_english(), |control| control.w_auto())
                 .flex()
                 .gap(px(8.0))
-                .child(selector("系统默认", 92.0, false))
-                .child(selector("常规", 68.0, true))
+                .child(selector(crate::i18n::text("系统默认"), 92.0, false))
+                .child(selector(crate::i18n::text("常规"), 68.0, true))
         };
         let contrast = div()
             .w(px(192.0))
@@ -361,53 +371,53 @@ impl SettingsView {
             .border_color(theme.border)
             .bg(theme.settings_panel)
             .child(theme_row(
-                "深色主题",
+                crate::i18n::text("深色主题"),
                 52.5625,
                 false,
                 top_controls.into_any_element(),
             ))
             .child(theme_row(
-                "强调色",
+                crate::i18n::text("强调色"),
                 44.0,
                 false,
                 color_field("#339CFF", theme.settings_accent, gpui::rgba(0xffffffff))
                     .into_any_element(),
             ))
             .child(theme_row(
-                "背景",
+                crate::i18n::text("背景"),
                 44.0,
                 false,
                 color_field("#181818", gpui::rgba(0x181818ff), gpui::rgba(0xffffffff))
                     .into_any_element(),
             ))
             .child(theme_row(
-                "前景",
+                crate::i18n::text("前景"),
                 44.0,
                 false,
                 color_field("#FFFFFF", gpui::rgba(0xffffffff), gpui::rgba(0x181818ff))
                     .into_any_element(),
             ))
             .child(theme_row(
-                "UI 字体",
+                crate::i18n::text("UI 字体"),
                 44.0,
                 false,
                 font_controls().into_any_element(),
             ))
             .child(theme_row(
-                "代码字体",
+                crate::i18n::text("代码字体"),
                 44.0,
                 false,
                 font_controls().into_any_element(),
             ))
             .child(theme_row(
-                "半透明侧边栏",
+                crate::i18n::text("半透明侧边栏"),
                 36.0,
                 false,
                 self.switch_control(true, (page.slug, 0, 7), theme, cx)
                     .into_any_element(),
             ))
             .child(theme_row(
-                "对比度",
+                crate::i18n::text("对比度"),
                 53.4375,
                 true,
                 contrast.into_any_element(),
@@ -473,7 +483,14 @@ impl SettingsView {
             );
         let reduced_motion = div().w(px(136.0)).h(px(24.0)).flex().gap(px(2.0));
         let mut reduced_motion = reduced_motion;
-        for (index, label) in ["系统", "开启", "关闭"].iter().enumerate() {
+        for (index, label) in [
+            crate::i18n::text("系统"),
+            crate::i18n::text("开启"),
+            crate::i18n::text("关闭"),
+        ]
+        .iter()
+        .enumerate()
+        {
             reduced_motion = reduced_motion.child(
                 div()
                     .w(px(44.0))
@@ -496,7 +513,7 @@ impl SettingsView {
                     } else {
                         theme.text_tertiary
                     })
-                    .child(*label),
+                    .child(crate::i18n::text(label)),
             );
         }
         let number_control = |value: &'static str| {
@@ -517,7 +534,7 @@ impl SettingsView {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .child(value),
+                        .child(crate::i18n::text(value)),
                 )
                 .child("px")
         };
@@ -539,7 +556,7 @@ impl SettingsView {
                     .justify_center()
                     .text_size(px(13.0))
                     .line_height(px(18.0))
-                    .child("颜色"),
+                    .child(crate::i18n::text("颜色")),
             )
             .child(
                 div()
@@ -561,51 +578,51 @@ impl SettingsView {
             .border_color(theme.border)
             .bg(theme.settings_panel)
             .child(preference_row(
-                "使用指针光标",
-                "悬停交互元素时切换为指针光标",
+                crate::i18n::text("使用指针光标"),
+                crate::i18n::text("悬停交互元素时切换为指针光标"),
                 60.5625,
                 false,
                 self.switch_control(false, (page.slug, 1, 0), theme, cx)
                     .into_any_element(),
             ))
             .child(preference_row(
-                "Dock 图标",
-                "选择应用在 Dock 中使用的图标",
+                crate::i18n::text("Dock 图标"),
+                crate::i18n::text("选择应用在 Dock 中使用的图标"),
                 72.0,
                 false,
                 dock_icons.into_any_element(),
             ))
             .child(preference_row(
-                "减少动态效果",
-                "减少动画效果或匹配系统设置",
+                crate::i18n::text("减少动态效果"),
+                crate::i18n::text("减少动画效果或匹配系统设置"),
                 60.5625,
                 false,
                 reduced_motion.into_any_element(),
             ))
             .child(preference_row(
-                "UI 字号",
-                "调整 ChatGPT 界面使用的基准字号",
+                crate::i18n::text("UI 字号"),
+                crate::i18n::text("调整 ChatGPT 界面使用的基准字号"),
                 60.5625,
                 false,
                 number_control("14").into_any_element(),
             ))
             .child(preference_row(
-                "代码字体大小",
-                "调整聊天和差异视图中代码使用的基础字号",
+                crate::i18n::text("代码字体大小"),
+                crate::i18n::text("调整聊天和差异视图中代码使用的基础字号"),
                 60.5625,
                 false,
                 number_control("12").into_any_element(),
             ))
             .child(preference_row(
-                "差异标记",
-                "使用颜色或 +/− 标记显示更改",
+                crate::i18n::text("差异标记"),
+                crate::i18n::text("使用颜色或 +/− 标记显示更改"),
                 60.5625,
                 false,
                 diff_controls.into_any_element(),
             ))
             .child(preference_row(
-                "字体平滑",
-                "使用 macOS 原生字体抗锯齿",
+                crate::i18n::text("字体平滑"),
+                crate::i18n::text("使用 macOS 原生字体抗锯齿"),
                 60.5625,
                 true,
                 self.switch_control(true, (page.slug, 1, 6), theme, cx)
@@ -625,7 +642,7 @@ impl SettingsView {
                     .text_size(px(24.0))
                     .line_height(px(28.8))
                     .font_weight(gpui::FontWeight::NORMAL)
-                    .child(page.label),
+                    .child(crate::i18n::text(page.label)),
             )
             .child(
                 div()
@@ -633,7 +650,7 @@ impl SettingsView {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .font_weight(gpui::FontWeight(500.0))
-                    .child("主题"),
+                    .child(crate::i18n::text("主题")),
             )
             .child(previews)
             .child(
@@ -651,7 +668,7 @@ impl SettingsView {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .font_weight(gpui::FontWeight(500.0))
-                    .child("偏好设置"),
+                    .child(crate::i18n::text("偏好设置")),
             )
             .child(div().mt(px(15.5)).child(preferences))
             .into_any_element()

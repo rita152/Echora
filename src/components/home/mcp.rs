@@ -34,7 +34,7 @@ pub(super) fn computer_use_surface_label(call: &AgentMcpToolCall) -> Option<Stri
             .and_then(serde_json::Value::as_bool)
             == Some(true)
     {
-        return Some("浏览器".into());
+        return Some(crate::i18n::text("浏览器").into());
     }
     let surface = surface?;
     if surface.get("kind").and_then(serde_json::Value::as_str) != Some("computerUse") {
@@ -74,7 +74,7 @@ pub(super) fn computer_use_activity(
     let hover: SharedString = format!("computer-use-{id}").into();
     let color = theme.text.alpha(0.60);
     let icon_name = if computer_use_surface_label(&call)
-        .is_some_and(|s| s != "浏览器" && s != "Computer Use")
+        .is_some_and(|s| s != crate::i18n::text("浏览器") && s != "Computer Use")
     {
         "activity-native-app"
     } else {
@@ -153,9 +153,9 @@ pub(super) fn computer_use_activity(
                 .tab_stop(true)
                 .role(Role::Button)
                 .aria_expanded(expanded)
-                .aria_label(format!(
-                    "{label}，{}详情",
-                    if expanded { "折叠" } else { "展开" }
+                .aria_label(crate::i18n::format!(
+                    "{label}，{}详情" => "{label}, {} details",
+                    if expanded { crate::i18n::text("折叠") } else { crate::i18n::text("展开") }
                 ))
                 .focus_visible(|s| s.border_1().border_color(rgba(0x3a83f7ff)))
                 .cursor_pointer()
@@ -261,23 +261,23 @@ pub(super) fn mcp_tool_call_activity(
     let label = mcp_tool_call_label(&tool_call);
     let failed = tool_call.status == AgentMcpToolCallStatus::Failed;
     let display_label = if failed {
-        format!("{label} 失败")
+        crate::i18n::format!("{label} 失败" => "{label} failed")
     } else {
         label
     };
     let status = match tool_call.status {
-        AgentMcpToolCallStatus::InProgress => "进行中",
-        AgentMcpToolCallStatus::Completed => "已完成",
-        AgentMcpToolCallStatus::Failed => "失败",
+        AgentMcpToolCallStatus::InProgress => crate::i18n::text("进行中"),
+        AgentMcpToolCallStatus::Completed => crate::i18n::text("已完成"),
+        AgentMcpToolCallStatus::Failed => crate::i18n::text("失败"),
     };
     let accessible_label = if let Some(error) = tool_call.error.as_deref() {
-        format!(
-            "MCP 工具 {} 的 {}，{status}：{error}",
+        crate::i18n::format!(
+            "MCP 工具 {} 的 {}，{status}：{error}" => "MCP tool {} / {}, {status}: {error}",
             tool_call.server, tool_call.tool
         )
     } else {
-        format!(
-            "MCP 工具 {} 的 {}，{status}",
+        crate::i18n::format!(
+            "MCP 工具 {} 的 {}，{status}" => "MCP tool {} / {}, {status}",
             tool_call.server, tool_call.tool
         )
     };

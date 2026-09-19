@@ -58,11 +58,11 @@ pub(super) fn format_reasoning_elapsed(elapsed_ms: u64) -> String {
 
 pub(super) fn reasoning_header_label(reasoning: &ReasoningActivityPresentation) -> String {
     if reasoning.is_active() {
-        "正在思考".to_owned()
+        crate::i18n::text("正在思考").to_owned()
     } else if let Some(elapsed_ms) = reasoning.elapsed_ms() {
-        format!("思考了 {}", format_reasoning_elapsed(elapsed_ms))
+        crate::i18n::format!("思考了 {}" => "Thought for {}", format_reasoning_elapsed(elapsed_ms))
     } else {
-        "完成思考".to_owned()
+        crate::i18n::text("完成思考").to_owned()
     }
 }
 
@@ -159,9 +159,9 @@ pub(super) fn reasoning_activity(
     let can_toggle = !active && has_content;
     let header_label = reasoning_header_label(&reasoning);
     let accessible_label = if expanded {
-        format!("{header_label}，折叠推理内容")
+        crate::i18n::format!("{header_label}，折叠推理内容" => "{header_label}, collapse reasoning")
     } else {
-        format!("{header_label}，展开推理内容")
+        crate::i18n::format!("{header_label}，展开推理内容" => "{header_label}, expand reasoning")
     };
     let click_home_entity = home_entity.clone();
     let click_item_id = item_id.clone();

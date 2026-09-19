@@ -765,7 +765,7 @@ impl ReviewPanel {
                     Ok(message) => {
                         if s.pr_open && message.starts_with("https://") {
                             cx.open_url(&message);
-                            s.show_notice("已创建 Pull Request".into(), cx);
+                            s.show_notice(crate::i18n::text("已创建 Pull Request").into(), cx);
                         } else {
                             s.show_notice(message, cx);
                         }
@@ -805,7 +805,7 @@ impl ReviewPanel {
                 s.busy = false;
                 match result {
                     Ok(m) => s.show_notice(m, cx),
-                    Err(e) => s.operation_error = Some(format!("提交已完成；推送失败：{e:#}")),
+                    Err(e) => s.operation_error = Some(crate::i18n::format!("提交已完成；推送失败：{e:#}" => "Commit completed; push failed: {e:#}")),
                 }
                 s.refresh(cx);
             });

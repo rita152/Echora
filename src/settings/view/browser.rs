@@ -58,7 +58,7 @@ impl SettingsView {
                             .line_height(px(18.5625))
                             .font_weight(gpui::FontWeight(500.0))
                             .text_color(browser_primary)
-                            .child(title),
+                            .child(crate::i18n::text(title)),
                     )
                     .when(!subtitle.is_empty(), |column| {
                         column.child(
@@ -68,13 +68,16 @@ impl SettingsView {
                                 .text_size(px(12.0))
                                 .line_height(px(16.0))
                                 .text_color(browser_secondary)
-                                .child(subtitle),
+                                .child(crate::i18n::text(subtitle)),
                         )
                     })
             };
         let browser_button = |label: &'static str, width: f32, header: bool| {
             div()
                 .w(px(width))
+                .when(crate::i18n::is_english(), |control| {
+                    control.w_auto().min_w(px(width))
+                })
                 .h(px(28.0))
                 .flex_none()
                 .px(px(8.0))
@@ -93,7 +96,7 @@ impl SettingsView {
                 .text_color(theme.text)
                 .whitespace_nowrap()
                 .cursor_pointer()
-                .child(label)
+                .child(crate::i18n::text(label))
                 .into_any_element()
         };
 
@@ -223,7 +226,7 @@ impl SettingsView {
                             .relative()
                             .left(px(-1.0))
                             .top(px(if index == 0 { 1.0 } else { 0.0 }))
-                            .child(browser_button("管理", 46.0, false)),
+                            .child(browser_button(crate::i18n::text("管理"), 46.0, false)),
                     ),
             );
         }
@@ -351,7 +354,7 @@ impl SettingsView {
                     .text_size(px(24.0))
                     .line_height(px(28.8))
                     .font_weight(gpui::FontWeight::NORMAL)
-                    .child(page.label),
+                    .child(crate::i18n::text(page.label)),
             )
             .child(
                 div()
@@ -361,9 +364,13 @@ impl SettingsView {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .text_color(intro_color)
-                    .child("管理内置浏览器。可在")
-                    .child(div().text_color(link_color).child("计算机使用设置"))
-                    .child("中设置浏览器扩展程序"),
+                    .child(crate::i18n::text("管理内置浏览器。可在"))
+                    .child(
+                        div()
+                            .text_color(link_color)
+                            .child(crate::i18n::text("计算机使用设置")),
+                    )
+                    .child(crate::i18n::text("中设置浏览器扩展程序")),
             )
             .child(
                 div()
@@ -435,13 +442,13 @@ impl SettingsView {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .font_weight(gpui::FontWeight(500.0))
-                    .child(div().child(general.title))
+                    .child(div().child(crate::i18n::text(general.title)))
                     .child(
                         div()
                             .flex_none()
                             .relative()
                             .left(px(-1.0))
-                            .child(browser_button("导入…", 57.125, true)),
+                            .child(browser_button(crate::i18n::text("导入…"), 57.125, true)),
                     ),
             )
             .child(div().mt(px(12.0)).child(general_card))
@@ -451,7 +458,7 @@ impl SettingsView {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .font_weight(gpui::FontWeight(500.0))
-                    .child(autofill.title),
+                    .child(crate::i18n::text(autofill.title)),
             )
             .child(div().mt(px(15.5)).child(autofill_card))
             .child(
@@ -463,7 +470,7 @@ impl SettingsView {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .font_weight(gpui::FontWeight(500.0))
-                    .child(download.title),
+                    .child(crate::i18n::text(download.title)),
             )
             .child(div().mt(px(15.5)).child(download_card))
             .child(
@@ -472,7 +479,7 @@ impl SettingsView {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .font_weight(gpui::FontWeight(500.0))
-                    .child(permissions.title),
+                    .child(crate::i18n::text(permissions.title)),
             )
             .child(div().mt(px(15.5)).child(permission_card))
             .child(
@@ -490,7 +497,7 @@ impl SettingsView {
                                     .text_size(px(16.0))
                                     .line_height(px(24.875))
                                     .font_weight(gpui::FontWeight(500.0))
-                                    .child(permissions.rows[6].title),
+                                    .child(crate::i18n::text(permissions.rows[6].title)),
                             )
                             .child(
                                 div()
@@ -498,10 +505,16 @@ impl SettingsView {
                                     .text_size(px(13.0))
                                     .line_height(px(18.0))
                                     .text_color(theme.settings_description)
-                                    .child(permissions.rows[6].subtitle),
+                                    .child(crate::i18n::text(permissions.rows[6].subtitle)),
                             ),
                     )
-                    .child(self.reference_button("添加", 66.0, None, false, theme)),
+                    .child(self.reference_button(
+                        crate::i18n::text("添加"),
+                        66.0,
+                        None,
+                        false,
+                        theme,
+                    )),
             )
             .child(
                 div()
@@ -517,7 +530,7 @@ impl SettingsView {
                     .text_size(px(13.0))
                     .line_height(px(18.5625))
                     .text_color(theme.settings_description)
-                    .child(permissions.rows[7].title),
+                    .child(crate::i18n::text(permissions.rows[7].title)),
             )
             .child(
                 div()
@@ -525,7 +538,7 @@ impl SettingsView {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .font_weight(gpui::FontWeight(500.0))
-                    .child(developer.title),
+                    .child(crate::i18n::text(developer.title)),
             )
             .child(
                 div()
@@ -561,7 +574,7 @@ impl SettingsView {
                                             .size(px(16.0))
                                             .flex_none(),
                                     )
-                                    .child(developer.subtitle),
+                                    .child(crate::i18n::text(developer.subtitle)),
                             )
                             .child(
                                 div()
@@ -569,7 +582,7 @@ impl SettingsView {
                                     .text_size(px(13.0))
                                     .line_height(px(18.5625))
                                     .font_weight(gpui::FontWeight(500.0))
-                                    .child(developer_row.title),
+                                    .child(crate::i18n::text(developer_row.title)),
                             )
                             .child(
                                 div()
@@ -577,7 +590,7 @@ impl SettingsView {
                                     .text_size(px(12.0))
                                     .line_height(px(16.0))
                                     .text_color(theme.settings_description)
-                                    .child(developer_row.subtitle),
+                                    .child(crate::i18n::text(developer_row.subtitle)),
                             ),
                     )
                     .child(div().mt(px(39.5625)).child(self.reference_switch_control(

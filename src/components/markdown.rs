@@ -927,7 +927,7 @@ fn render_block(
                     .items_start()
                     .cursor_pointer()
                     .role(gpui::Role::Button)
-                    .aria_label(format!("打开图片：{alt}"))
+                    .aria_label(crate::i18n::format!("打开图片：{alt}" => "Open image: {alt}"))
                     .on_click(move |_, _, cx| {
                         if path.is_absolute() {
                             cx.open_with_system(&path);
@@ -1780,10 +1780,10 @@ fn code_language_label(language: Option<&str>) -> String {
         .map(str::trim)
         .filter(|language| !language.is_empty())
     else {
-        return "纯文本".to_owned();
+        return crate::i18n::text("纯文本").to_owned();
     };
     match raw_language.to_ascii_lowercase().as_str() {
-        "text" | "txt" | "plaintext" | "plain" => "纯文本".to_owned(),
+        "text" | "txt" | "plaintext" | "plain" => crate::i18n::text("纯文本").to_owned(),
         "bash" | "sh" | "zsh" => "Bash".to_owned(),
         "fish" => "Fish".to_owned(),
         "arduino" => "Arduino".to_owned(),

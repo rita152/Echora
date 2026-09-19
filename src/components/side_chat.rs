@@ -138,7 +138,7 @@ impl SideChatPanel {
                             .find(|tab| tab.thread_id.as_ref() == Some(&thread_id))
                         {
                             tab.error = Some(
-                                "侧边聊天的连接已结束。你仍可查看和复制消息，或新建侧边聊天继续。"
+                                crate::i18n::text("侧边聊天的连接已结束。你仍可查看和复制消息，或新建侧边聊天继续。")
                                     .into(),
                             );
                             tab.composer.update(cx, |composer, cx| {
@@ -184,9 +184,9 @@ impl SideChatPanel {
         let id = self.next_id;
         self.next_id += 1;
         let title = if self.tabs.is_empty() {
-            "侧边聊天".into()
+            crate::i18n::text("侧边聊天").into()
         } else {
-            format!("侧边聊天 {}", self.tabs.len() + 1)
+            crate::i18n::format!("侧边聊天 {}" => "Side chat {}", self.tabs.len() + 1)
         };
         let backend = self.backend.clone();
         let composer =
@@ -271,9 +271,9 @@ impl SideChatPanel {
         let backend = self.backend.clone();
         cx.spawn(async move |this, cx| {
             let result = receiver.recv().await.unwrap_or_else(|_| {
-                Err(crate::agent::WorkspaceError::backend(
+                Err(crate::agent::WorkspaceError::backend(crate::i18n::text(
                     "创建侧边聊天的响应通道已关闭",
-                ))
+                )))
             });
             let created = result.as_ref().ok().cloned();
             let cleanup = this
@@ -297,11 +297,15 @@ impl SideChatPanel {
                                 }
                             });
                             if closed {
-                                tab.error =
-                                    Some("侧边聊天的连接已结束，请新建侧边聊天继续。".into());
+                                tab.error = Some(
+                                    crate::i18n::text("侧边聊天的连接已结束，请新建侧边聊天继续。")
+                                        .into(),
+                                );
                             }
                         }
-                        Err(error) => tab.error = Some(error.user_message("打开侧边聊天")),
+                        Err(error) => {
+                            tab.error = Some(error.user_message(crate::i18n::text("打开侧边聊天")))
+                        }
                     }
                     cx.notify();
                     false

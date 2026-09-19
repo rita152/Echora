@@ -124,7 +124,7 @@ impl ReviewPanel {
                     &self.snapshot.files,
                 )));
                 self.menu = None;
-                self.show_notice("已复制 git apply 命令".into(), cx);
+                self.show_notice(crate::i18n::text("已复制 git apply 命令").into(), cx);
             }
             Action::Collapse => self.toggle_all(cx),
             Action::Split => {
@@ -140,7 +140,7 @@ impl ReviewPanel {
             Action::Copy(s) => {
                 cx.write_to_clipboard(ClipboardItem::new_string(s));
                 self.menu = None;
-                self.show_notice("已复制".into(), cx);
+                self.show_notice(crate::i18n::text("已复制").into(), cx);
             }
             Action::Viewed(i) => {
                 let f = &self.snapshot.files[i];
@@ -324,13 +324,28 @@ impl ReviewPanel {
         let toggle = |on: bool, yes: &str, no: &str| if on { yes.into() } else { no.into() };
         match menu {
             Menu::Scope => vec![
-                ("上一轮".into(), Action::Scope(Scope::LastTurn)),
-                ("未提交".into(), Action::Scope(Scope::Uncommitted)),
-                ("未暂存".into(), Action::Scope(Scope::Unstaged)),
-                ("已暂存".into(), Action::Scope(Scope::Staged)),
-                ("已提交  ›".into(), Action::Menu(Menu::Commits)),
                 (
-                    "分支".into(),
+                    crate::i18n::text("上一轮").into(),
+                    Action::Scope(Scope::LastTurn),
+                ),
+                (
+                    crate::i18n::text("未提交").into(),
+                    Action::Scope(Scope::Uncommitted),
+                ),
+                (
+                    crate::i18n::text("未暂存").into(),
+                    Action::Scope(Scope::Unstaged),
+                ),
+                (
+                    crate::i18n::text("已暂存").into(),
+                    Action::Scope(Scope::Staged),
+                ),
+                (
+                    crate::i18n::text("已提交  ›").into(),
+                    Action::Menu(Menu::Commits),
+                ),
+                (
+                    crate::i18n::text("分支").into(),
                     Action::Scope(Scope::Branch(
                         self.snapshot.upstream.clone().unwrap_or_else(|| {
                             self.snapshot
@@ -344,36 +359,62 @@ impl ReviewPanel {
                 ),
             ],
             Menu::View => vec![
-                ("刷新".into(), Action::Refresh),
+                (crate::i18n::text("刷新").into(), Action::Refresh),
                 (
-                    toggle(self.wrap, "禁用自动换行", "启用自动换行"),
+                    toggle(
+                        self.wrap,
+                        crate::i18n::text("禁用自动换行"),
+                        crate::i18n::text("启用自动换行"),
+                    ),
                     Action::Wrap,
                 ),
                 (
-                    toggle(self.load_files, "不加载完整文件", "加载完整文件"),
+                    toggle(
+                        self.load_files,
+                        crate::i18n::text("不加载完整文件"),
+                        crate::i18n::text("加载完整文件"),
+                    ),
                     Action::LoadFiles,
                 ),
                 (
-                    toggle(self.rich, "禁用富文本预览", "启用富文本预览"),
+                    toggle(
+                        self.rich,
+                        crate::i18n::text("禁用富文本预览"),
+                        crate::i18n::text("启用富文本预览"),
+                    ),
                     Action::Rich,
                 ),
                 (
-                    toggle(self.words, "禁用文字差异", "启用文字差异"),
+                    toggle(
+                        self.words,
+                        crate::i18n::text("禁用文字差异"),
+                        crate::i18n::text("启用文字差异"),
+                    ),
                     Action::Words,
                 ),
                 (
-                    toggle(self.whitespace, "显示空白字符", "隐藏空白字符"),
+                    toggle(
+                        self.whitespace,
+                        crate::i18n::text("显示空白字符"),
+                        crate::i18n::text("隐藏空白字符"),
+                    ),
                     Action::Whitespace,
                 ),
-                ("复制 git apply 命令".into(), Action::CopyPatch),
+                (
+                    crate::i18n::text("复制 git apply 命令").into(),
+                    Action::CopyPatch,
+                ),
             ],
             Menu::Git => vec![
-                ("提交或推送".into(), Action::Commit),
-                ("创建 Pull Request".into(), Action::PullRequest),
+                (crate::i18n::text("提交或推送").into(), Action::Commit),
+                (
+                    crate::i18n::text("创建 Pull Request").into(),
+                    Action::PullRequest,
+                ),
             ],
             Menu::CommitBranch => vec![
                 (self.snapshot.branch.clone(), Action::NewBranch(false)),
-                ("新分支".into(), Action::NewBranch(true)),
+                (crate::i18n::text("新分支").into(), Action::NewBranch(true)),
             ],
             Menu::PullRequestBase => {
                 let mut names = self
@@ -414,20 +455,23 @@ impl ReviewPanel {
             Menu::File(i) => {
                 let file = &self.snapshot.files[*i];
                 let mut a = vec![
-                    ("打开文件".into(), Action::Open(*i)),
-                    ("在访达中显示".into(), Action::Reveal(*i)),
-                    ("复制路径".into(), Action::Copy(file.path.clone())),
+                    (crate::i18n::text("打开文件").into(), Action::Open(*i)),
+                    (crate::i18n::text("在访达中显示").into(), Action::Reveal(*i)),
                     (
-                        "复制绝对路径".into(),
+                        crate::i18n::text("复制路径").into(),
+                        Action::Copy(file.path.clone()),
+                    ),
+                    (
+                        crate::i18n::text("复制绝对路径").into(),
                         Action::Copy(self.snapshot.root.join(&file.path).to_string_lossy().into()),
                     ),
                 ];
                 if self.scope.editable() {
                     a.push((
                         if self.scope == Scope::Staged {
-                            "取消暂存"
+                            crate::i18n::text("取消暂存")
                         } else {
-                            "暂存更改"
+                            crate::i18n::text("暂存更改")
                         }
                         .into(),
                         Action::Mutation(if self.scope == Scope::Staged {
@@ -437,7 +481,7 @@ impl ReviewPanel {
                         }),
                     ));
                     a.push((
-                        "撤销更改…".into(),
+                        crate::i18n::text("撤销更改…").into(),
                         Action::Confirm(Mutation::Discard(file.path.clone())),
                     ));
                 }
@@ -512,9 +556,9 @@ impl ReviewPanel {
                     .text_color(t.text_tertiary)
                     .text_size(px(13.))
                     .child(if m == Menu::Commits {
-                        "分支上暂无提交记录"
+                        crate::i18n::text("分支上暂无提交记录")
                     } else {
-                        "没有匹配的文件"
+                        crate::i18n::text("没有匹配的文件")
                     }),
             );
         }
@@ -596,7 +640,7 @@ impl ReviewPanel {
             .child(div().flex_1().min_w(px(0.)))
             .child(self.button(
                 "review-options",
-                "查看选项",
+                crate::i18n::text("查看选项"),
                 Some("review-options"),
                 Action::Menu(Menu::View),
                 cx,
@@ -604,9 +648,9 @@ impl ReviewPanel {
             .child(self.button(
                 "review-collapse",
                 if self.collapsed.len() == self.snapshot.files.len() {
-                    "展开全部差异"
+                    crate::i18n::text("展开全部差异")
                 } else {
-                    "折叠全部差异"
+                    crate::i18n::text("折叠全部差异")
                 },
                 Some("review-collapse"),
                 Action::Collapse,
@@ -614,7 +658,7 @@ impl ReviewPanel {
             ))
             .child(self.button(
                 "review-jump",
-                "跳转到文件",
+                crate::i18n::text("跳转到文件"),
                 Some("review-jump"),
                 Action::Menu(Menu::Jump),
                 cx,
@@ -623,9 +667,9 @@ impl ReviewPanel {
                 self.button(
                     "review-split",
                     if self.split {
-                        "切换到统一差异视图"
+                        crate::i18n::text("切换到统一差异视图")
                     } else {
-                        "切换到拆分差异视图"
+                        crate::i18n::text("切换到拆分差异视图")
                     },
                     Some("review-split"),
                     Action::Split,
@@ -638,9 +682,9 @@ impl ReviewPanel {
                     self.button(
                         "review-tree",
                         if self.tree_open {
-                            "隐藏文件"
+                            crate::i18n::text("隐藏文件")
                         } else {
-                            "显示文件"
+                            crate::i18n::text("显示文件")
                         },
                         Some("review-tree"),
                         Action::Tree,
@@ -652,7 +696,7 @@ impl ReviewPanel {
             .child(
                 self.button(
                     "review-git",
-                    "提交或推送",
+                    crate::i18n::text("提交或推送"),
                     Some("review-commit"),
                     Action::Commit,
                     cx,
@@ -662,7 +706,7 @@ impl ReviewPanel {
             )
             .child(self.button(
                 "review-more-git",
-                "更多 Git 操作",
+                crate::i18n::text("更多 Git 操作"),
                 Some("chevron-down"),
                 Action::Menu(Menu::Git),
                 cx,

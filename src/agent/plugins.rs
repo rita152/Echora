@@ -132,10 +132,10 @@ impl AgentPluginDisabledReason {
     /// The reason text the directory shows for a disabled entry.
     pub fn label(self) -> &'static str {
         match self {
-            Self::DisabledByAdmin => "管理员已停用",
-            Self::PlanNotEligible => "当前方案不可用",
-            Self::RequiredAppUnavailable => "所需应用不可用",
-            Self::Unknown => "暂不可用",
+            Self::DisabledByAdmin => crate::i18n::text("管理员已停用"),
+            Self::PlanNotEligible => crate::i18n::text("当前方案不可用"),
+            Self::RequiredAppUnavailable => crate::i18n::text("所需应用不可用"),
+            Self::Unknown => crate::i18n::text("暂不可用"),
         }
     }
 }
@@ -551,8 +551,12 @@ impl<T> AgentPluginOperationOutcome<T> {
         match self {
             Self::Succeeded(_) => success.to_owned(),
             Self::Failed { message, .. } => message.clone(),
-            Self::TimedOut { .. } => "操作超时，结果未确认；请重新读取后再试".to_owned(),
-            Self::Unknown { .. } => "操作结果未知；请重新读取目录确认当前状态".to_owned(),
+            Self::TimedOut { .. } => {
+                crate::i18n::text("操作超时，结果未确认；请重新读取后再试").to_owned()
+            }
+            Self::Unknown { .. } => {
+                crate::i18n::text("操作结果未知；请重新读取目录确认当前状态").to_owned()
+            }
         }
     }
 }
@@ -828,9 +832,13 @@ pub struct AgentPluginsError {
 impl AgentPluginsError {
     pub fn user_message(&self) -> String {
         match self.kind {
-            AgentPluginsErrorKind::Unsupported => "当前 coding agent 不支持插件管理".to_owned(),
-            AgentPluginsErrorKind::Connection => "与 coding agent 的连接已断开".to_owned(),
-            AgentPluginsErrorKind::Protocol => "插件请求失败".to_owned(),
+            AgentPluginsErrorKind::Unsupported => {
+                crate::i18n::text("当前 coding agent 不支持插件管理").to_owned()
+            }
+            AgentPluginsErrorKind::Connection => {
+                crate::i18n::text("与 coding agent 的连接已断开").to_owned()
+            }
+            AgentPluginsErrorKind::Protocol => crate::i18n::text("插件请求失败").to_owned(),
         }
     }
 }

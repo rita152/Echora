@@ -75,11 +75,11 @@ impl AgentMcpAuthStatus {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Unknown => "认证状态未知",
-            Self::Unsupported => "无需认证",
-            Self::NotLoggedIn => "尚未登录",
-            Self::BearerToken => "已配置令牌",
-            Self::OAuth => "已登录",
+            Self::Unknown => crate::i18n::text("认证状态未知"),
+            Self::Unsupported => crate::i18n::text("无需认证"),
+            Self::NotLoggedIn => crate::i18n::text("尚未登录"),
+            Self::BearerToken => crate::i18n::text("已配置令牌"),
+            Self::OAuth => crate::i18n::text("已登录"),
         }
     }
 
@@ -117,13 +117,13 @@ impl AgentMcpServerConnectionStatus {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::NotStarted => "未连接",
-            Self::Starting => "连接中",
-            Self::Connected => "已连接",
-            Self::AuthenticationRequired => "需要登录",
-            Self::Failed => "连接失败",
-            Self::Cancelled => "已取消",
-            Self::Disabled => "已停用",
+            Self::NotStarted => crate::i18n::text("未连接"),
+            Self::Starting => crate::i18n::text("连接中"),
+            Self::Connected => crate::i18n::text("已连接"),
+            Self::AuthenticationRequired => crate::i18n::text("需要登录"),
+            Self::Failed => crate::i18n::text("连接失败"),
+            Self::Cancelled => crate::i18n::text("已取消"),
+            Self::Disabled => crate::i18n::text("已停用"),
         }
     }
 }
@@ -317,10 +317,14 @@ impl AgentMcpReloadOutcome {
 
     pub fn user_message(&self) -> String {
         match self {
-            Self::Reloaded => "已重新加载 MCP 服务器".to_owned(),
+            Self::Reloaded => crate::i18n::text("已重新加载 MCP 服务器").to_owned(),
             Self::Failed { message, .. } => message.clone(),
-            Self::TimedOut { .. } => "重新加载超时，结果未确认；连接已重置，请重试".to_owned(),
-            Self::Unknown { .. } => "重新加载结果未知；请重新读取服务器列表".to_owned(),
+            Self::TimedOut { .. } => {
+                crate::i18n::text("重新加载超时，结果未确认；连接已重置，请重试").to_owned()
+            }
+            Self::Unknown { .. } => {
+                crate::i18n::text("重新加载结果未知；请重新读取服务器列表").to_owned()
+            }
         }
     }
 }
@@ -358,9 +362,13 @@ pub struct AgentMcpError {
 impl AgentMcpError {
     pub fn user_message(&self) -> String {
         match self.kind {
-            AgentMcpErrorKind::Unsupported => "当前 coding agent 不支持 MCP 管理".to_owned(),
-            AgentMcpErrorKind::Connection => "与 coding agent 的连接已断开".to_owned(),
-            AgentMcpErrorKind::Protocol => "MCP 请求失败".to_owned(),
+            AgentMcpErrorKind::Unsupported => {
+                crate::i18n::text("当前 coding agent 不支持 MCP 管理").to_owned()
+            }
+            AgentMcpErrorKind::Connection => {
+                crate::i18n::text("与 coding agent 的连接已断开").to_owned()
+            }
+            AgentMcpErrorKind::Protocol => crate::i18n::text("MCP 请求失败").to_owned(),
         }
     }
 }

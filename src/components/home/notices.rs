@@ -23,7 +23,7 @@ pub(super) fn retrying_error_activity(
     details: Option<String>,
     theme: Theme,
 ) -> impl IntoElement {
-    let mut accessible_label = format!("Codex 错误，正在重试：{message}");
+    let mut accessible_label = crate::i18n::format!("Codex 错误，正在重试：{message}" => "Codex error, retrying: {message}");
     if let Some(details) = details
         .as_deref()
         .filter(|details| !details.trim().is_empty())
@@ -75,12 +75,12 @@ pub(super) fn notice_activity(
         content_gap,
     } = notice;
     let file_label = file.as_ref().map(|file| {
-        let mut label = format!("文件：{}", file.path);
+        let mut label = crate::i18n::format!("文件：{}" => "File: {}", file.path);
         match (file.line, file.column) {
             (Some(line), Some(column)) => {
-                label.push_str(&format!("（第 {line} 行，第 {column} 列）"));
+                label.push_str(&crate::i18n::format!("（第 {line} 行，第 {column} 列）" => "(line {line}, column {column})"));
             }
-            (Some(line), None) => label.push_str(&format!("（第 {line} 行）")),
+            (Some(line), None) => label.push_str(&crate::i18n::format!("（第 {line} 行）" => "(line {line})")),
             _ => {}
         }
         label
@@ -142,7 +142,7 @@ pub(super) fn notice_activity(
                 div()
                     .id(("config-warning-open", index))
                     .role(Role::Button)
-                    .aria_label(format!("打开配置文件 {}", file.path))
+                    .aria_label(crate::i18n::format!("打开配置文件 {}" => "Open configuration file {}", file.path))
                     .h(px(NOTICE_BUTTON_HEIGHT))
                     .px(px(8.0))
                     .flex_none()
@@ -159,7 +159,7 @@ pub(super) fn notice_activity(
                     .cursor_pointer()
                     .hover(|button| button.bg(theme.sidebar_hover))
                     .on_click(move |_, _, cx| cx.open_with_system(&path))
-                    .child("打开文件"),
+                    .child(crate::i18n::text("打开文件")),
             )
         })
 }
@@ -168,10 +168,10 @@ pub(super) fn notice_activity(
 pub(crate) fn thread_owner_warning(theme: Theme) -> impl IntoElement {
     notice_activity(
         NoticePresentation {
-            summary: "此会话正由另一个 app-server 使用，请释放后重试。".into(),
+            summary: crate::i18n::text("此会话正由另一个 app-server 使用，请释放后重试。").into(),
             details: None,
             file: None,
-            accessible_kind: "Codex 警告",
+            accessible_kind: crate::i18n::text("Codex 警告"),
             outer_gap: super::NOTICE_WARNING_GAP,
             content_gap: super::NOTICE_WARNING_CONTENT_GAP,
         },
@@ -241,10 +241,12 @@ pub(super) fn context_compaction_activity(
         .font_family(".SystemUIFont")
         .text_color(color)
         .child(icon("context-compaction", color.into()).size(px(20.0)))
-        .when(compaction.completed, |row| row.child("上下文已自动压缩"))
+        .when(compaction.completed, |row| {
+            row.child(crate::i18n::text("上下文已自动压缩"))
+        })
         .when(!compaction.completed, |row| {
             row.child(shimmer_label(
-                "正在压缩上下文",
+                crate::i18n::text("正在压缩上下文"),
                 98.0,
                 theme,
                 shimmer_progress,
@@ -262,9 +264,9 @@ pub(super) fn web_search_label(search: &crate::agent::AgentWebSearch) -> String 
     {
         Some("openPage") => (
             if active {
-                "正在打开网页"
+                crate::i18n::text("正在打开网页")
             } else {
-                "已打开网页"
+                crate::i18n::text("已打开网页")
             },
             search
                 .action
@@ -275,9 +277,9 @@ pub(super) fn web_search_label(search: &crate::agent::AgentWebSearch) -> String 
         ),
         Some("findInPage") => (
             if active {
-                "正在查找网页"
+                crate::i18n::text("正在查找网页")
             } else {
-                "已查找网页"
+                crate::i18n::text("已查找网页")
             },
             search
                 .action
@@ -288,16 +290,16 @@ pub(super) fn web_search_label(search: &crate::agent::AgentWebSearch) -> String 
         ),
         _ => (
             if active {
-                "正在搜索网页"
+                crate::i18n::text("正在搜索网页")
             } else {
-                "已搜索网页"
+                crate::i18n::text("已搜索网页")
             },
             search.query.clone(),
         ),
     };
     let verb = match search.status {
-        AgentActivityStatus::Interrupted => "网页搜索已中断",
-        AgentActivityStatus::Failed => "网页搜索失败",
+        AgentActivityStatus::Interrupted => crate::i18n::text("网页搜索已中断"),
+        AgentActivityStatus::Failed => crate::i18n::text("网页搜索失败"),
         _ => verb,
     };
     format!("{verb} ：{target}")

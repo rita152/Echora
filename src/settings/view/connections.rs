@@ -37,7 +37,7 @@ impl SettingsView {
                     .text_size(px(24.0))
                     .line_height(px(28.8))
                     .font_weight(gpui::FontWeight::NORMAL)
-                    .child(page.label),
+                    .child(crate::i18n::text(page.label)),
             )
             .child(
                 div()
@@ -59,7 +59,7 @@ impl SettingsView {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .child("控制这台 Mac"),
+                            .child(crate::i18n::text("控制这台 Mac")),
                     )
                     .child(
                         div()
@@ -68,7 +68,7 @@ impl SettingsView {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .child("控制其他设备"),
+                            .child(crate::i18n::text("控制其他设备")),
                     )
                     .child(
                         div()
@@ -90,7 +90,7 @@ impl SettingsView {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .font_weight(gpui::FontWeight(500.0))
-                    .child(div().child(device.title))
+                    .child(div().child(crate::i18n::text(device.title)))
                     .child(
                         div()
                             .flex()
@@ -123,7 +123,7 @@ impl SettingsView {
                                     .line_height(px(16.0))
                                     .font_weight(gpui::FontWeight(500.0))
                                     .text_color(theme.surface)
-                                    .child("添加"),
+                                    .child(crate::i18n::text("添加")),
                             ),
                     ),
             )
@@ -148,7 +148,7 @@ impl SettingsView {
                                     .text_size(px(13.0))
                                     .line_height(px(18.5625))
                                     .font_weight(gpui::FontWeight(500.0))
-                                    .child(device.rows[0].title),
+                                    .child(crate::i18n::text(device.rows[0].title)),
                             )
                             .child(self.reference_switch_control(
                                 true,
@@ -198,7 +198,7 @@ impl SettingsView {
                                     .text_size(px(12.0))
                                     .line_height(px(16.0))
                                     .text_color(danger_text)
-                                    .child("撤销访问权限"),
+                                    .child(crate::i18n::text("撤销访问权限")),
                             ),
                     ),
             )
@@ -208,7 +208,7 @@ impl SettingsView {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .font_weight(gpui::FontWeight(500.0))
-                    .child(other.title),
+                    .child(crate::i18n::text(other.title)),
             )
             .child(
                 div()

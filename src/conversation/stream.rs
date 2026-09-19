@@ -128,7 +128,9 @@ pub(crate) fn ensure_closed_batch_is_terminal(batch: &mut Vec<AgentEvent>) {
             AgentEvent::Completed | AgentEvent::Interrupted | AgentEvent::Failed(_)
         )
     }) {
-        batch.push(AgentEvent::Failed(STREAM_DISCONNECTED_MESSAGE.to_owned()));
+        batch.push(AgentEvent::Failed(
+            crate::i18n::text(STREAM_DISCONNECTED_MESSAGE).to_owned(),
+        ));
     }
 }
 

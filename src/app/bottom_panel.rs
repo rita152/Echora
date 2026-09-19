@@ -208,7 +208,13 @@ impl ChatApp {
                     .size(px(16.0))
                     .flex_none(),
             )
-            .child(div().min_w(px(0.0)).flex_1().truncate().child(label))
+            .child(
+                div()
+                    .min_w(px(0.0))
+                    .flex_1()
+                    .truncate()
+                    .child(crate::i18n::text(label)),
+            )
             .child(
                 div()
                     .ml(px(8.0))
@@ -320,7 +326,7 @@ impl ChatApp {
                             } else {
                                 theme.text_secondary
                             })
-                            .child(label),
+                            .child(crate::i18n::text(label)),
                     )
                     .child(
                         div()
@@ -438,11 +444,11 @@ impl ChatApp {
 
 pub(super) fn bottom_panel_tab_spec(mode: BottomPanelMode) -> (&'static str, &'static str) {
     match mode {
-        BottomPanelMode::Review => ("审查", "panel-review"),
-        BottomPanelMode::Terminal => ("终端", "panel-terminal"),
+        BottomPanelMode::Review => (crate::i18n::text("审查"), "panel-review"),
+        BottomPanelMode::Terminal => (crate::i18n::text("终端"), "panel-terminal"),
         // CDP: a browser item appended from the add menu is titled 新标签页.
-        BottomPanelMode::Browser => ("新标签页", "panel-browser"),
-        BottomPanelMode::Files => ("文件", "panel-files"),
-        BottomPanelMode::SideChat => ("侧边聊天", "side-chat"),
+        BottomPanelMode::Browser => (crate::i18n::text("新标签页"), "panel-browser"),
+        BottomPanelMode::Files => (crate::i18n::text("文件"), "panel-files"),
+        BottomPanelMode::SideChat => (crate::i18n::text("侧边聊天"), "side-chat"),
     }
 }

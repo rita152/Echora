@@ -120,28 +120,32 @@ impl ConversationState {
             .enumerate()
             .map(|(index, choice)| {
                 let (label, description, is_rejection) = match choice {
-                    AgentCommandApprovalChoice::Accept => ("允许一次".to_owned(), None, false),
+                    AgentCommandApprovalChoice::Accept => {
+                        (crate::i18n::text("允许一次").to_owned(), None, false)
+                    }
                     AgentCommandApprovalChoice::AcceptForSession => {
-                        ("允许此对话".to_owned(), None, false)
+                        (crate::i18n::text("允许此对话").to_owned(), None, false)
                     }
                     AgentCommandApprovalChoice::Decline => (
-                        "拒绝".to_owned(),
-                        Some("拒绝此操作，继续当前轮次".to_owned()),
+                        crate::i18n::text("拒绝").to_owned(),
+                        Some(crate::i18n::text("拒绝此操作，继续当前轮次").to_owned()),
                         true,
                     ),
                     AgentCommandApprovalChoice::Cancel => (
-                        "拒绝并停止".to_owned(),
-                        Some("拒绝此操作并停止当前轮次".to_owned()),
+                        crate::i18n::text("拒绝并停止").to_owned(),
+                        Some(crate::i18n::text("拒绝此操作并停止当前轮次").to_owned()),
                         true,
                     ),
-                    AgentCommandApprovalChoice::AcceptWithExecpolicyAmendment(prefix) => {
-                        ("允许类似命令".to_owned(), Some(prefix.join(" ")), false)
-                    }
+                    AgentCommandApprovalChoice::AcceptWithExecpolicyAmendment(prefix) => (
+                        crate::i18n::text("允许类似命令").to_owned(),
+                        Some(prefix.join(" ")),
+                        false,
+                    ),
                     AgentCommandApprovalChoice::ApplyNetworkPolicyAmendment(rule) => (
                         if rule.action == AgentNetworkPolicyAction::Allow {
-                            "始终允许此网站"
+                            crate::i18n::text("始终允许此网站")
                         } else {
-                            "始终拒绝此网站"
+                            crate::i18n::text("始终拒绝此网站")
                         }
                         .to_owned(),
                         Some(rule.host.clone()),
@@ -176,7 +180,9 @@ impl ConversationState {
         if let AgentOptionalField::Value(permissions) = &request.additional_permissions {
             let (network, paths) = permission_presentation_data(permissions);
             if network {
-                model.permission_details.push("互联网访问".to_owned());
+                model
+                    .permission_details
+                    .push(crate::i18n::text("互联网访问").to_owned());
             }
             model
                 .permission_details
@@ -184,9 +190,9 @@ impl ConversationState {
                     format!(
                         "{}：{}",
                         match path.access {
-                            PermissionPathAccess::Read => "读取",
-                            PermissionPathAccess::Write => "写入",
-                            PermissionPathAccess::Deny => "禁止访问",
+                            PermissionPathAccess::Read => crate::i18n::text("读取"),
+                            PermissionPathAccess::Write => crate::i18n::text("写入"),
+                            PermissionPathAccess::Deny => crate::i18n::text("禁止访问"),
                         },
                         path.path
                     )
@@ -194,7 +200,8 @@ impl ConversationState {
         }
         if model.server_choices.is_empty() {
             model.status = ApprovalCardStatus::Failed;
-            model.failure_message = Some("服务器没有提供可用的审批选项".to_owned());
+            model.failure_message =
+                Some(crate::i18n::text("服务器没有提供可用的审批选项").to_owned());
         }
         self.command_approval_requests.insert(id.clone(), request);
         self.approval_responders.insert(id.clone(), responder);
@@ -247,7 +254,7 @@ impl ConversationState {
         };
         let review = DiffReviewPresentation::from_file_change_entries(
             format!("file-approval-{item_id}"),
-            "待审批",
+            crate::i18n::text("待审批"),
             &change.changes,
             Some(&self.cwd),
         );

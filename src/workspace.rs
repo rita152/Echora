@@ -23,7 +23,7 @@ use loaders::{
     load_all_turns, receive,
 };
 use preferences::{PreferenceStore, default_preferences_path};
-pub use preferences::{ReviewPreferences, UiPreferences};
+pub use preferences::{ReviewPreferences, UiPreferences, preferred_language};
 
 /// One row of the chat search dialog: the thread plus the match snippet the
 /// backend returned for the current query. The reference collapses the snippet
@@ -235,7 +235,7 @@ impl WorkspaceStore {
             .unwrap_or_else(|_| {
                 let mut snapshot =
                     WorkspaceSnapshot::new(self.backend.capabilities(), UiPreferences::current());
-                snapshot.error = Some("WorkspaceStore 状态锁已损坏".to_owned());
+                snapshot.error = Some(crate::i18n::text("WorkspaceStore 状态锁已损坏").to_owned());
                 snapshot
             })
     }
@@ -467,7 +467,10 @@ impl WorkspaceStore {
                 snapshot.loading.projects = false;
                 match projects {
                     Ok(projects) => snapshot.projects = projects,
-                    Err(error) => append_error(&mut snapshot.error, error.user_message("加载项目")),
+                    Err(error) => append_error(
+                        &mut snapshot.error,
+                        error.user_message(crate::i18n::text("加载项目")),
+                    ),
                 }
             });
         });
@@ -493,9 +496,10 @@ impl WorkspaceStore {
                 snapshot.loading.recent = false;
                 match recent {
                     Ok(recent) => snapshot.recent_threads = recent,
-                    Err(error) => {
-                        append_error(&mut snapshot.error, error.user_message("加载最近聊天"))
-                    }
+                    Err(error) => append_error(
+                        &mut snapshot.error,
+                        error.user_message(crate::i18n::text("加载最近聊天")),
+                    ),
                 }
             });
         });
@@ -527,9 +531,10 @@ impl WorkspaceStore {
                 snapshot.loading.archived = false;
                 match archived {
                     Ok(archived) => snapshot.archived_threads = archived,
-                    Err(error) => {
-                        append_error(&mut snapshot.error, error.user_message("加载已归档聊天"))
-                    }
+                    Err(error) => append_error(
+                        &mut snapshot.error,
+                        error.user_message(crate::i18n::text("加载已归档聊天")),
+                    ),
                 }
             });
         });
@@ -585,9 +590,10 @@ impl WorkspaceStore {
             store.update(|snapshot| {
                 match pinned {
                     Ok(pinned) => snapshot.pinned_threads = pinned,
-                    Err(error) => {
-                        append_error(&mut snapshot.error, error.user_message("加载置顶聊天"))
-                    }
+                    Err(error) => append_error(
+                        &mut snapshot.error,
+                        error.user_message(crate::i18n::text("加载置顶聊天")),
+                    ),
                 }
                 if let Some(section) = pinned_section {
                     snapshot.preferences.pinned_section_id = Some(section.section_id);
@@ -596,7 +602,10 @@ impl WorkspaceStore {
                 }
                 snapshot.loading.pinned = false;
                 if let Err(error) = sections {
-                    append_error(&mut snapshot.error, error.user_message("加载会话分区"));
+                    append_error(
+                        &mut snapshot.error,
+                        error.user_message(crate::i18n::text("加载会话分区")),
+                    );
                 }
             });
             if preference_changed {
@@ -629,7 +638,9 @@ impl WorkspaceStore {
                 snapshot.loading.projects = false;
                 match result {
                     Ok(projects) => snapshot.projects = projects,
-                    Err(error) => snapshot.error = Some(error.user_message("刷新项目")),
+                    Err(error) => {
+                        snapshot.error = Some(error.user_message(crate::i18n::text("刷新项目")))
+                    }
                 }
             });
         });
@@ -661,7 +672,10 @@ impl WorkspaceStore {
                 snapshot.loading.archived = false;
                 match result {
                     Ok(threads) => snapshot.archived_threads = threads,
-                    Err(error) => snapshot.error = Some(error.user_message("刷新已归档聊天")),
+                    Err(error) => {
+                        snapshot.error =
+                            Some(error.user_message(crate::i18n::text("刷新已归档聊天")))
+                    }
                 }
             });
         });
@@ -710,14 +724,18 @@ impl WorkspaceStore {
                     snapshot.loading.recent = false;
                     match recent {
                         Ok(recent) => snapshot.recent_threads = recent,
-                        Err(error) => errors.push(error.user_message("刷新最近聊天")),
+                        Err(error) => {
+                            errors.push(error.user_message(crate::i18n::text("刷新最近聊天")))
+                        }
                     }
                 }
                 if pinned_current {
                     snapshot.loading.pinned = false;
                     match pinned {
                         Ok(pinned) => snapshot.pinned_threads = pinned,
-                        Err(error) => errors.push(error.user_message("刷新置顶聊天")),
+                        Err(error) => {
+                            errors.push(error.user_message(crate::i18n::text("刷新置顶聊天")))
+                        }
                     }
                 }
                 if !errors.is_empty() {
@@ -752,7 +770,9 @@ impl WorkspaceStore {
                 snapshot.loading.search = false;
                 match result {
                     Ok(results) => snapshot.search_results = results,
-                    Err(error) => snapshot.error = Some(error.user_message("搜索聊天")),
+                    Err(error) => {
+                        snapshot.error = Some(error.user_message(crate::i18n::text("搜索聊天")))
+                    }
                 }
             });
         });
@@ -762,7 +782,7 @@ impl WorkspaceStore {
         let name = root
             .file_name()
             .and_then(|name| name.to_str())
-            .unwrap_or("项目")
+            .unwrap_or(crate::i18n::text("项目"))
             .to_owned();
         let operation = WorkspaceOperation::CreateProject(root.display().to_string());
         self.begin(operation.clone());
@@ -771,16 +791,21 @@ impl WorkspaceStore {
             roots: vec![root],
         });
         let store = Arc::clone(self);
-        std::thread::spawn(move || match receive(receiver, "创建项目") {
-            Ok(project) => {
-                if let Ok(mut deleted) = store.deleted_project_ids.lock() {
-                    deleted.remove(&project.project_id);
+        std::thread::spawn(
+            move || match receive(receiver, crate::i18n::text("创建项目")) {
+                Ok(project) => {
+                    if let Ok(mut deleted) = store.deleted_project_ids.lock() {
+                        deleted.remove(&project.project_id);
+                    }
+                    store.update(|snapshot| upsert_project(&mut snapshot.projects, project));
+                    store.finish(&operation, None);
                 }
-                store.update(|snapshot| upsert_project(&mut snapshot.projects, project));
-                store.finish(&operation, None);
-            }
-            Err(error) => store.finish(&operation, Some(error.user_message("创建项目"))),
-        });
+                Err(error) => store.finish(
+                    &operation,
+                    Some(error.user_message(crate::i18n::text("创建项目"))),
+                ),
+            },
+        );
     }
 
     pub fn update_project(self: &Arc<Self>, project_id: ProjectId, update: UpdateProject) {
@@ -788,15 +813,20 @@ impl WorkspaceStore {
         self.begin(operation.clone());
         let receiver = self.backend.update_project(project_id, update);
         let store = Arc::clone(self);
-        std::thread::spawn(move || match receive(receiver, "更新项目") {
-            Ok(project) => {
-                if !store.deleted_projects().contains(&project.project_id) {
-                    store.update(|snapshot| upsert_project(&mut snapshot.projects, project));
+        std::thread::spawn(
+            move || match receive(receiver, crate::i18n::text("更新项目")) {
+                Ok(project) => {
+                    if !store.deleted_projects().contains(&project.project_id) {
+                        store.update(|snapshot| upsert_project(&mut snapshot.projects, project));
+                    }
+                    store.finish(&operation, None);
                 }
-                store.finish(&operation, None);
-            }
-            Err(error) => store.finish(&operation, Some(error.user_message("更新项目"))),
-        });
+                Err(error) => store.finish(
+                    &operation,
+                    Some(error.user_message(crate::i18n::text("更新项目"))),
+                ),
+            },
+        );
     }
 
     pub fn delete_project(self: &Arc<Self>, project_id: ProjectId) {
@@ -804,18 +834,23 @@ impl WorkspaceStore {
         self.begin(operation.clone());
         let receiver = self.backend.delete_project(project_id);
         let store = Arc::clone(self);
-        std::thread::spawn(move || match receive(receiver, "删除项目") {
-            Ok(()) => {
-                if let WorkspaceOperation::DeleteProject(project_id) = &operation
-                    && let Ok(mut deleted) = store.deleted_project_ids.lock()
-                {
-                    deleted.insert(project_id.clone());
+        std::thread::spawn(
+            move || match receive(receiver, crate::i18n::text("删除项目")) {
+                Ok(()) => {
+                    if let WorkspaceOperation::DeleteProject(project_id) = &operation
+                        && let Ok(mut deleted) = store.deleted_project_ids.lock()
+                    {
+                        deleted.insert(project_id.clone());
+                    }
+                    store.finish(&operation, None);
+                    store.refresh_all();
                 }
-                store.finish(&operation, None);
-                store.refresh_all();
-            }
-            Err(error) => store.finish(&operation, Some(error.user_message("删除项目"))),
-        });
+                Err(error) => store.finish(
+                    &operation,
+                    Some(error.user_message(crate::i18n::text("删除项目"))),
+                ),
+            },
+        );
     }
 
     pub fn move_project(
@@ -827,13 +862,18 @@ impl WorkspaceStore {
         self.begin(operation.clone());
         let receiver = self.backend.move_project(project_id, before_project_id);
         let store = Arc::clone(self);
-        std::thread::spawn(move || match receive(receiver, "移动项目") {
-            Ok(()) => {
-                store.finish(&operation, None);
-                store.refresh_projects();
-            }
-            Err(error) => store.finish(&operation, Some(error.user_message("移动项目"))),
-        });
+        std::thread::spawn(
+            move || match receive(receiver, crate::i18n::text("移动项目")) {
+                Ok(()) => {
+                    store.finish(&operation, None);
+                    store.refresh_projects();
+                }
+                Err(error) => store.finish(
+                    &operation,
+                    Some(error.user_message(crate::i18n::text("移动项目"))),
+                ),
+            },
+        );
     }
 
     pub fn rename_thread(self: &Arc<Self>, thread_id: ThreadId, name: String) {
@@ -843,24 +883,29 @@ impl WorkspaceStore {
             .backend
             .set_thread_name(thread_id.clone(), name.clone());
         let store = Arc::clone(self);
-        std::thread::spawn(move || match receive(receiver, "重命名会话") {
-            Ok(()) => {
-                store.update_thread_overlay(&thread_id, |overlay| {
-                    overlay.name = Some(Some(name.clone()))
-                });
-                store.update(|snapshot| {
-                    visit_thread_mut(snapshot, &thread_id, |thread| {
-                        thread.title = if name.trim().is_empty() {
-                            fallback_thread_title(&thread.preview)
-                        } else {
-                            name.clone()
-                        };
+        std::thread::spawn(
+            move || match receive(receiver, crate::i18n::text("重命名会话")) {
+                Ok(()) => {
+                    store.update_thread_overlay(&thread_id, |overlay| {
+                        overlay.name = Some(Some(name.clone()))
                     });
-                });
-                store.finish(&operation, None);
-            }
-            Err(error) => store.finish(&operation, Some(error.user_message("重命名聊天"))),
-        });
+                    store.update(|snapshot| {
+                        visit_thread_mut(snapshot, &thread_id, |thread| {
+                            thread.title = if name.trim().is_empty() {
+                                fallback_thread_title(&thread.preview)
+                            } else {
+                                name.clone()
+                            };
+                        });
+                    });
+                    store.finish(&operation, None);
+                }
+                Err(error) => store.finish(
+                    &operation,
+                    Some(error.user_message(crate::i18n::text("重命名聊天"))),
+                ),
+            },
+        );
     }
 
     pub fn archive_thread(self: &Arc<Self>, thread_id: ThreadId) {
@@ -868,22 +913,28 @@ impl WorkspaceStore {
         self.begin(operation.clone());
         let receiver = self.backend.archive_thread(thread_id.clone());
         let store = Arc::clone(self);
-        std::thread::spawn(move || match receive(receiver, "归档会话") {
-            Ok(()) => {
-                store.update_thread_overlay(&thread_id, |overlay| overlay.archived = Some(true));
-                store.update(|snapshot| {
-                    snapshot
-                        .recent_threads
-                        .retain(|thread| thread.thread_id != thread_id);
-                    snapshot
-                        .pinned_threads
-                        .retain(|thread| thread.thread_id != thread_id);
-                });
-                store.finish(&operation, None);
-                store.refresh_archived();
-            }
-            Err(error) => store.finish(&operation, Some(error.user_message("归档聊天"))),
-        });
+        std::thread::spawn(
+            move || match receive(receiver, crate::i18n::text("归档会话")) {
+                Ok(()) => {
+                    store
+                        .update_thread_overlay(&thread_id, |overlay| overlay.archived = Some(true));
+                    store.update(|snapshot| {
+                        snapshot
+                            .recent_threads
+                            .retain(|thread| thread.thread_id != thread_id);
+                        snapshot
+                            .pinned_threads
+                            .retain(|thread| thread.thread_id != thread_id);
+                    });
+                    store.finish(&operation, None);
+                    store.refresh_archived();
+                }
+                Err(error) => store.finish(
+                    &operation,
+                    Some(error.user_message(crate::i18n::text("归档聊天"))),
+                ),
+            },
+        );
     }
 
     pub fn unarchive_thread(self: &Arc<Self>, thread_id: ThreadId) {
@@ -891,29 +942,34 @@ impl WorkspaceStore {
         self.begin(operation.clone());
         let receiver = self.backend.unarchive_thread(thread_id);
         let store = Arc::clone(self);
-        std::thread::spawn(move || match receive(receiver, "取消归档") {
-            Ok(mut thread) => {
-                store.update_thread_overlay(&thread.thread_id, |overlay| {
-                    overlay.archived = Some(false)
-                });
-                let visible = apply_thread_overlay(
-                    &mut thread,
-                    &store.thread_overlays(),
-                    ThreadCollectionKind::Recent,
-                );
-                store.update(|snapshot| {
-                    snapshot
-                        .archived_threads
-                        .retain(|candidate| candidate.thread_id != thread.thread_id);
-                    if visible {
-                        upsert_thread(&mut snapshot.recent_threads, thread);
-                    }
-                });
-                store.finish(&operation, None);
-                store.refresh_recent_and_pinned();
-            }
-            Err(error) => store.finish(&operation, Some(error.user_message("取消归档"))),
-        });
+        std::thread::spawn(
+            move || match receive(receiver, crate::i18n::text("取消归档")) {
+                Ok(mut thread) => {
+                    store.update_thread_overlay(&thread.thread_id, |overlay| {
+                        overlay.archived = Some(false)
+                    });
+                    let visible = apply_thread_overlay(
+                        &mut thread,
+                        &store.thread_overlays(),
+                        ThreadCollectionKind::Recent,
+                    );
+                    store.update(|snapshot| {
+                        snapshot
+                            .archived_threads
+                            .retain(|candidate| candidate.thread_id != thread.thread_id);
+                        if visible {
+                            upsert_thread(&mut snapshot.recent_threads, thread);
+                        }
+                    });
+                    store.finish(&operation, None);
+                    store.refresh_recent_and_pinned();
+                }
+                Err(error) => store.finish(
+                    &operation,
+                    Some(error.user_message(crate::i18n::text("取消归档"))),
+                ),
+            },
+        );
     }
 
     pub fn delete_thread(self: &Arc<Self>, thread_id: ThreadId) {
@@ -921,14 +977,19 @@ impl WorkspaceStore {
         self.begin(operation.clone());
         let receiver = self.backend.delete_thread(thread_id.clone());
         let store = Arc::clone(self);
-        std::thread::spawn(move || match receive(receiver, "删除会话") {
-            Ok(()) => {
-                store.update_thread_overlay(&thread_id, |overlay| overlay.deleted = true);
-                store.update(|snapshot| remove_thread(snapshot, &thread_id));
-                store.finish(&operation, None);
-            }
-            Err(error) => store.finish(&operation, Some(error.user_message("删除聊天"))),
-        });
+        std::thread::spawn(
+            move || match receive(receiver, crate::i18n::text("删除会话")) {
+                Ok(()) => {
+                    store.update_thread_overlay(&thread_id, |overlay| overlay.deleted = true);
+                    store.update(|snapshot| remove_thread(snapshot, &thread_id));
+                    store.finish(&operation, None);
+                }
+                Err(error) => store.finish(
+                    &operation,
+                    Some(error.user_message(crate::i18n::text("删除聊天"))),
+                ),
+            },
+        );
     }
 
     pub fn move_thread_to_project(
@@ -948,27 +1009,32 @@ impl WorkspaceStore {
             },
         );
         let store = Arc::clone(self);
-        std::thread::spawn(move || match receive(receiver, "移动会话") {
-            Ok(mut thread) => {
-                store.update_thread_overlay(&thread.thread_id, |overlay| {
-                    overlay.project_id = Some(thread.project_id.clone())
-                });
-                let visible = apply_thread_overlay(
-                    &mut thread,
-                    &store.thread_overlays(),
-                    ThreadCollectionKind::Recent,
-                );
-                store.update(|snapshot| {
-                    if visible {
-                        upsert_thread_everywhere(snapshot, thread);
-                    } else {
-                        remove_thread(snapshot, &thread.thread_id);
-                    }
-                });
-                store.finish(&operation, None);
-            }
-            Err(error) => store.finish(&operation, Some(error.user_message("移动聊天"))),
-        });
+        std::thread::spawn(
+            move || match receive(receiver, crate::i18n::text("移动会话")) {
+                Ok(mut thread) => {
+                    store.update_thread_overlay(&thread.thread_id, |overlay| {
+                        overlay.project_id = Some(thread.project_id.clone())
+                    });
+                    let visible = apply_thread_overlay(
+                        &mut thread,
+                        &store.thread_overlays(),
+                        ThreadCollectionKind::Recent,
+                    );
+                    store.update(|snapshot| {
+                        if visible {
+                            upsert_thread_everywhere(snapshot, thread);
+                        } else {
+                            remove_thread(snapshot, &thread.thread_id);
+                        }
+                    });
+                    store.finish(&operation, None);
+                }
+                Err(error) => store.finish(
+                    &operation,
+                    Some(error.user_message(crate::i18n::text("移动聊天"))),
+                ),
+            },
+        );
     }
 
     pub fn set_thread_pinned(self: &Arc<Self>, thread_id: ThreadId, pinned: bool) {
@@ -989,9 +1055,9 @@ impl WorkspaceStore {
                         .backend
                         .move_thread_to_section(thread_id, section_id, None),
                     if pinned {
-                        "置顶会话"
+                        crate::i18n::text("置顶会话")
                     } else {
-                        "取消置顶"
+                        crate::i18n::text("取消置顶")
                     },
                 )
             })();
@@ -1009,7 +1075,10 @@ impl WorkspaceStore {
                         });
                         store.save_preferences();
                     }
-                    store.finish(&operation, Some(error.user_message("更新置顶状态")));
+                    store.finish(
+                        &operation,
+                        Some(error.user_message(crate::i18n::text("更新置顶状态"))),
+                    );
                 }
             }
         });
@@ -1019,7 +1088,7 @@ impl WorkspaceStore {
         let _guard = self
             .pin_section_lock
             .lock()
-            .map_err(|_| WorkspaceError::backend("pinned section 锁已损坏"))?;
+            .map_err(|_| WorkspaceError::backend(crate::i18n::text("pinned section 锁已损坏")))?;
         if let Some(section_id) = self.snapshot().preferences.pinned_section_id {
             return Ok(section_id);
         }
@@ -1032,7 +1101,7 @@ impl WorkspaceStore {
             None => receive(
                 self.backend
                     .create_thread_section(PINNED_SECTION_NAME.to_owned(), None),
-                "创建置顶分区",
+                crate::i18n::text("创建置顶分区"),
             )?,
         };
         self.update(|snapshot| {
@@ -1087,6 +1156,11 @@ impl WorkspaceStore {
         self.update(|snapshot| snapshot.preferences.review = review);
         self.save_preferences();
     }
+
+    pub fn set_language(&self, language: crate::i18n::Language) {
+        self.update(|snapshot| snapshot.preferences.language = language);
+        self.save_preferences();
+    }
     pub fn set_skip_side_chat_close_confirmation(&self, skip: bool) {
         self.update(|snapshot| snapshot.preferences.skip_side_chat_close_confirmation = skip);
         self.save_preferences();
@@ -1096,7 +1170,8 @@ impl WorkspaceStore {
             Ok(guard) => guard,
             Err(_) => {
                 self.update(|snapshot| {
-                    snapshot.preference_error = Some("UI 偏好写入锁已损坏".to_owned())
+                    snapshot.preference_error =
+                        Some(crate::i18n::text("UI 偏好写入锁已损坏").to_owned())
                 });
                 return;
             }
@@ -1116,13 +1191,16 @@ impl WorkspaceStore {
         let store = Arc::clone(self);
         std::thread::spawn(move || {
             let result = (|| {
-                let mut thread = receive(store.backend.read_thread(thread_id.clone()), "读取会话")?;
+                let mut thread = receive(
+                    store.backend.read_thread(thread_id.clone()),
+                    crate::i18n::text("读取会话"),
+                )?;
                 if !apply_thread_overlay(
                     &mut thread,
                     &store.thread_overlays(),
                     ThreadCollectionKind::History,
                 ) {
-                    return Err(WorkspaceError::backend("会话已不可用"));
+                    return Err(WorkspaceError::backend(crate::i18n::text("会话已不可用")));
                 }
                 let turns = load_all_turns(store.backend.as_ref(), thread_id)?;
                 Ok(ThreadHistory {
@@ -1153,7 +1231,7 @@ fn fallback_thread_title(preview: &str) -> String {
         .lines()
         .find(|line| !line.trim().is_empty())
         .map(str::to_owned)
-        .unwrap_or_else(|| "新对话".to_owned())
+        .unwrap_or_else(|| crate::i18n::text("新对话").to_owned())
 }
 
 fn normalize_workspace_path(path: &Path) -> PathBuf {

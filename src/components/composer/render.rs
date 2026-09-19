@@ -149,7 +149,7 @@ impl ComposerView {
                             div()
                                 .id("composer-review-comments")
                                 .role(gpui::Role::Button)
-                                .aria_label("查看审查评论")
+                                .aria_label(crate::i18n::text("查看审查评论"))
                                 .focusable()
                                 .tab_stop(true)
                                 .h(px(28.))
@@ -177,7 +177,7 @@ impl ComposerView {
                                     div()
                                         .text_size(px(12.))
                                         .text_color(theme.text_secondary)
-                                        .child(format!("{} 个评论", self.review_comments.len())),
+                                        .child(crate::i18n::format!("{} 个评论" => "{} comments", self.review_comments.len())),
                                 ),
                         )
                     })
@@ -202,7 +202,7 @@ impl ComposerView {
                                                 .id("composer-add-context")
                                                 .flex_none()
                                                 .role(gpui::Role::Button)
-                                                .aria_label("添加文件等内容")
+                                                .aria_label(crate::i18n::text("添加文件等内容"))
                                                 .focusable()
                                                 .tab_stop(true)
                                                 .on_click(cx.listener(|this, _, window, cx| { this.toggle_context(window, cx); cx.stop_propagation(); }))
@@ -223,7 +223,7 @@ impl ComposerView {
                                                 div()
                                                     .id("composer-permissions")
                                                     .role(gpui::Role::Button)
-                                                    .aria_label("更改权限")
+                                                    .aria_label(crate::i18n::text("更改权限"))
                                                     .flex_none()
                                                     .h(px(28.0))
                                                     .px(px(8.0))
@@ -286,7 +286,7 @@ impl ComposerView {
                                                             )),
                                                     )
                                                     .when(!compact, |button| button.child(permission_label))
-                                                    .when(self.prompt_context.plan_mode == Some(true) && !compact, |button| button.child(" · 计划")),
+                                                    .when(self.prompt_context.plan_mode == Some(true) && !compact, |button| button.child(crate::i18n::text(" · 计划"))),
                                             )
                                         }),
                                 )
@@ -300,7 +300,7 @@ impl ComposerView {
                                             div()
                                                 .id("composer-model-picker")
                                                 .role(gpui::Role::Button)
-                                                .aria_label("选择模型和思考强度")
+                                                .aria_label(crate::i18n::text("选择模型和思考强度"))
                                                 .focusable()
                                                 .tab_stop(true)
                                                 .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
@@ -383,7 +383,7 @@ impl ComposerView {
                                                     div()
                                                         .id("composer-voice")
                                                         .role(gpui::Role::Button)
-                                                        .aria_label(if show_stop { "停止生成" } else if generation_active { "追加输入" } else { "发送" })
+                                                        .aria_label(if show_stop { crate::i18n::text("停止生成") } else if generation_active { crate::i18n::text("追加输入") } else { crate::i18n::text("发送") })
                                                         .focusable()
                                                         .tab_stop(true)
                                                         .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, _, cx| {
@@ -495,7 +495,7 @@ impl ComposerView {
                             .flex()
                             .items_center()
                             .gap(px(8.0))
-                            .child(div().flex_none().child("选择模型"))
+                            .child(div().flex_none().child(crate::i18n::text("选择模型")))
                             .child(
                                 div()
                                     .w(px(42.0))
@@ -634,7 +634,13 @@ pub(super) fn context_toolbar(theme: Theme) -> Div {
                 .items_center()
                 .gap(px(4.0))
                 .child(project_utility(theme))
-                .child(utility("composer-location", "本地", "local", 8.0, theme))
+                .child(utility(
+                    "composer-location",
+                    crate::i18n::text("本地"),
+                    "local",
+                    8.0,
+                    theme,
+                ))
                 // Although the HTML includes a trailing `px-0` class, the
                 // home-placement `px-2` rule is emitted later in the bundled
                 // stylesheet and wins the cascade. The computed button has

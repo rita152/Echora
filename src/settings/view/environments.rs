@@ -52,7 +52,7 @@ impl SettingsView {
                                 .text_size(px(13.0))
                                 .line_height(px(18.5))
                                 .font_weight(gpui::FontWeight(500.0))
-                                .child(row.title),
+                                .child(crate::i18n::text(row.title)),
                         )
                         .when(!subtitle.is_empty(), |column| {
                             column.child(
@@ -60,7 +60,7 @@ impl SettingsView {
                                     .text_size(px(12.0))
                                     .line_height(px(16.0))
                                     .text_color(theme.text_tertiary)
-                                    .child(subtitle),
+                                    .child(crate::i18n::text(subtitle)),
                             )
                         }),
                 )
@@ -124,7 +124,7 @@ impl SettingsView {
                     .text_size(px(24.0))
                     .line_height(px(28.8))
                     .font_weight(gpui::FontWeight::NORMAL)
-                    .child(page.label),
+                    .child(crate::i18n::text(page.label)),
             )
             .child(
                 div()
@@ -136,8 +136,14 @@ impl SettingsView {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .text_color(theme.text_tertiary)
-                    .child("本地环境会告诉 ChatGPT 如何为项目设置工作树。")
-                    .child(div().text_color(theme.settings_accent).child("了解更多。")),
+                    .child(crate::i18n::text(
+                        "本地环境会告诉 ChatGPT 如何为项目设置工作树。",
+                    ))
+                    .child(
+                        div()
+                            .text_color(theme.settings_accent)
+                            .child(crate::i18n::text("了解更多。")),
+                    ),
             )
             .child(
                 div()
@@ -151,9 +157,15 @@ impl SettingsView {
                             .text_size(px(14.0))
                             .line_height(px(21.0))
                             .font_weight(gpui::FontWeight(500.0))
-                            .child(page.sections[0].title),
+                            .child(crate::i18n::text(page.sections[0].title)),
                     )
-                    .child(self.coding_button("添加项目", 74.0, None, false, theme)),
+                    .child(self.coding_button(
+                        crate::i18n::text("添加项目"),
+                        74.0,
+                        None,
+                        false,
+                        theme,
+                    )),
             )
             .child(cards)
             .into_any_element()

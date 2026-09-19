@@ -629,7 +629,7 @@ impl ComposerView {
                         self.conversation.thread_id.as_deref().unwrap_or("draft"),
                         self.conversation.cycle
                     ),
-                    "上一轮",
+                    crate::i18n::text("上一轮"),
                     files,
                 );
                 review.raw_diff = (!raw.is_empty()).then_some(raw);

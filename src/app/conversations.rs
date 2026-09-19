@@ -213,9 +213,9 @@ impl ChatApp {
         let receiver = self.workspace_store.load_history(thread_id);
         cx.spawn(async move |this, cx| {
             let result = receiver.recv().await.unwrap_or_else(|_| {
-                Err(crate::agent::WorkspaceError::backend(
+                Err(crate::agent::WorkspaceError::backend(crate::i18n::text(
                     "读取聊天历史的响应通道提前关闭",
-                ))
+                )))
             });
             let _ = this.update(cx, |this, cx| match result {
                 Ok(history) => {
@@ -233,7 +233,10 @@ impl ChatApp {
                     }
                 }
                 Err(error) => composer.update(cx, |composer, cx| {
-                    composer.set_history_error(error.user_message("读取聊天历史"), cx)
+                    composer.set_history_error(
+                        error.user_message(crate::i18n::text("读取聊天历史")),
+                        cx,
+                    )
                 }),
             });
         })

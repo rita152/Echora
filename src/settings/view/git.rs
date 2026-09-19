@@ -36,7 +36,7 @@ impl SettingsView {
                     .flex()
                     .items_center()
                     .text_size(px(13.0))
-                    .child("合并"),
+                    .child(crate::i18n::text("合并")),
             )
             .child(
                 div()
@@ -46,7 +46,7 @@ impl SettingsView {
                     .items_center()
                     .text_size(px(13.0))
                     .text_color(secondary_text)
-                    .child("压缩合并"),
+                    .child(crate::i18n::text("压缩合并")),
             )
             .into_any_element();
         let review = div()
@@ -62,7 +62,7 @@ impl SettingsView {
                     .flex()
                     .items_center()
                     .text_size(px(13.0))
-                    .child("内联"),
+                    .child(crate::i18n::text("内联")),
             )
             .child(
                 div()
@@ -72,7 +72,7 @@ impl SettingsView {
                     .items_center()
                     .text_size(px(13.0))
                     .text_color(secondary_text)
-                    .child("单独"),
+                    .child(crate::i18n::text("单独")),
             )
             .into_any_element();
         let first_card = div()
@@ -158,7 +158,7 @@ impl SettingsView {
                     .line_height(px(28.8))
                     .font_weight(gpui::FontWeight::NORMAL)
                     .text_color(theme.text)
-                    .child(page.label),
+                    .child(crate::i18n::text(page.label)),
             )
             .child(div().mt(px(32.0)).child(first_card))
             .child(
@@ -169,7 +169,7 @@ impl SettingsView {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .font_weight(gpui::FontWeight(500.0))
-                    .child(monitor.title),
+                    .child(crate::i18n::text(monitor.title)),
             )
             .child(
                 div()
@@ -183,7 +183,7 @@ impl SettingsView {
                         self.coding_setting_row(
                             CodingSettingRow {
                                 title: monitor.rows[0].title,
-                                subtitle: "继续监控，直到 Pull Request 合并",
+                                subtitle: crate::i18n::text("继续监控，直到 Pull Request 合并"),
                                 height: 60.5625,
                                 content_phase: 0.0,
                                 last: true,
@@ -209,7 +209,7 @@ impl SettingsView {
                     .text_size(px(16.0))
                     .line_height(px(25.0))
                     .font_weight(gpui::FontWeight(500.0))
-                    .child(page.sections[2].title),
+                    .child(crate::i18n::text(page.sections[2].title)),
             )
             .child(
                 div()
@@ -219,7 +219,7 @@ impl SettingsView {
                     .text_size(px(13.0))
                     .line_height(px(18.0))
                     .text_color(secondary_text)
-                    .child(page.sections[2].subtitle),
+                    .child(crate::i18n::text(page.sections[2].subtitle)),
             )
             .child(div().mt(px(12.0)).child(self.coding_textarea(
                 page.sections[2].rows[0].title,
@@ -236,7 +236,7 @@ impl SettingsView {
                     .text_size(px(16.0))
                     .line_height(px(25.0))
                     .font_weight(gpui::FontWeight(500.0))
-                    .child(page.sections[3].title),
+                    .child(crate::i18n::text(page.sections[3].title)),
             )
             .child(
                 div()
@@ -246,7 +246,7 @@ impl SettingsView {
                     .text_size(px(13.0))
                     .line_height(px(18.0))
                     .text_color(secondary_text)
-                    .child(page.sections[3].subtitle),
+                    .child(crate::i18n::text(page.sections[3].subtitle)),
             )
             .child(div().mt(px(12.0)).child(self.coding_textarea(
                 page.sections[3].rows[0].title,

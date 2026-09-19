@@ -17,6 +17,9 @@ impl SettingsView {
     ) -> gpui::AnyElement {
         div()
             .w(px(width))
+            .when(crate::i18n::is_english(), |control| {
+                control.w_auto().min_w(px(width))
+            })
             .h(px(28.0))
             .flex_none()
             .px(px(12.0))
@@ -31,7 +34,7 @@ impl SettingsView {
             .text_size(px(14.0))
             .line_height(px(18.0))
             .whitespace_nowrap()
-            .child(label)
+            .child(crate::i18n::text(label))
             .child(
                 svg()
                     .path("icons/chevron-down.svg")
@@ -107,7 +110,7 @@ impl SettingsView {
             .whitespace_nowrap()
             .cursor_pointer()
             .hover(move |style| style.bg(theme.settings_switch_off))
-            .child(label)
+            .child(crate::i18n::text(label))
     }
     pub(super) fn control(
         &self,
@@ -117,6 +120,9 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         match control {
+            ControlSpec::Select(_) if key == ("general-settings", 1, 2) => {
+                self.language_control(theme, cx)
+            }
             ControlSpec::None => div().into_any_element(),
             ControlSpec::Switch(checked) => div()
                 .flex()
@@ -143,7 +149,7 @@ impl SettingsView {
                         .size(px(14.0))
                         .text_color(theme.text),
                 )
-                .child(label)
+                .child(crate::i18n::text(label))
                 .into_any_element(),
             ControlSpec::Button(label) => self.small_button(label, false, theme).into_any_element(),
             ControlSpec::Danger(label) => self.small_button(label, true, theme).into_any_element(),
@@ -166,7 +172,7 @@ impl SettingsView {
                         .rounded_full()
                         .bg(theme.settings_accent),
                 )
-                .child(label)
+                .child(crate::i18n::text(label))
                 .into_any_element(),
             ControlSpec::Select(label) => div()
                 .min_h(px(28.0))
@@ -193,7 +199,7 @@ impl SettingsView {
                         )
                     },
                 )
-                .child(label)
+                .child(crate::i18n::text(label))
                 .child(
                     svg()
                         .path("icons/chevron-down.svg")
@@ -218,7 +224,7 @@ impl SettingsView {
                             .whitespace_nowrap()
                             .child("/Users/zp/Documents/Codex"),
                     )
-                    .child(self.small_button("更改", false, theme))
+                    .child(self.small_button(crate::i18n::text("更改"), false, theme))
                     .into_any_element()
             }
             ControlSpec::Value(label) => div()
@@ -250,7 +256,7 @@ impl SettingsView {
                         .line_height(px(18.0))
                         .text_color(theme.text_secondary)
                         .whitespace_nowrap()
-                        .child(label),
+                        .child(crate::i18n::text(label)),
                 )
                 .into_any_element(),
             ControlSpec::Shortcut(label)
@@ -265,7 +271,7 @@ impl SettingsView {
                     .text_size(px(13.0))
                     .line_height(px(18.5))
                     .text_color(theme.text_tertiary)
-                    .child(label)
+                    .child(crate::i18n::text(label))
                     .child(
                         div()
                             .size(px(28.0))
@@ -297,7 +303,7 @@ impl SettingsView {
                         .text_size(px(12.0))
                         .line_height(px(12.0))
                         .text_color(theme.text_tertiary)
-                        .child(label),
+                        .child(crate::i18n::text(label)),
                 )
                 .child(
                     div()
@@ -337,7 +343,7 @@ impl SettingsView {
                 .text_size(px(12.0))
                 .text_color(theme.text_secondary)
                 .whitespace_nowrap()
-                .child(label)
+                .child(crate::i18n::text(label))
                 .into_any_element(),
             ControlSpec::Segmented(labels, selected) => {
                 let mut group = div().flex().items_center().gap(px(2.0));
@@ -354,7 +360,7 @@ impl SettingsView {
                                 theme.text_tertiary
                             })
                             .when(index == selected, |item| item.bg(theme.settings_button))
-                            .child(*label),
+                            .child(crate::i18n::text(label)),
                     );
                 }
                 group.into_any_element()
@@ -376,7 +382,7 @@ impl SettingsView {
         } = location;
         div()
             .min_h(px(58.0))
-            .when(slug == "general-settings", |node| {
+            .when(slug == "general-settings" && !crate::i18n::is_english(), |node| {
                 node.h(px(if section_index == 0 {
                     if row_index == 0 { 61.0 } else { 76.0 }
                 } else if row_index < 2 || row_index % 2 == 1 {
@@ -386,10 +392,10 @@ impl SettingsView {
                 }))
                 .flex_none()
             })
-            .when(slug == "voice" && section_index == 1, |node| {
+            .when(slug == "voice" && section_index == 1 && !crate::i18n::is_english(), |node| {
                 node.h(px(61.0)).flex_none()
             })
-            .when(slug == "voice" && section_index == 2, |node| {
+            .when(slug == "voice" && section_index == 2 && !crate::i18n::is_english(), |node| {
                 node.h(px(match row_index {
                     0 | 1 | 3 => 61.0,
                     _ => 60.0,
@@ -458,10 +464,10 @@ impl SettingsView {
                                     && matches!(row_index, 1 | 2),
                                 |title| title.relative().top(px(-1.0)),
                             )
-                            .child(row.title),
+                            .child(crate::i18n::text(row.title)),
                     )
                     .when(
-                        slug == "general-settings" && section_index == 0 && row_index == 1,
+                        slug == "general-settings" && section_index == 0 && row_index == 1 && !crate::i18n::is_english(),
                         |column| {
                             column.child(
                                 div()
@@ -479,14 +485,14 @@ impl SettingsView {
                                             .relative()
                                             .left(px(-1.0))
                                             .child(
-                                                "当 ChatGPT 以完整访问权限运行时，它无需你的批准即可编辑你电脑上的任何文件，并运行可访问",
+                                                crate::i18n::text("当 ChatGPT 以完整访问权限运行时，它无需你的批准即可编辑你电脑上的任何文件，并运行可访问"),
                                             ),
                                     )
                                     .child(
                                         div()
                                             .flex()
                                             .child(
-                                                "网络的命令。这会显著增加数据丢失、泄露或意外行为的风险。",
+                                                crate::i18n::text("网络的命令。这会显著增加数据丢失、泄露或意外行为的风险。"),
                                             )
                                             .child(
                                                 div()
@@ -497,9 +503,9 @@ impl SettingsView {
                                                     } else {
                                                         gpui::rgba(0x339cffff)
                                                     })
-                                                    .child("了解更多"),
+                                                    .child(crate::i18n::text("了解更多")),
                                             )
-                                            .child("关于风险升高的信息。"),
+                                            .child(crate::i18n::text("关于风险升高的信息。")),
                                     ),
                             )
                         },
@@ -508,7 +514,8 @@ impl SettingsView {
                         !row.subtitle.is_empty()
                             && !(slug == "general-settings"
                                 && section_index == 0
-                                && row_index == 1),
+                                && row_index == 1
+                                && !crate::i18n::is_english()),
                         |column| {
                         column.child(
                             div()
@@ -537,7 +544,7 @@ impl SettingsView {
                                         && row_index == 7,
                                     |subtitle| subtitle.relative().left(px(-1.0)),
                                 )
-                                .child(row.subtitle),
+                                .child(crate::i18n::text(row.subtitle)),
                         )
                     },
                     ),
@@ -645,7 +652,7 @@ impl SettingsView {
                                     },
                                 ))
                                 .text_color(theme.text)
-                                .child(section.title),
+                                .child(crate::i18n::text(section.title)),
                         )
                         .when(!section.subtitle.is_empty(), |header| {
                             header.child(
@@ -657,7 +664,7 @@ impl SettingsView {
                                     } else {
                                         theme.settings_description
                                     })
-                                    .child(section.subtitle),
+                                    .child(crate::i18n::text(section.subtitle)),
                             )
                         }),
                 )
@@ -692,7 +699,7 @@ impl SettingsView {
                             .line_height(px(31.0))
                             .font_weight(gpui::FontWeight::NORMAL)
                             .text_color(theme.text)
-                            .child(page.label),
+                            .child(crate::i18n::text(page.label)),
                     )
                     .when(!page.intro.is_empty(), |header| {
                         header.child(
@@ -700,7 +707,7 @@ impl SettingsView {
                                 .text_size(px(13.0))
                                 .line_height(px(19.0))
                                 .text_color(theme.text_secondary)
-                                .child(page.intro),
+                                .child(crate::i18n::text(page.intro)),
                         )
                     }),
             );
@@ -750,7 +757,7 @@ impl SettingsView {
                     .line_height(px(18.5))
                     .font_weight(gpui::FontWeight(500.0))
                     .text_color(primary_text)
-                    .child(title),
+                    .child(crate::i18n::text(title)),
             )
             .when(!subtitle.is_empty(), |column| {
                 column.child(
@@ -758,7 +765,7 @@ impl SettingsView {
                         .text_size(px(12.0))
                         .line_height(px(16.0))
                         .text_color(secondary_text)
-                        .child(subtitle),
+                        .child(crate::i18n::text(subtitle)),
                 )
             })
             .into_any_element()
@@ -778,6 +785,9 @@ impl SettingsView {
         };
         div()
             .w(px(width))
+            .when(crate::i18n::is_english(), |control| {
+                control.w_auto().min_w(px(width))
+            })
             .h(px(height))
             .flex_none()
             .px(px(if height <= 28.0 { 8.0 } else { 10.0 }))
@@ -793,7 +803,7 @@ impl SettingsView {
             } else {
                 primary_text
             })
-            .child(value)
+            .child(crate::i18n::text(value))
             .into_any_element()
     }
     pub(super) fn coding_button(
@@ -808,6 +818,9 @@ impl SettingsView {
         let danger_fill = gpui::rgba(0xff625a1a);
         let mut button = div()
             .w(px(width))
+            .when(crate::i18n::is_english(), |control| {
+                control.w_auto().min_w(px(width))
+            })
             .h(px(28.0))
             .flex_none()
             .px(px(8.0))
@@ -830,7 +843,7 @@ impl SettingsView {
         if let Some(path) = icon {
             button = button.child(svg().path(path).size(px(14.0)));
         }
-        button.child(label).into_any_element()
+        button.child(crate::i18n::text(label)).into_any_element()
     }
     pub(super) fn coding_icon_button(
         &self,
@@ -936,7 +949,7 @@ impl SettingsView {
                     .relative()
                     .left(px(x_nudge))
                     .top(px(y_nudge))
-                    .child(placeholder),
+                    .child(crate::i18n::text(placeholder)),
             )
             .into_any_element()
     }
@@ -995,7 +1008,7 @@ impl SettingsView {
                     .line_height(px(18.5625))
                     .font_weight(gpui::FontWeight(500.0))
                     .text_color(theme.text)
-                    .child(title),
+                    .child(crate::i18n::text(title)),
             )
             .when(!subtitle.is_empty(), |column| {
                 column.child(
@@ -1003,7 +1016,7 @@ impl SettingsView {
                         .text_size(px(12.0))
                         .line_height(px(16.0))
                         .text_color(theme.settings_description)
-                        .child(subtitle),
+                        .child(crate::i18n::text(subtitle)),
                 )
             })
             .into_any_element()
@@ -1026,6 +1039,9 @@ impl SettingsView {
         };
         let mut button = div()
             .w(px(width))
+            .when(crate::i18n::is_english(), |control| {
+                control.w_auto().min_w(px(width))
+            })
             .h(px(28.0))
             .flex_none()
             .px(px(8.0))
@@ -1047,7 +1063,7 @@ impl SettingsView {
         if let Some((path, size)) = icon {
             button = button.child(svg().path(path).size(px(size)));
         }
-        button.child(label).into_any_element()
+        button.child(crate::i18n::text(label)).into_any_element()
     }
 }
 

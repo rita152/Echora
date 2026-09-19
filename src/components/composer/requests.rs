@@ -90,7 +90,7 @@ impl ComposerView {
         Some(
             crate::components::file_change::DiffReviewPresentation::from_file_change_entries(
                 format!("approval-review-{request_id}-{file_index}"),
-                "待审批",
+                crate::i18n::text("待审批"),
                 std::slice::from_ref(entry),
                 Some(&self.conversation.cwd),
             ),
@@ -207,13 +207,15 @@ impl ComposerView {
                             &mut self.conversation.activities[index]
                         {
                             model.status = ApprovalCardStatus::Failed;
-                            model.failure_message =
-                                Some("无法写入审批响应，请停止此轮次后重试".to_owned());
+                            model.failure_message = Some(
+                                crate::i18n::text("无法写入审批响应，请停止此轮次后重试")
+                                    .to_owned(),
+                            );
                         }
                         self.conversation
                             .activities
                             .push(ConversationActivity::ProtocolError {
-                                message: "无法回复命令审批".to_owned(),
+                                message: crate::i18n::text("无法回复命令审批").to_owned(),
                                 details: Some(error),
                                 will_retry: false,
                             });
@@ -228,12 +230,15 @@ impl ComposerView {
                                 &mut self.conversation.activities[index]
                             {
                                 model.status = ApprovalCardStatus::Failed;
-                                model.failure_message = Some("命令审批响应连接不存在".to_owned());
+                                model.failure_message =
+                                    Some(crate::i18n::text("命令审批响应连接不存在").to_owned());
                             }
                             self.conversation.activities.push(
                                 ConversationActivity::ProtocolError {
-                                    message: "无法回复命令审批".to_owned(),
-                                    details: Some("命令审批 responder 不存在".to_owned()),
+                                    message: crate::i18n::text("无法回复命令审批").to_owned(),
+                                    details: Some(
+                                        crate::i18n::text("命令审批 responder 不存在").to_owned(),
+                                    ),
                                     will_retry: false,
                                 },
                             );
@@ -366,11 +371,12 @@ impl ComposerView {
                             unreachable!("activity kind was checked above")
                         };
                         model.status = PermissionApprovalStatus::Failed;
-                        model.failure_message = Some("无法写入权限审批响应".to_owned());
+                        model.failure_message =
+                            Some(crate::i18n::text("无法写入权限审批响应").to_owned());
                         self.conversation
                             .activities
                             .push(ConversationActivity::ProtocolError {
-                                message: "无法回复权限审批".to_owned(),
+                                message: crate::i18n::text("无法回复权限审批").to_owned(),
                                 details: Some(error),
                                 will_retry: false,
                             });
@@ -387,11 +393,14 @@ impl ComposerView {
                             .contains_key(request_id)
                         {
                             model.status = PermissionApprovalStatus::Failed;
-                            model.failure_message = Some("权限审批 responder 不存在".to_owned());
+                            model.failure_message =
+                                Some(crate::i18n::text("权限审批 responder 不存在").to_owned());
                             self.conversation.activities.push(
                                 ConversationActivity::ProtocolError {
-                                    message: "无法回复权限审批".to_owned(),
-                                    details: Some("权限审批 responder 不存在".to_owned()),
+                                    message: crate::i18n::text("无法回复权限审批").to_owned(),
+                                    details: Some(
+                                        crate::i18n::text("权限审批 responder 不存在").to_owned(),
+                                    ),
                                     will_retry: false,
                                 },
                             );
@@ -570,7 +579,9 @@ impl ComposerView {
             let error = match response {
                 Some(Ok(())) => None,
                 Some(Err(error)) => Some(error),
-                None if live_request => Some("文件审批 responder 不存在".to_owned()),
+                None if live_request => {
+                    Some(crate::i18n::text("文件审批 responder 不存在").to_owned())
+                }
                 None => None,
             };
             let ConversationActivity::FileApproval(model) =
@@ -584,11 +595,12 @@ impl ComposerView {
                 FileApprovalStatus::Submitting
             };
             if let Some(error) = error {
-                model.failure_message = Some("无法写入文件审批响应，请停止此轮次后重试".to_owned());
+                model.failure_message =
+                    Some(crate::i18n::text("无法写入文件审批响应，请停止此轮次后重试").to_owned());
                 self.conversation
                     .activities
                     .push(ConversationActivity::ProtocolError {
-                        message: "无法回复文件审批".to_owned(),
+                        message: crate::i18n::text("无法回复文件审批").to_owned(),
                         details: Some(error),
                         will_retry: false,
                     });
@@ -879,7 +891,7 @@ impl ComposerView {
             .cloned();
         let result = match responder {
             Some(responder) => responder.respond(response),
-            None => Err("该 MCP elicitation 的 responder 已经失效".to_owned()),
+            None => Err(crate::i18n::text("该 MCP elicitation 的 responder 已经失效").to_owned()),
         };
         let ConversationActivity::McpElicitation(model) = &mut self.conversation.activities[index]
         else {
@@ -973,8 +985,8 @@ impl ComposerView {
                     label,
                 } => {
                     if current_question_id.as_deref() != Some(question_id.as_str()) {
-                        mismatch = Some(format!(
-                            "选择事件 question id `{question_id}` 与当前 question id {:?} 不一致",
+                        mismatch = Some(crate::i18n::format!(
+                            "选择事件 question id `{question_id}` 与当前 question id {:?} 不一致" => "Selection question id `{question_id}` does not match current question id {:?}",
                             current_question_id
                         ));
                     } else {
@@ -984,8 +996,8 @@ impl ComposerView {
                 }
                 UserInputRequestEvent::BeginOtherAnswer { question_id, .. } => {
                     if current_question_id.as_deref() != Some(question_id.as_str()) {
-                        mismatch = Some(format!(
-                            "Other 事件 question id `{question_id}` 与当前 question id {:?} 不一致",
+                        mismatch = Some(crate::i18n::format!(
+                            "Other 事件 question id `{question_id}` 与当前 question id {:?} 不一致" => "Other event question id `{question_id}` does not match current question id {:?}",
                             current_question_id
                         ));
                     } else {
@@ -998,8 +1010,8 @@ impl ComposerView {
                     answer,
                 } => {
                     if current_question_id.as_deref() != Some(question_id.as_str()) {
-                        mismatch = Some(format!(
-                            "Other 提交 question id `{question_id}` 与当前 question id {:?} 不一致",
+                        mismatch = Some(crate::i18n::format!(
+                            "Other 提交 question id `{question_id}` 与当前 question id {:?} 不一致" => "Other submission question id `{question_id}` does not match current question id {:?}",
                             current_question_id
                         ));
                     } else {
@@ -1040,7 +1052,7 @@ impl ComposerView {
             self.conversation
                 .activities
                 .push(ConversationActivity::ProtocolError {
-                    message: "用户输入请求事件标识不一致".to_owned(),
+                    message: crate::i18n::text("用户输入请求事件标识不一致").to_owned(),
                     details: Some(details),
                     will_retry: false,
                 });
@@ -1086,11 +1098,12 @@ impl ComposerView {
                         unreachable!("activity kind was checked above")
                     };
                     model.status = UserInputRequestStatus::Failed;
-                    model.failure_message = Some("无法写入用户输入响应".to_owned());
+                    model.failure_message =
+                        Some(crate::i18n::text("无法写入用户输入响应").to_owned());
                     self.conversation
                         .activities
                         .push(ConversationActivity::ProtocolError {
-                            message: "无法回复用户输入请求".to_owned(),
+                            message: crate::i18n::text("无法回复用户输入请求").to_owned(),
                             details: Some(error),
                             will_retry: false,
                         });
@@ -1107,12 +1120,15 @@ impl ComposerView {
                         .contains_key(request_id)
                     {
                         model.status = UserInputRequestStatus::Failed;
-                        model.failure_message = Some("用户输入 responder 不存在".to_owned());
+                        model.failure_message =
+                            Some(crate::i18n::text("用户输入 responder 不存在").to_owned());
                         self.conversation
                             .activities
                             .push(ConversationActivity::ProtocolError {
-                                message: "无法回复用户输入请求".to_owned(),
-                                details: Some("用户输入 responder 不存在".to_owned()),
+                                message: crate::i18n::text("无法回复用户输入请求").to_owned(),
+                                details: Some(
+                                    crate::i18n::text("用户输入 responder 不存在").to_owned(),
+                                ),
                                 will_retry: false,
                             });
                     } else {

@@ -137,7 +137,7 @@ pub(super) fn tool_activity_group(
         {
             CommandActivitySummary {
                 icon: "message-edit",
-                text: "正在编辑文件".to_owned(),
+                text: crate::i18n::text("正在编辑文件").to_owned(),
                 reads_files: false,
                 runs_command: false,
             }
@@ -151,7 +151,7 @@ pub(super) fn tool_activity_group(
                 .and_then(|command| command_activity_summaries(command).into_iter().last())
                 .unwrap_or_else(|| CommandActivitySummary {
                     icon: "panel-terminal",
-                    text: "正在工作".to_owned(),
+                    text: crate::i18n::text("正在工作").to_owned(),
                     reads_files: false,
                     runs_command: true,
                 })
@@ -161,9 +161,9 @@ pub(super) fn tool_activity_group(
     };
     let has_header_icon = !summary.icon.is_empty();
     let accessible_label = if expanded {
-        format!("{}，折叠工具调用", summary.text)
+        crate::i18n::format!("{}，折叠工具调用" => "{}, collapse tool calls", summary.text)
     } else {
-        format!("{}，展开工具调用", summary.text)
+        crate::i18n::format!("{}，展开工具调用" => "{}, expand tool calls", summary.text)
     };
     let hover_group: SharedString = format!("tool-activity-group-{group_id}").into();
     let click_home = home_entity.clone();
@@ -489,7 +489,9 @@ pub(super) fn static_command_action_activity(
                             div()
                                 .id(SharedString::from(format!("command-read-link-{row_id}")))
                                 .role(Role::Link)
-                                .aria_label(format!("打开 {}", path.display()))
+                                .aria_label(
+                                    crate::i18n::format!("打开 {}" => "Open {}", path.display()),
+                                )
                                 .focusable()
                                 .tab_stop(true)
                                 .min_w(px(0.0))
@@ -617,9 +619,9 @@ pub(super) fn command_activity(
     let hover_group: SharedString = format!("command-activity-{item_id}").into();
     let summary = command_activity_summary(&command);
     let status_label = match command.status {
-        CommandExecutionStatus::InProgress => "运行中",
-        CommandExecutionStatus::Completed => "成功",
-        CommandExecutionStatus::Failed => "失败",
+        CommandExecutionStatus::InProgress => crate::i18n::text("运行中"),
+        CommandExecutionStatus::Completed => crate::i18n::text("成功"),
+        CommandExecutionStatus::Failed => crate::i18n::text("失败"),
     };
     let status_icon = match command.status {
         CommandExecutionStatus::Failed => "settings-warning",
@@ -631,15 +633,15 @@ pub(super) fn command_activity(
         theme.command_muted
     };
     let display_command = if command.command.is_empty() {
-        "命令".to_owned()
+        crate::i18n::text("命令").to_owned()
     } else {
         command.command.clone()
     };
     let output = if command.output.is_empty() {
         if command.status == CommandExecutionStatus::InProgress {
-            "等待输出…".to_owned()
+            crate::i18n::text("等待输出…").to_owned()
         } else {
-            "（无输出）".to_owned()
+            crate::i18n::text("（无输出）").to_owned()
         }
     } else {
         // A terminal normally returns one final line ending. Browsers do not
@@ -649,12 +651,12 @@ pub(super) fn command_activity(
     };
     let command_for_body = display_command.clone();
     let accessible_label = if expanded {
-        format!("{}，折叠详情", summary.text)
+        crate::i18n::format!("{}，折叠详情" => "{}, collapse details", summary.text)
     } else {
-        format!("{}，展开详情", summary.text)
+        crate::i18n::format!("{}，展开详情" => "{}, expand details", summary.text)
     };
     let accessible_label = if command.status == CommandExecutionStatus::Failed {
-        format!("{accessible_label}，命令失败")
+        crate::i18n::format!("{accessible_label}，命令失败" => "{accessible_label}, command failed")
     } else {
         accessible_label
     };

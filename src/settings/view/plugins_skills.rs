@@ -150,7 +150,7 @@ impl SettingsView {
                         cycle,
                         AgentSkillsError {
                             kind: crate::agent::AgentSkillsErrorKind::Connection,
-                            message: "技能列表连接已关闭".into(),
+                            message: crate::i18n::text("技能列表连接已关闭").into(),
                             data: None,
                             outcome_unknown: false,
                         },
@@ -200,7 +200,7 @@ impl SettingsView {
                         sequence,
                         AgentSkillsError {
                             kind: crate::agent::AgentSkillsErrorKind::Connection,
-                            message: "重试连接已关闭".into(),
+                            message: crate::i18n::text("重试连接已关闭").into(),
                             data: None,
                             outcome_unknown: true,
                         },
@@ -254,7 +254,7 @@ impl SettingsView {
                         sequence,
                         AgentSkillsError {
                             kind: crate::agent::AgentSkillsErrorKind::Connection,
-                            message: "保存连接已关闭".into(),
+                            message: crate::i18n::text("保存连接已关闭").into(),
                             data: None,
                             outcome_unknown: true,
                         },
@@ -301,10 +301,11 @@ impl SettingsView {
             .unwrap_or_default();
 
         if self.skills.directory.loading && self.skills.directory.snapshot.is_none() {
-            list = list.child(self.manage_state_card("正在读取技能…", theme));
+            list = list.child(self.manage_state_card(crate::i18n::text("正在读取技能…"), theme));
         }
         if self.skills.directory.busy() {
-            list = list.child(self.manage_state_card("正在保存技能设置…", theme));
+            list =
+                list.child(self.manage_state_card(crate::i18n::text("正在保存技能设置…"), theme));
         }
         if let Some(error) = self.skills.directory.error.clone() {
             list = list.child(
@@ -342,7 +343,7 @@ impl SettingsView {
                             .items_center()
                             .cursor_pointer()
                             .on_click(cx.listener(|this, _, _, cx| this.refresh_skills(true, cx)))
-                            .child("重试"),
+                            .child(crate::i18n::text("重试")),
                     ),
             );
         }
@@ -351,9 +352,9 @@ impl SettingsView {
             && self.skills.directory.error.is_none()
         {
             let message = if self.skills.query.trim().is_empty() {
-                "还没有可管理的技能"
+                crate::i18n::text("还没有可管理的技能")
             } else {
-                "没有匹配的技能"
+                crate::i18n::text("没有匹配的技能")
             };
             list = list.child(self.manage_state_card(message, theme));
         }
@@ -459,7 +460,7 @@ impl SettingsView {
                                         .line_height(px(18.0))
                                         .text_color(theme.warning)
                                         .child(if outcome_unknown {
-                                            format!("{message}（结果未确认）")
+                                            crate::i18n::format!("{message}（结果未确认）" => "{message} (result unconfirmed)")
                                         } else {
                                             message
                                         }),
@@ -485,7 +486,7 @@ impl SettingsView {
                                         .on_click(cx.listener(move |this, _, _, cx| {
                                             this.retry_skill_write(&row_skill, cx)
                                         }))
-                                        .child("重试"),
+                                        .child(crate::i18n::text("重试")),
                                 ),
                         )
                     }),

@@ -44,8 +44,9 @@ fn gh(args: &[&str], input: Option<&[u8]>, cwd: Option<&Path>) -> Result<String>
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
-    let output = process::run(&mut command, input, COMMAND_TIMEOUT)
-        .with_context(|| format!("无法运行 gh {}", args.join(" ")))?;
+    let output = process::run(&mut command, input, COMMAND_TIMEOUT).with_context(
+        || crate::i18n::format!("无法运行 gh {}" => "Could not run gh {}", args.join(" ")),
+    )?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         bail!("{}", stderr.trim());
@@ -71,7 +72,7 @@ fn graphql(query: &str, variables: &[(&str, Value)]) -> Result<Value> {
     }
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
     let raw = gh(&borrowed, None, None)?;
-    let value: Value = serde_json::from_str(&raw).context("无法解析 gh 输出")?;
+    let value: Value = serde_json::from_str(&raw).context(crate::i18n::text("无法解析 gh 输出"))?;
     if let Some(errors) = value.get("errors").and_then(Value::as_array)
         && let Some(first) = errors.first()
     {
@@ -80,7 +81,7 @@ fn graphql(query: &str, variables: &[(&str, Value)]) -> Result<Value> {
             first
                 .get("message")
                 .and_then(Value::as_str)
-                .unwrap_or("GitHub 查询失败")
+                .unwrap_or(crate::i18n::text("GitHub 查询失败"))
         );
     }
     Ok(value)
@@ -269,7 +270,7 @@ impl GhClient {
     pub fn detail(&self, repository: &str, number: u64) -> Result<PullRequestDetail> {
         let (owner, name) = repository
             .split_once('/')
-            .with_context(|| format!("仓库名称必须是 owner/name（收到 {repository:?}）"))?;
+            .with_context(|| crate::i18n::format!("仓库名称必须是 owner/name（收到 {repository:?}）" => "Repository name must be owner/name (received {repository:?})"))?;
         let query = r#"
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
@@ -327,7 +328,7 @@ query($owner: String!, $name: String!, $number: Int!) {
             .cloned()
             .unwrap_or(Value::Null);
         if pull.is_null() {
-            bail!("找不到该 Pull Request");
+            bail!(crate::i18n::text("找不到该 Pull Request"));
         }
         let mut summary = summary_from(&pull);
         summary.repository = repository.to_string();
@@ -576,7 +577,7 @@ query($owner: String!, $name: String!, $number: Int!) {
         )?;
         let cleaned: String = raw.chars().filter(|c| !c.is_whitespace()).collect();
         if cleaned.is_empty() {
-            bail!("文件内容不可用");
+            bail!(crate::i18n::text("文件内容不可用"));
         }
         let bytes = decode_base64(&cleaned)?;
         let text = String::from_utf8_lossy(&bytes);
@@ -724,7 +725,7 @@ mutation($id: ID!) {
     ) -> Result<()> {
         let (owner, name) = repository
             .split_once('/')
-            .with_context(|| format!("仓库名称必须是 owner/name（收到 {repository:?}）"))?;
+            .with_context(|| crate::i18n::format!("仓库名称必须是 owner/name（收到 {repository:?}）" => "Repository name must be owner/name (received {repository:?})"))?;
         let head = gh(
             &[
                 "api",
@@ -785,7 +786,7 @@ fn decode_base64(input: &str) -> Result<Vec<u8>> {
         }
         let value = lookup[byte as usize];
         if value == 255 {
-            bail!("文件内容不是有效的 base64");
+            bail!(crate::i18n::text("文件内容不是有效的 base64"));
         }
         buffer = (buffer << 6) | u32::from(value);
         bits += 6;

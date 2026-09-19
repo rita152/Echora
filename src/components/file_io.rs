@@ -45,26 +45,27 @@ impl TextFile {
     pub fn read(path: &Path) -> Result<Self, String> {
         let path = path
             .canonicalize()
-            .map_err(|e| format!("无法打开文件：{e}"))?;
-        let file = fs::File::open(&path).map_err(|e| format!("无法读取文件：{e}"))?;
+            .map_err(|e| crate::i18n::format!("无法打开文件：{e}" => "Could not open file: {e}"))?;
+        let file = fs::File::open(&path)
+            .map_err(|e| crate::i18n::format!("无法读取文件：{e}" => "Could not read file: {e}"))?;
         if !file.metadata().map_err(|e| e.to_string())?.is_file() {
-            return Err("仅支持普通文件".into());
+            return Err(crate::i18n::text("仅支持普通文件").into());
         }
         let mut bytes = Vec::new();
         file.take(MAX_TEXT_BYTES + 1)
             .read_to_end(&mut bytes)
             .map_err(|e| e.to_string())?;
         if bytes.len() as u64 > MAX_TEXT_BYTES {
-            return Err("文件超过 2 MB，请在外部编辑器中打开".into());
+            return Err(crate::i18n::text("文件超过 2 MB，请在外部编辑器中打开").into());
         }
         if bytes.contains(&0) {
-            return Err("此文件为二进制文件，无法作为文本编辑".into());
+            return Err(crate::i18n::text("此文件为二进制文件，无法作为文本编辑").into());
         }
         let bom = bytes.starts_with(&[0xef, 0xbb, 0xbf]);
         let raw = std::str::from_utf8(&bytes[if bom { 3 } else { 0 }..])
-            .map_err(|_| "此文件不是 UTF-8 文本，请在外部编辑器中打开")?;
+            .map_err(|_| crate::i18n::text("此文件不是 UTF-8 文本，请在外部编辑器中打开"))?;
         if raw.lines().any(|line| line.len() > 65_536) {
-            return Err("单行超过 64 KB，请在外部编辑器中打开".into());
+            return Err(crate::i18n::text("单行超过 64 KB，请在外部编辑器中打开").into());
         }
         let crlf = raw.contains("\r\n") && !raw.replace("\r\n", "").contains('\n');
         // Only normalize consistent CRLF files; mixed endings are kept verbatim.
@@ -95,16 +96,19 @@ impl TextFile {
         bytes
     }
     pub fn save(&self, text: &str) -> Result<Self, String> {
-        let metadata = fs::metadata(&self.path).map_err(|e| format!("无法保存：{e}"))?;
+        let metadata = fs::metadata(&self.path)
+            .map_err(|e| crate::i18n::format!("无法保存：{e}" => "Could not save: {e}"))?;
         if metadata.permissions().readonly() {
-            return Err("文件为只读，无法保存".into());
+            return Err(crate::i18n::text("文件为只读，无法保存").into());
         }
         let check = || -> Result<(), String> {
-            let current = fs::read(&self.path).map_err(|e| format!("无法保存：{e}"))?;
+            let current = fs::read(&self.path)
+                .map_err(|e| crate::i18n::format!("无法保存：{e}" => "Could not save: {e}"))?;
             if current != self.bytes {
-                return Err(
-                    "文件已被其他程序修改。请复制当前编辑内容后重新加载，以免覆盖外部更改。".into(),
-                );
+                return Err(crate::i18n::text(
+                    "文件已被其他程序修改。请复制当前编辑内容后重新加载，以免覆盖外部更改。",
+                )
+                .into());
             }
             Ok(())
         };

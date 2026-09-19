@@ -301,15 +301,15 @@ impl PullRequestsView {
     }
 
     pub fn set_mode(&mut self, mode: ThemeMode, cx: &mut Context<Self>) {
-        if self.mode == mode {
-            return;
-        }
         self.mode = mode;
         self.search.update(cx, |input, cx| input.set_mode(mode, cx));
         self.tree_filter
             .update(cx, |input, cx| input.set_mode(mode, cx));
         self.comment_box
             .update(cx, |editor, cx| editor.set_mode(mode, cx));
+        if let Some(input) = &self.title_edit {
+            input.update(cx, |input, cx| input.set_mode(mode, cx));
+        }
         if let Some(editor) = self.description_edit.clone() {
             editor.update(cx, |editor, cx| editor.set_mode(mode, cx));
         }

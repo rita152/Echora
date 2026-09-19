@@ -158,7 +158,7 @@ impl Render for MarkdownPreview {
             .overflow_hidden()
             .track_focus(&self.focus)
             .role(gpui::Role::List)
-            .aria_label("Markdown 文件预览")
+            .aria_label(crate::i18n::text("Markdown 文件预览"))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|s, _, window, cx| {

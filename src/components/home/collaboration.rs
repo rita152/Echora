@@ -55,9 +55,9 @@ pub(super) fn collaboration_display_name(
     }
     let short_id = thread_id.rsplit('-').next().unwrap_or(thread_id);
     if short_id.is_empty() {
-        "子智能体".to_owned()
+        crate::i18n::text("子智能体").to_owned()
     } else {
-        format!("子智能体 {short_id}")
+        crate::i18n::format!("子智能体 {short_id}" => "Subagent {short_id}")
     }
 }
 
@@ -89,32 +89,34 @@ pub(super) fn collaboration_status_label(
 ) -> &'static str {
     if let Some(kind) = collaboration.legacy_kind {
         return match kind {
-            LegacySubAgentActivityKind::Started => "开始工作",
-            LegacySubAgentActivityKind::Interacted => "已更新",
-            LegacySubAgentActivityKind::Interrupted => "已中断",
-            LegacySubAgentActivityKind::Completed => "已完成",
+            LegacySubAgentActivityKind::Started => crate::i18n::text("开始工作"),
+            LegacySubAgentActivityKind::Interacted => crate::i18n::text("已更新"),
+            LegacySubAgentActivityKind::Interrupted => crate::i18n::text("已中断"),
+            LegacySubAgentActivityKind::Completed => crate::i18n::text("已完成"),
         };
     }
     if collaboration.status == AgentCollaborationStatus::Failed {
-        return "失败";
+        return crate::i18n::text("失败");
     }
     if collaboration.status == AgentCollaborationStatus::Interrupted {
-        return "已中断";
+        return crate::i18n::text("已中断");
     }
     match collaboration
         .agents_states
         .get(thread_id)
         .map(|state| state.status)
     {
-        Some(AgentCollaboratorStatus::PendingInit) => "正在启动",
-        Some(AgentCollaboratorStatus::Running) => "开始工作",
-        Some(AgentCollaboratorStatus::Interrupted) => "已中断",
-        Some(AgentCollaboratorStatus::Completed) => "已完成",
-        Some(AgentCollaboratorStatus::Errored) => "失败",
-        Some(AgentCollaboratorStatus::Shutdown) => "已关闭",
-        Some(AgentCollaboratorStatus::NotFound) => "未找到",
-        None if collaboration.status == AgentCollaborationStatus::Completed => "已完成",
-        None => "正在工作",
+        Some(AgentCollaboratorStatus::PendingInit) => crate::i18n::text("正在启动"),
+        Some(AgentCollaboratorStatus::Running) => crate::i18n::text("开始工作"),
+        Some(AgentCollaboratorStatus::Interrupted) => crate::i18n::text("已中断"),
+        Some(AgentCollaboratorStatus::Completed) => crate::i18n::text("已完成"),
+        Some(AgentCollaboratorStatus::Errored) => crate::i18n::text("失败"),
+        Some(AgentCollaboratorStatus::Shutdown) => crate::i18n::text("已关闭"),
+        Some(AgentCollaboratorStatus::NotFound) => crate::i18n::text("未找到"),
+        None if collaboration.status == AgentCollaborationStatus::Completed => {
+            crate::i18n::text("已完成")
+        }
+        None => crate::i18n::text("正在工作"),
     }
 }
 
@@ -168,7 +170,7 @@ pub(super) fn collaboration_activity(
     for (index, thread_id) in receiver_thread_ids.iter().enumerate() {
         let name = collaboration_display_name(&collaboration, thread_id);
         let status = collaboration_status_label(&collaboration, thread_id);
-        let accessible_label = format!("在右侧打开子智能体 {name}，状态{status}");
+        let accessible_label = crate::i18n::format!("在右侧打开子智能体 {name}，状态{status}" => "Open subagent {name} on the right, status: {status}");
         let click_home = home_entity.clone();
         let key_home = home_entity.clone();
         let click_thread_id = thread_id.clone();
@@ -176,7 +178,7 @@ pub(super) fn collaboration_activity(
         let click_name = name.clone();
         let key_name = name.clone();
         let can_open = !thread_id.is_empty();
-        let failure = matches!(status, "失败" | "未找到");
+        let failure = status == crate::i18n::text("失败") || status == crate::i18n::text("未找到");
         let text_color = if failure {
             theme.warning
         } else {
@@ -312,7 +314,7 @@ pub(super) fn collaboration_activity(
             let click_name = name.clone();
             let key_name = name.clone();
             let can_open = !thread_id.is_empty();
-            let receiver_label = format!("在右侧打开子智能体 {name}，状态{status}");
+            let receiver_label = crate::i18n::format!("在右侧打开子智能体 {name}，状态{status}" => "Open subagent {name} on the right, status: {status}");
             let message = collaboration
                 .agents_states
                 .get(&thread_id)

@@ -22,7 +22,7 @@ impl ComposerView {
             files: true,
             directories: true,
             multiple: true,
-            prompt: Some("添加文件或文件夹".into()),
+            prompt: Some(crate::i18n::text("添加文件或文件夹").into()),
         });
         cx.spawn(async move |this, cx| {
             let paths = selection
@@ -125,7 +125,7 @@ impl ComposerView {
                                 div()
                                     .id(("side-chat-remove-attachment", index))
                                     .role(Role::Button)
-                                    .aria_label(format!("移除附件 {label}"))
+                                    .aria_label(crate::i18n::format!("移除附件 {label}" => "Remove attachment {label}"))
                                     .focusable()
                                     .tab_stop(true)
                                     .size(px(20.0))
@@ -244,35 +244,46 @@ impl ComposerView {
                         .items_center()
                         .text_size(px(12.0))
                         .text_color(theme.text_tertiary)
-                        .child("添加"),
+                        .child(crate::i18n::text("添加")),
                 )
                 .child(
-                    item("side-chat-add-files", "文件和文件夹", "utility-folder")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.attach_files(cx);
-                            cx.stop_propagation();
-                        }))
-                        .on_key_down(cx.listener(|this, e: &KeyDownEvent, _, cx| {
+                    item(
+                        "side-chat-add-files",
+                        crate::i18n::text("文件和文件夹"),
+                        "utility-folder",
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.attach_files(cx);
+                        cx.stop_propagation();
+                    }))
+                    .on_key_down(cx.listener(
+                        |this, e: &KeyDownEvent, _, cx| {
                             if matches!(e.keystroke.key.as_str(), "enter" | "space") {
                                 this.attach_files(cx);
                                 cx.stop_propagation();
                             }
-                        })),
+                        },
+                    )),
                 )
                 .child(
-                    item("side-chat-plan-mode", "计划模式", "panel-review")
-                        .child(div().flex_1())
-                        .when(self.prompt_context.plan_mode == Some(true), |d| {
-                            d.child(icon("check", theme.text.into()).size(px(14.0)))
-                        })
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.prompt_context.plan_mode =
-                                Some(this.prompt_context.plan_mode != Some(true));
-                            this.context_menu_open = false;
-                            cx.notify();
-                            cx.stop_propagation();
-                        }))
-                        .on_key_down(cx.listener(|this, e: &KeyDownEvent, _, cx| {
+                    item(
+                        "side-chat-plan-mode",
+                        crate::i18n::text("计划模式"),
+                        "panel-review",
+                    )
+                    .child(div().flex_1())
+                    .when(self.prompt_context.plan_mode == Some(true), |d| {
+                        d.child(icon("check", theme.text.into()).size(px(14.0)))
+                    })
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.prompt_context.plan_mode =
+                            Some(this.prompt_context.plan_mode != Some(true));
+                        this.context_menu_open = false;
+                        cx.notify();
+                        cx.stop_propagation();
+                    }))
+                    .on_key_down(cx.listener(
+                        |this, e: &KeyDownEvent, _, cx| {
                             if matches!(e.keystroke.key.as_str(), "enter" | "space") {
                                 this.prompt_context.plan_mode =
                                     Some(this.prompt_context.plan_mode != Some(true));
@@ -280,7 +291,8 @@ impl ComposerView {
                                 cx.notify();
                                 cx.stop_propagation();
                             }
-                        })),
+                        },
+                    )),
                 ),
         )
         .with_priority(20)

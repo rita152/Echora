@@ -29,8 +29,9 @@ impl ConversationState {
                     .is_some_and(|generation| generation < event.generation)
             }) {
                 self.permission_change = None;
-                self.permission_error =
-                    Some("连接已重建，权限变更结果未确认，请重新读取后核对。".into());
+                self.permission_error = Some(
+                    crate::i18n::text("连接已重建，权限变更结果未确认，请重新读取后核对。").into(),
+                );
             }
             self.pending_connection_events
                 .values_mut()

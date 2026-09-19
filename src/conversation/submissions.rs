@@ -110,17 +110,20 @@ impl ConversationState {
 
     pub(crate) fn steer_target(&self) -> Result<AgentTurnIdentity, String> {
         match self.phase {
-            ConversationPhase::Starting => {
-                Err("当前轮次正在启动，尚未取得可用轮次标识。输入已保留，请稍后发送。".into())
+            ConversationPhase::Starting => Err(crate::i18n::text(
+                "当前轮次正在启动，尚未取得可用轮次标识。输入已保留，请稍后发送。",
+            )
+            .into()),
+            ConversationPhase::Stopping => Err(crate::i18n::text(
+                "正在停止当前轮次。输入已保留，请等待停止完成后发送。",
+            )
+            .into()),
+            ConversationPhase::Thinking | ConversationPhase::Streaming => {
+                self.turn_identity.clone().ok_or_else(|| {
+                    crate::i18n::text("当前轮次尚未就绪。输入已保留，请稍后发送。").into()
+                })
             }
-            ConversationPhase::Stopping => {
-                Err("正在停止当前轮次。输入已保留，请等待停止完成后发送。".into())
-            }
-            ConversationPhase::Thinking | ConversationPhase::Streaming => self
-                .turn_identity
-                .clone()
-                .ok_or_else(|| "当前轮次尚未就绪。输入已保留，请稍后发送。".into()),
-            _ => Err("当前轮次已结束。输入已保留，请手动发送。".into()),
+            _ => Err(crate::i18n::text("当前轮次已结束。输入已保留，请手动发送。").into()),
         }
     }
 

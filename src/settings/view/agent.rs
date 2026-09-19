@@ -54,7 +54,7 @@ impl SettingsView {
                     .line_height(px(18.5625))
                     .font_weight(gpui::FontWeight(500.0))
                     .text_color(theme.markdown_text)
-                    .child(title),
+                    .child(crate::i18n::text(title)),
             )
             .when(!subtitle.is_empty(), |column| {
                 column.child(
@@ -62,7 +62,7 @@ impl SettingsView {
                         .text_size(px(12.0))
                         .line_height(px(16.0))
                         .text_color(theme.settings_description)
-                        .child(subtitle),
+                        .child(crate::i18n::text(subtitle)),
                 )
             });
         let label = label.when_some(field_error, |column, error| {
@@ -141,22 +141,30 @@ impl SettingsView {
         use crate::configuration::ConfigOperation;
         let busy = self.config_editor.busy();
         let rows = [
-            ("approval_policy", "批准策略", "选择 ChatGPT 何时请求批准"),
+            (
+                "approval_policy",
+                crate::i18n::text("批准策略"),
+                crate::i18n::text("选择 ChatGPT 何时请求批准"),
+            ),
             (
                 "sandbox_mode",
-                "沙盒设置",
-                "选择 ChatGPT 运行命令时的权限范围",
+                crate::i18n::text("沙盒设置"),
+                crate::i18n::text("选择 ChatGPT 运行命令时的权限范围"),
             ),
-            ("web_search", "网页搜索", "选择 ChatGPT 访问网络的方式"),
+            (
+                "web_search",
+                crate::i18n::text("网页搜索"),
+                crate::i18n::text("选择 ChatGPT 访问网络的方式"),
+            ),
             (
                 "model_verbosity",
-                "输出详细程度",
-                "选择 ChatGPT 回复包含细节的详细程度",
+                crate::i18n::text("输出详细程度"),
+                crate::i18n::text("选择 ChatGPT 回复包含细节的详细程度"),
             ),
             (
                 "model_reasoning_summary",
-                "推理摘要",
-                "选择 ChatGPT 总结其推理的方式",
+                crate::i18n::text("推理摘要"),
+                crate::i18n::text("选择 ChatGPT 总结其推理的方式"),
             ),
         ]
         .into_iter()
@@ -182,7 +190,7 @@ impl SettingsView {
                     .text_size(px(24.))
                     .line_height(px(28.8))
                     .font_weight(gpui::FontWeight::NORMAL)
-                    .child(page.label),
+                    .child(crate::i18n::text(page.label)),
             )
             .child(
                 div()
@@ -190,7 +198,7 @@ impl SettingsView {
                     .text_size(px(14.))
                     .line_height(px(21.))
                     .text_color(theme.settings_description)
-                    .child("配置新聊天的权限、网页访问和智能体回复"),
+                    .child(crate::i18n::text("配置新聊天的权限、网页访问和智能体回复")),
             )
             .child(
                 div()
@@ -198,7 +206,7 @@ impl SettingsView {
                     .text_size(px(14.))
                     .line_height(px(21.))
                     .font_weight(gpui::FontWeight(500.))
-                    .child("智能体默认设置"),
+                    .child(crate::i18n::text("智能体默认设置")),
             )
             .child(
                 div()
@@ -210,9 +218,9 @@ impl SettingsView {
                     .child(self.config_button(
                         "config-reload",
                         if self.config_editor.operation == ConfigOperation::Loading {
-                            "读取中…"
+                            crate::i18n::text("读取中…")
                         } else {
-                            "重新读取"
+                            crate::i18n::text("重新读取")
                         },
                         ConfigAction::Reload,
                         busy,
@@ -264,12 +272,12 @@ impl SettingsView {
                             .flex_1()
                             .text_size(px(13.))
                             .text_color(theme.text_tertiary)
-                            .child(format!("{} 项未保存的修改", self.config_editor.edits.len())),
+                            .child(crate::i18n::format!("{} 项未保存的修改" => "{} unsaved changes", self.config_editor.edits.len())),
                     )
                     .when(self.config_editor.needs_review, |row| {
                         row.child(self.config_button(
                             "config-review",
-                            "确认已核对草稿",
+                            crate::i18n::text("确认已核对草稿"),
                             ConfigAction::Review,
                             busy || self.config_editor.operation != ConfigOperation::Ready,
                             theme,
@@ -278,7 +286,7 @@ impl SettingsView {
                     })
                     .child(self.config_button(
                         "config-discard",
-                        "放弃修改",
+                        crate::i18n::text("放弃修改"),
                         ConfigAction::Discard,
                         busy,
                         theme,
@@ -287,9 +295,9 @@ impl SettingsView {
                     .child(self.config_button(
                         "config-save",
                         if matches!(self.config_editor.operation, ConfigOperation::Saving) {
-                            "保存中…"
+                            crate::i18n::text("保存中…")
                         } else {
-                            "保存"
+                            crate::i18n::text("保存")
                         },
                         ConfigAction::Save,
                         busy || self.config_editor.needs_review
@@ -309,7 +317,7 @@ impl SettingsView {
                 .gap(px(8.))
                 .child(self.config_button(
                     "config-advanced",
-                    "权限与会话默认值",
+                    crate::i18n::text("权限与会话默认值"),
                     ConfigAction::Advanced,
                     false,
                     theme,
@@ -317,7 +325,7 @@ impl SettingsView {
                 ))
                 .child(self.config_button(
                     "config-sources",
-                    "配置来源与受管限制",
+                    crate::i18n::text("配置来源与受管限制"),
                     ConfigAction::Sources,
                     false,
                     theme,
@@ -326,33 +334,41 @@ impl SettingsView {
         );
         if self.config_advanced_open {
             let fields = [
-                ("approvals_reviewer", "批准方式", "用户批准或服务端自动复核"),
+                (
+                    "approvals_reviewer",
+                    crate::i18n::text("批准方式"),
+                    crate::i18n::text("用户批准或服务端自动复核"),
+                ),
                 (
                     "default_permissions",
-                    "默认权限配置",
-                    "仅可使用服务器允许的配置；新聊天继承此设置",
+                    crate::i18n::text("默认权限配置"),
+                    crate::i18n::text("仅可使用服务器允许的配置；新聊天继承此设置"),
                 ),
                 (
                     "model",
-                    "默认模型",
-                    "仅用于新会话；已有会话可在模型菜单中修改",
+                    crate::i18n::text("默认模型"),
+                    crate::i18n::text("仅用于新会话；已有会话可在模型菜单中修改"),
                 ),
                 (
                     "model_reasoning_effort",
-                    "默认推理强度",
-                    "使用模型目录提供的强度",
+                    crate::i18n::text("默认推理强度"),
+                    crate::i18n::text("使用模型目录提供的强度"),
                 ),
                 (
                     "plan_mode_reasoning_effort",
-                    "Plan 推理强度",
-                    "仅用于新会话的 Plan 默认值",
+                    crate::i18n::text("Plan 推理强度"),
+                    crate::i18n::text("仅用于新会话的 Plan 默认值"),
                 ),
                 (
                     "service_tier",
-                    "服务等级",
-                    "仅用于新会话；合法值由模型目录提供",
+                    crate::i18n::text("服务等级"),
+                    crate::i18n::text("仅用于新会话；合法值由模型目录提供"),
                 ),
-                ("personality", "个性默认值", "仅用于新会话"),
+                (
+                    "personality",
+                    crate::i18n::text("个性默认值"),
+                    crate::i18n::text("仅用于新会话"),
+                ),
             ];
             let rows = fields
                 .into_iter()
@@ -374,7 +390,7 @@ impl SettingsView {
                         .mt(px(8.))
                         .text_size(px(13.))
                         .text_color(theme.warning)
-                        .child(format!("权限配置列表不可用：{error}")),
+                        .child(crate::i18n::format!("权限配置列表不可用：{error}" => "Permission profiles unavailable: {error}")),
                 );
             }
         }
@@ -389,7 +405,7 @@ impl SettingsView {
                     .child(div().flex_1().child(self.config_input.clone()))
                     .child(self.config_button(
                         "config-apply-custom",
-                        "应用到草稿",
+                        crate::i18n::text("应用到草稿"),
                         ConfigAction::ApplyCustom,
                         busy,
                         theme,
@@ -403,7 +419,7 @@ impl SettingsView {
                     .mt(px(16.))
                     .child(self.config_button(
                         "config-copy",
-                        "复制配置来源与诊断",
+                        crate::i18n::text("复制配置来源与诊断"),
                         ConfigAction::Copy,
                         false,
                         theme,
@@ -425,9 +441,9 @@ impl SettingsView {
             );
         }
         content.child(div().mt(px(24.)).text_size(px(12.)).line_height(px(18.)).text_color(theme.settings_description)
-            .child(format!("工作目录：{}",self.config_cwd.display())))
+            .child(crate::i18n::format!("工作目录：{}" => "Working directory: {}",self.config_cwd.display())))
             .child(div().mt(px(6.)).text_size(px(12.)).line_height(px(18.)).text_color(theme.settings_description)
-                .child("保存后会回读有效配置。配置默认值与当前线程权限分别管理；线程权限变更用于后续轮次。"))
+                .child(crate::i18n::text("保存后会回读有效配置。配置默认值与当前线程权限分别管理；线程权限变更用于后续轮次。")))
             .into_any_element()
     }
 }

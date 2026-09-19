@@ -374,11 +374,11 @@ pub(super) fn command_action_summary(
         CommandExecutionAction::Read { name, path, .. } => {
             let target = if name.trim().is_empty() { path } else { name };
             let text = if failed {
-                format!("读取失败 {target}")
+                crate::i18n::format!("读取失败 {target}" => "Failed to read {target}")
             } else if completed {
-                format!("已读取 {target}")
+                crate::i18n::format!("已读取 {target}" => "Read {target}")
             } else {
-                format!("正在读取 {target}")
+                crate::i18n::format!("正在读取 {target}" => "Reading {target}")
             };
             CommandActivitySummary {
                 icon: "activity-read",
@@ -390,12 +390,18 @@ pub(super) fn command_action_summary(
         CommandExecutionAction::ListFiles { path, .. } => {
             let target = path.as_deref().filter(|path| !path.trim().is_empty());
             let text = match (failed, completed, target) {
-                (true, _, Some(path)) => format!("列出 {path} 中的文件失败"),
-                (true, _, None) => "列出文件失败".to_owned(),
-                (false, true, Some(path)) => format!("已列出 {path} 中的文件"),
-                (false, true, None) => "已列出文件".to_owned(),
-                (false, false, Some(path)) => format!("正在列出 {path} 中的文件"),
-                (false, false, None) => "正在列出文件".to_owned(),
+                (true, _, Some(path)) => {
+                    crate::i18n::format!("列出 {path} 中的文件失败" => "Failed to list files in {path}")
+                }
+                (true, _, None) => crate::i18n::text("列出文件失败").to_owned(),
+                (false, true, Some(path)) => {
+                    crate::i18n::format!("已列出 {path} 中的文件" => "Listed files in {path}")
+                }
+                (false, true, None) => crate::i18n::text("已列出文件").to_owned(),
+                (false, false, Some(path)) => {
+                    crate::i18n::format!("正在列出 {path} 中的文件" => "Listing files in {path}")
+                }
+                (false, false, None) => crate::i18n::text("正在列出文件").to_owned(),
             };
             CommandActivitySummary {
                 icon: "activity-read",
@@ -408,18 +414,24 @@ pub(super) fn command_action_summary(
             let path = path.as_deref().filter(|path| !path.trim().is_empty());
             let query = query.as_deref().filter(|query| !query.trim().is_empty());
             let text = match (failed, completed, path, query) {
-                (true, _, _, Some(query)) => format!("搜索“{query}”失败"),
-                (true, _, _, None) => "搜索文件失败".to_owned(),
+                (true, _, _, Some(query)) => {
+                    crate::i18n::format!("搜索“{query}”失败" => "Failed to search for “{query}”")
+                }
+                (true, _, _, None) => crate::i18n::text("搜索文件失败").to_owned(),
                 (false, true, Some(path), Some(query)) => {
-                    format!("已在 {path} 中搜索“{query}”")
+                    crate::i18n::format!("已在 {path} 中搜索“{query}”" => "Searched for “{query}” in {path}")
                 }
-                (false, true, _, Some(query)) => format!("已对“{query}”进行搜索"),
-                (false, true, _, None) => "已搜索文件".to_owned(),
+                (false, true, _, Some(query)) => {
+                    crate::i18n::format!("已对“{query}”进行搜索" => "Searched for “{query}”")
+                }
+                (false, true, _, None) => crate::i18n::text("已搜索文件").to_owned(),
                 (false, false, Some(path), Some(query)) => {
-                    format!("正在 {path} 中搜索“{query}”")
+                    crate::i18n::format!("正在 {path} 中搜索“{query}”" => "Searching for “{query}” in {path}")
                 }
-                (false, false, _, Some(query)) => format!("正在搜索“{query}”"),
-                (false, false, _, None) => "正在搜索文件".to_owned(),
+                (false, false, _, Some(query)) => {
+                    crate::i18n::format!("正在搜索“{query}”" => "Searching for “{query}”")
+                }
+                (false, false, _, None) => crate::i18n::text("正在搜索文件").to_owned(),
             };
             CommandActivitySummary {
                 icon: "search",
@@ -446,14 +458,20 @@ pub(super) fn generic_command_activity_summary(
         .collect::<Vec<_>>()
         .join(" ");
     let display_command = if display_command.is_empty() {
-        "命令"
+        crate::i18n::text("命令")
     } else {
         &display_command
     };
     let text = match command.status {
-        CommandExecutionStatus::InProgress => format!("正在运行 {display_command}"),
-        CommandExecutionStatus::Completed => format!("已运行 {display_command}"),
-        CommandExecutionStatus::Failed => format!("已运行 {display_command}"),
+        CommandExecutionStatus::InProgress => {
+            crate::i18n::format!("正在运行 {display_command}" => "Running {display_command}")
+        }
+        CommandExecutionStatus::Completed => {
+            crate::i18n::format!("已运行 {display_command}" => "Ran {display_command}")
+        }
+        CommandExecutionStatus::Failed => {
+            crate::i18n::format!("已运行 {display_command}" => "Ran {display_command}")
+        }
     };
     CommandActivitySummary {
         icon: "panel-terminal",
@@ -475,14 +493,14 @@ pub(super) fn completed_tool_group_summary(
     let runs_command = command_summaries.iter().any(|summary| summary.runs_command);
     let edits_files = !group.file_changes.is_empty();
     let text = match (edits_files, reads_files, runs_command) {
-        (true, true, true) => "编辑了文件读取文件运行了命令",
-        (true, true, false) => "编辑了文件读取文件",
-        (true, false, true) => "编辑了文件运行了命令",
-        (true, false, false) => "编辑了文件",
-        (false, true, true) => "已读取文件运行了命令",
-        (false, true, false) => "已读取文件",
-        (false, false, true) => "运行了命令",
-        (false, false, false) => "已工作",
+        (true, true, true) => crate::i18n::text("编辑了文件读取文件运行了命令"),
+        (true, true, false) => crate::i18n::text("编辑了文件读取文件"),
+        (true, false, true) => crate::i18n::text("编辑了文件运行了命令"),
+        (true, false, false) => crate::i18n::text("编辑了文件"),
+        (false, true, true) => crate::i18n::text("已读取文件运行了命令"),
+        (false, true, false) => crate::i18n::text("已读取文件"),
+        (false, false, true) => crate::i18n::text("运行了命令"),
+        (false, false, false) => crate::i18n::text("已工作"),
     };
     let mut surfaces = group
         .activities
@@ -500,25 +518,27 @@ pub(super) fn completed_tool_group_summary(
         .iter()
         .any(|a| matches!(a, ConversationActivity::WebSearch(_)));
     let text = if uses_computer {
-        let suffix = if surfaces.iter().any(|s| s == "浏览器") {
+        let suffix = if surfaces.iter().any(|s| s == crate::i18n::text("浏览器")) {
             ""
         } else {
-            " 集成"
+            crate::i18n::text(" 集成")
         };
-        let operations = if text == "已工作" {
+        let operations = if text == crate::i18n::text("已工作") {
             String::new()
+        } else if crate::i18n::is_english() {
+            format!(", {}", text.to_lowercase())
         } else {
             text.strip_prefix("已")
                 .unwrap_or(text)
                 .replace("编辑了文件", "编辑了多个文件")
         };
-        format!("已使用 {}{suffix}{operations}", surfaces.join("和"))
+        crate::i18n::format!("已使用 {}{suffix}{operations}" => "Used {}{suffix}{operations}", surfaces.join(if crate::i18n::is_english() { " and " } else { "和" }))
     } else {
         text.to_owned()
     };
     CommandActivitySummary {
         icon: if uses_computer {
-            if surfaces.iter().any(|s| s == "浏览器") {
+            if surfaces.iter().any(|s| s == crate::i18n::text("浏览器")) {
                 "activity-computer-use"
             } else {
                 "activity-native-app"
@@ -530,8 +550,14 @@ pub(super) fn completed_tool_group_summary(
         } else {
             "panel-terminal"
         },
-        text: if searches_web {
-            format!("{}已搜索网页", if text == "已工作" { "" } else { &text })
+        text: if searches_web && crate::i18n::is_english() {
+            if text == "Worked" {
+                "Searched the web".into()
+            } else {
+                format!("{text}, searched the web")
+            }
+        } else if searches_web {
+            crate::i18n::format!("{}已搜索网页" => "{}Searched the web", if text == crate::i18n::text("已工作") { "" } else { &text })
         } else {
             text
         },
@@ -730,8 +756,11 @@ pub(super) fn resumed_file_summary(
         }
     }
     (!files.is_empty()).then(|| {
-        let mut review =
-            DiffReviewPresentation::new(format!("resumed-summary-{}", turn.id), "本轮更改", files);
+        let mut review = DiffReviewPresentation::new(
+            format!("resumed-summary-{}", turn.id),
+            crate::i18n::text("本轮更改"),
+            files,
+        );
         let raw = activities
             .iter()
             .filter_map(|a| {
@@ -752,19 +781,19 @@ pub(super) fn resumed_work_label(duration_ms: Option<i64>) -> String {
         Some(ms) => {
             let seconds = ms / 1000;
             if seconds >= 3600 {
-                format!(
-                    "用时 {}小时 {}分钟 {}秒",
+                crate::i18n::format!(
+                    "用时 {}小时 {}分钟 {}秒" => "Worked for {}h {}m {}s",
                     seconds / 3600,
                     seconds / 60 % 60,
                     seconds % 60
                 )
             } else if seconds >= 60 {
-                format!("用时 {}分钟 {}秒", seconds / 60, seconds % 60)
+                crate::i18n::format!("用时 {}分钟 {}秒" => "Worked for {}m {}s", seconds / 60, seconds % 60)
             } else {
-                format!("用时 {seconds}秒")
+                crate::i18n::format!("用时 {seconds}秒" => "Worked for {seconds}s")
             }
         }
-        None => "工作过程".to_owned(),
+        None => crate::i18n::text("工作过程").to_owned(),
     }
 }
 
@@ -825,7 +854,7 @@ pub(super) fn append_turn_activity_rows(
 
 pub(super) fn conversation_status(phase: ConversationPhase) -> Option<&'static str> {
     match phase {
-        ConversationPhase::Thinking => Some("正在思考"),
+        ConversationPhase::Thinking => Some(crate::i18n::text("正在思考")),
         _ => None,
     }
 }

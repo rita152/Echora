@@ -54,16 +54,17 @@ pub(super) fn dynamic_tool_call_activity(
     let label = dynamic_tool_call_label(call);
     let failed = call.status == AgentDynamicToolCallStatus::Failed;
     let display_label = if failed {
-        format!("{label} 失败")
+        crate::i18n::format!("{label} 失败" => "{label} failed")
     } else {
         label
     };
     let status = match call.status {
-        AgentDynamicToolCallStatus::InProgress => "进行中",
-        AgentDynamicToolCallStatus::Completed => "已完成",
-        AgentDynamicToolCallStatus::Failed => "失败",
+        AgentDynamicToolCallStatus::InProgress => crate::i18n::text("进行中"),
+        AgentDynamicToolCallStatus::Completed => crate::i18n::text("已完成"),
+        AgentDynamicToolCallStatus::Failed => crate::i18n::text("失败"),
     };
-    let accessible_label = format!("动态工具 {}，{status}", call.tool);
+    let accessible_label =
+        crate::i18n::format!("动态工具 {}，{status}" => "Dynamic tool {}, {status}", call.tool);
     let foreground = if failed {
         theme.warning
     } else {
@@ -156,7 +157,9 @@ pub(super) fn dynamic_tool_call_activity(
                 div()
                     .text_size(px(MCP_TOOL_CALL_TEXT_SIZE))
                     .text_color(theme.text.alpha(0.60))
-                    .child(format!("耗时 {duration_ms} 毫秒")),
+                    .child(
+                        crate::i18n::format!("耗时 {duration_ms} 毫秒" => "Took {duration_ms} ms"),
+                    ),
             );
         }
         if !matches!(call.arguments, serde_json::Value::Null) {

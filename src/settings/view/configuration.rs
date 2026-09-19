@@ -30,6 +30,7 @@ pub(super) enum ConfigAction {
 
 impl SettingsView {
     pub fn dismiss_transient(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.language_menu_open = false;
         if let Some(key) = self
             .config_menu
             .take()
@@ -43,7 +44,7 @@ impl SettingsView {
     }
 
     pub fn advance_focus(&mut self, backwards: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.config_menu.is_some() {
+        if self.config_menu.is_some() || self.language_menu_open {
             self.dismiss_transient(window, cx);
         }
         if backwards {
@@ -80,7 +81,7 @@ impl SettingsView {
             let result = result.recv().await.unwrap_or_else(|_| {
                 Err(AgentConfigError {
                     kind: AgentConfigErrorKind::Connection,
-                    message: "读取配置的连接已关闭".into(),
+                    message: crate::i18n::text("读取配置的连接已关闭").into(),
                     data: None,
                     outcome_unknown: false,
                 })
@@ -97,7 +98,7 @@ impl SettingsView {
             let profiles = profiles
                 .recv()
                 .await
-                .unwrap_or_else(|_| Err("权限列表连接已关闭".into()));
+                .unwrap_or_else(|_| Err(crate::i18n::text("权限列表连接已关闭").into()));
             let _ = this.update(cx, |this, cx| {
                 if this.config_cwd != cwd || this.config_editor.cycle != cycle {
                     return;
@@ -142,7 +143,8 @@ impl SettingsView {
             let result = result.recv().await.unwrap_or_else(|_| {
                 Err(AgentConfigError {
                     kind: AgentConfigErrorKind::Connection,
-                    message: "保存连接已关闭；写入结果未知，请重新读取后核对".into(),
+                    message: crate::i18n::text("保存连接已关闭；写入结果未知，请重新读取后核对")
+                        .into(),
                     data: None,
                     outcome_unknown: true,
                 })
@@ -224,7 +226,7 @@ impl SettingsView {
                     let text = self.config_input.read(cx).text().trim().to_owned();
                     if text.is_empty() {
                         self.config_editor.feedback =
-                            Some("请输入非空值，或在菜单中选择继承".into());
+                            Some(crate::i18n::text("请输入非空值，或在菜单中选择继承").into());
                     } else if let Err(error) = self.config_editor.edit(&key, json!(text)) {
                         self.config_editor.feedback = Some(error);
                     } else {
@@ -311,8 +313,9 @@ impl SettingsView {
                         layer.source.label(),
                         ConfigAction::Target(path),
                         layer.disabled_reason.clone().or_else(|| {
-                            (!layer.source.writable())
-                                .then(|| "本机服务端仅允许写入用户配置；此层只读".into())
+                            (!layer.source.writable()).then(|| {
+                                crate::i18n::text("本机服务端仅允许写入用户配置；此层只读").into()
+                            })
                         }),
                     ))
                 })
@@ -402,7 +405,7 @@ impl SettingsView {
                         .find(|profile| profile.id == id)
                         .is_none_or(|profile| !profile.allowed)
                 {
-                    reason = Some("服务端未允许使用此权限配置".into());
+                    reason = Some(crate::i18n::text("服务端未允许使用此权限配置").into());
                 }
                 (
                     config_label(key, &value),
@@ -417,7 +420,7 @@ impl SettingsView {
             .any(|field| field.key == key && field.allows_custom_string)
         {
             options.push((
-                "输入其他值…".into(),
+                crate::i18n::text("输入其他值…").into(),
                 ConfigAction::Custom(key.into()),
                 self.config_editor.restriction(key, &Value::Null),
             ));
@@ -488,13 +491,15 @@ impl SettingsView {
     ) -> gpui::AnyElement {
         let busy = self.config_editor.busy() || self.config_editor.snapshot.is_none();
         let label = match &self.config_editor.operation {
-            ConfigOperation::Loading if self.config_editor.snapshot.is_none() => "读取中…".into(),
+            ConfigOperation::Loading if self.config_editor.snapshot.is_none() => {
+                crate::i18n::text("读取中…").into()
+            }
             ConfigOperation::Failed(_) | ConfigOperation::ReadFailed(_)
                 if self.config_editor.snapshot.is_none() =>
             {
-                "读取失败".into()
+                crate::i18n::text("读取失败").into()
             }
-            ConfigOperation::Unavailable => "不可用".into(),
+            ConfigOperation::Unavailable => crate::i18n::text("不可用").into(),
             _ if key == "source" => self
                 .config_editor
                 .snapshot
@@ -502,12 +507,12 @@ impl SettingsView {
                 .and_then(|snapshot| snapshot.layer(self.config_editor.target.as_ref()?))
                 .map(|layer| {
                     if layer.source.kind() == "project" {
-                        "项目配置"
+                        crate::i18n::text("项目配置")
                     } else {
-                        "用户配置"
+                        crate::i18n::text("用户配置")
                     }
                 })
-                .unwrap_or("无可写配置")
+                .unwrap_or(crate::i18n::text("无可写配置"))
                 .into(),
             _ if self
                 .config_editor
@@ -525,7 +530,7 @@ impl SettingsView {
                     .as_ref()
                     .unwrap()
                     .enforced[key];
-                format!("{} · 受管", config_label(key, value))
+                crate::i18n::format!("{} · 受管" => "{} · Managed", config_label(key, value))
             }
             _ => {
                 let value = self.config_editor.value(key).unwrap_or(&Value::Null);
@@ -538,7 +543,7 @@ impl SettingsView {
                         .and_then(|snapshot| config_value(&snapshot.effective, key))
                         .filter(|value| !value.is_null())
                 {
-                    label = format!("继承 · {}", config_label(key, effective));
+                    label = crate::i18n::format!("继承 · {}" => "Inherit · {}", config_label(key, effective));
                 }
                 if self.config_editor.edits.contains_key(key) {
                     label.push_str(" ·");
@@ -546,7 +551,7 @@ impl SettingsView {
                     && let Some(snapshot) = &self.config_editor.snapshot
                     && config_value(&snapshot.effective, key) != Some(value)
                 {
-                    label.push_str(" · 被覆盖");
+                    label.push_str(crate::i18n::text(" · 被覆盖"));
                 }
                 label
             }
@@ -702,36 +707,38 @@ impl SettingsView {
 
     pub(super) fn config_diagnostics(&self) -> String {
         let Some(snapshot) = &self.config_editor.snapshot else {
-            return "尚未读取配置".into();
+            return crate::i18n::text("尚未读取配置").into();
         };
-        let mut lines = vec![format!("工作目录：{}", snapshot.cwd.display())];
+        let mut lines = vec![
+            crate::i18n::format!("工作目录：{}" => "Working directory: {}", snapshot.cwd.display()),
+        ];
         for layer in snapshot.layers.as_ref().into_iter().flatten() {
-            lines.push(format!(
-                "{}\n版本：{}{}",
+            lines.push(crate::i18n::format!(
+                "{}\n版本：{}{}" => "{}\nVersion: {}{}",
                 layer.source.label(),
                 layer.source.version,
                 layer
                     .disabled_reason
                     .as_ref()
-                    .map(|reason| format!("\n不可用：{reason}"))
+                    .map(|reason| crate::i18n::format!("\n不可用：{reason}" => "\nUnavailable: {reason}"))
                     .unwrap_or_default()
             ));
         }
         for field in &self.config_choices {
             let value = config_value(&snapshot.effective, &field.key)
                 .map(Value::to_string)
-                .unwrap_or_else(|| "未设置".into());
+                .unwrap_or_else(|| crate::i18n::text("未设置").into());
             let source = snapshot
                 .origin(&field.key)
                 .map(|source| source.label())
-                .unwrap_or_else(|| "未指定来源／服务端默认".into());
-            lines.push(format!(
-                "{} = {}\n来源：{}{}",
+                .unwrap_or_else(|| crate::i18n::text("未指定来源／服务端默认").into());
+            lines.push(crate::i18n::format!(
+                "{} = {}\n来源：{}{}" => "{} = {}\nSource: {}{}",
                 field.key,
                 value,
                 source,
                 if field.session_static {
-                    "；会话静态默认值"
+                    crate::i18n::text("；会话静态默认值")
                 } else {
                     ""
                 }
@@ -746,50 +753,50 @@ impl SettingsView {
             for field in &self.config_choices {
                 let stored = config_value(&layer.config, &field.key)
                     .map(Value::to_string)
-                    .unwrap_or_else(|| "未设置（继承）".into());
-                lines.push(format!(
-                    "用户文件中的 {}：{}{}",
+                    .unwrap_or_else(|| crate::i18n::text("未设置（继承）").into());
+                lines.push(crate::i18n::format!(
+                    "用户文件中的 {}：{}{}" => "{} in user file: {}{}",
                     field.key,
                     stored,
                     self.config_editor
                         .edits
                         .get(&field.key)
-                        .map(|value| format!("；草稿：{value}"))
+                        .map(|value| crate::i18n::format!("；草稿：{value}" => "; draft: {value}"))
                         .unwrap_or_default()
                 ));
             }
         }
         if let Some(requirements) = &snapshot.requirements {
-            lines.push(format!(
-                "受管限制：\n{}",
+            lines.push(crate::i18n::format!(
+                "受管限制：\n{}" => "Managed restrictions:\n{}",
                 serde_json::to_string_pretty(&requirements.raw).unwrap_or_default()
             ));
         } else {
-            lines.push("未配置受管限制".into());
+            lines.push(crate::i18n::text("未配置受管限制").into());
         }
         if let Some(receipt) = &self.config_editor.receipt {
-            lines.push(format!(
-                "保存状态：{}\n写入版本：{}\n覆盖信息：{}",
+            lines.push(crate::i18n::format!(
+                "保存状态：{}\n写入版本：{}\n覆盖信息：{}" => "Save status: {}\nWritten version: {}\nOverrides: {}",
                 receipt.status,
                 receipt.version,
                 receipt
                     .overridden
                     .as_ref()
                     .map(Value::to_string)
-                    .unwrap_or_else(|| "无".into())
+                    .unwrap_or_else(|| crate::i18n::text("无").into())
             ));
         }
         if let ConfigOperation::Failed(error) | ConfigOperation::ReadFailed(error) =
             &self.config_editor.operation
         {
-            lines.push(format!(
-                "操作错误：{}\n原始错误载荷：{}",
+            lines.push(crate::i18n::format!(
+                "操作错误：{}\n原始错误载荷：{}" => "Operation error: {}\nRaw error payload: {}",
                 error.user_message(),
                 error
                     .data
                     .as_ref()
                     .map(Value::to_string)
-                    .unwrap_or_else(|| "无".into())
+                    .unwrap_or_else(|| crate::i18n::text("无").into())
             ));
         }
         lines.join("\n\n")
@@ -799,32 +806,32 @@ impl SettingsView {
 pub(super) fn config_label(key: &str, value: &Value) -> String {
     let Some(value) = value.as_str() else {
         return if value.is_null() {
-            "继承 / 未设置".into()
+            crate::i18n::text("继承 / 未设置").into()
         } else {
-            format!("精细策略：{value}")
+            crate::i18n::format!("精细策略：{value}" => "Granular policy: {value}")
         };
     };
     match (key, value) {
-        ("approval_policy", "on-request") => "按请求",
-        ("approval_policy", "untrusted") => "不受信任",
-        ("approval_policy", "never") => "从不",
-        ("sandbox_mode", "read-only") => "只读",
-        ("sandbox_mode", "workspace-write") => "工作区写入",
-        ("sandbox_mode", "danger-full-access") => "完整访问权限",
-        ("web_search", "disabled") => "已禁用",
-        ("web_search", "cached") => "已缓存",
-        ("web_search", "indexed") => "已索引",
-        ("web_search", "live") => "实时",
-        ("model_verbosity", "low") => "低",
-        ("model_verbosity", "medium") => "中",
-        ("model_verbosity", "high") => "高",
-        ("model_reasoning_summary", "auto") => "自动",
-        ("model_reasoning_summary", "concise") => "简洁",
-        ("model_reasoning_summary", "detailed") => "详细",
-        ("model_reasoning_summary", "none") => "无",
-        ("approvals_reviewer", "user") => "用户批准",
-        ("approvals_reviewer", "auto_review") => "自动复核",
-        ("approvals_reviewer", "guardian_subagent") => "自动复核（兼容旧值）",
+        ("approval_policy", "on-request") => crate::i18n::text("按请求"),
+        ("approval_policy", "untrusted") => crate::i18n::text("不受信任"),
+        ("approval_policy", "never") => crate::i18n::text("从不"),
+        ("sandbox_mode", "read-only") => crate::i18n::text("只读"),
+        ("sandbox_mode", "workspace-write") => crate::i18n::text("工作区写入"),
+        ("sandbox_mode", "danger-full-access") => crate::i18n::text("完整访问权限"),
+        ("web_search", "disabled") => crate::i18n::text("已禁用"),
+        ("web_search", "cached") => crate::i18n::text("已缓存"),
+        ("web_search", "indexed") => crate::i18n::text("已索引"),
+        ("web_search", "live") => crate::i18n::text("实时"),
+        ("model_verbosity", "low") => crate::i18n::text("低"),
+        ("model_verbosity", "medium") => crate::i18n::text("中"),
+        ("model_verbosity", "high") => crate::i18n::text("高"),
+        ("model_reasoning_summary", "auto") => crate::i18n::text("自动"),
+        ("model_reasoning_summary", "concise") => crate::i18n::text("简洁"),
+        ("model_reasoning_summary", "detailed") => crate::i18n::text("详细"),
+        ("model_reasoning_summary", "none") => crate::i18n::text("无"),
+        ("approvals_reviewer", "user") => crate::i18n::text("用户批准"),
+        ("approvals_reviewer", "auto_review") => crate::i18n::text("自动复核"),
+        ("approvals_reviewer", "guardian_subagent") => crate::i18n::text("自动复核（兼容旧值）"),
         _ => value,
     }
     .into()
@@ -834,32 +841,34 @@ pub(super) type ConfigDrafts = BTreeMap<PathBuf, ConfigEditor>;
 
 fn config_choice_detail(key: &str, value: &Value) -> Option<&'static str> {
     if value.is_null() {
-        return Some("移除此文件中的值，使用继承配置或服务端默认值");
+        return Some(crate::i18n::text(
+            "移除此文件中的值，使用继承配置或服务端默认值",
+        ));
     }
     match (key, value.as_str()?) {
-        ("web_search", "disabled") => Some("不允许网页搜索"),
-        ("web_search", "cached") => Some("使用 OpenAI 维护的搜索索引"),
-        ("web_search", "indexed") => Some("允许访问已索引的外部网页"),
-        ("web_search", "live") => Some("允许不受限制地访问当前网页"),
+        ("web_search", "disabled") => Some(crate::i18n::text("不允许网页搜索")),
+        ("web_search", "cached") => Some(crate::i18n::text("使用 OpenAI 维护的搜索索引")),
+        ("web_search", "indexed") => Some(crate::i18n::text("允许访问已索引的外部网页")),
+        ("web_search", "live") => Some(crate::i18n::text("允许不受限制地访问当前网页")),
         _ => None,
     }
 }
 
 fn config_field_name(key: &str) -> &str {
     match key {
-        "source" => "配置来源",
-        "approval_policy" => "批准策略",
-        "sandbox_mode" => "沙盒设置",
-        "web_search" => "网页搜索",
-        "model_verbosity" => "输出详细程度",
-        "model_reasoning_summary" => "推理摘要",
-        "approvals_reviewer" => "批准方式",
-        "default_permissions" => "默认权限配置",
-        "model" => "默认模型",
-        "model_reasoning_effort" => "默认推理强度",
-        "plan_mode_reasoning_effort" => "Plan 推理强度",
-        "service_tier" => "服务等级",
-        "personality" => "个性默认值",
+        "source" => crate::i18n::text("配置来源"),
+        "approval_policy" => crate::i18n::text("批准策略"),
+        "sandbox_mode" => crate::i18n::text("沙盒设置"),
+        "web_search" => crate::i18n::text("网页搜索"),
+        "model_verbosity" => crate::i18n::text("输出详细程度"),
+        "model_reasoning_summary" => crate::i18n::text("推理摘要"),
+        "approvals_reviewer" => crate::i18n::text("批准方式"),
+        "default_permissions" => crate::i18n::text("默认权限配置"),
+        "model" => crate::i18n::text("默认模型"),
+        "model_reasoning_effort" => crate::i18n::text("默认推理强度"),
+        "plan_mode_reasoning_effort" => crate::i18n::text("Plan 推理强度"),
+        "service_tier" => crate::i18n::text("服务等级"),
+        "personality" => crate::i18n::text("个性默认值"),
         other => other,
     }
 }

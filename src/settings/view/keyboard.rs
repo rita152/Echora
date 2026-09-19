@@ -71,7 +71,7 @@ impl SettingsView {
                                 .line_height(px(12.0))
                                 .text_color(theme.settings_description)
                                 .whitespace_nowrap()
-                                .child(shortcut)
+                                .child(crate::i18n::text(shortcut))
                         } else {
                             div()
                                 .h(px(32.0))
@@ -81,7 +81,7 @@ impl SettingsView {
                                 .line_height(px(18.5))
                                 .text_color(theme.settings_description)
                                 .whitespace_nowrap()
-                                .child(shortcut)
+                                .child(crate::i18n::text(shortcut))
                         };
                         bindings = bindings.child(
                             div()
@@ -127,6 +127,9 @@ impl SettingsView {
                 card = card.child(
                     div()
                         .h(px(row_height))
+                        .when(crate::i18n::is_english(), |row| {
+                            row.h_auto().min_h(px(row_height))
+                        })
                         .flex_none()
                         .px(px(16.0))
                         .py(px(12.0))
@@ -158,14 +161,14 @@ impl SettingsView {
                                         .text_size(px(13.0))
                                         .line_height(px(18.5))
                                         .font_weight(gpui::FontWeight(500.0))
-                                        .child(row.title),
+                                        .child(crate::i18n::text(row.title)),
                                 )
                                 .child(
                                     div()
                                         .text_size(px(12.0))
                                         .line_height(px(16.0))
                                         .text_color(theme.settings_description)
-                                        .child(row.subtitle),
+                                        .child(crate::i18n::text(row.subtitle)),
                                 ),
                         )
                         .child(bindings),
@@ -193,7 +196,7 @@ impl SettingsView {
                             .top(px(-3.0))
                             .text_size(px(24.0))
                             .font_weight(gpui::FontWeight::NORMAL)
-                            .child(page.label),
+                            .child(crate::i18n::text(page.label)),
                     )
                     .child(
                         div()
@@ -212,7 +215,7 @@ impl SettingsView {
                             .text_size(px(14.0))
                             .line_height(px(18.0))
                             .whitespace_nowrap()
-                            .child("全部重置为默认值"),
+                            .child(crate::i18n::text("全部重置为默认值")),
                     ),
             )
             .child(
@@ -235,7 +238,7 @@ impl SettingsView {
                             .size(px(18.0))
                             .text_color(theme.settings_description),
                     )
-                    .child(div().flex_1().child("搜索快捷键"))
+                    .child(div().flex_1().child(crate::i18n::text("搜索快捷键")))
                     .child(
                         div()
                             .size(px(28.0))

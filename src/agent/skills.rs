@@ -28,10 +28,10 @@ impl AgentSkillScope {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::User => "个人",
-            Self::Repo => "项目",
-            Self::System => "系统",
-            Self::Admin => "组织",
+            Self::User => crate::i18n::text("个人"),
+            Self::Repo => crate::i18n::text("项目"),
+            Self::System => crate::i18n::text("系统"),
+            Self::Admin => crate::i18n::text("组织"),
         }
     }
 }
@@ -196,9 +196,13 @@ pub struct AgentSkillsError {
 impl AgentSkillsError {
     pub fn user_message(&self) -> String {
         match self.kind {
-            AgentSkillsErrorKind::Unsupported => "当前 coding agent 不支持技能管理".to_owned(),
-            AgentSkillsErrorKind::Connection => "与 coding agent 的连接已断开".to_owned(),
-            AgentSkillsErrorKind::Protocol => "技能请求失败".to_owned(),
+            AgentSkillsErrorKind::Unsupported => {
+                crate::i18n::text("当前 coding agent 不支持技能管理").to_owned()
+            }
+            AgentSkillsErrorKind::Connection => {
+                crate::i18n::text("与 coding agent 的连接已断开").to_owned()
+            }
+            AgentSkillsErrorKind::Protocol => crate::i18n::text("技能请求失败").to_owned(),
         }
     }
 }

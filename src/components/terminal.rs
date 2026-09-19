@@ -156,7 +156,7 @@ impl Process {
             }
             let status = child
                 .wait()
-                .map(|s| format!("进程已退出（{}）", s.exit_code()))
+                .map(|s| crate::i18n::format!("进程已退出（{}）" => "Process exited ({})", s.exit_code()))
                 .unwrap_or_else(|e| e.to_string());
             reader_exited.store(true, Ordering::Release);
             let _ = tx.send_blocking(Output::Exit(status));
@@ -240,7 +240,7 @@ impl TerminalView {
                                         this.process = None;
                                     }
                                     Output::Error(error) => {
-                                        this.status = Some(format!("终端错误：{error}"))
+                                        this.status = Some(crate::i18n::format!("终端错误：{error}" => "Terminal error: {error}"))
                                     }
                                 }
                                 this.blink = true;
@@ -254,7 +254,11 @@ impl TerminalView {
                 })
                 .detach();
             }
-            Err(error) => view.status = Some(format!("无法启动终端：{error}")),
+            Err(error) => {
+                view.status = Some(
+                    crate::i18n::format!("无法启动终端：{error}" => "Could not start terminal: {error}"),
+                )
+            }
         }
         cx.spawn(async move |this, cx| {
             loop {
@@ -279,7 +283,7 @@ impl TerminalView {
         if let Some(input) = self.process.as_ref().and_then(|p| p.input.as_ref())
             && input.try_send(bytes).is_err()
         {
-            self.status = Some("终端连接已关闭".into());
+            self.status = Some(crate::i18n::text("终端连接已关闭").into());
         }
         self.parser.screen_mut().set_scrollback(0);
         self.selection = None;
@@ -299,7 +303,9 @@ impl TerminalView {
                     pixel_height: 0,
                 })
             {
-                self.status = Some(format!("终端尺寸更新失败：{error}"));
+                self.status = Some(
+                    crate::i18n::format!("终端尺寸更新失败：{error}" => "Could not resize terminal: {error}"),
+                );
             }
             self.parser.screen_mut().set_size(rows, cols);
             self.selection = None;
@@ -489,7 +495,7 @@ impl Render for TerminalView {
         div()
             .id("terminal-session")
             .role(gpui::Role::Terminal)
-            .aria_label("内置终端")
+            .aria_label(crate::i18n::text("内置终端"))
             .aria_value(self.parser.screen().contents())
             .size_full()
             .min_h(px(0.))
@@ -876,7 +882,7 @@ impl Render for TerminalPanel {
             .cwd
             .file_name()
             .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "终端".into());
+            .unwrap_or_else(|| crate::i18n::text("终端").into());
         div()
             .id("terminal-panel")
             .size_full()
@@ -910,7 +916,7 @@ impl Render for TerminalPanel {
                                     .id(("terminal-tab", *id))
                                     .role(gpui::Role::Tab)
                                     .aria_selected(index == self.active)
-                                    .aria_label(format!("终端 {}", index + 1))
+                                    .aria_label(crate::i18n::format!("终端 {}" => "Terminal {}", index + 1))
                                     .h(px(28.))
                                     .w(px(156.))
                                     .min_w(px(80.))
@@ -940,7 +946,7 @@ impl Render for TerminalPanel {
                                         div()
                                             .id(("close-terminal", *id))
                                             .role(gpui::Role::Button)
-                                            .aria_label(format!("关闭终端 {}", index + 1))
+                                            .aria_label(crate::i18n::format!("关闭终端 {}" => "Close terminal {}", index + 1))
                                             .size(px(20.))
                                             .flex_none()
                                             .rounded(px(5.))
@@ -974,7 +980,7 @@ impl Render for TerminalPanel {
                         div()
                             .id("new-terminal")
                             .role(gpui::Role::Button)
-                            .aria_label("新建终端")
+                            .aria_label(crate::i18n::text("新建终端"))
                             .size(px(28.))
                             .flex_none()
                             .rounded(px(10.))
@@ -1010,7 +1016,7 @@ impl Render for TerminalPanel {
                                 .cursor_pointer()
                                 .text_color(theme.text)
                                 .on_click(cx.listener(|this, _, _, cx| this.add(cx)))
-                                .child("新建终端"),
+                                .child(crate::i18n::text("新建终端")),
                         )
                     }),
             )

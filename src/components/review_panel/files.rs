@@ -151,13 +151,13 @@ impl ReviewPanel {
                     .p(px(8.))
                     .text_size(px(13.))
                     .text_color(t.text_tertiary)
-                    .child("没有匹配的文件"),
+                    .child(crate::i18n::text("没有匹配的文件")),
             );
         }
         div()
             .id("review-file-tree")
             .role(Role::Tree)
-            .aria_label("审查文件")
+            .aria_label(crate::i18n::text("审查文件"))
             .w(px(250.))
             .min_w(px(160.))
             .max_w(gpui::relative(0.4))
@@ -245,7 +245,7 @@ impl ReviewPanel {
             .child(
                 self.button(
                     format!("review-copy-{i}"),
-                    "复制路径",
+                    crate::i18n::text("复制路径"),
                     Some("message-copy"),
                     Action::Copy(path.clone()),
                     cx,
@@ -258,7 +258,7 @@ impl ReviewPanel {
             .child(
                 self.button(
                     format!("review-fold-{i}"),
-                    "切换文件差异对比",
+                    crate::i18n::text("切换文件差异对比"),
                     Some(if collapsed {
                         "settings-chevron-right"
                     } else {
@@ -272,7 +272,7 @@ impl ReviewPanel {
             .child(
                 self.button(
                     format!("review-open-{i}"),
-                    "打开位置",
+                    crate::i18n::text("打开位置"),
                     Some("review-open"),
                     Action::Open(i),
                     cx,
@@ -286,7 +286,7 @@ impl ReviewPanel {
                 d.child(
                     self.button(
                         format!("review-restore-{i}"),
-                        "还原文件",
+                        crate::i18n::text("还原文件"),
                         Some("review-restore"),
                         Action::Confirm(Mutation::Discard(file.path.clone())),
                         cx,
@@ -297,9 +297,9 @@ impl ReviewPanel {
                     self.button(
                         format!("review-stage-{i}"),
                         if self.scope == Scope::Staged {
-                            "对文件取消暂存"
+                            crate::i18n::text("对文件取消暂存")
                         } else {
-                            "暂存文件"
+                            crate::i18n::text("暂存文件")
                         },
                         Some(if self.scope == Scope::Staged {
                             "review-minus"
@@ -323,9 +323,9 @@ impl ReviewPanel {
                         self.button(
                             format!("review-viewed-{i}"),
                             if self.viewed.get(&file.path) == Some(&file.patch) {
-                                "✓ 已查看"
+                                crate::i18n::text("✓ 已查看")
                             } else {
-                                "标记为已查看"
+                                crate::i18n::text("标记为已查看")
                             },
                             None,
                             Action::Viewed(i),
@@ -437,8 +437,8 @@ impl ReviewPanel {
                 div()
                     .id(("review-line-number", index * 2 + old as usize))
                     .role(Role::Button)
-                    .aria_label(format!(
-                        "在 {} 第 {}{} 行添加评论",
+                    .aria_label(crate::i18n::format!(
+                        "在 {} 第 {}{} 行添加评论" => "Add comment in {} at line {}{}",
                         self.snapshot.files[file].path,
                         if comment_old { "L" } else { "R" },
                         number
@@ -594,9 +594,9 @@ impl ReviewPanel {
                         self.button(
                             format!("review-context-{i}-{h}"),
                             if self.expanded_files.contains(&file.path) {
-                                "收起上下文"
+                                crate::i18n::text("收起上下文")
                             } else {
-                                "展开上下文"
+                                crate::i18n::text("展开上下文")
                             },
                             Some("chevron-down"),
                             Action::Context(i),
@@ -609,9 +609,9 @@ impl ReviewPanel {
                             self.button(
                                 format!("review-hunk-{i}-{h}"),
                                 if reverse {
-                                    "取消暂存差异块"
+                                    crate::i18n::text("取消暂存差异块")
                                 } else {
-                                    "暂存差异块"
+                                    crate::i18n::text("暂存差异块")
                                 },
                                 Some(if reverse {
                                     "review-minus"
@@ -668,10 +668,10 @@ impl ReviewPanel {
                 .p(px(28.))
                 .text_size(px(13.))
                 .text_color(t.text_tertiary)
-                .child("二进制文件内容已更改")
+                .child(crate::i18n::text("二进制文件内容已更改"))
                 .child(self.button(
                     format!("review-binary-open-{i}"),
-                    "打开文件",
+                    crate::i18n::text("打开文件"),
                     None,
                     Action::Open(i),
                     cx,
@@ -682,9 +682,9 @@ impl ReviewPanel {
                 .text_size(px(13.))
                 .text_color(t.text_tertiary)
                 .child(if self.snapshot.files[i].old_path.is_some() {
-                    "文件已重命名，内容未更改"
+                    crate::i18n::text("文件已重命名，内容未更改")
                 } else {
-                    "没有文本差异"
+                    crate::i18n::text("没有文本差异")
                 })
                 .into_any_element(),
             Row::Preview(i) => {

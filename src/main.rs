@@ -5,6 +5,7 @@ mod components;
 mod configuration;
 mod conversation;
 mod git_review;
+mod i18n;
 mod mcp;
 mod media;
 mod plugins;
@@ -743,6 +744,15 @@ fn normalize_resume_thread_id(value: &str) -> String {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    let language = args.iter().find_map(|arg| arg.strip_prefix("--language="));
+    let language = match language {
+        Some(value) => i18n::Language::from_name(value).unwrap_or_else(|| {
+            eprintln!("Unsupported language '{value}'. Use auto, en, or zh-CN.");
+            std::process::exit(2);
+        }),
+        None => workspace::preferred_language(),
+    };
+    i18n::set_language(language);
     let mode = args
         .iter()
         .find_map(|arg| arg.strip_prefix("--theme=").map(ThemeMode::from_name))

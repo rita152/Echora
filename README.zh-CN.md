@@ -56,6 +56,7 @@
 | **浏览 Pull Request** | 打开侧边栏 `Pull requests` 页面：列表与过滤、Summary、Activity、提交与检查、带文件树的 diff、行内评论，以及从变更统计按钮打开的 Review 标签页。 |
 | **侧边探索** | 从主会话派生临时对话，分别控制输入、模型、权限与停止操作。 |
 | **配置 Codex** | 读取有效配置与来源，查看受管限制，编辑已支持的用户层设置，并通过后端回读核验保存结果。 |
+| **选择语言** | 在设置 → 常规 → 语言中切换 English、简体中文或自动检测；切换立即生效并在本地保存。 |
 | **账户** | 账户菜单与登录流程都由连接级账户快照驱动：缺失的套餐显示为未知而不是杜撰；登录保留服务端返回的 `loginId` 直到完成通知到达；退出登录先确认再发请求。只提供 Codex 管理的 ChatGPT 登录，API key、外部 token 与 Bedrock 变体返回明确错误。 |
 | **管理账户** | 在账户菜单查看当前 ChatGPT 账户与套餐；通过 Codex 管理的 ChatGPT 登录、取消进行中的登录，并在确认后退出登录。 |
 | **管理技能与 MCP** | 读取技能目录并按技能启用／禁用并核验回执；列出 MCP 服务器的状态、认证、工具与服务端扩展字段；重新加载服务器；完成 OAuth 登录并区分等待、成功、失败、取消与断连状态。 |
@@ -77,6 +78,8 @@ cargo run --release -- --theme=dark
 ```
 
 浅色主题使用 `--theme=light`。本地开发可运行 `cargo run -- --theme=dark`，使用已优化的开发 profile。以下示例均从仓库根目录执行。
+
+界面默认自动检测语言：中文系统区域使用简体中文，其余使用英语。设置 → 常规 → 语言可保存明确选择。启动时可用 `--language=en`、`--language=zh-CN` 或 `--language=auto` 临时覆盖，不修改已保存的偏好。此设置只改变应用界面文案，不翻译会话消息、项目名称、文件内容或后端提供的文本。
 
 Echora 启动 `codex app-server --stdio`，使用本机 Codex 安装提供的后端配置与会话。Git 审查需要本机 Git，创建 PR 另需已登录的 `gh`。Python、Node.js 和 Electron 用于开发验证，不是运行原生界面的必要依赖。
 
@@ -139,6 +142,7 @@ GPUI 应用 · 项目 · 会话 · 原生面板
 | [src/workspace.rs](src/workspace.rs)、[src/workspace/](src/workspace/) | 工作区状态与通知合并；`loaders.rs` 负责分页，`preferences.rs` 原子保存 UI 偏好。 |
 | [src/conversation/](src/conversation/) | 会话状态、事件归约、流式批处理与历史恢复，不持有 GPUI Entity 或 Context。 |
 | [src/configuration.rs](src/configuration.rs) | 配置草稿、保存回执与回读核验，使用 `src/agent/config.rs` 的领域类型。 |
+| [src/i18n.rs](src/i18n.rs)、[src/i18n/](src/i18n/) | UI 语言选择、系统区域检测及应用文案翻译；不依赖 GPUI 或具体适配器。 |
 | [src/components/](src/components/) | Composer、时间线、审批、文件、终端、审查与侧边聊天的渲染和交互。 |
 | [src/git_review.rs](src/git_review.rs)、[src/git_review/](src/git_review/) | Git/gh 操作、diff、版本校验、进程回收与评论，不依赖 GPUI 或具体 Agent 适配器。 |
 | [src/app.rs](src/app.rs)、[src/app/](src/app/) | 服务装配、会话 host、面板挂载、项目创建与图片预览。 |
@@ -212,6 +216,7 @@ Computer Use 先枚举应用，连接 **GPUI Capture**，读取可访问性树�
 | `--file-panel-root=/absolute/workspace --open-file=/absolute/file` | 真实文件编辑、保存与冲突检查；使用专用测试文件。 |
 | `--review-root=/absolute/repository --review-filter=src/example.rs` | 真实 Git 审查；截图等待 diff 就绪。 |
 | `--settings-page=appearance` | 直接打开设置页，页面列表见 `src/settings/mod.rs`。 |
+| `--language=en\|zh-CN\|auto` | 指定本次启动的 UI 语言；截图验收时明确指定，以保证可复现。 |
 | `--chat-search-state=initial\|selected\|hover\|query\|no-match` | 以固定状态打开历史会话搜索弹窗用于截图；配合 `--chat-search-query=` 与 `--chat-search-index=`。 |
 | `--image-generation-ui-state=running/completed/failed/load-error` | 固定图像生成状态；完成态另传 `--image-generation-path=/absolute/image.png`。 |
 | `--auto-approval-ui-state=inProgress/approved/denied/timedOut/aborted/strict/warning` | 自动复核，支持 `--auto-approval-expanded`、`--auto-approval-details-expanded` 与 `--reduce-motion`；长说明和动态采样使用 `--auto-approval-rationale-file`、`--auto-approval-motion-output`。 |

@@ -262,7 +262,7 @@ impl ChatApp {
         div()
             .id(("right-panel-menu-item", index))
             .role(Role::Button)
-            .aria_label(label)
+            .aria_label(crate::i18n::text(label))
             .w_full()
             .h(px(40.0))
             .px(px(10.0))
@@ -302,7 +302,7 @@ impl ChatApp {
                     .line_height(px(18.5714))
                     .font_weight(gpui::FontWeight::NORMAL)
                     .text_color(theme.text)
-                    .child(label),
+                    .child(crate::i18n::text(label)),
             )
             .child(
                 div()
@@ -436,9 +436,9 @@ impl ChatApp {
             .role(Role::Button)
             .aria_expanded(menu_open)
             .aria_label(if menu_open {
-                "关闭面板信息下拉框"
+                crate::i18n::text("关闭面板信息下拉框")
             } else {
-                "打开面板信息下拉框"
+                crate::i18n::text("打开面板信息下拉框")
             })
             .cursor_pointer()
             .on_click(cx.listener(|this, _, _, cx| {
@@ -462,7 +462,7 @@ impl ChatApp {
                     .text_size(px(13.0))
                     .line_height(px(18.5714))
                     .text_color(theme.text)
-                    .child("子智能体"),
+                    .child(crate::i18n::text("子智能体")),
             )
             .child(
                 icon("chevron-down", theme.text_tertiary.into())
@@ -480,7 +480,7 @@ impl ChatApp {
             .focusable()
             .tab_stop(true)
             .role(Role::Button)
-            .aria_label("关闭子智能体面板")
+            .aria_label(crate::i18n::text("关闭子智能体面板"))
             .cursor_pointer()
             .hover(move |style| style.bg(theme.sidebar_hover))
             .active(move |style| style.bg(theme.text.alpha(0.12)))
@@ -507,7 +507,7 @@ impl ChatApp {
             .focusable()
             .tab_stop(true)
             .role(Role::Button)
-            .aria_label("打开面板选择器")
+            .aria_label(crate::i18n::text("打开面板选择器"))
             .cursor_pointer()
             .hover(move |style| style.bg(theme.sidebar_hover))
             .on_click(cx.listener(|this, _, _, cx| {
@@ -566,7 +566,7 @@ impl ChatApp {
             .focusable()
             .tab_stop(true)
             .role(Role::Button)
-            .aria_label("返回子智能体列表")
+            .aria_label(crate::i18n::text("返回子智能体列表"))
             .cursor_pointer()
             .hover(move |style| style.bg(theme.sidebar_hover))
             .active(move |style| style.bg(theme.text.alpha(0.12)))
@@ -583,7 +583,7 @@ impl ChatApp {
             }))
             .child(icon("back", theme.text_tertiary.into()).size(px(16.0)));
         let panel_name = panel.name.clone();
-        let panel_label = format!("子智能体 {panel_name}，任务 {}", panel.thread_id);
+        let panel_label = crate::i18n::format!("子智能体 {panel_name}，任务 {}" => "Subagent {panel_name}, task {}", panel.thread_id);
         let header = div()
             .id("subagent-panel-header")
             .h(px(SUBAGENT_PANEL_HEADER_HEIGHT))
@@ -640,7 +640,7 @@ impl ChatApp {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .text_color(theme.text_tertiary)
-                    .child("环境信息"),
+                    .child(crate::i18n::text("环境信息")),
             )
             .child(
                 div()
@@ -648,7 +648,7 @@ impl ChatApp {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .text_color(theme.text_tertiary)
-                    .child("变更"),
+                    .child(crate::i18n::text("变更")),
             )
             .child(div().h(px(0.5)).mx(px(4.0)).bg(theme.border))
             .child(
@@ -661,8 +661,8 @@ impl ChatApp {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .text_color(theme.text_tertiary)
-                    .child("子智能体")
-                    .child("1 完成"),
+                    .child(crate::i18n::text("子智能体"))
+                    .child(crate::i18n::text("1 完成")),
             )
             .child(
                 div()
@@ -676,7 +676,9 @@ impl ChatApp {
                     .focusable()
                     .tab_stop(true)
                     .role(Role::Button)
-                    .aria_label(format!("子智能体 {panel_name}"))
+                    .aria_label(
+                        crate::i18n::format!("子智能体 {panel_name}" => "Subagent {panel_name}"),
+                    )
                     .cursor_pointer()
                     .hover(move |style| style.bg(theme.sidebar_hover))
                     .on_click(cx.listener(|this, _, _, cx| {
@@ -874,7 +876,7 @@ impl ChatApp {
                                 .text_size(px(13.0))
                                 .line_height(px(18.5714))
                                 .text_color(theme.text)
-                                .child(label),
+                                .child(crate::i18n::text(label)),
                         )
                         .child(
                             div()

@@ -39,21 +39,25 @@ pub(super) fn image_generation_failure_copy(image: &AgentImageGeneration) -> (St
             .map(|timestamp| {
                 timestamp
                     .with_timezone(&chrono::Local)
-                    .format("%m月%d日 %H:%M")
+                    .format(crate::i18n::text("%m月%d日 %H:%M"))
                     .to_string()
             });
         let detail = match reset {
-            Some(reset) => format!("额度 {limit_id} 将于 {reset} 重置。"),
-            None => format!("额度 {limit_id} 暂时不可用。"),
+            Some(reset) => {
+                crate::i18n::format!("额度 {limit_id} 将于 {reset} 重置。" => "Limit {limit_id} resets at {reset}.")
+            }
+            None => {
+                crate::i18n::format!("额度 {limit_id} 暂时不可用。" => "Limit {limit_id} is temporarily unavailable.")
+            }
         };
-        return ("图像生成额度已用完".to_owned(), detail);
+        return (crate::i18n::text("图像生成额度已用完").to_owned(), detail);
     }
     (
-        "无法显示生成的图像".to_owned(),
+        crate::i18n::text("无法显示生成的图像").to_owned(),
         image
             .load_error
             .clone()
-            .unwrap_or_else(|| "图像生成失败，请重试。".to_owned()),
+            .unwrap_or_else(|| crate::i18n::text("图像生成失败，请重试。").to_owned()),
     )
 }
 
@@ -128,7 +132,7 @@ pub(super) fn image_generation_error_activity(
                 .border_color(theme.border)
                 .bg(theme.control)
                 .role(Role::Button)
-                .aria_label("重试图像生成")
+                .aria_label(crate::i18n::text("重试图像生成"))
                 .focusable()
                 .tab_stop(true)
                 .cursor_pointer()
@@ -150,7 +154,7 @@ pub(super) fn image_generation_error_activity(
                         cx.stop_propagation();
                     }
                 })
-                .child("重试"),
+                .child(crate::i18n::text("重试")),
         )
         .into_any_element()
 }
@@ -185,7 +189,7 @@ pub(super) fn image_generation_activity(
             .rounded(px(16.0))
             .bg(theme.text.alpha(0.055))
             .role(Role::Status)
-            .aria_label("正在生成图像...")
+            .aria_label(crate::i18n::text("正在生成图像..."))
             .child(
                 div()
                     .absolute()
@@ -208,7 +212,7 @@ pub(super) fn image_generation_activity(
     {
         let mut failed = image;
         if path_missing && failed.load_error.is_none() {
-            failed.load_error = Some("生成的图像文件已移动或删除。".to_owned());
+            failed.load_error = Some(crate::i18n::text("生成的图像文件已移动或删除。").to_owned());
         }
         return image_generation_error_activity(home_entity, failed, theme);
     }
@@ -237,7 +241,9 @@ pub(super) fn image_generation_activity(
         .rounded(px(16.0))
         .bg(theme.surface)
         .role(Role::Button)
-        .aria_label(format!("已生成图像 1{dimensions}"))
+        .aria_label(
+            crate::i18n::format!("已生成图像 1{dimensions}" => "Generated image 1{dimensions}"),
+        )
         .focusable()
         .tab_stop(true)
         .cursor_pointer()
@@ -282,9 +288,9 @@ pub(super) fn image_view_activity(
     let key_item_id = item_id.clone();
     let hover_group: SharedString = format!("image-view-header-{item_id}").into();
     let label = if expanded {
-        format!("已查看 {count} 张图像，折叠图像")
+        crate::i18n::format!("已查看 {count} 张图像，折叠图像" => "Viewed {count} images, collapse images")
     } else {
-        format!("已查看 {count} 张图像，展开图像")
+        crate::i18n::format!("已查看 {count} 张图像，展开图像" => "Viewed {count} images, expand images")
     };
 
     div()
@@ -360,7 +366,7 @@ pub(super) fn image_view_activity(
                                 .font_family(".SystemUIFont")
                                 .font_weight(FontWeight::NORMAL)
                                 .text_color(theme.text.alpha(0.40))
-                                .child(format!("已查看 {count} 张图像")),
+                                .child(crate::i18n::format!("已查看 {count} 张图像" => "Viewed {count} images")),
                         ),
                 )
                 .child(
@@ -396,7 +402,7 @@ pub(super) fn image_view_activity(
                         .border_color(theme.text.alpha(0.20))
                         .overflow_hidden()
                         .role(Role::Button)
-                        .aria_label("已检查的图像")
+                        .aria_label(crate::i18n::text("已检查的图像"))
                         .focusable()
                         .tab_stop(true)
                         .cursor_pointer()

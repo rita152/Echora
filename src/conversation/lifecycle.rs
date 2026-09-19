@@ -50,15 +50,17 @@ impl ConversationState {
                 .active_turn
                 .as_ref()
                 .map(AgentInterruptHandle::interrupt)
-                .unwrap_or_else(|| Err("当前 Codex turn 没有可用的中断连接".to_owned()));
+                .unwrap_or_else(|| {
+                    Err(crate::i18n::text("当前 Codex turn 没有可用的中断连接").to_owned())
+                });
             match result {
                 Ok(AgentInterruptOutcome::Requested | AgentInterruptOutcome::AlreadyRequested) => {
                     self.phase = ConversationPhase::Stopping;
                 }
                 Ok(AgentInterruptOutcome::AlreadyFinished) => {}
                 Err(error) => {
-                    self.apply_agent_event_batch(vec![AgentEvent::Failed(format!(
-                        "无法中断 Codex turn：{error}"
+                    self.apply_agent_event_batch(vec![AgentEvent::Failed(crate::i18n::format!(
+                        "无法中断 Codex turn：{error}" => "Could not interrupt Codex turn: {error}"
                     ))]);
                 }
             }

@@ -45,7 +45,7 @@ impl ComposerView {
                     (Ok(Ok(config)), Ok(Ok(profiles))) => {
                         if config.generation < this.conversation.runtime.generation {
                             this.permission_catalog_error =
-                                Some("连接已变化，请重新读取权限配置".into());
+                                Some(crate::i18n::text("连接已变化，请重新读取权限配置").into());
                         } else {
                             this.conversation.apply_config_defaults(&config);
                             this.permission_config = Some(config);
@@ -56,7 +56,10 @@ impl ComposerView {
                     }
                     (Ok(Err(error)), _) => this.permission_catalog_error = Some(error.message),
                     (_, Ok(Err(error))) => this.permission_catalog_error = Some(error),
-                    _ => this.permission_catalog_error = Some("权限配置连接已关闭".into()),
+                    _ => {
+                        this.permission_catalog_error =
+                            Some(crate::i18n::text("权限配置连接已关闭").into())
+                    }
                 }
                 cx.notify();
             });
@@ -116,10 +119,10 @@ impl ComposerView {
                     failure => {
                         let message = match failure {
                             Ok(Err(error)) => error,
-                            _ => "线程设置连接在返回前关闭".into(),
+                            _ => crate::i18n::text("线程设置连接在返回前关闭").into(),
                         };
                         this.conversation.permission_error =
-                            Some(format!("无法读取当前有效权限：{message}"));
+                            Some(crate::i18n::format!("无法读取当前有效权限：{message}" => "Could not read effective permissions: {message}"));
                         cx.notify();
                     }
                 }
@@ -162,22 +165,24 @@ impl ComposerView {
     ) -> Option<String> {
         use crate::agent::AgentPermissionMode as Mode;
         if self.conversation.thread_id.is_none() && self.is_running() {
-            return Some("聊天正在启动，请在就绪后更改权限；更改不会影响当前轮次".into());
+            return Some(
+                crate::i18n::text("聊天正在启动，请在就绪后更改权限；更改不会影响当前轮次").into(),
+            );
         }
         if self.side_chat && !self.side_ready {
-            return Some("临时聊天连接已结束".into());
+            return Some(crate::i18n::text("临时聊天连接已结束").into());
         }
         if self.permission_catalog_loading || self.permission_effective_loading {
-            return Some("正在读取权限配置".into());
+            return Some(crate::i18n::text("正在读取权限配置").into());
         }
         if let Some(error) = &self.permission_catalog_error {
             return Some(error.clone());
         }
         let Some(config) = &self.permission_config else {
-            return Some("权限配置尚未读取".into());
+            return Some(crate::i18n::text("权限配置尚未读取").into());
         };
         if config.generation < self.conversation.runtime.generation {
-            return Some("连接已变化，请重新读取权限配置".into());
+            return Some(crate::i18n::text("连接已变化，请重新读取权限配置").into());
         }
         let profile = match selection {
             Mode::Request | Mode::Assist => Some(":workspace"),
@@ -195,7 +200,7 @@ impl ComposerView {
                 .find(|entry| entry.id == profile)
                 .is_none_or(|entry| !entry.allowed)
         {
-            return Some("管理员或服务端不允许使用此权限配置".into());
+            return Some(crate::i18n::text("管理员或服务端不允许使用此权限配置").into());
         }
         let policy = match selection {
             Mode::Request | Mode::Assist => Some("on-request"),
@@ -293,7 +298,7 @@ impl ComposerView {
             let result = receiver
                 .recv()
                 .await
-                .unwrap_or_else(|_| Err("权限设置连接在返回结果前关闭".into()));
+                .unwrap_or_else(|_| Err(crate::i18n::text("权限设置连接在返回结果前关闭").into()));
             let _ = this.update(cx, |this, cx| {
                 if this.permission_update_cycle != cycle
                     || this.conversation.thread_id.as_ref() != Some(&thread_id)
@@ -382,7 +387,7 @@ impl ComposerView {
                 self.apply_agent_event_batch(vec![AgentEvent::ThreadSettingsUpdated(settings)]);
             }
             Err(error) => {
-                let message = format!("无法更新权限模式：{error}");
+                let message = crate::i18n::format!("无法更新权限模式：{error}" => "Could not update permission mode: {error}");
                 self.conversation.permission_error = Some(message.clone());
                 self.conversation
                     .activities
@@ -526,14 +531,14 @@ impl ComposerView {
         let theme = Theme::for_mode(self.mode);
         if self.permission_catalog_loading || self.permission_effective_loading {
             return (
-                "读取权限中…".into(),
+                crate::i18n::text("读取权限中…").into(),
                 "permission-custom",
                 theme.text_tertiary,
             );
         }
         if self.conversation.permission_change.is_some() {
             return (
-                "设置权限中…".into(),
+                crate::i18n::text("设置权限中…").into(),
                 "permission-custom",
                 theme.text_tertiary,
             );
@@ -546,10 +551,22 @@ impl ComposerView {
             );
         }
         let (label, icon, color) = match self.permission_mode {
-            PermissionMode::Request => ("请求批准", "permission-request", theme.text_tertiary),
-            PermissionMode::Assist => ("帮我批准", "permission-assist", theme.text_tertiary),
-            PermissionMode::Full => ("完全访问", "permission", theme.warning),
-            PermissionMode::Custom => ("自定义", "permission-custom", theme.text_tertiary),
+            PermissionMode::Request => (
+                crate::i18n::text("请求批准"),
+                "permission-request",
+                theme.text_tertiary,
+            ),
+            PermissionMode::Assist => (
+                crate::i18n::text("帮我批准"),
+                "permission-assist",
+                theme.text_tertiary,
+            ),
+            PermissionMode::Full => (crate::i18n::text("完全访问"), "permission", theme.warning),
+            PermissionMode::Custom => (
+                crate::i18n::text("自定义"),
+                "permission-custom",
+                theme.text_tertiary,
+            ),
         };
         (label.into(), icon, color)
     }
@@ -700,7 +717,7 @@ impl ComposerView {
         div()
             .id("permission-menu")
             .role(gpui::Role::Menu)
-            .aria_label("权限配置")
+            .aria_label(crate::i18n::text("权限配置"))
             .absolute()
             .left(px(42.0))
             // CDP: the menu's bottom edge is 1.5px above the 28px trigger.
@@ -748,7 +765,7 @@ impl ComposerView {
                     .text_size(px(13.0))
                     .line_height(px(16.0))
                     .text_color(theme.text_tertiary)
-                    .child(div().flex_1().child("应如何批准 ChatGPT 操作？"))
+                    .child(div().flex_1().child(crate::i18n::text("应如何批准 ChatGPT 操作？")))
                     .child(
                         div()
                             .id("permission-learn-more")
@@ -758,15 +775,15 @@ impl ComposerView {
                             .text_size(px(13.0))
                             .line_height(px(16.0))
                             .underline()
-                            .child("了解更多"),
+                            .child(crate::i18n::text("了解更多")),
                     ),
             )
             .child(self.permission_row(
                 0,
                 PermissionOption {
                     mode: PermissionMode::Request,
-                    title: "请求批准",
-                    detail: "编辑外部文件和使用互联网时始终询问",
+                    title: crate::i18n::text("请求批准"),
+                    detail: crate::i18n::text("编辑外部文件和使用互联网时始终询问"),
                     glyph: "permission-request",
                 },
                 theme,
@@ -776,8 +793,8 @@ impl ComposerView {
                 1,
                 PermissionOption {
                     mode: PermissionMode::Assist,
-                    title: "帮我批准",
-                    detail: "仅对检测到的风险操作请求批准",
+                    title: crate::i18n::text("帮我批准"),
+                    detail: crate::i18n::text("仅对检测到的风险操作请求批准"),
                     glyph: "permission-assist",
                 },
                 theme,
@@ -787,8 +804,8 @@ impl ComposerView {
                 2,
                 PermissionOption {
                     mode: PermissionMode::Full,
-                    title: "完全访问权限",
-                    detail: "可不受限制地访问互联网和你电脑上的任何文件",
+                    title: crate::i18n::text("完全访问权限"),
+                    detail: crate::i18n::text("可不受限制地访问互联网和你电脑上的任何文件"),
                     glyph: "permission",
                 },
                 theme,
@@ -798,8 +815,8 @@ impl ComposerView {
                 3,
                 PermissionOption {
                     mode: PermissionMode::Custom,
-                    title: "自定义 (config.toml)",
-                    detail: "使用 config.toml 中定义的权限",
+                    title: crate::i18n::text("自定义 (config.toml)"),
+                    detail: crate::i18n::text("使用 config.toml 中定义的权限"),
                     glyph: "permission-custom",
                 },
                 theme,
@@ -818,14 +835,14 @@ impl ComposerView {
                         let detail = reason.clone().unwrap_or_else(|| {
                             let parent = self
                                 .profile_parent(&profile.id)
-                                .map(|parent| format!("继承 {parent}"));
+                                .map(|parent| crate::i18n::format!("继承 {parent}" => "Inherit {parent}"));
                             match (&profile.description, parent) {
                                 (Some(description), Some(parent)) => {
                                     format!("{description} · {parent}")
                                 }
                                 (Some(description), None) => description.clone(),
                                 (None, Some(parent)) => parent,
-                                (None, None) => "服务端权限配置".into(),
+                                (None, None) => crate::i18n::text("服务端权限配置").into(),
                             }
                         });
                         div()

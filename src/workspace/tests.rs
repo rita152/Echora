@@ -445,6 +445,30 @@ fn test_preferences_path(label: &str) -> PathBuf {
         .join("preferences.json")
 }
 
+#[test]
+fn language_choice_survives_restart_without_changing_other_preferences_or_backend() {
+    let backend = FakeWorkspaceBackend::new();
+    let path = test_preferences_path("language");
+    let store = WorkspaceStore::with_preferences_path(backend.clone(), path.clone());
+    store.set_section_collapsed("recent", true);
+    store.set_language(crate::i18n::Language::English);
+    let reopened = WorkspaceStore::with_preferences_path(backend.clone(), path.clone());
+    assert_eq!(
+        reopened.snapshot().preferences.language,
+        crate::i18n::Language::English
+    );
+    assert!(reopened.snapshot().preferences.recent_collapsed);
+    reopened.set_language(crate::i18n::Language::SimplifiedChinese);
+    let reopened = WorkspaceStore::with_preferences_path(backend.clone(), path.clone());
+    assert_eq!(
+        reopened.snapshot().preferences.language,
+        crate::i18n::Language::SimplifiedChinese
+    );
+    assert!(reopened.snapshot().preferences.recent_collapsed);
+    assert!(backend.calls().is_empty());
+    fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
 fn wait_until(mut condition: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(3);
     while !condition() {

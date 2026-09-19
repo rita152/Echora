@@ -100,7 +100,7 @@ pub(super) fn startup_loading_view(theme: Theme) -> impl IntoElement {
     div()
         .id("startup-loading-screen")
         .role(Role::ProgressIndicator)
-        .aria_label("GPUI 正在加载")
+        .aria_label(crate::i18n::text("GPUI 正在加载"))
         .size_full()
         .relative()
         .child(
@@ -527,7 +527,7 @@ impl Render for ChatApp {
                         .child(
                             div()
                                 .id("permission-confirmation-dialog")
-                                .role(gpui::Role::Dialog).aria_label("要开启完整访问权限吗？")
+                                .role(gpui::Role::Dialog).aria_label(crate::i18n::text("要开启完整访问权限吗？"))
                                 .track_focus(&self.permission_confirmation_focus)
                                 .on_key_down(cx.listener(Self::permission_confirmation_key))
                                 .w(px(520.0))
@@ -557,7 +557,7 @@ impl Render for ChatApp {
                                                 .text_size(px(20.0))
                                                 .line_height(px(24.0))
                                                 .font_weight(gpui::FontWeight(600.0))
-                                                .child("要开启完整访问权限吗？"),
+                                                .child(crate::i18n::text("要开启完整访问权限吗？")),
                                         ),
                                 )
                                 .child(
@@ -566,7 +566,7 @@ impl Render for ChatApp {
                                         .text_size(px(14.0))
                                         .line_height(px(21.0))
                                         .text_color(theme.text_tertiary)
-                                        .child("Codex 将能够在未经您许可的情况下，在这台计算机上的任何位置运行命令、使用互联网，以及创建和编辑文件。这包括但不限于："),
+                                        .child(crate::i18n::text("Codex 将能够在未经您许可的情况下，在这台计算机上的任何位置运行命令、使用互联网，以及创建和编辑文件。这包括但不限于：")),
                                 )
                                 .child(
                                     div()
@@ -574,9 +574,9 @@ impl Render for ChatApp {
                                         .h(px(162.0))
                                         .rounded(px(17.0))
                                         .bg(theme.elevated)
-                                        .child(permission_risk_row("permission-dialog-folder", "文件和文件夹", "读取、创建、修改、上传或删除此计算机上任意位置的文件", false, theme))
-                                        .child(permission_risk_row("permission-dialog-terminal", "终端命令", "运行命令、安装软件和更改系统设置", true, theme))
-                                        .child(permission_risk_row("permission-dialog-internet", "互联网和已连接的应用", "访问网站、发送数据并使用已启用的插件", true, theme)),
+                                        .child(permission_risk_row("permission-dialog-folder", crate::i18n::text("文件和文件夹"), crate::i18n::text("读取、创建、修改、上传或删除此计算机上任意位置的文件"), false, theme))
+                                        .child(permission_risk_row("permission-dialog-terminal", crate::i18n::text("终端命令"), crate::i18n::text("运行命令、安装软件和更改系统设置"), true, theme))
+                                        .child(permission_risk_row("permission-dialog-internet", crate::i18n::text("互联网和已连接的应用"), crate::i18n::text("访问网站、发送数据并使用已启用的插件"), true, theme)),
                                 )
                                 .child(
                                     div()
@@ -587,8 +587,8 @@ impl Render for ChatApp {
                                         .text_size(px(14.0))
                                         .line_height(px(21.0))
                                         .text_color(theme.text_tertiary)
-                                        .child(div().flex_1().child("这会带来敏感数据丢失或泄露、提示注入等风险。你可以将其关闭。"))
-                                        .child(div().text_color(theme.accent).child("了解更多")),
+                                        .child(div().flex_1().child(crate::i18n::text("这会带来敏感数据丢失或泄露、提示注入等风险。你可以将其关闭。")))
+                                        .child(div().text_color(theme.accent).child(crate::i18n::text("了解更多"))),
                                 )
                                 .child(
                                     div()
@@ -600,7 +600,7 @@ impl Render for ChatApp {
                                         .child(
                                             div()
                                                 .id("permission-confirmation-cancel")
-                                                .role(gpui::Role::Button).aria_label("取消")
+                                                .role(gpui::Role::Button).aria_label(crate::i18n::text("取消"))
                                                 .when(self.permission_confirmation_keyboard&&self.permission_confirmation_choice==0,|button|button.aria_active_descendant().shadow(vec![BoxShadow::new(px(0.),px(0.),theme.accent.into()).spread_radius(px(2.))]))
                                                 .h(px(36.0))
                                                 .px(px(20.0))
@@ -612,12 +612,12 @@ impl Render for ChatApp {
                                                 .cursor_pointer()
                                                 .hover(move |style| style.bg(theme.text.alpha(0.10)))
                                                 .on_click(cx.listener(|this,_,window,cx|this.resolve_permission_confirmation(false,window,cx)))
-                                                .child("取消"),
+                                                .child(crate::i18n::text("取消")),
                                         )
                                         .child(
                                             div()
                                                 .id("permission-confirmation-confirm")
-                                                .role(gpui::Role::Button).aria_label("确认")
+                                                .role(gpui::Role::Button).aria_label(crate::i18n::text("确认"))
                                                 .when(self.permission_confirmation_keyboard&&self.permission_confirmation_choice==1,|button|button.aria_active_descendant().shadow(vec![BoxShadow::new(px(0.),px(0.),theme.accent.into()).spread_radius(px(2.))]))
                                                 .h(px(36.0))
                                                 .px(px(20.0))
@@ -632,7 +632,7 @@ impl Render for ChatApp {
                                                 .hover(|style| style.bg(rgba(0xff676433)))
                                                 .on_click(cx.listener(|this,_,window,cx|this.resolve_permission_confirmation(true,window,cx)))
                                                 .child(icon("permission-warning", rgba(0xff6764ff).into()).size(px(16.0)))
-                                                .child("确认"),
+                                                .child(crate::i18n::text("确认")),
                                         ),
                                 ),
                         ),
@@ -753,7 +753,7 @@ impl Render for ChatApp {
                         .id("image-preview-dialog")
                         .track_focus(&self.image_preview.focus)
                         .role(Role::Dialog)
-                        .aria_label("图片预览")
+                        .aria_label(crate::i18n::text("图片预览"))
                         .absolute()
                         .inset_0()
                         .bg(theme.surface)
@@ -811,7 +811,7 @@ impl Render for ChatApp {
                                             .spread_radius(px(-1.0)),
                                         ])
                                         .role(Role::Button)
-                                        .aria_label("下载图片")
+                                        .aria_label(crate::i18n::text("下载图片"))
                                         .focusable()
                                         .tab_stop(true)
                                         .cursor_pointer()
@@ -860,7 +860,7 @@ impl Render for ChatApp {
                                             .spread_radius(px(-1.0)),
                                         ])
                                         .role(Role::Button)
-                                        .aria_label("关闭图片预览")
+                                        .aria_label(crate::i18n::text("关闭图片预览"))
                                         .focusable()
                                         .tab_stop(true)
                                         .cursor_pointer()
@@ -925,7 +925,7 @@ impl Render for ChatApp {
                                                 .rounded_full()
                                                 .bg(theme.text.alpha(0.10))
                                                 .role(Role::Button)
-                                                .aria_label("缩小图片")
+                                                .aria_label(crate::i18n::text("缩小图片"))
                                                 .focusable()
                                                 .tab_stop(true)
                                                 .cursor_pointer()
@@ -955,7 +955,7 @@ impl Render for ChatApp {
                                                 .rounded_full()
                                                 .bg(theme.text.alpha(0.10))
                                                 .role(Role::Button)
-                                                .aria_label("放大图片")
+                                                .aria_label(crate::i18n::text("放大图片"))
                                                 .focusable()
                                                 .tab_stop(true)
                                                 .cursor_pointer()
@@ -1009,7 +1009,7 @@ impl ChatApp {
         div()
             .id("account-logout-dialog")
             .role(gpui::Role::Dialog)
-            .aria_label("要退出登录？")
+            .aria_label(crate::i18n::text("要退出登录？"))
             .track_focus(&self.account_focus)
             .on_key_down(cx.listener(Self::account_dialog_key))
             .w(px(380.0))
@@ -1036,7 +1036,7 @@ impl ChatApp {
                     .text_size(px(20.0))
                     .line_height(px(28.0))
                     .font_weight(gpui::FontWeight(600.0))
-                    .child("要退出登录？"),
+                    .child(crate::i18n::text("要退出登录？")),
             )
             .child(
                 div()
@@ -1045,8 +1045,10 @@ impl ChatApp {
                     .line_height(px(21.0))
                     .text_color(theme.text_tertiary)
                     .child(match &email {
-                        Some(email) => format!("已以 {email} 身份登录"),
-                        None => "已登录 ChatGPT 账户".to_owned(),
+                        Some(email) => {
+                            crate::i18n::format!("已以 {email} 身份登录" => "Signed in as {email}")
+                        }
+                        None => crate::i18n::text("已登录 ChatGPT 账户").to_owned(),
                     }),
             )
             .child(
@@ -1054,13 +1056,13 @@ impl ChatApp {
                     .mt(px(11.0))
                     .text_size(px(14.0))
                     .line_height(px(21.0))
-                    .child("你需要重新登录才能继续使用 ChatGPT"),
+                    .child(crate::i18n::text("你需要重新登录才能继续使用 ChatGPT")),
             )
             .child(
                 div()
                     .id("account-dialog-close")
                     .role(gpui::Role::Button)
-                    .aria_label("关闭对话框")
+                    .aria_label(crate::i18n::text("关闭对话框"))
                     .absolute()
                     .top(px(16.0))
                     .right(px(16.0))
@@ -1087,7 +1089,7 @@ impl ChatApp {
                         div()
                             .id("account-logout-cancel")
                             .role(gpui::Role::Button)
-                            .aria_label("取消")
+                            .aria_label(crate::i18n::text("取消"))
                             .when(self.account_choice == 0, |button| {
                                 button.aria_active_descendant().shadow(vec![
                                     BoxShadow::new(px(0.0), px(0.0), theme.accent.into())
@@ -1106,13 +1108,13 @@ impl ChatApp {
                             .cursor_pointer()
                             .hover(move |style| style.bg(theme.text.alpha(0.05)))
                             .on_click(cx.listener(|this, _, _, cx| this.dismiss_account_dialog(cx)))
-                            .child("取消"),
+                            .child(crate::i18n::text("取消")),
                     )
                     .child(
                         div()
                             .id("account-logout-confirm")
                             .role(gpui::Role::Button)
-                            .aria_label("退出登录")
+                            .aria_label(crate::i18n::text("退出登录"))
                             .when(self.account_choice == 1, |button| {
                                 button.aria_active_descendant().shadow(vec![
                                     BoxShadow::new(px(0.0), px(0.0), theme.accent.into())
@@ -1132,7 +1134,7 @@ impl ChatApp {
                             .cursor_pointer()
                             .hover(|style| style.bg(rgba(0xe02e2a33)))
                             .on_click(cx.listener(|this, _, _, cx| this.confirm_logout(cx)))
-                            .child("退出登录"),
+                            .child(crate::i18n::text("退出登录")),
                     ),
             )
     }
@@ -1160,7 +1162,7 @@ impl ChatApp {
         let mut dialog = div()
             .id("account-login-dialog")
             .role(gpui::Role::Dialog)
-            .aria_label("登录 ChatGPT")
+            .aria_label(crate::i18n::text("登录 ChatGPT"))
             .track_focus(&self.account_focus)
             .on_key_down(cx.listener(Self::account_dialog_key))
             .w(px(420.0))
@@ -1184,7 +1186,7 @@ impl ChatApp {
                     .text_size(px(20.0))
                     .line_height(px(28.0))
                     .font_weight(gpui::FontWeight(600.0))
-                    .child("登录 ChatGPT"),
+                    .child(crate::i18n::text("登录 ChatGPT")),
             );
         let mut actions = div().mt(px(8.0)).flex().justify_end().gap(px(12.0));
         if let Some(error) = self.account.login_error().map(str::to_owned) {
@@ -1197,11 +1199,11 @@ impl ChatApp {
                     .text_color(theme.text_tertiary)
                     .child(match challenge {
                         AgentLoginChallenge::AuthUrl { .. } => {
-                            "请在浏览器中完成授权。完成后此窗口会自动更新。"
+                            crate::i18n::text("请在浏览器中完成授权。完成后此窗口会自动更新。")
                         }
-                        AgentLoginChallenge::DeviceCode { .. } => {
-                            "请打开下面的地址，并输入一次性代码。完成后此窗口会自动更新。"
-                        }
+                        AgentLoginChallenge::DeviceCode { .. } => crate::i18n::text(
+                            "请打开下面的地址，并输入一次性代码。完成后此窗口会自动更新。",
+                        ),
                     }),
             );
             if let Some(code) = &user_code {
@@ -1237,7 +1239,9 @@ impl ChatApp {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .text_color(theme.text_tertiary)
-                    .child("已请求登录，正在等待服务端返回授权信息。"),
+                    .child(crate::i18n::text(
+                        "已请求登录，正在等待服务端返回授权信息。",
+                    )),
             );
         }
         if let Some(url) = url {
@@ -1245,7 +1249,7 @@ impl ChatApp {
                 div()
                     .id("account-login-open")
                     .role(gpui::Role::Button)
-                    .aria_label("打开浏览器")
+                    .aria_label(crate::i18n::text("打开浏览器"))
                     .h(px(32.0))
                     .px(px(16.0))
                     .py(px(6.0))
@@ -1263,7 +1267,7 @@ impl ChatApp {
                             cx,
                         );
                     }))
-                    .child("打开浏览器"),
+                    .child(crate::i18n::text("打开浏览器")),
             );
         }
         let retry = phase == AgentAccountLoginPhase::Failed;
@@ -1271,7 +1275,11 @@ impl ChatApp {
             div()
                 .id("account-login-cancel")
                 .role(gpui::Role::Button)
-                .aria_label(if retry { "重试" } else { "取消登录" })
+                .aria_label(if retry {
+                    crate::i18n::text("重试")
+                } else {
+                    crate::i18n::text("取消登录")
+                })
                 .h(px(32.0))
                 .px(px(16.0))
                 .py(px(6.0))
@@ -1291,7 +1299,11 @@ impl ChatApp {
                         this.dismiss_account_dialog(cx);
                     }
                 }))
-                .child(if retry { "重试" } else { "取消登录" }),
+                .child(if retry {
+                    crate::i18n::text("重试")
+                } else {
+                    crate::i18n::text("取消登录")
+                }),
         );
         dialog.child(actions)
     }

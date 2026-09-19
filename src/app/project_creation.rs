@@ -321,7 +321,7 @@ impl ChatApp {
                             .text_size(px(25.0))
                             .line_height(px(28.8))
                             .font_weight(gpui::FontWeight(500.0))
-                            .child("创建项目"),
+                            .child(crate::i18n::text("创建项目")),
                     )
                     .child(
                         div()
@@ -336,7 +336,7 @@ impl ChatApp {
                                     .text_size(px(14.0))
                                     .line_height(px(21.0))
                                     .font_weight(gpui::FontWeight::MEDIUM)
-                                    .child("项目类型"),
+                                    .child(crate::i18n::text("项目类型")),
                             )
                             .child(
                                 div()
@@ -348,8 +348,10 @@ impl ChatApp {
                                         ProjectKindOption {
                                             kind: ProjectCreationKind::Local,
                                             glyph: "project-local",
-                                            label: "本地",
-                                            detail: "在你的电脑上编辑、运行和测试文件",
+                                            label: crate::i18n::text("本地"),
+                                            detail: crate::i18n::text(
+                                                "在你的电脑上编辑、运行和测试文件",
+                                            ),
                                         },
                                         theme,
                                         cx,
@@ -359,8 +361,8 @@ impl ChatApp {
                                         ProjectKindOption {
                                             kind: ProjectCreationKind::Remote,
                                             glyph: "project-remote",
-                                            label: "远程",
-                                            detail: "选择已连接计算机上的文件夹",
+                                            label: crate::i18n::text("远程"),
+                                            detail: crate::i18n::text("选择已连接计算机上的文件夹"),
                                         },
                                         theme,
                                         cx,
@@ -394,11 +396,11 @@ impl ChatApp {
                                     this.project_creation.keyboard_focus = false;
                                     this.advance_project_creation(cx);
                                 }))
-                                .child("下一步"),
+                                .child(crate::i18n::text("下一步")),
                         ),
                     ),
             )
-            .child(self.project_creation_close_button(3, "关闭", theme, cx))
+            .child(self.project_creation_close_button(3, crate::i18n::text("关闭"), theme, cx))
     }
     pub(super) fn project_creation_remote_dialog(
         &self,
@@ -438,7 +440,7 @@ impl ChatApp {
                     .text_size(px(20.5))
                     .line_height(px(28.0))
                     .font_weight(gpui::FontWeight(500.0))
-                    .child("新建远程项目"),
+                    .child(crate::i18n::text("新建远程项目")),
             )
             .child(
                 div()
@@ -447,7 +449,9 @@ impl ChatApp {
                     .top(px(1.0))
                     .font_weight(crate::theme::UI_BODY_FONT_WEIGHT)
                     .text_color(theme.text_tertiary)
-                    .child("先设置远程主机。然后可在此处选择主机和文件夹。"),
+                    .child(crate::i18n::text(
+                        "先设置远程主机。然后可在此处选择主机和文件夹。",
+                    )),
             )
             .child(
                 div()
@@ -476,7 +480,7 @@ impl ChatApp {
                         div()
                             .text_size(px(13.0))
                             .line_height(px(18.5714))
-                            .child("项目名称"),
+                            .child(crate::i18n::text("项目名称")),
                     ),
             )
             .child(
@@ -485,7 +489,7 @@ impl ChatApp {
                     .relative()
                     .top(px(1.0))
                     .font_weight(gpui::FontWeight::MEDIUM)
-                    .child("远程主机"),
+                    .child(crate::i18n::text("远程主机")),
             )
             .child(
                 div()
@@ -502,7 +506,11 @@ impl ChatApp {
                     .text_size(px(13.0))
                     .line_height(px(18.5714))
                     .text_color(theme.text_tertiary)
-                    .child(div().flex_1().child("没有已连接的远程目标"))
+                    .child(
+                        div()
+                            .flex_1()
+                            .child(crate::i18n::text("没有已连接的远程目标")),
+                    )
                     .child(icon("chevron-down", theme.text_tertiary.into())),
             )
             .child(
@@ -511,7 +519,7 @@ impl ChatApp {
                     .relative()
                     .top(px(1.0))
                     .font_weight(gpui::FontWeight::MEDIUM)
-                    .child("源文件夹"),
+                    .child(crate::i18n::text("源文件夹")),
             )
             .child(
                 div()
@@ -531,7 +539,7 @@ impl ChatApp {
                             .line_height(px(20.0))
                             .text_color(theme.warning)
                             .child(icon("settings-warning", theme.warning.into()))
-                            .child("目前没有连接任何远程主机。"),
+                            .child(crate::i18n::text("目前没有连接任何远程主机。")),
                     )
                     .child(
                         div()
@@ -558,7 +566,12 @@ impl ChatApp {
                                         cx.stop_propagation();
                                         this.cancel_project_creation(cx);
                                     }))
-                                    .child(div().relative().left(px(2.0)).child("取消")),
+                                    .child(
+                                        div()
+                                            .relative()
+                                            .left(px(2.0))
+                                            .child(crate::i18n::text("取消")),
+                                    ),
                             )
                             .child(
                                 div()
@@ -572,11 +585,16 @@ impl ChatApp {
                                     .opacity(0.4)
                                     .flex()
                                     .items_center()
-                                    .child("添加项目"),
+                                    .child(crate::i18n::text("添加项目")),
                             ),
                     ),
             )
-            .child(self.project_creation_close_button(3, "关闭对话框", theme, cx))
+            .child(self.project_creation_close_button(
+                3,
+                crate::i18n::text("关闭对话框"),
+                theme,
+                cx,
+            ))
     }
     pub(super) fn project_creation_overlay(
         &self,

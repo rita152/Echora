@@ -54,7 +54,7 @@ impl SettingsView {
                 .gap(px(4.0))
                 .text_size(px(14.0))
                 .line_height(px(18.0))
-                .child(label)
+                .child(crate::i18n::text(label))
                 .child(
                     svg()
                         .path("icons/chevron-down.svg")
@@ -98,7 +98,7 @@ impl SettingsView {
                                 .text_size(px(13.0))
                                 .line_height(px(18.5714))
                                 .font_weight(gpui::FontWeight(500.0))
-                                .child(title),
+                                .child(crate::i18n::text(title)),
                         )
                         .when(!subtitle.is_empty(), |node| {
                             node.child(
@@ -106,7 +106,7 @@ impl SettingsView {
                                     .text_size(px(12.0))
                                     .line_height(px(16.0))
                                     .text_color(theme.text_tertiary)
-                                    .child(subtitle),
+                                    .child(crate::i18n::text(subtitle)),
                             )
                         }),
                 )
@@ -120,21 +120,21 @@ impl SettingsView {
             .border_color(theme.border)
             .bg(theme.settings_panel)
             .child(control_row(
-                "快捷键",
-                "同时按下两个 ⌘ 键",
+                crate::i18n::text("快捷键"),
+                crate::i18n::text("同时按下两个 ⌘ 键"),
                 60.5625,
                 false,
                 select_control("⌘ + ⌘", 85.671875).into_any_element(),
             ))
             .child(control_row(
-                "Appshot 发送目标",
-                "选择使用快捷键时将 appshots 发送到哪里",
+                crate::i18n::text("Appshot 发送目标"),
+                crate::i18n::text("选择使用快捷键时将 appshots 发送到哪里"),
                 60.5625,
                 false,
-                select_control("自动", 72.0).into_any_element(),
+                select_control(crate::i18n::text("自动"), 72.0).into_any_element(),
             ))
             .child(control_row(
-                "播放音效",
+                crate::i18n::text("播放音效"),
                 "",
                 44.0,
                 true,
@@ -152,7 +152,7 @@ impl SettingsView {
                     .text_size(px(24.0))
                     .line_height(px(28.8))
                     .font_weight(gpui::FontWeight::NORMAL)
-                    .child(page.label),
+                    .child(crate::i18n::text(page.label)),
             )
             .child(
                 div()
@@ -243,14 +243,14 @@ impl SettingsView {
                                     .text_size(px(14.0))
                                     .line_height(px(21.0))
                                     .font_weight(gpui::FontWeight(500.0))
-                                    .child(section.title),
+                                    .child(crate::i18n::text(section.title)),
                             )
                             .child(
                                 div()
                                     .text_size(px(13.0))
                                     .line_height(px(16.25))
                                     .text_color(theme.text_tertiary)
-                                    .child(section.subtitle),
+                                    .child(crate::i18n::text(section.subtitle)),
                             ),
                     ),
             )

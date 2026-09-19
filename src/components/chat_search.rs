@@ -520,7 +520,7 @@ impl ChatSearchView {
         self.stop_file_session();
         if self.roots.is_empty() {
             self.files_loading = false;
-            self.files_error = Some("当前会话没有可搜索的工作区目录".to_owned());
+            self.files_error = Some(crate::i18n::text("当前会话没有可搜索的工作区目录").to_owned());
             cx.notify();
             return;
         }
@@ -895,7 +895,9 @@ impl ChatSearchView {
             return Ok(!self.files_loading || !self.files.is_empty());
         }
         if let Some(error) = &self.snapshot.error {
-            return Err(format!("侧栏数据加载失败：{error}"));
+            return Err(
+                crate::i18n::format!("侧栏数据加载失败：{error}" => "Could not load sidebar: {error}"),
+            );
         }
         let loading = self.snapshot.loading;
         if loading.projects || loading.recent || loading.pinned || loading.search {

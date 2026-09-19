@@ -81,7 +81,7 @@ impl ComposerView {
     }
     pub(super) fn selected_model_label(&self) -> String {
         if self.conversation.selected_model.is_empty() {
-            "模型不可用".to_owned()
+            crate::i18n::text("模型不可用").to_owned()
         } else {
             self.model_display_name(&self.conversation.selected_model)
                 .to_owned()
@@ -96,19 +96,19 @@ impl ComposerView {
     }
     pub(super) fn effort_label(effort: &str) -> &str {
         match effort {
-            "none" => "无",
-            "minimal" => "最小",
-            "low" => "轻度",
-            "medium" => "中",
-            "high" => "高",
-            "xhigh" => "极高",
-            "max" => "最高",
+            "none" => crate::i18n::text("无"),
+            "minimal" => crate::i18n::text("最小"),
+            "low" => crate::i18n::text("轻度"),
+            "medium" => crate::i18n::text("中"),
+            "high" => crate::i18n::text("高"),
+            "xhigh" => crate::i18n::text("极高"),
+            "max" => crate::i18n::text("最高"),
             "ultra" => "Ultra",
             other => other,
         }
     }
     pub(super) fn effort_detail(effort: &str) -> Option<&'static str> {
-        (effort == "ultra").then_some("更快消耗使用额度")
+        (effort == "ultra").then_some(crate::i18n::text("更快消耗使用额度"))
     }
     pub(super) fn selected_effort_label(&self) -> String {
         let effort = self.request_effort();
@@ -120,7 +120,7 @@ impl ComposerView {
     }
     pub(super) fn selected_service_tier_label(&self) -> String {
         let Some(selected) = self.conversation.selected_service_tier.as_deref() else {
-            return "标准".to_owned();
+            return crate::i18n::text("标准").to_owned();
         };
         self.selected_model_entry()
             .and_then(|model| model.service_tiers.iter().find(|tier| tier.id == selected))
@@ -562,7 +562,7 @@ impl ComposerView {
                         .conversation
                         .model_catalog_error
                         .clone()
-                        .unwrap_or_else(|| "没有可用模型".to_owned());
+                        .unwrap_or_else(|| crate::i18n::text("没有可用模型").to_owned());
                     menu = menu.child(self.option_row(
                         PickerOption {
                             id: ("model-option", 0),
@@ -614,7 +614,7 @@ impl ComposerView {
                         .text_size(px(13.0))
                         .line_height(px(18.5625))
                         .text_color(theme.text_tertiary)
-                        .child("推理强度"),
+                        .child(crate::i18n::text("推理强度")),
                 );
                 let options = self
                     .selected_model_entry()
@@ -664,7 +664,7 @@ impl ComposerView {
                         .text_size(px(13.0))
                         .line_height(px(18.5625))
                         .text_color(theme.text_tertiary)
-                        .child("速度"),
+                        .child(crate::i18n::text("速度")),
                 );
                 let service_tiers = self
                     .selected_model_entry()
@@ -674,8 +674,8 @@ impl ComposerView {
                     self.option_row(
                         PickerOption {
                             id: ("service-tier-option", 0),
-                            title: "标准",
-                            detail: Some("默认速度"),
+                            title: crate::i18n::text("标准"),
+                            detail: Some(crate::i18n::text("默认速度")),
                             truncate_detail: false,
                             selected: self.conversation.selected_service_tier.is_none(),
                             focused: self.submenu_keyboard_focus && self.submenu_focused_item == 0,
@@ -768,7 +768,7 @@ impl ComposerView {
                                 .flex()
                                 .items_center()
                                 .gap(px(4.0))
-                                .child("高级")
+                                .child(crate::i18n::text("高级"))
                                 .child(
                                     icon("chevron-down", theme.text_tertiary.into())
                                         .size(px(12.0))
@@ -805,7 +805,7 @@ impl ComposerView {
                         this.reset_model_selection();
                         cx.notify();
                     }))
-                    .child(div().flex_1().child("重置为默认设置"))
+                    .child(div().flex_1().child(crate::i18n::text("重置为默认设置")))
                     .child(icon("model-reset", theme.text_tertiary.into()).size(px(14.0))),
             );
         }
@@ -1191,7 +1191,7 @@ impl ComposerView {
                     0,
                     ModelPickerField {
                         id: "model-picker-model-row",
-                        label: "模型",
+                        label: crate::i18n::text("模型"),
                         value: &selected_model_label,
                         submenu: PickerSubmenu::Model,
                     },
@@ -1202,7 +1202,7 @@ impl ComposerView {
                     1,
                     ModelPickerField {
                         id: "model-picker-effort-row",
-                        label: "推理强度",
+                        label: crate::i18n::text("推理强度"),
                         value: &selected_effort_label,
                         submenu: PickerSubmenu::Effort,
                     },
@@ -1213,7 +1213,7 @@ impl ComposerView {
                     2,
                     ModelPickerField {
                         id: "model-picker-service-tier-row",
-                        label: "速度",
+                        label: crate::i18n::text("速度"),
                         value: &selected_service_tier_label,
                         submenu: PickerSubmenu::ServiceTier,
                     },

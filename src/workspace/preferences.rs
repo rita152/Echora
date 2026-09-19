@@ -16,6 +16,8 @@ const PREFERENCES_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiPreferences {
+    #[serde(default)]
+    pub language: crate::i18n::Language,
     #[serde(default = "preferences_version")]
     pub version: u32,
     #[serde(default)]
@@ -92,10 +94,14 @@ impl PreferenceStore {
             Err(error) if error.kind() == ErrorKind::NotFound => {
                 return Ok(UiPreferences::current());
             }
-            Err(error) => return Err(format!("无法读取 UI 偏好：{error}")),
+            Err(error) => {
+                return Err(
+                    crate::i18n::format!("无法读取 UI 偏好：{error}" => "Could not read UI preferences: {error}"),
+                );
+            }
         };
         let preferences: UiPreferences =
-            serde_json::from_slice(&bytes).map_err(|error| format!("UI 偏好格式无效：{error}"))?;
+            serde_json::from_slice(&bytes).map_err(|error| crate::i18n::format!("UI 偏好格式无效：{error}" => "Invalid UI preferences: {error}"))?;
         if preferences.version != PREFERENCES_VERSION {
             return Ok(UiPreferences::current());
         }
@@ -104,9 +110,9 @@ impl PreferenceStore {
 
     pub(super) fn save(&self, preferences: &UiPreferences) -> Result<(), String> {
         let Some(parent) = self.path.parent() else {
-            return Err("UI 偏好路径缺少父目录".to_owned());
+            return Err(crate::i18n::text("UI 偏好路径缺少父目录").to_owned());
         };
-        fs::create_dir_all(parent).map_err(|error| format!("无法创建 UI 偏好目录：{error}"))?;
+        fs::create_dir_all(parent).map_err(|error| crate::i18n::format!("无法创建 UI 偏好目录：{error}" => "Could not create UI preferences directory: {error}"))?;
         let serial = self.write_serial.fetch_add(1, Ordering::Relaxed);
         let file_name = self
             .path
@@ -123,17 +129,17 @@ impl PreferenceStore {
                 .create_new(true)
                 .write(true)
                 .open(&temporary)
-                .map_err(|error| format!("无法创建 UI 偏好临时文件：{error}"))?;
+                .map_err(|error| crate::i18n::format!("无法创建 UI 偏好临时文件：{error}" => "Could not create temporary UI preferences file: {error}"))?;
             let bytes = serde_json::to_vec_pretty(preferences)
-                .map_err(|error| format!("无法序列化 UI 偏好：{error}"))?;
+                .map_err(|error| crate::i18n::format!("无法序列化 UI 偏好：{error}" => "Could not serialize UI preferences: {error}"))?;
             file.write_all(&bytes)
-                .map_err(|error| format!("无法写入 UI 偏好：{error}"))?;
+                .map_err(|error| crate::i18n::format!("无法写入 UI 偏好：{error}" => "Could not write UI preferences: {error}"))?;
             file.write_all(b"\n")
-                .map_err(|error| format!("无法完成 UI 偏好写入：{error}"))?;
+                .map_err(|error| crate::i18n::format!("无法完成 UI 偏好写入：{error}" => "Could not finish writing UI preferences: {error}"))?;
             file.sync_all()
-                .map_err(|error| format!("无法同步 UI 偏好：{error}"))?;
+                .map_err(|error| crate::i18n::format!("无法同步 UI 偏好：{error}" => "Could not sync UI preferences: {error}"))?;
             fs::rename(&temporary, &self.path)
-                .map_err(|error| format!("无法原子替换 UI 偏好：{error}"))?;
+                .map_err(|error| crate::i18n::format!("无法原子替换 UI 偏好：{error}" => "Could not atomically replace UI preferences: {error}"))?;
             if let Ok(directory) = File::open(parent) {
                 let _ = directory.sync_all();
             }
@@ -164,9 +170,39 @@ pub(super) fn default_preferences_path() -> PathBuf {
     PathBuf::from(".gpui-ui-preferences.json")
 }
 
+pub fn preferred_language() -> crate::i18n::Language {
+    PreferenceStore::new(default_preferences_path())
+        .load()
+        .unwrap_or_default()
+        .language
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn existing_and_future_language_preferences_remain_readable() {
+        for json in [
+            r#"{"version":1,"pinned_collapsed":true}"#,
+            r#"{"version":1,"language":"future-language","pinned_collapsed":true}"#,
+        ] {
+            let preferences: UiPreferences = serde_json::from_str(json).unwrap();
+            assert_eq!(preferences.language, crate::i18n::Language::Auto);
+            assert!(preferences.pinned_collapsed);
+        }
+        for language in crate::i18n::Language::ALL {
+            let preferences = UiPreferences {
+                language,
+                ..UiPreferences::current()
+            };
+            let json = serde_json::to_string(&preferences).unwrap();
+            assert_eq!(
+                serde_json::from_str::<UiPreferences>(&json).unwrap(),
+                preferences
+            );
+        }
+    }
 
     #[test]
     fn version_mismatch_does_not_reuse_old_preferences() {
@@ -198,6 +234,7 @@ mod tests {
         let store = PreferenceStore::new(path.clone());
         let mut preferences = UiPreferences::current();
         preferences.pinned_section_id = Some("section-1".into());
+        preferences.language = crate::i18n::Language::English;
         store.save(&preferences).unwrap();
         let bytes = fs::read(&path).unwrap();
         assert!(bytes.ends_with(b"\n"));

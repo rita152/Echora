@@ -77,7 +77,7 @@ pub(super) fn cubic_bezier_ease(progress: f32, x1: f32, y1: f32, x2: f32, y2: f3
 
 pub(super) fn thinking_shimmer(theme: Theme, progress: f32) -> impl IntoElement {
     div().id("thinking-shimmer").child(shimmer_label(
-        "正在思考",
+        crate::i18n::text("正在思考"),
         THINKING_SHIMMER_WIDTH,
         theme,
         progress,

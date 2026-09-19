@@ -30,10 +30,9 @@ impl ComposerView {
     pub(super) fn load_model_catalog(&mut self, cx: &mut Context<Self>) {
         let receiver = self.backend.load_model_catalog();
         cx.spawn(async move |this, cx| {
-            let result = receiver
-                .recv()
-                .await
-                .unwrap_or_else(|_| Err("Codex 模型目录连接在返回结果前关闭".to_owned()));
+            let result = receiver.recv().await.unwrap_or_else(|_| {
+                Err(crate::i18n::text("Codex 模型目录连接在返回结果前关闭").to_owned())
+            });
             let _ = this.update(cx, |this, cx| {
                 match result {
                     Ok(catalog) => this.apply_model_catalog(catalog),
@@ -61,26 +60,27 @@ impl ComposerView {
         }
         self.focus_prompt_pending = true;
         if !self.side_ready {
-            self.submission_error =
-                Some("聊天连接不可用，输入已保留。请重新连接或新建侧边聊天。".into());
+            self.submission_error = Some(
+                crate::i18n::text("聊天连接不可用，输入已保留。请重新连接或新建侧边聊天。").into(),
+            );
             cx.notify();
             return;
         }
         if self.conversation.thread_id.is_none()
             && (self.permission_catalog_loading || self.permission_catalog_error.is_some())
         {
-            self.submission_error = Some(
-                self.permission_catalog_error
-                    .clone()
-                    .unwrap_or_else(|| "正在读取新会话配置，输入已保留。".into()),
-            );
+            self.submission_error =
+                Some(self.permission_catalog_error.clone().unwrap_or_else(|| {
+                    crate::i18n::text("正在读取新会话配置，输入已保留。").into()
+                }));
             cx.notify();
             return;
         }
         let running = self.is_running();
         if !running && self.conversation.permission_change.is_some() {
-            self.submission_error =
-                Some("权限变更尚未确认，输入已保留。请等待确认后发送新轮次。".into());
+            self.submission_error = Some(
+                crate::i18n::text("权限变更尚未确认，输入已保留。请等待确认后发送新轮次。").into(),
+            );
             cx.notify();
             return;
         }
@@ -100,7 +100,8 @@ impl ComposerView {
             && (self.conversation.selected_model.is_empty()
                 || self.conversation.selected_effort.is_empty())
         {
-            self.submission_error = Some("没有可用模型，请选择模型后重试。输入已保留。".into());
+            self.submission_error =
+                Some(crate::i18n::text("没有可用模型，请选择模型后重试。输入已保留。").into());
             cx.notify();
             return;
         }
@@ -110,15 +111,15 @@ impl ComposerView {
             comments: self.review_comments.clone(),
         };
         let prompt = if raw_prompt.trim().is_empty() && !self.prompt_context.files.is_empty() {
-            "请查看附加文件。".to_owned()
+            crate::i18n::text("请查看附加文件。").to_owned()
         } else {
             raw_prompt
         };
         let prompt = if self.review_comments.is_empty() {
             prompt
         } else {
-            format!(
-                "{}\n\n请处理以下审查评论：\n\n{}",
+            crate::i18n::format!(
+                "{}\n\n请处理以下审查评论：\n\n{}" => "{}\n\nPlease address these review comments:\n\n{}",
                 prompt.trim(),
                 crate::git_review::comments_prompt(&self.review_comments)
             )
@@ -166,7 +167,10 @@ impl ComposerView {
             });
             cx.spawn(async move |this, cx| {
                 let result = receiver.recv().await.unwrap_or_else(|_| {
-                    Err("追加输入响应连接已关闭，接受状态未知。输入快照已保留。".into())
+                    Err(
+                        crate::i18n::text("追加输入响应连接已关闭，接受状态未知。输入快照已保留。")
+                            .into(),
+                    )
                 });
                 let _ = this.update(cx, |this, cx| {
                     this.conversation.resolve_submission(&id, result);
@@ -230,7 +234,8 @@ impl ComposerView {
 
     pub(super) fn restore_submission(&mut self, id: &str, cx: &mut Context<Self>) {
         if !self.draft_is_empty(cx) {
-            self.submission_error = Some("请先保存或清空当前草稿，再恢复失败的输入。".into());
+            self.submission_error =
+                Some(crate::i18n::text("请先保存或清空当前草稿，再恢复失败的输入。").into());
             cx.notify();
             return;
         }
@@ -269,7 +274,7 @@ impl ComposerView {
                                 return;
                             }
                             this.apply_agent_event_batch(vec![AgentEvent::Failed(
-                                STREAM_DISCONNECTED_MESSAGE.to_owned(),
+                                crate::i18n::text(STREAM_DISCONNECTED_MESSAGE).to_owned(),
                             )]);
                             cx.emit(ConversationChanged);
                             cx.notify();
@@ -338,7 +343,10 @@ impl ComposerView {
         }
     }
     pub fn retry_image_generation(&mut self, cx: &mut Context<Self>) {
-        self.submit_prompt("请重新生成上一张图像，保持相同要求。".to_owned(), cx);
+        self.submit_prompt(
+            crate::i18n::text("请重新生成上一张图像，保持相同要求。").to_owned(),
+            cx,
+        );
     }
 
     /// Typed form of the reference's "Compact" slash command. The request only
@@ -348,12 +356,13 @@ impl ComposerView {
     /// submission failure.
     pub(super) fn start_context_compaction(&mut self, cx: &mut Context<Self>) {
         let Some(thread_id) = self.conversation.thread_id.clone() else {
-            self.submission_error = Some("当前没有可压缩的会话".to_owned());
+            self.submission_error = Some(crate::i18n::text("当前没有可压缩的会话").to_owned());
             cx.notify();
             return;
         };
         if self.is_running() {
-            self.submission_error = Some("会话进行中，无法压缩上下文".to_owned());
+            self.submission_error =
+                Some(crate::i18n::text("会话进行中，无法压缩上下文").to_owned());
             cx.notify();
             return;
         }
@@ -364,7 +373,7 @@ impl ComposerView {
             let error = match result {
                 Ok(Ok(())) => None,
                 Ok(Err(error)) => Some(error),
-                Err(_) => Some("压缩请求的响应通道提前关闭".to_owned()),
+                Err(_) => Some(crate::i18n::text("压缩请求的响应通道提前关闭").to_owned()),
             };
             let _ = this.update(cx, |this, cx| {
                 match error {
@@ -384,7 +393,7 @@ impl ComposerView {
     pub(crate) fn submit_edited_message(&mut self, text: String, cx: &mut Context<Self>) {
         let Some(thread_id) = self.conversation.thread_id.clone() else {
             self.conversation.cancel_message_edit();
-            self.submission_error = Some("当前没有可编辑的会话".to_owned());
+            self.submission_error = Some(crate::i18n::text("当前没有可编辑的会话").to_owned());
             cx.notify();
             return;
         };
@@ -405,12 +414,15 @@ impl ComposerView {
                         this.submit_prompt(text.clone(), cx);
                     }
                     Ok(Err(error)) => {
-                        this.submission_error = Some(error.user_message("回退会话历史"));
+                        this.submission_error =
+                            Some(error.user_message(crate::i18n::text("回退会话历史")));
                         input.update(cx, |input, cx| input.set_text_silently(&text, cx));
                     }
                     Err(_) => {
-                        this.submission_error =
-                            Some("回退请求的响应通道提前关闭，历史状态未知".to_owned());
+                        this.submission_error = Some(
+                            crate::i18n::text("回退请求的响应通道提前关闭，历史状态未知")
+                                .to_owned(),
+                        );
                     }
                 }
                 cx.emit(ConversationChanged);

@@ -98,15 +98,19 @@ impl WorkspaceError {
     /// diagnostics, but must not cross into views.
     pub fn user_message(&self, action: &str) -> String {
         match self {
-            Self::Unsupported(_) => format!("当前 coding agent 不支持{action}"),
-            Self::Backend(_) => format!("{action}失败，请重试"),
+            Self::Unsupported(_) => {
+                crate::i18n::format!("当前 coding agent 不支持{action}" => "This coding agent does not support {action}")
+            }
+            Self::Backend(_) => {
+                crate::i18n::format!("{action}失败，请重试" => "{action} failed. Please try again.")
+            }
         }
     }
 
     fn unsupported(capability: AgentCapability) -> Self {
         Self::Unsupported(Unsupported {
             capability,
-            message: format!("当前 coding agent 不支持 {capability:?}"),
+            message: crate::i18n::format!("当前 coding agent 不支持 {capability:?}" => "This coding agent does not support {capability:?}"),
         })
     }
 }
@@ -261,7 +265,7 @@ pub trait AgentBackend: Send + Sync {
         _generation: u64,
     ) -> Receiver<Result<super::AgentThreadSettingsSnapshot, String>> {
         let (sender, receiver) = async_channel::bounded(1);
-        let _ = sender.try_send(Err("此后端不支持读取线程设置".into()));
+        let _ = sender.try_send(Err(crate::i18n::text("此后端不支持读取线程设置").into()));
         receiver
     }
 
@@ -273,28 +277,28 @@ pub trait AgentBackend: Send + Sync {
     /// account stays distinguishable, and the answer is also reduced into the
     /// connection snapshot other views observe.
     fn read_account(&self) -> Receiver<Result<AgentAccountSnapshot, String>> {
-        unsupported_account_receiver("读取账户状态")
+        unsupported_account_receiver(crate::i18n::text("读取账户状态"))
     }
 
     /// Reads the current quota snapshot for the connected account.
     fn read_rate_limits(&self) -> Receiver<Result<AgentRateLimitsRead, String>> {
-        unsupported_account_receiver("读取配额")
+        unsupported_account_receiver(crate::i18n::text("读取配额"))
     }
 
     /// Starts the Codex-managed ChatGPT login and returns the login id with the
     /// challenge the user must complete in a browser.
     fn start_chatgpt_login(&self) -> Receiver<Result<AgentLoginStart, String>> {
-        unsupported_account_receiver("登录 ChatGPT 账户")
+        unsupported_account_receiver(crate::i18n::text("登录 ChatGPT 账户"))
     }
 
     /// Cancels exactly the login named by this identifier.
     fn cancel_login(&self, _login_id: String) -> Receiver<Result<AgentLoginCancelOutcome, String>> {
-        unsupported_account_receiver("取消登录")
+        unsupported_account_receiver(crate::i18n::text("取消登录"))
     }
 
     /// Signs out and confirms the resulting account state.
     fn logout_account(&self) -> Receiver<Result<AgentLogoutOutcome, String>> {
-        unsupported_account_receiver("退出登录")
+        unsupported_account_receiver(crate::i18n::text("退出登录"))
     }
 
     /// Reads the skills inventory. `skills/changed` invalidates the caller's
@@ -306,7 +310,7 @@ pub trait AgentBackend: Send + Sync {
         let (sender, receiver) = async_channel::bounded(1);
         let _ = sender.try_send(Err(super::AgentSkillsError {
             kind: super::AgentSkillsErrorKind::Unsupported,
-            message: "当前 coding agent 不支持技能管理".into(),
+            message: crate::i18n::text("当前 coding agent 不支持技能管理").into(),
             data: None,
             outcome_unknown: false,
         }));
@@ -322,7 +326,7 @@ pub trait AgentBackend: Send + Sync {
         let (sender, receiver) = async_channel::bounded(1);
         let _ = sender.try_send(Err(super::AgentSkillsError {
             kind: super::AgentSkillsErrorKind::Unsupported,
-            message: "当前 coding agent 不支持技能管理".into(),
+            message: crate::i18n::text("当前 coding agent 不支持技能管理").into(),
             data: None,
             outcome_unknown: false,
         }));
@@ -336,7 +340,7 @@ pub trait AgentBackend: Send + Sync {
         let (sender, receiver) = async_channel::bounded(1);
         let _ = sender.try_send(Err(super::AgentMcpError {
             kind: super::AgentMcpErrorKind::Unsupported,
-            message: "当前 coding agent 不支持 MCP 管理".into(),
+            message: crate::i18n::text("当前 coding agent 不支持 MCP 管理").into(),
             data: None,
             outcome_unknown: false,
         }));
@@ -354,7 +358,7 @@ pub trait AgentBackend: Send + Sync {
             generation: request.generation,
             cwd: request.cwd,
             outcome: super::AgentMcpReloadOutcome::Failed {
-                message: "当前 coding agent 不支持 MCP 管理".into(),
+                message: crate::i18n::text("当前 coding agent 不支持 MCP 管理").into(),
                 data: None,
             },
         });
@@ -371,7 +375,7 @@ pub trait AgentBackend: Send + Sync {
         let (sender, receiver) = async_channel::bounded(1);
         let _ = sender.try_send(Err(super::AgentMcpError {
             kind: super::AgentMcpErrorKind::Unsupported,
-            message: "当前 coding agent 不支持 MCP 登录".into(),
+            message: crate::i18n::text("当前 coding agent 不支持 MCP 登录").into(),
             data: None,
             outcome_unknown: false,
         }));
@@ -390,7 +394,7 @@ pub trait AgentBackend: Send + Sync {
         &self,
         _request: super::AgentAppsListRequest,
     ) -> Receiver<Result<super::AgentAppsPage, super::AgentAppsError>> {
-        unsupported_apps_receiver("应用目录")
+        unsupported_apps_receiver(crate::i18n::text("应用目录"))
     }
 
     /// Reads the committed installed-connector runtime snapshot.
@@ -398,7 +402,7 @@ pub trait AgentBackend: Send + Sync {
         &self,
         _request: super::AgentAppsInstalledRequest,
     ) -> Receiver<Result<super::AgentInstalledApps, super::AgentAppsError>> {
-        unsupported_apps_receiver("应用目录")
+        unsupported_apps_receiver(crate::i18n::text("应用目录"))
     }
 
     /// Reads metadata for specific apps.
@@ -406,7 +410,7 @@ pub trait AgentBackend: Send + Sync {
         &self,
         _request: super::AgentAppsReadRequest,
     ) -> Receiver<Result<super::AgentAppsReadResult, super::AgentAppsError>> {
-        unsupported_apps_receiver("应用目录")
+        unsupported_apps_receiver(crate::i18n::text("应用目录"))
     }
 
     /// Reads the plugin catalog, marketplace by marketplace.
@@ -414,7 +418,7 @@ pub trait AgentBackend: Send + Sync {
         &self,
         _request: super::AgentPluginCatalogRequest,
     ) -> Receiver<Result<super::AgentPluginCatalog, super::AgentPluginsError>> {
-        unsupported_plugins_receiver("插件目录")
+        unsupported_plugins_receiver(crate::i18n::text("插件目录"))
     }
 
     /// Reads only the marketplaces that have installed plugins.
@@ -422,14 +426,14 @@ pub trait AgentBackend: Send + Sync {
         &self,
         _request: super::AgentPluginInstalledRequest,
     ) -> Receiver<Result<super::AgentPluginCatalog, super::AgentPluginsError>> {
-        unsupported_plugins_receiver("插件目录")
+        unsupported_plugins_receiver(crate::i18n::text("插件目录"))
     }
 
     fn read_plugin(
         &self,
         _request: super::AgentPluginReadRequest,
     ) -> Receiver<Result<super::AgentPluginDetail, super::AgentPluginsError>> {
-        unsupported_plugins_receiver("插件目录")
+        unsupported_plugins_receiver(crate::i18n::text("插件目录"))
     }
 
     /// Searches every marketplace for a term.
@@ -437,14 +441,14 @@ pub trait AgentBackend: Send + Sync {
         &self,
         _request: super::AgentPluginSearchRequest,
     ) -> Receiver<Result<super::AgentPluginSearchPage, super::AgentPluginsError>> {
-        unsupported_plugins_receiver("插件搜索")
+        unsupported_plugins_receiver(crate::i18n::text("插件搜索"))
     }
 
     fn read_plugin_skill(
         &self,
         _request: super::AgentPluginSkillReadRequest,
     ) -> Receiver<Result<super::AgentPluginSkillContent, super::AgentPluginsError>> {
-        unsupported_plugins_receiver("插件技能")
+        unsupported_plugins_receiver(crate::i18n::text("插件技能"))
     }
 
     /// Reconciles installed plugins with the current configuration.
@@ -452,7 +456,7 @@ pub trait AgentBackend: Send + Sync {
         &self,
         _request: super::AgentPluginReconcileRequest,
     ) -> Receiver<Result<super::AgentPluginReconcileReceipt, super::AgentPluginsError>> {
-        unsupported_plugins_receiver("插件核对")
+        unsupported_plugins_receiver(crate::i18n::text("插件核对"))
     }
 
     /// Installs one plugin. The outcome distinguishes success, failure, timeout
@@ -464,7 +468,7 @@ pub trait AgentBackend: Send + Sync {
         unsupported_plugin_operation(
             request.generation,
             request.plugin_name,
-            "当前 coding agent 不支持安装插件",
+            crate::i18n::text("当前 coding agent 不支持安装插件"),
         )
     }
 
@@ -477,7 +481,7 @@ pub trait AgentBackend: Send + Sync {
             generation: request.generation,
             plugin_id: request.plugin_id,
             outcome: super::AgentPluginOperationOutcome::Failed {
-                message: "当前 coding agent 不支持卸载插件".to_owned(),
+                message: crate::i18n::text("当前 coding agent 不支持卸载插件").to_owned(),
                 data: None,
             },
         });
@@ -487,7 +491,7 @@ pub trait AgentBackend: Send + Sync {
     fn plugin_share_list(
         &self,
     ) -> Receiver<Result<super::AgentPluginShareList, super::AgentPluginsError>> {
-        unsupported_plugins_receiver("插件共享")
+        unsupported_plugins_receiver(crate::i18n::text("插件共享"))
     }
 
     fn save_plugin_share(
@@ -499,7 +503,7 @@ pub trait AgentBackend: Send + Sync {
             generation: request.generation,
             plugin_path: request.plugin_path,
             outcome: super::AgentPluginOperationOutcome::Failed {
-                message: "当前 coding agent 不支持共享插件".to_owned(),
+                message: crate::i18n::text("当前 coding agent 不支持共享插件").to_owned(),
                 data: None,
             },
         });
@@ -515,7 +519,7 @@ pub trait AgentBackend: Send + Sync {
             generation: request.generation,
             remote_plugin_id: request.remote_plugin_id,
             outcome: super::AgentPluginOperationOutcome::Failed {
-                message: "当前 coding agent 不支持共享插件".to_owned(),
+                message: crate::i18n::text("当前 coding agent 不支持共享插件").to_owned(),
                 data: None,
             },
         });
@@ -531,7 +535,7 @@ pub trait AgentBackend: Send + Sync {
             generation: request.generation,
             remote_plugin_id: request.remote_plugin_id,
             outcome: super::AgentPluginOperationOutcome::Failed {
-                message: "当前 coding agent 不支持共享插件".to_owned(),
+                message: crate::i18n::text("当前 coding agent 不支持共享插件").to_owned(),
                 data: None,
             },
         });
@@ -547,7 +551,7 @@ pub trait AgentBackend: Send + Sync {
             generation: request.generation,
             source: request.source,
             outcome: super::AgentPluginOperationOutcome::Failed {
-                message: "当前 coding agent 不支持 marketplace 管理".to_owned(),
+                message: crate::i18n::text("当前 coding agent 不支持 marketplace 管理").to_owned(),
                 data: None,
             },
         });
@@ -563,7 +567,7 @@ pub trait AgentBackend: Send + Sync {
             generation: request.generation,
             marketplace_name: request.marketplace_name,
             outcome: super::AgentPluginOperationOutcome::Failed {
-                message: "当前 coding agent 不支持 marketplace 管理".to_owned(),
+                message: crate::i18n::text("当前 coding agent 不支持 marketplace 管理").to_owned(),
                 data: None,
             },
         });
@@ -579,7 +583,7 @@ pub trait AgentBackend: Send + Sync {
             generation: request.generation,
             marketplace_name: request.marketplace_name,
             outcome: super::AgentPluginOperationOutcome::Failed {
-                message: "当前 coding agent 不支持 marketplace 管理".to_owned(),
+                message: crate::i18n::text("当前 coding agent 不支持 marketplace 管理").to_owned(),
                 data: None,
             },
         });
@@ -680,7 +684,7 @@ pub trait AgentBackend: Send + Sync {
     /// Starts one manual context compaction. Progress and completion arrive as
     /// ordinary turn events, so the acknowledgement carries no payload.
     fn start_thread_compaction(&self, _thread_id: ThreadId) -> Receiver<Result<(), String>> {
-        unsupported_account_receiver("手动上下文压缩")
+        unsupported_account_receiver(crate::i18n::text("手动上下文压缩"))
     }
 
     /// Opens a fuzzy file search session for the given workspace roots.
@@ -688,7 +692,7 @@ pub trait AgentBackend: Send + Sync {
         &self,
         _roots: Vec<String>,
     ) -> Receiver<Result<super::AgentFileSearchSession, String>> {
-        unsupported_account_receiver("文件搜索")
+        unsupported_account_receiver(crate::i18n::text("文件搜索"))
     }
 
     fn set_thread_name(
@@ -745,7 +749,10 @@ pub trait AgentBackend: Send + Sync {
 
     fn steer_turn(&self, _request: AgentSteerRequest) -> Receiver<Result<(), String>> {
         let (sender, receiver) = async_channel::bounded(1);
-        let _ = sender.send_blocking(Err("当前 coding agent 不支持运行中追加输入。".into()));
+        let _ = sender.send_blocking(Err(crate::i18n::text(
+            "当前 coding agent 不支持运行中追加输入。",
+        )
+        .into()));
         receiver
     }
 
@@ -762,7 +769,7 @@ fn unsupported_receiver<T: Send + 'static>(
 
 fn unsupported_account_receiver<T: Send + 'static>(action: &str) -> Receiver<Result<T, String>> {
     let (sender, receiver) = async_channel::bounded(1);
-    let _ = sender.send_blocking(Err(format!("当前 coding agent 不支持{action}")));
+    let _ = sender.send_blocking(Err(crate::i18n::format!("当前 coding agent 不支持{action}" => "This coding agent does not support {action}")));
     receiver
 }
 
@@ -772,7 +779,7 @@ fn unsupported_apps_receiver<T: Send + 'static>(
     let (sender, receiver) = async_channel::bounded(1);
     let _ = sender.send_blocking(Err(super::AgentAppsError {
         kind: super::AgentAppsErrorKind::Unsupported,
-        message: format!("当前 coding agent 不支持{action}"),
+        message: crate::i18n::format!("当前 coding agent 不支持{action}" => "This coding agent does not support {action}"),
         data: None,
         outcome_unknown: false,
     }));
@@ -785,7 +792,7 @@ fn unsupported_plugins_receiver<T: Send + 'static>(
     let (sender, receiver) = async_channel::bounded(1);
     let _ = sender.send_blocking(Err(super::AgentPluginsError {
         kind: super::AgentPluginsErrorKind::Unsupported,
-        message: format!("当前 coding agent 不支持{action}"),
+        message: crate::i18n::format!("当前 coding agent 不支持{action}" => "This coding agent does not support {action}"),
         data: None,
         outcome_unknown: false,
     }));

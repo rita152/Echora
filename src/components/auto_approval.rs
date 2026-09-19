@@ -44,49 +44,53 @@ pub(crate) fn action_label(action: &Action) -> String {
             .join(" "),
         Action::WriteStdin {
             process_id, stdin, ..
-        } => format!("向进程 {process_id} 发送输入：{stdin}"),
+        } => {
+            crate::i18n::format!("向进程 {process_id} 发送输入：{stdin}" => "Send input to process {process_id}: {stdin}")
+        }
         Action::ApplyPatch { files, .. } => {
             if files.len() == 1 {
-                format!("正在编辑 {}", files[0])
+                crate::i18n::format!("正在编辑 {}" => "Editing {}", files[0])
             } else {
-                format!("正在编辑 {} 个文件", files.len())
+                crate::i18n::format!("正在编辑 {} 个文件" => "Editing {} files", files.len())
             }
         }
-        Action::NetworkAccess { target, .. } => format!("通过网络访问 {target}"),
+        Action::NetworkAccess { target, .. } => {
+            crate::i18n::format!("通过网络访问 {target}" => "Access {target} over the network")
+        }
         Action::McpToolCall {
             tool_name,
             connector_name,
             server,
             ..
-        } => format!(
-            "{} 上的 MCP {}",
+        } => crate::i18n::format!(
+            "{} 上的 MCP {}" => "MCP {1} on {0}",
             connector_name.as_deref().unwrap_or(server),
             tool_name
         ),
         Action::RequestPermissions { reason, .. } => reason.as_ref().map_or_else(
-            || "权限请求".to_owned(),
-            |reason| format!("权限请求：{reason}"),
+            || crate::i18n::text("权限请求").to_owned(),
+            |reason| crate::i18n::format!("权限请求：{reason}" => "Permission request: {reason}"),
         ),
     }
 }
 
 pub(crate) fn status_label(status: Status) -> &'static str {
     match status {
-        Status::InProgress => "自动审核中",
-        Status::Approved => "自动审核已批准",
-        Status::Denied => "需要明确授权",
-        Status::TimedOut => "自动审核超时",
-        Status::Aborted => "自动审核已停止",
+        Status::InProgress => crate::i18n::text("自动审核中"),
+        Status::Approved => crate::i18n::text("自动审核已批准"),
+        Status::Denied => crate::i18n::text("需要明确授权"),
+        Status::TimedOut => crate::i18n::text("自动审核超时"),
+        Status::Aborted => crate::i18n::text("自动审核已停止"),
     }
 }
 
 fn level_label(level: Option<&str>) -> &str {
     match level {
-        Some("low") => "低",
-        Some("medium") => "中",
-        Some("high") => "高",
-        Some("critical") => "严重",
-        _ => "未知",
+        Some("low") => crate::i18n::text("低"),
+        Some("medium") => crate::i18n::text("中"),
+        Some("high") => crate::i18n::text("高"),
+        Some("critical") => crate::i18n::text("严重"),
+        _ => crate::i18n::text("未知"),
     }
 }
 
@@ -97,15 +101,21 @@ fn time_label(time: Option<i64>) -> String {
                 .format("%Y-%m-%d %H:%M:%S%.3f")
                 .to_string()
         })
-        .unwrap_or_else(|| "未记录".to_owned())
+        .unwrap_or_else(|| crate::i18n::text("未记录").to_owned())
 }
 
 fn fallback_explanation(status: Status) -> &'static str {
     match status {
-        Status::InProgress => "经过精心提示的审查智能体正在审查此请求，随后 ChatGPT 才会运行它",
-        Status::TimedOut => "经过精心提示的审查智能体在 ChatGPT 运行此请求前已超时。",
-        Status::Aborted => "经过精心提示的审查智能体在 ChatGPT 运行此请求前已停止审查此请求",
-        _ => "经优化提示的审查智能体已审查此请求。",
+        Status::InProgress => {
+            crate::i18n::text("经过精心提示的审查智能体正在审查此请求，随后 ChatGPT 才会运行它")
+        }
+        Status::TimedOut => {
+            crate::i18n::text("经过精心提示的审查智能体在 ChatGPT 运行此请求前已超时。")
+        }
+        Status::Aborted => {
+            crate::i18n::text("经过精心提示的审查智能体在 ChatGPT 运行此请求前已停止审查此请求")
+        }
+        _ => crate::i18n::text("经优化提示的审查智能体已审查此请求。"),
     }
 }
 
@@ -279,8 +289,8 @@ impl AutoApprovalReviewView {
             .role(Role::Button)
             .aria_label(label.clone())
             .aria_expanded(expanded)
-            .aria_description(format!(
-                "{}；风险：{}；用户授权：{}；开始时间：{}；完成时间：{}",
+            .aria_description(crate::i18n::format!(
+                "{}；风险：{}；用户授权：{}；开始时间：{}；完成时间：{}" => "{}; Risk: {}; User authorization: {}; Started: {}; Completed: {}",
                 status_label(status),
                 level_label(self.model.review.risk_level.as_deref()),
                 level_label(self.model.review.user_authorization.as_deref()),
@@ -593,9 +603,9 @@ impl Render for AutoApprovalReviewView {
         if action_progress > 0. || self.expanded || self.attached {
             let text = if status == Status::Denied {
                 if self.model.review.risk_level.as_deref() == Some("high") {
-                    "此操作被视为高风险，需要明确授权"
+                    crate::i18n::text("此操作被视为高风险，需要明确授权")
                 } else {
-                    "需要明确授权"
+                    crate::i18n::text("需要明确授权")
                 }
                 .to_owned()
             } else {
@@ -687,7 +697,7 @@ impl Render for AutoApprovalReviewView {
 }
 
 pub(crate) fn strict_review(requirement: &StrictReviewPresentation, theme: Theme) -> Stateful<Div> {
-    let label = "此请求需要额外的安全检查，可能需要更多时间。";
+    let label = crate::i18n::text("此请求需要额外的安全检查，可能需要更多时间。");
     div()
         .id(SharedString::from(format!(
             "strict-review-{:?}",
@@ -717,7 +727,7 @@ pub(crate) fn guardian_warning(warning: &AgentGuardianWarning, theme: Theme) -> 
         .message
         .starts_with("Automatic approval review rejected too many approval requests for this turn");
     let message = if interrupted {
-        "本轮操作已被自动审查终止"
+        crate::i18n::text("本轮操作已被自动审查终止")
     } else {
         &warning.message
     };
@@ -772,7 +782,7 @@ fn warning_info(theme: Theme) -> Stateful<Div> {
         .relative()
         .size(px(14.))
         .role(Role::Label)
-        .aria_label("自动审查停止说明")
+        .aria_label(crate::i18n::text("自动审查停止说明"))
         .on_hover(|_, window, _| window.refresh())
         .child(icon("auto-review-info", theme.markdown_text.alpha(0.65).into()).size(px(14.)))
         .child(
@@ -834,8 +844,8 @@ impl Render for WarningTooltip {
             .line_height(px(130. / 7.))
             .text_color(self.theme.markdown_text)
             .text_center()
-            .child(
+            .child(crate::i18n::text(
                 "因多次被驳回，自动审查已停止本轮操作。请添加更多上下文或选择其他权限模式以继续。",
-            )
+            ))
     }
 }

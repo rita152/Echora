@@ -249,11 +249,12 @@ impl SettingsView {
                     let result = reader.recv().await;
                     let _ = this.update(cx, |this, cx| {
                         let phase = match result {
-                            Ok(result) => {
-                                SettingsView::operation_phase(&result.outcome, "已安装插件")
-                            }
+                            Ok(result) => SettingsView::operation_phase(
+                                &result.outcome,
+                                crate::i18n::text("已安装插件"),
+                            ),
                             Err(_) => PluginOperationPhase::Unknown {
-                                message: "安装连接在返回结果前关闭".to_owned(),
+                                message: crate::i18n::text("安装连接在返回结果前关闭").to_owned(),
                             },
                         };
                         let target = intent.target();
@@ -292,11 +293,12 @@ impl SettingsView {
                     let result = reader.recv().await;
                     let _ = this.update(cx, |this, cx| {
                         let phase = match result {
-                            Ok(result) => {
-                                SettingsView::operation_phase(&result.outcome, "已卸载插件")
-                            }
+                            Ok(result) => SettingsView::operation_phase(
+                                &result.outcome,
+                                crate::i18n::text("已卸载插件"),
+                            ),
                             Err(_) => PluginOperationPhase::Unknown {
-                                message: "卸载连接在返回结果前关闭".to_owned(),
+                                message: crate::i18n::text("卸载连接在返回结果前关闭").to_owned(),
                             },
                         };
                         let settled = matches!(
@@ -334,11 +336,12 @@ impl SettingsView {
                     let result = reader.recv().await;
                     let _ = this.update(cx, |this, cx| {
                         let phase = match result {
-                            Ok(result) => {
-                                SettingsView::operation_phase(&result.outcome, "已更新插件目录")
-                            }
+                            Ok(result) => SettingsView::operation_phase(
+                                &result.outcome,
+                                crate::i18n::text("已更新插件目录"),
+                            ),
                             Err(_) => PluginOperationPhase::Unknown {
-                                message: "更新连接在返回结果前关闭".to_owned(),
+                                message: crate::i18n::text("更新连接在返回结果前关闭").to_owned(),
                             },
                         };
                         let settled = matches!(
@@ -376,11 +379,12 @@ impl SettingsView {
                     let result = reader.recv().await;
                     let _ = this.update(cx, |this, cx| {
                         let phase = match result {
-                            Ok(result) => {
-                                SettingsView::operation_phase(&result.outcome, "已移除 marketplace")
-                            }
+                            Ok(result) => SettingsView::operation_phase(
+                                &result.outcome,
+                                crate::i18n::text("已移除 marketplace"),
+                            ),
                             Err(_) => PluginOperationPhase::Unknown {
-                                message: "移除连接在返回结果前关闭".to_owned(),
+                                message: crate::i18n::text("移除连接在返回结果前关闭").to_owned(),
                             },
                         };
                         let settled = matches!(
@@ -418,11 +422,12 @@ impl SettingsView {
                     let result = reader.recv().await;
                     let _ = this.update(cx, |this, cx| {
                         let phase = match result {
-                            Ok(result) => {
-                                SettingsView::operation_phase(&result.outcome, "已添加 marketplace")
-                            }
+                            Ok(result) => SettingsView::operation_phase(
+                                &result.outcome,
+                                crate::i18n::text("已添加 marketplace"),
+                            ),
                             Err(_) => PluginOperationPhase::Unknown {
-                                message: "添加连接在返回结果前关闭".to_owned(),
+                                message: crate::i18n::text("添加连接在返回结果前关闭").to_owned(),
                             },
                         };
                         let settled = matches!(
@@ -454,7 +459,10 @@ impl SettingsView {
                     self.plugins_catalog.directory.shares_error =
                         Some(crate::agent::AgentPluginsError {
                             kind: crate::agent::AgentPluginsErrorKind::Protocol,
-                            message: "该插件没有本地路径，plugin/share/save 无法定位它".to_owned(),
+                            message: crate::i18n::text(
+                                "该插件没有本地路径，plugin/share/save 无法定位它",
+                            )
+                            .to_owned(),
                             data: None,
                             outcome_unknown: false,
                         });
@@ -482,14 +490,17 @@ impl SettingsView {
                                 }
                                 None => Some(crate::agent::AgentPluginsError {
                                     kind: crate::agent::AgentPluginsErrorKind::Protocol,
-                                    message: result.outcome.user_message("已共享插件"),
+                                    message: result
+                                        .outcome
+                                        .user_message(crate::i18n::text("已共享插件")),
                                     data: None,
                                     outcome_unknown: result.outcome.outcome_unknown(),
                                 }),
                             },
                             Err(_) => Some(crate::agent::AgentPluginsError {
                                 kind: crate::agent::AgentPluginsErrorKind::Connection,
-                                message: "共享请求连接在返回结果前关闭".to_owned(),
+                                message: crate::i18n::text("共享请求连接在返回结果前关闭")
+                                    .to_owned(),
                                 data: None,
                                 outcome_unknown: false,
                             }),
@@ -532,14 +543,16 @@ impl SettingsView {
                                 crate::agent::AgentPluginOperationOutcome::Succeeded(_) => None,
                                 other => Some(crate::agent::AgentPluginsError {
                                     kind: crate::agent::AgentPluginsErrorKind::Protocol,
-                                    message: other.user_message("已更新共享范围"),
+                                    message: other
+                                        .user_message(crate::i18n::text("已更新共享范围")),
                                     data: None,
                                     outcome_unknown: other.outcome_unknown(),
                                 }),
                             },
                             Err(_) => Some(crate::agent::AgentPluginsError {
                                 kind: crate::agent::AgentPluginsErrorKind::Connection,
-                                message: "共享请求连接在返回结果前关闭".to_owned(),
+                                message: crate::i18n::text("共享请求连接在返回结果前关闭")
+                                    .to_owned(),
                                 data: None,
                                 outcome_unknown: false,
                             }),
@@ -564,14 +577,15 @@ impl SettingsView {
                                 crate::agent::AgentPluginOperationOutcome::Succeeded(_) => None,
                                 other => Some(crate::agent::AgentPluginsError {
                                     kind: crate::agent::AgentPluginsErrorKind::Protocol,
-                                    message: other.user_message("已取消共享"),
+                                    message: other.user_message(crate::i18n::text("已取消共享")),
                                     data: None,
                                     outcome_unknown: other.outcome_unknown(),
                                 }),
                             },
                             Err(_) => Some(crate::agent::AgentPluginsError {
                                 kind: crate::agent::AgentPluginsErrorKind::Connection,
-                                message: "共享请求连接在返回结果前关闭".to_owned(),
+                                message: crate::i18n::text("共享请求连接在返回结果前关闭")
+                                    .to_owned(),
                                 data: None,
                                 outcome_unknown: false,
                             }),
@@ -703,7 +717,8 @@ impl SettingsView {
                 &key,
                 crate::agent::AgentPluginsError {
                     kind: crate::agent::AgentPluginsErrorKind::Protocol,
-                    message: "该插件没有远端 id，服务端不提供技能内容".to_owned(),
+                    message: crate::i18n::text("该插件没有远端 id，服务端不提供技能内容")
+                        .to_owned(),
                     data: None,
                     outcome_unknown: false,
                 },
@@ -771,7 +786,7 @@ impl SettingsView {
 fn disconnected_plugins_error() -> crate::agent::AgentPluginsError {
     crate::agent::AgentPluginsError {
         kind: crate::agent::AgentPluginsErrorKind::Connection,
-        message: "插件请求连接在返回结果前关闭".to_owned(),
+        message: crate::i18n::text("插件请求连接在返回结果前关闭").to_owned(),
         data: None,
         outcome_unknown: false,
     }
@@ -780,7 +795,7 @@ fn disconnected_plugins_error() -> crate::agent::AgentPluginsError {
 fn disconnected_apps_error() -> crate::agent::AgentAppsError {
     crate::agent::AgentAppsError {
         kind: crate::agent::AgentAppsErrorKind::Connection,
-        message: "应用请求连接在返回结果前关闭".to_owned(),
+        message: crate::i18n::text("应用请求连接在返回结果前关闭").to_owned(),
         data: None,
         outcome_unknown: false,
     }

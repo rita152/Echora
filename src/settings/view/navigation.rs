@@ -90,7 +90,7 @@ impl SettingsView {
         div()
             .id(slug)
             .role(gpui::Role::Button)
-            .aria_label(item.label)
+            .aria_label(crate::i18n::text(item.label))
             .aria_selected(selected)
             .focusable()
             .tab_stop(true)
@@ -135,7 +135,7 @@ impl SettingsView {
             })
             .on_click(cx.listener(move |this, _, _, cx| this.select(slug, cx)))
             .child(Self::nav_icon(slug, theme))
-            .child(item.label)
+            .child(crate::i18n::text(item.label))
     }
     pub(super) fn nav_group(
         &self,
@@ -161,7 +161,7 @@ impl SettingsView {
                 .line_height(px(21.0))
                 .font_weight(gpui::FontWeight(500.0))
                 .text_color(theme.text_tertiary)
-                .child(title),
+                .child(crate::i18n::text(title)),
         );
         for slug in slugs {
             if let Some(item) = page(slug) {

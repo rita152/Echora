@@ -208,7 +208,7 @@ impl FileApprovalPresentation {
             .as_deref()
             .map(str::trim)
             .filter(|reason| !reason.is_empty())
-            .unwrap_or("是否允许 ChatGPT 编辑以下文件？")
+            .unwrap_or(crate::i18n::text("是否允许 ChatGPT 编辑以下文件？"))
     }
 
     pub fn should_render(&self) -> bool {
@@ -573,7 +573,7 @@ pub fn render_file_approval_card(
     let header = div()
         .id(element_id("file-approval-header", &model.request_id))
         .role(Role::Alert)
-        .aria_label(format!("编辑文件，{}", model.question()))
+        .aria_label(crate::i18n::format!("编辑文件，{}" => "Edit files, {}", model.question()))
         .min_h(px(FILE_APPROVAL_HEADER_HEIGHT))
         .px(px(16.0))
         .pt(px(16.0))
@@ -592,7 +592,7 @@ pub fn render_file_approval_card(
                 .font_weight(FontWeight::NORMAL)
                 .text_color(palette.approval_secondary)
                 .child(icon("file-approval-edit", palette.approval_icon.into()).size(px(18.0)))
-                .child("编辑文件"),
+                .child(crate::i18n::text("编辑文件")),
         )
         .child(
             div()
@@ -684,8 +684,8 @@ fn render_approval_files(
                 .flex_none()
                 .min_w(px(0.0))
                 .role(Role::Button)
-                .aria_label(format!(
-                    "{}，增加 {} 行，删除 {} 行",
+                .aria_label(crate::i18n::format!(
+                    "{}，增加 {} 行，删除 {} 行" => "{}, {} lines added, {} lines removed",
                     file.path, file.additions, file.deletions
                 ))
                 .px(px(6.0))
@@ -736,7 +736,7 @@ fn render_approval_files(
                 .px(px(6.0))
                 .text_size(px(13.0))
                 .text_color(palette.tertiary)
-                .child("正在加载待审批的文件更改…"),
+                .child(crate::i18n::text("正在加载待审批的文件更改…")),
         );
     }
     div()
@@ -782,7 +782,7 @@ fn render_file_approval_actions(
                 div()
                     .id(element_id("file-approval-stop", &model.request_id))
                     .role(Role::Button)
-                    .aria_label("停止当前轮次")
+                    .aria_label(crate::i18n::text("停止当前轮次"))
                     .h(px(28.0))
                     .px(px(8.0))
                     .rounded_full()
@@ -796,14 +796,14 @@ fn render_file_approval_actions(
                     .on_click(move |_, window, cx| {
                         callback.emit(FileApprovalEvent::StopTurn, window, cx)
                     })
-                    .child("停止当前轮次"),
+                    .child(crate::i18n::text("停止当前轮次")),
             );
     }
     let decline_callback = callback.clone();
     let decline = div()
         .id(element_id("file-approval-decline", &model.request_id))
         .role(Role::Button)
-        .aria_label("拒绝文件修改")
+        .aria_label(crate::i18n::text("拒绝文件修改"))
         .h(px(FILE_APPROVAL_BUTTON_HEIGHT))
         .w(px(80.156_25))
         .px(px(8.0))
@@ -832,7 +832,7 @@ fn render_file_approval_actions(
                 cx,
             );
         })
-        .child("拒绝")
+        .child(crate::i18n::text("拒绝"))
         .child(keycap("Esc", palette.approval_decline_text));
 
     let primary_fill = if matches!(
@@ -847,7 +847,7 @@ fn render_file_approval_actions(
     let allow = div()
         .id(element_id("file-approval-once", &model.request_id))
         .role(Role::Button)
-        .aria_label("允许一次")
+        .aria_label(crate::i18n::text("允许一次"))
         .h(px(FILE_APPROVAL_BUTTON_HEIGHT))
         .w(px(93.140_625))
         .pl(px(8.0))
@@ -876,14 +876,14 @@ fn render_file_approval_actions(
                 cx,
             );
         })
-        .child("允许一次")
+        .child(crate::i18n::text("允许一次"))
         .child(keycap("⏎", palette.approval_primary_text));
 
     let menu_callback = callback;
     let menu_toggle = div()
         .id(element_id("file-approval-menu-toggle", &model.request_id))
         .role(Role::Button)
-        .aria_label("审批选项")
+        .aria_label(crate::i18n::text("审批选项"))
         .when(!model.changes_ready || !model.is_interactive(), |button| {
             button.opacity(0.4)
         })
@@ -943,7 +943,7 @@ fn render_file_approval_menu(
     div()
         .id(element_id("file-approval-menu", request_id))
         .role(Role::Menu)
-        .aria_label("审批选项")
+        .aria_label(crate::i18n::text("审批选项"))
         .absolute()
         .bottom(px(47.0))
         .right(px(17.75))
@@ -964,7 +964,7 @@ fn render_file_approval_menu(
         ])
         .child(file_approval_menu_row(
             element_id("file-approval-menu-once", request_id),
-            "允许一次",
+            crate::i18n::text("允许一次"),
             FileApprovalMenuItem::AllowOnce,
             focused == Some(FileApprovalMenuItem::AllowOnce),
             palette,
@@ -972,7 +972,7 @@ fn render_file_approval_menu(
         ))
         .child(file_approval_menu_row(
             element_id("file-approval-menu-all", request_id),
-            "允许所有修改",
+            crate::i18n::text("允许所有修改"),
             FileApprovalMenuItem::AllowAllEdits,
             focused == Some(FileApprovalMenuItem::AllowAllEdits),
             palette,
@@ -1114,7 +1114,7 @@ impl FileChangeActivityPresentation {
         let path = path.into();
         let review = DiffReviewPresentation::new(
             format!("file-change-{item_id}"),
-            "上一轮",
+            crate::i18n::text("上一轮"),
             vec![DiffFilePresentation {
                 path: path.clone(),
                 resolved_path: Some(path.clone()),
@@ -1164,7 +1164,7 @@ impl FileChangeActivityPresentation {
             .first()
             .map(|file| file.path.clone())
             .or_else(|| change.changes.first().map(|entry| entry.path.clone()))
-            .unwrap_or_else(|| "变更".to_owned());
+            .unwrap_or_else(|| crate::i18n::text("变更").to_owned());
         let mut presentation = Self::edited(
             change.id.clone(),
             path,
@@ -1183,13 +1183,13 @@ impl FileChangeActivityPresentation {
 
     pub fn title(&self) -> String {
         if self.review.files.is_empty() {
-            return "已编辑 0 个文件".to_owned();
+            return crate::i18n::text("已编辑 0 个文件").to_owned();
         }
         if self.review.files.len() > 1 {
-            return format!("已编辑 {} 个文件", self.review.files.len());
+            return crate::i18n::format!("已编辑 {} 个文件" => "Edited {} files", self.review.files.len());
         }
         let (_, name) = split_directory_and_name(&self.path);
-        format!("已编辑 {name}")
+        crate::i18n::format!("已编辑 {name}" => "Edited {name}")
     }
 }
 
@@ -1198,7 +1198,7 @@ impl FileChangeActivityPresentation {
 pub fn captured_file_change_activity_fixture(_state: &str) -> FileChangeActivityPresentation {
     let review = DiffReviewPresentation::new(
         "file-change-ui-capture-review",
-        "上一轮",
+        crate::i18n::text("上一轮"),
         vec![
             DiffFilePresentation {
                 path: "/Users/zp/Desktop/codex-cdp-multifile-approval-20260830-a.txt".to_owned(),
@@ -1254,8 +1254,8 @@ pub fn render_file_change_activity(
     let mut activity = div()
         .id(element_id("file-change-activity", &model.item_id))
         .role(Role::Group)
-        .aria_label(format!(
-            "{}，增加 {} 行，删除 {} 行",
+        .aria_label(crate::i18n::format!(
+            "{}，增加 {} 行，删除 {} 行" => "{}, {} lines added, {} lines removed",
             model.title(),
             model.additions,
             model.deletions
@@ -1271,9 +1271,9 @@ pub fn render_file_change_activity(
                 .role(Role::Button)
                 .aria_expanded(expanded)
                 .aria_label(if expanded {
-                    "已编辑的文件，折叠文件更改"
+                    crate::i18n::text("已编辑的文件，折叠文件更改")
                 } else {
-                    "已编辑的文件，展开文件更改"
+                    crate::i18n::text("已编辑的文件，展开文件更改")
                 })
                 .focusable()
                 .tab_stop(true)
@@ -1333,7 +1333,7 @@ pub fn render_file_change_activity(
                         .font_weight(FontWeight::NORMAL)
                         .text_color(row_color)
                         .group_hover(hover_group, move |label| label.text_color(theme.text))
-                        .child("已编辑的文件"),
+                        .child(crate::i18n::text("已编辑的文件")),
                 )
                 .child(
                     icon("settings-chevron-right", row_color.into())
@@ -1391,9 +1391,9 @@ pub(super) fn render_grouped_file_change(
             let key_callback = callback.clone();
             let (_, name) = split_directory_and_name(&file.path);
             let verb = match model.file_kinds.get(index) {
-                Some(AgentFileChangeKind::Add) => "已创建",
-                Some(AgentFileChangeKind::Delete) => "已删除",
-                _ => "已编辑",
+                Some(AgentFileChangeKind::Add) => crate::i18n::text("已创建"),
+                Some(AgentFileChangeKind::Delete) => crate::i18n::text("已删除"),
+                _ => crate::i18n::text("已编辑"),
             };
             let label = format!("{verb} {name}");
             let color = theme.text.alpha(0.60);
@@ -1418,9 +1418,9 @@ pub(super) fn render_grouped_file_change(
                             .tab_stop(true)
                             .role(Role::Button)
                             .aria_expanded(expanded)
-                            .aria_label(format!(
-                                "{label}，{}文件更改",
-                                if expanded { "折叠" } else { "展开" }
+                            .aria_label(crate::i18n::format!(
+                                "{label}，{}文件更改" => "{label}, {} file changes",
+                                if expanded { crate::i18n::text("折叠") } else { crate::i18n::text("展开") }
                             ))
                             .rounded(px(6.0))
                             .cursor_pointer()
@@ -1522,8 +1522,8 @@ fn render_inline_file_change_file(
             &format!("{item_id}-{index}"),
         ))
         .role(Role::Region)
-        .aria_label(format!(
-            "{name}，增加 {} 行，删除 {} 行",
+        .aria_label(crate::i18n::format!(
+            "{name}，增加 {} 行，删除 {} 行" => "{name}, {} lines added, {} lines removed",
             file.additions, file.deletions
         ))
         .w_full()
@@ -1560,7 +1560,9 @@ fn render_inline_file_change_file(
                             &format!("{item_id}-{index}"),
                         ))
                         .role(Role::Button)
-                        .aria_label(format!("复制 {name} 的路径"))
+                        .aria_label(
+                            crate::i18n::format!("复制 {name} 的路径" => "Copy path to {name}"),
+                        )
                         .size(px(24.0))
                         .flex_none()
                         .flex()
@@ -1778,7 +1780,7 @@ impl DiffReviewPresentation {
             }
             if current.is_none() && raw_line.starts_with("@@ ") {
                 current = Some(DiffFilePresentation {
-                    path: "变更".to_owned(),
+                    path: crate::i18n::text("变更").to_owned(),
                     resolved_path: None,
                     additions: 0,
                     deletions: 0,
@@ -2029,7 +2031,7 @@ pub const CAPTURED_LONG_TWO_FILE_TURN_DIFF: &str = include_str!(concat!(
 pub fn captured_diff_review_fixture(state: &str) -> DiffReviewPresentation {
     let mut review = DiffReviewPresentation::from_unified_diff(
         "turn-diff-ui-capture",
-        "上一轮",
+        crate::i18n::text("上一轮"),
         CAPTURED_LONG_TWO_FILE_TURN_DIFF,
         Some(Path::new("/Users/zp/Desktop/GPUI")),
     );
@@ -2098,7 +2100,13 @@ pub fn render_diff_review_panel(
                 .line_height(px(18.5714))
                 .text_color(palette.text)
                 .child(icon("panel-review", palette.text.into()).size(px(16.0)))
-                .child(div().min_w(px(0.0)).flex_1().truncate().child("审查"))
+                .child(
+                    div()
+                        .min_w(px(0.0))
+                        .flex_1()
+                        .truncate()
+                        .child(crate::i18n::text("审查")),
+                )
                 .child(
                     div()
                         .id(element_id("review-close", &model.review_id))
@@ -2183,7 +2191,7 @@ pub fn render_diff_review_panel(
     div()
         .id(element_id("diff-review", &model.review_id))
         .role(Role::Region)
-        .aria_label("审查文件更改")
+        .aria_label(crate::i18n::text("审查文件更改"))
         .h_full()
         .w_full()
         .min_h(px(0.0))
@@ -2214,7 +2222,7 @@ fn render_review_summary(model: &DiffReviewPresentation, palette: FilePalette) -
                 .h(px(24.0))
                 .flex()
                 .items_center()
-                .child("变更")
+                .child(crate::i18n::text("变更"))
                 .child(div().flex_1())
                 .child(change_counts(
                     model.total_additions(),
@@ -2222,9 +2230,9 @@ fn render_review_summary(model: &DiffReviewPresentation, palette: FilePalette) -
                     palette,
                 )),
         )
-        .child("本地")
+        .child(crate::i18n::text("本地"))
         .child("main")
-        .child("提交或推送")
+        .child(crate::i18n::text("提交或推送"))
 }
 
 fn render_review_file(
@@ -2548,7 +2556,7 @@ fn render_review_file_tree(model: &DiffReviewPresentation, palette: FilePalette)
                 .border_color(palette.outline)
                 .bg(palette.soft)
                 .text_color(palette.tertiary)
-                .child("⌕  筛选文件…"),
+                .child(crate::i18n::text("⌕  筛选文件…")),
         );
     for (index, file) in model.files.iter().enumerate() {
         let (directory, name) = split_directory_and_name(&file.path);

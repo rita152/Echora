@@ -336,41 +336,26 @@ impl ChatApp {
             },
         )
         .detach();
+        cx.subscribe(
+            &settings,
+            |this, _, event: &crate::settings::ChangeLanguage, cx| {
+                crate::i18n::set_language(event.0);
+                this.workspace_store.set_language(event.0);
+                // Invalidate hidden views too: a window refresh only redraws
+                // the settings subtree currently on screen.
+                this.refresh_child_views(cx);
+                cx.refresh_windows();
+                cx.notify();
+            },
+        )
+        .detach();
         cx.subscribe(&settings, |this, _, event: &ChangeTheme, cx| {
             this.mode = event.0;
-            for panel in this.file_panels.values() {
-                panel.update(cx, |panel, cx| panel.set_mode(event.0, cx));
-            }
-            for panel in this.review_panels.values() {
-                panel.update(cx, |panel, cx| panel.set_mode(event.0, cx));
-            }
-            for panel in this.terminal_panels.values() {
-                panel.update(cx, |panel, cx| panel.set_mode(event.0, cx));
-            }
-            for panel in this.side_chat_panels.values() {
-                panel.update(cx, |panel, cx| panel.set_mode(event.0, cx));
-            }
             cx.set_window_appearance(Some(match event.0 {
                 ThemeMode::Light => WindowAppearance::Light,
                 ThemeMode::Dark => WindowAppearance::Dark,
             }));
-            this.sidebar.update(cx, |sidebar, cx| {
-                sidebar.set_mode(event.0, cx);
-            });
-            this.chat_search.update(cx, |search, cx| {
-                search.set_mode(event.0, cx);
-            });
-            this.home.update(cx, |home, cx| {
-                home.set_mode(event.0, cx);
-            });
-            for host in this.conversation_hosts.values() {
-                host.composer.update(cx, |composer, cx| {
-                    composer.set_mode(event.0, cx);
-                });
-            }
-            if let Some(panel) = &this.right_panel.subagent {
-                panel.home.update(cx, |home, cx| home.set_mode(event.0, cx));
-            }
+            this.refresh_child_views(cx);
             cx.notify();
         })
         .detach();
@@ -498,6 +483,44 @@ impl ChatApp {
         }
     }
 
+    /// Reapply presentation to child entities, including cached inputs that
+    /// are hidden while settings are open. Preserves drafts and session state.
+    fn refresh_child_views(&mut self, cx: &mut Context<Self>) {
+        for panel in self.file_panels.values() {
+            panel.update(cx, |panel, cx| panel.set_mode(self.mode, cx));
+        }
+        for panel in self.review_panels.values() {
+            panel.update(cx, |panel, cx| panel.set_mode(self.mode, cx));
+        }
+        for panel in self.terminal_panels.values() {
+            panel.update(cx, |panel, cx| panel.set_mode(self.mode, cx));
+        }
+        for panel in self.side_chat_panels.values() {
+            panel.update(cx, |panel, cx| panel.set_mode(self.mode, cx));
+        }
+        self.sidebar.update(cx, |sidebar, cx| {
+            sidebar.set_mode(self.mode, cx);
+        });
+        self.chat_search.update(cx, |search, cx| {
+            search.set_mode(self.mode, cx);
+        });
+        self.home.update(cx, |home, cx| {
+            home.set_mode(self.mode, cx);
+        });
+        for host in self.conversation_hosts.values() {
+            host.composer.update(cx, |composer, cx| {
+                composer.set_mode(self.mode, cx);
+            });
+        }
+        if let Some(panel) = &self.right_panel.subagent {
+            panel
+                .home
+                .update(cx, |home, cx| home.set_mode(self.mode, cx));
+        }
+        self.pull_requests
+            .update(cx, |view, cx| view.set_mode(self.mode, cx));
+    }
+
     /// Reduces the account parts of a connection event. These events never
     /// touch a conversation or a turn.
     fn apply_account_event(&mut self, event: AgentConnectionEvent, cx: &mut Context<Self>) {
@@ -563,8 +586,12 @@ impl ChatApp {
             let status = match (&account_result, &limits_result) {
                 (Ok(Ok(_)), Ok(Ok(_))) => AccountLoadStatus::Loaded,
                 (Ok(Err(error)), _) => AccountLoadStatus::Failed(error.clone()),
-                (Err(_), _) => AccountLoadStatus::Failed("账户连接在返回结果前关闭".to_owned()),
-                (_, Err(_)) => AccountLoadStatus::Failed("配额连接在返回结果前关闭".to_owned()),
+                (Err(_), _) => AccountLoadStatus::Failed(
+                    crate::i18n::text("账户连接在返回结果前关闭").to_owned(),
+                ),
+                (_, Err(_)) => AccountLoadStatus::Failed(
+                    crate::i18n::text("配额连接在返回结果前关闭").to_owned(),
+                ),
                 (_, Ok(Err(error))) => AccountLoadStatus::Failed(error.clone()),
             };
             let _ = this.update(cx, |this, cx| {
@@ -612,7 +639,7 @@ impl ChatApp {
                         this.account.dialog = Some(AccountDialog::Login);
                     }
                     Err(_) => {
-                        let error = "登录连接在返回结果前关闭".to_owned();
+                        let error = crate::i18n::text("登录连接在返回结果前关闭").to_owned();
                         this.account.state.apply_login_failed(None, error.clone());
                         this.account.action_error = Some(error);
                         this.account.dialog = Some(AccountDialog::Login);
@@ -633,7 +660,8 @@ impl ChatApp {
                     Ok(Ok(_)) => this.account.action_error = None,
                     Ok(Err(error)) => this.account.action_error = Some(error),
                     Err(_) => {
-                        this.account.action_error = Some("取消登录连接在返回结果前关闭".to_owned())
+                        this.account.action_error =
+                            Some(crate::i18n::text("取消登录连接在返回结果前关闭").to_owned())
                     }
                 }
                 this.sync_account_view(cx);
@@ -662,7 +690,7 @@ impl ChatApp {
                         this.account.action_error = Some(error);
                     }
                     Err(_) => {
-                        let error = "退出登录连接在返回结果前关闭".to_owned();
+                        let error = crate::i18n::text("退出登录连接在返回结果前关闭").to_owned();
                         this.account.status = AccountLoadStatus::Failed(error.clone());
                         this.account.action_error = Some(error);
                     }

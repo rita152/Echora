@@ -183,9 +183,13 @@ pub struct AgentAppsError {
 impl AgentAppsError {
     pub fn user_message(&self) -> String {
         match self.kind {
-            AgentAppsErrorKind::Unsupported => "当前 coding agent 不支持应用目录".to_owned(),
-            AgentAppsErrorKind::Connection => "与 coding agent 的连接已断开".to_owned(),
-            AgentAppsErrorKind::Protocol => "应用目录请求失败".to_owned(),
+            AgentAppsErrorKind::Unsupported => {
+                crate::i18n::text("当前 coding agent 不支持应用目录").to_owned()
+            }
+            AgentAppsErrorKind::Connection => {
+                crate::i18n::text("与 coding agent 的连接已断开").to_owned()
+            }
+            AgentAppsErrorKind::Protocol => crate::i18n::text("应用目录请求失败").to_owned(),
         }
     }
 }

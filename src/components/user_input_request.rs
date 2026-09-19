@@ -110,7 +110,7 @@ impl UserInputQuestionPresentation {
             question: question.into(),
             options,
             allows_other: true,
-            other_placeholder: "否，并告诉 ChatGPT 应该如何做得不同".to_owned(),
+            other_placeholder: crate::i18n::text("否，并告诉 ChatGPT 应该如何做得不同").to_owned(),
             is_secret: false,
         }
     }
@@ -118,7 +118,7 @@ impl UserInputQuestionPresentation {
     pub fn display_question(&self) -> &str {
         non_empty(self.question.as_str())
             .or_else(|| self.header.as_deref().and_then(non_empty))
-            .unwrap_or("请选择一个选项。")
+            .unwrap_or(crate::i18n::text("请选择一个选项。"))
     }
 
     pub fn recommended_option_index(&self) -> Option<usize> {
@@ -605,7 +605,7 @@ pub fn captured_multi_question_fixture(
 
     match state {
         "multi-q2-navigation" => {
-            model.save_selected_option(1, "红色".to_owned());
+            model.save_selected_option(1, crate::i18n::text("红色").to_owned());
             model.next_question();
             // N02/N04 stabilized with the checked first option active. D02
             // instead retained the pointer over the second row after next.
@@ -615,7 +615,7 @@ pub fn captured_multi_question_fixture(
             };
         }
         "multi-previous-answer" => {
-            model.save_selected_option(1, "红色".to_owned());
+            model.save_selected_option(1, crate::i18n::text("红色").to_owned());
             model.next_question();
             model.previous_question();
             model.visual_state = UserInputVisualState::option_active(1);
@@ -864,7 +864,7 @@ pub fn render_user_input_request(
                     question_id.as_str(),
                 ))
                 .role(Role::Button)
-                .aria_label("忽略")
+                .aria_label(crate::i18n::text("忽略"))
                 .size(px(26.0))
                 .relative()
                 .flex()
@@ -950,14 +950,14 @@ fn render_user_input_status(model: &UserInputRequestPresentation, theme: Theme) 
     let title = model
         .current_question()
         .map(UserInputQuestionPresentation::display_question)
-        .unwrap_or("用户输入请求")
+        .unwrap_or(crate::i18n::text("用户输入请求"))
         .to_owned();
     let status = match model.status {
-        UserInputRequestStatus::Submitting => "正在提交…",
-        UserInputRequestStatus::Cancelled => "请求已取消",
-        UserInputRequestStatus::Failed => "提交失败",
-        UserInputRequestStatus::Pending => "等待输入",
-        UserInputRequestStatus::Resolved => "已完成",
+        UserInputRequestStatus::Submitting => crate::i18n::text("正在提交…"),
+        UserInputRequestStatus::Cancelled => crate::i18n::text("请求已取消"),
+        UserInputRequestStatus::Failed => crate::i18n::text("提交失败"),
+        UserInputRequestStatus::Pending => crate::i18n::text("等待输入"),
+        UserInputRequestStatus::Resolved => crate::i18n::text("已完成"),
     };
     div()
         .id(element_id("user-input-card", &model.request_id, "status"))
@@ -1028,7 +1028,7 @@ fn render_question_navigation(
                     model.current_question_index,
                 ))
                 .role(Role::Button)
-                .aria_label("上一题")
+                .aria_label(crate::i18n::text("上一题"))
                 .size(px(24.0))
                 .relative()
                 .p(px(4.0))
@@ -1076,7 +1076,9 @@ fn render_question_navigation(
                     model.current_question_index,
                 ))
                 .role(Role::Status)
-                .aria_label(format!("问题 {}", model.progress_label()))
+                .aria_label(
+                    crate::i18n::format!("问题 {}" => "Question {}", model.progress_label()),
+                )
                 .h(px(16.0))
                 .text_color(palette.secondary)
                 .child(model.progress_label()),
@@ -1089,7 +1091,7 @@ fn render_question_navigation(
                     model.current_question_index,
                 ))
                 .role(Role::Button)
-                .aria_label("下一题")
+                .aria_label(crate::i18n::text("下一题"))
                 .size(px(24.0))
                 .relative()
                 .p(px(4.0))
@@ -1191,7 +1193,7 @@ fn render_option(
                 .line_height(px(12.0))
                 .font_weight(FontWeight::NORMAL)
                 .text_color(palette.recommendation_text)
-                .child("推荐"),
+                .child(crate::i18n::text("推荐")),
         );
     }
 
@@ -1421,7 +1423,7 @@ fn render_other_row(
                     question.id.as_str(),
                 ))
                 .role(Role::Button)
-                .aria_label("跳过")
+                .aria_label(crate::i18n::text("跳过"))
                 .h(px(USER_INPUT_SKIP_HEIGHT))
                 .px(px(8.0))
                 .relative()
@@ -1481,9 +1483,9 @@ fn render_other_row(
                     )
                 })
                 .child(if has_other_answer {
-                    "下一步"
+                    crate::i18n::text("下一步")
                 } else {
-                    "跳过"
+                    crate::i18n::text("跳过")
                 }),
         )
 }

@@ -62,16 +62,26 @@ pub(super) enum PluginConfirmation {
 impl PluginConfirmation {
     fn title(&self) -> String {
         match self {
-            Self::Install { display_name, .. } => format!("安装 {display_name}"),
-            Self::Uninstall { display_name, .. } => format!("卸载 {display_name}"),
-            Self::MarketplaceUpgrade { .. } => "更新插件目录".to_owned(),
-            Self::MarketplaceRemove { marketplace_name } => {
-                format!("移除 {marketplace_name}")
+            Self::Install { display_name, .. } => {
+                crate::i18n::format!("安装 {display_name}" => "Install {display_name}")
             }
-            Self::MarketplaceAdd { source } => format!("添加 {source}"),
-            Self::ShareSave { display_name, .. } => format!("共享 {display_name}"),
-            Self::ShareUpdateTargets { .. } => "更新共享范围".to_owned(),
-            Self::ShareDelete { remote_plugin_id } => format!("取消共享 {remote_plugin_id}"),
+            Self::Uninstall { display_name, .. } => {
+                crate::i18n::format!("卸载 {display_name}" => "Uninstall {display_name}")
+            }
+            Self::MarketplaceUpgrade { .. } => crate::i18n::text("更新插件目录").to_owned(),
+            Self::MarketplaceRemove { marketplace_name } => {
+                crate::i18n::format!("移除 {marketplace_name}" => "Remove {marketplace_name}")
+            }
+            Self::MarketplaceAdd { source } => {
+                crate::i18n::format!("添加 {source}" => "Add {source}")
+            }
+            Self::ShareSave { display_name, .. } => {
+                crate::i18n::format!("共享 {display_name}" => "Share {display_name}")
+            }
+            Self::ShareUpdateTargets { .. } => crate::i18n::text("更新共享范围").to_owned(),
+            Self::ShareDelete { remote_plugin_id } => {
+                crate::i18n::format!("取消共享 {remote_plugin_id}" => "Unshare {remote_plugin_id}")
+            }
         }
     }
 
@@ -81,20 +91,27 @@ impl PluginConfirmation {
                 plugin_name,
                 marketplace_name,
                 ..
-            } => format!("将从 {marketplace_name} 安装插件 {plugin_name}。"),
+            } => {
+                crate::i18n::format!("将从 {marketplace_name} 安装插件 {plugin_name}。" => "Install plugin {plugin_name} from {marketplace_name}.")
+            }
             Self::Uninstall { plugin_id, .. } => {
-                format!("将卸载插件 {plugin_id}；它的技能与 MCP 服务器会同时移除。")
+                crate::i18n::format!("将卸载插件 {plugin_id}；它的技能与 MCP 服务器会同时移除。" => "Uninstall plugin {plugin_id}, including its skills and MCP servers.")
             }
             Self::MarketplaceUpgrade { marketplace_name } => match marketplace_name {
-                Some(name) => format!("将重新拉取 {name} 的插件目录。"),
-                None => "将重新拉取全部插件目录。".to_owned(),
+                Some(name) => {
+                    crate::i18n::format!("将重新拉取 {name} 的插件目录。" => "Refresh the plugin catalog for {name}.")
+                }
+                None => crate::i18n::text("将重新拉取全部插件目录。").to_owned(),
             },
             Self::MarketplaceRemove { marketplace_name } => {
-                format!("将移除 marketplace {marketplace_name}。")
+                crate::i18n::format!("将移除 marketplace {marketplace_name}。" => "Remove marketplace {marketplace_name}.")
             }
-            Self::MarketplaceAdd { source } => format!("将从 {source} 添加一个 marketplace。"),
+            Self::MarketplaceAdd { source } => {
+                crate::i18n::format!("将从 {source} 添加一个 marketplace。" => "Add a marketplace from {source}.")
+            }
             Self::ShareSave { .. } => {
-                "将把这个插件发布到账号的插件服务，并保留服务端返回的共享链接。".to_owned()
+                crate::i18n::text("将把这个插件发布到账号的插件服务，并保留服务端返回的共享链接。")
+                    .to_owned()
             }
             Self::ShareUpdateTargets {
                 discoverability,
@@ -103,25 +120,25 @@ impl PluginConfirmation {
                 ..
             } => match blocked {
                 Some(reason) => reason.clone(),
-                None => format!(
-                    "将共享范围改为 {discoverability:?}，共 {} 个目标。",
+                None => crate::i18n::format!(
+                    "将共享范围改为 {discoverability:?}，共 {} 个目标。" => "Change sharing scope to {discoverability:?}, with {} targets.",
                     targets.len()
                 ),
             },
-            Self::ShareDelete { .. } => "将删除这个插件的共享记录。".to_owned(),
+            Self::ShareDelete { .. } => crate::i18n::text("将删除这个插件的共享记录。").to_owned(),
         }
     }
 
     fn confirm_label(&self) -> &'static str {
         match self {
-            Self::Install { .. } => "安装",
-            Self::Uninstall { .. } => "卸载",
-            Self::MarketplaceUpgrade { .. } => "更新",
-            Self::MarketplaceRemove { .. } => "移除",
-            Self::MarketplaceAdd { .. } => "添加",
-            Self::ShareSave { .. } => "共享",
-            Self::ShareUpdateTargets { .. } => "更新",
-            Self::ShareDelete { .. } => "取消共享",
+            Self::Install { .. } => crate::i18n::text("安装"),
+            Self::Uninstall { .. } => crate::i18n::text("卸载"),
+            Self::MarketplaceUpgrade { .. } => crate::i18n::text("更新"),
+            Self::MarketplaceRemove { .. } => crate::i18n::text("移除"),
+            Self::MarketplaceAdd { .. } => crate::i18n::text("添加"),
+            Self::ShareSave { .. } => crate::i18n::text("共享"),
+            Self::ShareUpdateTargets { .. } => crate::i18n::text("更新"),
+            Self::ShareDelete { .. } => crate::i18n::text("取消共享"),
         }
     }
 }
@@ -340,12 +357,16 @@ impl SettingsView {
         let directory = &self.plugins_catalog.directory;
         let mut list = div().mt(px(36.0)).flex().flex_col().gap(px(8.0));
         if directory.loading && directory.catalog.is_none() {
-            list = list.child(self.catalog_state_card("正在读取插件目录…", None, theme));
+            list = list.child(self.catalog_state_card(
+                crate::i18n::text("正在读取插件目录…"),
+                None,
+                theme,
+            ));
         }
         if let Some(catalog) = &directory.catalog {
             list = list.child(self.catalog_state_card(
-                &format!(
-                    "已安装 {} / 共 {} 个插件",
+                &crate::i18n::format!(
+                    "已安装 {} / 共 {} 个插件" => "{} installed / {} plugins total",
                     catalog.installed_plugin_count(),
                     catalog.plugins().count()
                 ),
@@ -362,8 +383,8 @@ impl SettingsView {
         }
         if directory.stale {
             list = list.child(self.catalog_state_card(
-                "插件目录已在后端更新",
-                Some("重新打开插件页或刷新目录以读取最新状态"),
+                crate::i18n::text("插件目录已在后端更新"),
+                Some(crate::i18n::text("重新打开插件页或刷新目录以读取最新状态")),
                 theme,
             ));
         }
@@ -373,7 +394,11 @@ impl SettingsView {
             }
         }
         if directory.busy() {
-            list = list.child(self.catalog_state_card("正在处理插件操作…", None, theme));
+            list = list.child(self.catalog_state_card(
+                crate::i18n::text("正在处理插件操作…"),
+                None,
+                theme,
+            ));
         }
         if let Some(confirmation) = &self.plugins_catalog.confirmation {
             list = list.child(self.confirmation_card(confirmation, theme, cx));
@@ -394,7 +419,7 @@ impl SettingsView {
                 + reconcile.failed_materialization_remote_plugin_ids.len();
             if changed > 0 || failed > 0 {
                 list = list.child(self.catalog_state_card(
-                    &format!("启动核对：{changed} 个插件已更新，{failed} 个失败"),
+                    &crate::i18n::format!("启动核对：{changed} 个插件已更新，{failed} 个失败" => "Startup check: {changed} plugins updated, {failed} failed"),
                     None,
                     theme,
                 ));
@@ -404,9 +429,9 @@ impl SettingsView {
         let rows = directory.visible_plugins();
         if rows.is_empty() && !directory.loading && directory.error.is_none() {
             let message = if directory.search_term.trim().is_empty() {
-                "插件目录中没有任何条目"
+                crate::i18n::text("插件目录中没有任何条目")
             } else {
-                "没有匹配的插件"
+                crate::i18n::text("没有匹配的插件")
             };
             list = list.child(self.catalog_state_card(message, None, theme));
         }
@@ -466,7 +491,11 @@ impl SettingsView {
         // for a while; rendering an empty panel would look like a valid empty
         // catalog and diverge from the reference loading treatment.
         if directory.page.is_none() && !directory.resolved() {
-            list = list.child(self.catalog_state_card("正在读取应用目录…", None, theme));
+            list = list.child(self.catalog_state_card(
+                crate::i18n::text("正在读取应用目录…"),
+                None,
+                theme,
+            ));
         }
         if let Some(error) = &directory.error {
             list = list.child(self.catalog_state_card(
@@ -477,14 +506,18 @@ impl SettingsView {
         }
         if directory.stale {
             list = list.child(self.catalog_state_card(
-                "应用目录已在后端更新",
-                Some("重新打开应用页或刷新目录以读取最新状态"),
+                crate::i18n::text("应用目录已在后端更新"),
+                Some(crate::i18n::text("重新打开应用页或刷新目录以读取最新状态")),
                 theme,
             ));
         }
         let entries = directory.entries();
         if entries.is_empty() && directory.resolved() && directory.error.is_none() {
-            list = list.child(self.catalog_state_card("尚未连接任何应用", None, theme));
+            list = list.child(self.catalog_state_card(
+                crate::i18n::text("尚未连接任何应用"),
+                None,
+                theme,
+            ));
         }
         for (index, app) in entries.iter().enumerate() {
             let app_id = app.id.clone();
@@ -676,7 +709,7 @@ impl SettingsView {
                                         let name = upgrade_name.clone();
                                         this.confirm_marketplace_upgrade(name, cx);
                                     }))
-                                    .child("更新"),
+                                    .child(crate::i18n::text("更新")),
                             )
                             .child(
                                 div()
@@ -696,7 +729,7 @@ impl SettingsView {
                                         this.plugins_catalog.confirmation = Some(remove.clone());
                                         cx.notify();
                                     }))
-                                    .child("移除"),
+                                    .child(crate::i18n::text("移除")),
                             ),
                     ),
             );
@@ -779,7 +812,7 @@ impl SettingsView {
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.dismiss_catalog_confirmation(cx);
                             }))
-                            .child("取消"),
+                            .child(crate::i18n::text("取消")),
                     ),
             )
             .into_any_element()
@@ -817,8 +850,8 @@ impl SettingsView {
                     .text_size(px(12.0))
                     .line_height(px(16.0))
                     .text_color(theme.settings_description)
-                    .child(format!(
-                        "来源：{} · 市场：{}",
+                    .child(crate::i18n::format!(
+                        "来源：{} · 市场：{}" => "Source: {} · Marketplace: {}",
                         detail.summary.source.kind(),
                         detail.marketplace_name
                     ))
@@ -857,7 +890,7 @@ impl SettingsView {
                             cx,
                         );
                     }))
-                    .child(format!("技能：{}", skill.name)),
+                    .child(crate::i18n::format!("技能：{}" => "Skill: {}", skill.name)),
             );
         }
         for server in &detail.mcp_servers {
@@ -877,7 +910,7 @@ impl SettingsView {
                     .text_color(theme.text_tertiary)
                     .child(match &content.contents {
                         Some(contents) => contents.chars().take(400).collect::<String>(),
-                        None => "服务端未返回该技能内容".to_owned(),
+                        None => crate::i18n::text("服务端未返回该技能内容").to_owned(),
                     }),
             );
         }
@@ -918,7 +951,7 @@ impl SettingsView {
                     this.plugins_catalog.confirmation = Some(share_save.clone());
                     cx.notify();
                 }))
-                .child("共享"),
+                .child(crate::i18n::text("共享")),
         );
         if let Some(remote_plugin_id) = remote_plugin_id {
             let discoverability = detail
@@ -951,8 +984,8 @@ impl SettingsView {
                         });
                     }
                     crate::agent::AgentPluginShareRole::Owner => {
-                        blocked = Some(format!(
-                            "服务端共享列表包含 owner 角色（{}），更新接口无法表达该角色",
+                        blocked = Some(crate::i18n::format!(
+                            "服务端共享列表包含 owner 角色（{}），更新接口无法表达该角色" => "The server sharing list includes an owner role ({}) that the update interface cannot represent",
                             principal.name
                         ));
                     }
@@ -986,7 +1019,7 @@ impl SettingsView {
                             this.plugins_catalog.confirmation = Some(update.clone());
                             cx.notify();
                         }))
-                        .child("更新共享范围"),
+                        .child(crate::i18n::text("更新共享范围")),
                 )
                 .child(
                     div()
@@ -1006,7 +1039,7 @@ impl SettingsView {
                             this.plugins_catalog.confirmation = Some(delete.clone());
                             cx.notify();
                         }))
-                        .child("取消共享"),
+                        .child(crate::i18n::text("取消共享")),
                 );
         }
         card = card.child(share_actions);
@@ -1026,8 +1059,8 @@ impl SettingsView {
                         .text_size(px(12.0))
                         .line_height(px(16.0))
                         .text_color(theme.text_tertiary)
-                        .child(format!(
-                            "已共享：{}（{}）",
+                        .child(crate::i18n::format!(
+                            "已共享：{}（{}）" => "Shared: {} ({})",
                             entry.plugin.display_name(),
                             entry.plugin.remote_plugin_id.as_deref().unwrap_or("—")
                         )),
@@ -1043,7 +1076,7 @@ impl SettingsView {
                 .text_color(theme.settings_description)
                 .cursor_pointer()
                 .on_click(cx.listener(|this, _, _, cx| this.refresh_plugin_shares(cx)))
-                .child("读取已共享的插件"),
+                .child(crate::i18n::text("读取已共享的插件")),
         );
         card.into_any_element()
     }

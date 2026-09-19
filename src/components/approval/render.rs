@@ -83,7 +83,7 @@ pub fn render_approval_card(
                                 .flex_wrap()
                                 .items_center()
                                 .gap(px(4.0))
-                                .child("允许 ChatGPT 与")
+                                .child(crate::i18n::text("允许 ChatGPT 与"))
                                 .child(
                                     div()
                                         .id(approval_element_id(
@@ -113,7 +113,7 @@ pub fn render_approval_card(
                                         )
                                         .child(destination.clone()),
                                 )
-                                .child("建立连接？"),
+                                .child(crate::i18n::text("建立连接？")),
                         )
                         .child(
                             div()
@@ -129,7 +129,7 @@ pub fn render_approval_card(
                                         .filter(|value| !value.is_empty())
                                         .map(str::to_owned)
                                         .unwrap_or_else(|| {
-                                            format!("{host} 不在当前网络允许列表中")
+                                            crate::i18n::format!("{host} 不在当前网络允许列表中" => "{host} is not on the current network allowlist")
                                         }),
                                 ),
                         )
@@ -187,9 +187,9 @@ pub fn render_approval_card(
                                     ))
                                     .role(Role::Button)
                                     .aria_label(if model.preview_expanded {
-                                        "收起命令预览"
+                                        crate::i18n::text("收起命令预览")
                                     } else {
-                                        "展开命令预览"
+                                        crate::i18n::text("展开命令预览")
                                     })
                                     .h(px(24.0))
                                     .px(px(8.0))
@@ -205,9 +205,9 @@ pub fn render_approval_card(
                                         toggle.emit(ApprovalCardEvent::TogglePreview, w, cx)
                                     })
                                     .child(if model.preview_expanded {
-                                        "收起"
+                                        crate::i18n::text("收起")
                                     } else {
-                                        "展开"
+                                        crate::i18n::text("展开")
                                     }),
                             ),
                         )
@@ -260,7 +260,7 @@ pub fn render_approval_card(
                 div()
                     .id(approval_element_id("approval-stop", &model.request_id))
                     .role(Role::Button)
-                    .aria_label("停止当前轮次")
+                    .aria_label(crate::i18n::text("停止当前轮次"))
                     .h(px(28.0))
                     .px(px(8.0))
                     .rounded_full()
@@ -274,7 +274,7 @@ pub fn render_approval_card(
                     .on_click(move |_, window, cx| {
                         stop.emit(ApprovalCardEvent::StopTurn, window, cx)
                     })
-                    .child("停止当前轮次"),
+                    .child(crate::i18n::text("停止当前轮次")),
             );
         return Some(
             div()
@@ -300,7 +300,7 @@ pub fn render_approval_card(
         .filter(|(_, c)| c.kind == ApprovalChoiceKind::NetworkAllow)
     {
         let mut choice = choice.clone();
-        choice.label = "始终允许".to_owned();
+        choice.label = crate::i18n::text("始终允许").to_owned();
         actions = actions.child(action_button(
             model,
             i,
@@ -313,7 +313,7 @@ pub fn render_approval_card(
     }
     actions = actions.child(div().flex_1());
     if let Some((i, mut choice)) = model.reject_choice() {
-        choice.label = "拒绝".to_owned();
+        choice.label = crate::i18n::text("拒绝").to_owned();
         actions = actions.child(action_button(
             model,
             i,
@@ -354,7 +354,7 @@ pub fn render_approval_card(
                                 &model.request_id,
                             ))
                             .role(Role::Button)
-                            .aria_label("审批选项")
+                            .aria_label(crate::i18n::text("审批选项"))
                             .w(px(23.0))
                             .h(px(APPROVAL_BUTTON_HEIGHT))
                             .rounded_r(px(999.0))
@@ -391,7 +391,7 @@ pub fn render_approval_card(
         let mut menu = div()
             .id(approval_element_id("approval-menu", &model.request_id))
             .role(Role::Menu)
-            .aria_label("审批选项")
+            .aria_label(crate::i18n::text("审批选项"))
             .absolute()
             .bottom(px(47.0))
             .right(px(17.75))

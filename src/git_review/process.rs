@@ -82,7 +82,9 @@ pub(crate) fn run(
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
-    let child = command.spawn().context("无法启动审查命令")?;
+    let child = command
+        .spawn()
+        .context(crate::i18n::text("无法启动审查命令"))?;
     if let Ok(mut pids) = PROCESSES.lock() {
         pids.push(child.id());
     }
@@ -90,13 +92,25 @@ pub(crate) fn run(
         child,
         finished: false,
     };
-    let stdout = running.child.stdout.take().context("命令输出不可用")?;
-    let stderr = running.child.stderr.take().context("命令错误输出不可用")?;
+    let stdout = running
+        .child
+        .stdout
+        .take()
+        .context(crate::i18n::text("命令输出不可用"))?;
+    let stderr = running
+        .child
+        .stderr
+        .take()
+        .context(crate::i18n::text("命令错误输出不可用"))?;
     let reader = std::thread::spawn(move || read_limited(stdout, MAX_OUTPUT));
     let errors = std::thread::spawn(move || read_limited(stderr, 64 * 1024));
     // Writing stdin must also respect the deadline when a hook/helper stops reading.
     let writer = if let Some(input) = input {
-        let mut stdin = running.child.stdin.take().context("命令输入不可用")?;
+        let mut stdin = running
+            .child
+            .stdin
+            .take()
+            .context(crate::i18n::text("命令输入不可用"))?;
         let input = input.to_vec();
         Some(std::thread::spawn(move || stdin.write_all(&input)))
     } else {
@@ -104,7 +118,10 @@ pub(crate) fn run(
     };
     let start = Instant::now();
     let status = loop {
-        let status = running.child.try_wait().context("无法读取命令状态")?;
+        let status = running
+            .child
+            .try_wait()
+            .context(crate::i18n::text("无法读取命令状态"))?;
         if let Some(status) = status
             && reader.is_finished()
             && errors.is_finished()
@@ -113,24 +130,26 @@ pub(crate) fn run(
             break status;
         }
         if start.elapsed() >= timeout {
-            bail!("审查命令超时，已停止相关进程，请刷新后重试");
+            bail!(crate::i18n::text(
+                "审查命令超时，已停止相关进程，请刷新后重试"
+            ));
         }
         std::thread::sleep(Duration::from_millis(10));
     };
     running.finished = true;
     let stdout = reader
         .join()
-        .map_err(|_| anyhow::anyhow!("读取命令输出失败"))??;
+        .map_err(|_| anyhow::anyhow!(crate::i18n::text("读取命令输出失败")))??;
     let stderr = errors
         .join()
-        .map_err(|_| anyhow::anyhow!("读取命令错误失败"))??;
+        .map_err(|_| anyhow::anyhow!(crate::i18n::text("读取命令错误失败")))??;
     if let Some(writer) = writer {
         writer
             .join()
-            .map_err(|_| anyhow::anyhow!("写入命令输入失败"))??;
+            .map_err(|_| anyhow::anyhow!(crate::i18n::text("写入命令输入失败")))??;
     }
     if stdout.len() > MAX_OUTPUT {
-        bail!("差异过大，请选择较小的审查范围");
+        bail!(crate::i18n::text("差异过大，请选择较小的审查范围"));
     }
     Ok(Output {
         status,

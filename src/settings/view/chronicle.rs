@@ -135,7 +135,7 @@ impl SettingsView {
                     .text_size(px(24.0))
                     .line_height(px(28.8))
                     .font_weight(chronicle_text_weight)
-                    .child(page.label),
+                    .child(crate::i18n::text(page.label)),
             )
             .child(
                 div()
@@ -161,7 +161,7 @@ impl SettingsView {
                                     .text_size(px(14.0))
                                     .line_height(px(24.0))
                                     .font_weight(gpui::FontWeight(400.0))
-                                    .child(page.sections[0].title),
+                                    .child(crate::i18n::text(page.sections[0].title)),
                             )
                             .child(
                                 div()
@@ -173,7 +173,7 @@ impl SettingsView {
                                     .line_height(px(18.0))
                                     .font_weight(chronicle_text_weight)
                                     .text_color(theme.settings_description)
-                                    .child(page.sections[0].subtitle),
+                                    .child(crate::i18n::text(page.sections[0].subtitle)),
                             )
                             .child(
                                 div()
@@ -185,7 +185,7 @@ impl SettingsView {
                                     .line_height(px(18.0))
                                     .font_weight(chronicle_text_weight)
                                     .text_color(theme.settings_description)
-                                    .child(rows[0].subtitle),
+                                    .child(crate::i18n::text(rows[0].subtitle)),
                             )
                             .child(
                                 div()
@@ -203,7 +203,7 @@ impl SettingsView {
                                     .line_height(px(18.0))
                                     .font_weight(gpui::FontWeight(400.0))
                                     .text_color(theme.surface)
-                                    .child("开启"),
+                                    .child(crate::i18n::text("开启")),
                             ),
                     )
                     .child(art),
@@ -218,7 +218,7 @@ impl SettingsView {
                     .font_weight(chronicle_text_weight)
                     .text_color(theme.settings_description)
                     .child(
-                        "开启后，ChatGPT 会保存你在允许的应用和网站中的活动文本摘要，可能包括通信内容。音频和私密模式网页浏览绝不会包含在内；",
+                        crate::i18n::text("开启后，ChatGPT 会保存你在允许的应用和网站中的活动文本摘要，可能包括通信内容。音频和私密模式网页浏览绝不会包含在内；"),
                     )
                     .child(
                         div()
@@ -226,9 +226,9 @@ impl SettingsView {
                             .items_center()
                             .gap(px(4.0))
                             .child(
-                                "你可以随时暂停或清除历史记录，并管理包含的内容。此功能会增加 Token 用量。",
+                                crate::i18n::text("你可以随时暂停或清除历史记录，并管理包含的内容。此功能会增加 Token 用量。"),
                             )
-                            .child(div().text_color(link_color).child("了解更多")),
+                            .child(div().text_color(link_color).child(crate::i18n::text("了解更多"))),
                     ),
             )
             .into_any_element()

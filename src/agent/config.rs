@@ -32,11 +32,11 @@ impl AgentConfigSource {
 
     pub fn label(&self) -> String {
         let label = match self.kind() {
-            "user" => "用户配置",
-            "project" => "项目配置",
-            "managed" => "受管配置",
-            "session" => "启动参数",
-            "defaults" => "安装包默认值",
+            "user" => crate::i18n::text("用户配置"),
+            "project" => crate::i18n::text("项目配置"),
+            "managed" => crate::i18n::text("受管配置"),
+            "session" => crate::i18n::text("启动参数"),
+            "defaults" => crate::i18n::text("安装包默认值"),
             other => other,
         };
         let detail = self
@@ -47,7 +47,8 @@ impl AgentConfigSource {
         let mut label =
             detail.map_or_else(|| label.to_owned(), |detail| format!("{label} · {detail}"));
         if let Some(profile) = &self.profile {
-            label.push_str(&format!(" · 配置方案 {profile}"));
+            label
+                .push_str(&crate::i18n::format!(" · 配置方案 {profile}" => " · Profile {profile}"));
         }
         label
     }
@@ -135,7 +136,9 @@ impl AgentConfigSnapshot {
 
     pub fn restriction(&self, key: &str, value: &Value) -> Option<String> {
         if value.is_null() && self.required_fields.contains(key) {
-            return Some(format!("已定义具名权限配置，必须保留 {key} 的明确选择"));
+            return Some(
+                crate::i18n::format!("已定义具名权限配置，必须保留 {key} 的明确选择" => "Named permission profiles are defined; an explicit choice for {key} must be kept"),
+            );
         }
         let requirements = self.requirements.as_ref()?;
         if !value.is_null()
@@ -144,10 +147,14 @@ impl AgentConfigSnapshot {
                 self.equivalent(key, allowed, value) && self.equivalent(key, value, allowed)
             })
         {
-            return Some(format!("管理员限制：{key} 不允许此值"));
+            return Some(
+                crate::i18n::format!("管理员限制：{key} 不允许此值" => "Administrator restriction: this value is not allowed for {key}"),
+            );
         }
         if let Some(forced) = requirements.enforced.get(key) {
-            return Some(format!("由管理员强制设置为 {forced}"));
+            return Some(
+                crate::i18n::format!("由管理员强制设置为 {forced}" => "Enforced by the administrator: {forced}"),
+            );
         }
 
         None
@@ -210,16 +217,19 @@ impl AgentConfigError {
     pub fn user_message(&self) -> String {
         let mut message = match self.kind {
             AgentConfigErrorKind::Conflict => {
-                "配置已在外部修改。草稿已保留，请先重新读取，再核对后保存。".into()
+                crate::i18n::text("配置已在外部修改。草稿已保留，请先重新读取，再核对后保存。")
+                    .into()
             }
             AgentConfigErrorKind::Validation => {
-                format!("配置校验失败，草稿已保留：{}", self.message)
+                crate::i18n::format!("配置校验失败，草稿已保留：{}" => "Configuration validation failed; your draft was kept: {}", self.message)
             }
-            AgentConfigErrorKind::Restricted => format!("此配置受限制，无法保存：{}", self.message),
+            AgentConfigErrorKind::Restricted => {
+                crate::i18n::format!("此配置受限制，无法保存：{}" => "This configuration is restricted and cannot be saved: {}", self.message)
+            }
             _ => self.message.clone(),
         };
         if self.outcome_unknown {
-            message.push_str(" · 写入结果未知，请重新读取并核对。");
+            message.push_str(crate::i18n::text(" · 写入结果未知，请重新读取并核对。"));
         }
         message
     }
@@ -227,7 +237,7 @@ impl AgentConfigError {
     pub fn unavailable() -> Self {
         Self {
             kind: AgentConfigErrorKind::Unavailable,
-            message: "当前后端不支持配置".into(),
+            message: crate::i18n::text("当前后端不支持配置").into(),
             data: None,
             outcome_unknown: false,
         }

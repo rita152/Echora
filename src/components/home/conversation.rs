@@ -178,7 +178,7 @@ pub(super) fn subagent_conversation(
                             div()
                                 .id("subagent-loading")
                                 .role(Role::ProgressIndicator)
-                                .aria_label("正在载入子智能体")
+                                .aria_label(crate::i18n::text("正在载入子智能体"))
                                 .flex()
                                 .items_center()
                                 .gap(px(8.0))
@@ -186,7 +186,7 @@ pub(super) fn subagent_conversation(
                                 .line_height(px(20.0))
                                 .text_color(theme.text_tertiary)
                                 .child(icon("subagent-activity", theme.text.into()).size(px(16.0)))
-                                .child("正在载入子智能体…"),
+                                .child(crate::i18n::text("正在载入子智能体…")),
                         ),
                 )
             })
@@ -489,9 +489,9 @@ pub(super) fn resumed_work_header(
                 .track_focus(&focus)
                 .tab_stop(true)
                 .role(Role::Button)
-                .aria_label(format!(
-                    "{label}，{}工作过程",
-                    if expanded { "折叠" } else { "展开" }
+                .aria_label(crate::i18n::format!(
+                    "{label}，{}工作过程" => "{label}, {} work details",
+                    if expanded { crate::i18n::text("折叠") } else { crate::i18n::text("展开") }
                 ))
                 .aria_expanded(expanded)
                 .cursor_pointer()
@@ -604,7 +604,7 @@ pub(super) fn resumed_file_summary_card(
                 .items_center()
                 .gap(px(10.0))
                 .role(Role::Button)
-                .aria_label("审查已更改的文件")
+                .aria_label(crate::i18n::text("审查已更改的文件"))
                 .focusable()
                 .tab_stop(true)
                 .cursor_pointer()
@@ -633,7 +633,7 @@ pub(super) fn resumed_file_summary_card(
                         .child(
                             div()
                                 .font_weight(FontWeight::MEDIUM)
-                                .child(format!("已编辑 {} 个文件", review.files.len())),
+                                .child(crate::i18n::format!("已编辑 {} 个文件" => "Edited {} files", review.files.len())),
                         )
                         .child(counts(review.total_additions(), review.total_deletions())),
                 )
@@ -652,13 +652,13 @@ pub(super) fn resumed_file_summary_card(
                         .items_center()
                         .cursor_pointer()
                         .role(Role::Button)
-                        .aria_label("审核")
+                        .aria_label(crate::i18n::text("审核"))
                         .on_click(move |_, _, cx| {
                             review_home
                                 .update(cx, |_, cx| cx.emit(OpenDiffReview(review_button.clone())));
                             cx.stop_propagation();
                         })
-                        .child("审核"),
+                        .child(crate::i18n::text("审核")),
                 ),
         )
         .child(div().h(px(1.0)).bg(theme.border));
@@ -671,7 +671,7 @@ pub(super) fn resumed_file_summary_card(
         let click_home = home.clone();
         let mut single = DiffReviewPresentation::new(
             format!("{}-{index}", review.review_id),
-            "本轮更改",
+            crate::i18n::text("本轮更改"),
             vec![file.clone()],
         );
         single.show_file_tree = false;
@@ -689,7 +689,7 @@ pub(super) fn resumed_file_summary_card(
                 .gap(px(8.0))
                 .cursor_pointer()
                 .role(Role::Button)
-                .aria_label(format!("审核 {}", file.path))
+                .aria_label(crate::i18n::format!("审核 {}" => "Review {}", file.path))
                 .hover(move |s| s.bg(theme.sidebar_hover))
                 .on_click(move |_, _, cx| {
                     click_home.update(cx, |_, cx| cx.emit(OpenDiffReview(single.clone())))
@@ -723,9 +723,9 @@ pub(super) fn resumed_file_summary_card(
                 .gap(px(6.0))
                 .role(Role::Button)
                 .aria_label(if expanded {
-                    "收起文件列表".to_owned()
+                    crate::i18n::text("收起文件列表").to_owned()
                 } else {
-                    format!("再显示 {} 个文件", review.files.len() - 3)
+                    crate::i18n::format!("再显示 {} 个文件" => "Show {} more files", review.files.len() - 3)
                 })
                 .cursor_pointer()
                 .hover(move |s| s.bg(theme.sidebar_hover))
@@ -739,9 +739,9 @@ pub(super) fn resumed_file_summary_card(
                     })
                 })
                 .child(if expanded {
-                    "收起文件列表".to_owned()
+                    crate::i18n::text("收起文件列表").to_owned()
                 } else {
-                    format!("再显示 {} 个文件", review.files.len() - 3)
+                    crate::i18n::format!("再显示 {} 个文件" => "Show {} more files", review.files.len() - 3)
                 })
                 .child(
                     icon(

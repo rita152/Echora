@@ -182,7 +182,7 @@ impl SettingsView {
                     .flex()
                     .items_center()
                     .gap(px(10.0))
-                    .child(self.small_button("管理", false, theme))
+                    .child(self.small_button(crate::i18n::text("管理"), false, theme))
                     .child(self.switch_control(true, (page.slug, 0, index), theme, cx))
                     .into_any_element(),
                 2 => div()
@@ -223,14 +223,14 @@ impl SettingsView {
                                     .text_size(px(13.0))
                                     .line_height(px(18.5714))
                                     .font_weight(gpui::FontWeight(500.0))
-                                    .child(row.title),
+                                    .child(crate::i18n::text(row.title)),
                             )
                             .child(
                                 div()
                                     .text_size(px(12.0))
                                     .line_height(px(16.0))
                                     .text_color(theme.settings_description)
-                                    .child(row.subtitle),
+                                    .child(crate::i18n::text(row.subtitle)),
                             ),
                     )
                     .child(right),
@@ -248,7 +248,7 @@ impl SettingsView {
                     .text_size(px(24.0))
                     .line_height(px(28.8))
                     .font_weight(gpui::FontWeight::NORMAL)
-                    .child(page.label),
+                    .child(crate::i18n::text(page.label)),
             )
             .child(
                 div()
@@ -256,7 +256,7 @@ impl SettingsView {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .text_color(theme.settings_description)
-                    .child(page.intro),
+                    .child(crate::i18n::text(page.intro)),
             )
             .child(
                 div()
@@ -264,7 +264,7 @@ impl SettingsView {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .font_weight(gpui::FontWeight(500.0))
-                    .child("控制"),
+                    .child(crate::i18n::text("控制")),
             )
             .child(apps)
             .child(
@@ -338,14 +338,14 @@ impl SettingsView {
                                     .text_size(px(13.0))
                                     .line_height(px(18.5714))
                                     .font_weight(gpui::FontWeight(500.0))
-                                    .child(lock.title),
+                                    .child(crate::i18n::text(lock.title)),
                             )
                             .child(
                                 div()
                                     .text_size(px(12.0))
                                     .line_height(px(16.0))
                                     .text_color(theme.settings_description)
-                                    .child(lock.subtitle),
+                                    .child(crate::i18n::text(lock.subtitle)),
                             ),
                     )
                     .child(self.switch_control(false, (page.slug, 0, 4), theme, cx)),
@@ -356,7 +356,7 @@ impl SettingsView {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .font_weight(gpui::FontWeight(500.0))
-                    .child("始终允许的应用"),
+                    .child(crate::i18n::text("始终允许的应用")),
             )
             .child(
                 div()
@@ -372,7 +372,7 @@ impl SettingsView {
                     .text_size(px(13.0))
                     .line_height(px(18.5714))
                     .text_color(theme.settings_description)
-                    .child("暂无"),
+                    .child(crate::i18n::text("暂无")),
             )
             .into_any_element()
     }

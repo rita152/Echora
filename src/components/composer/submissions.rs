@@ -83,13 +83,15 @@ impl ComposerView {
                 && submission.item_id.is_none()
                 && (submission.cycle != self.conversation.cycle || !self.is_running());
             let label = match &submission.status {
-                SubmissionStatus::Accepted if recover_accepted => "已接受 · 恢复副本",
-                SubmissionStatus::Sending => "发送中…",
-                SubmissionStatus::Accepted if submission.acknowledgement_error.is_some() => {
-                    "已接受 · 确认异常"
+                SubmissionStatus::Accepted if recover_accepted => {
+                    crate::i18n::text("已接受 · 恢复副本")
                 }
-                SubmissionStatus::Accepted => "已接受",
-                SubmissionStatus::Failed(_) => "发送失败 · 恢复输入",
+                SubmissionStatus::Sending => crate::i18n::text("发送中…"),
+                SubmissionStatus::Accepted if submission.acknowledgement_error.is_some() => {
+                    crate::i18n::text("已接受 · 确认异常")
+                }
+                SubmissionStatus::Accepted => crate::i18n::text("已接受"),
+                SubmissionStatus::Failed(_) => crate::i18n::text("发送失败 · 恢复输入"),
             };
             let recoverable =
                 matches!(submission.status, SubmissionStatus::Failed(_)) || recover_accepted;

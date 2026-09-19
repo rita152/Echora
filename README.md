@@ -56,6 +56,7 @@ Both images are captured from the current native application using the dedicated
 | **Browse pull requests** | Open the sidebar's `Pull requests` page: list and filter pull requests, read the summary, activity, commits and checks, browse the diff with its file tree, review lines inline, and open a review tab from the change stats. |
 | **Explore in side chats** | Fork temporary conversations from the main thread, with their own input, model, permissions, and stop controls. |
 | **Configure Codex** | Read effective configuration and its sources, inspect managed restrictions, edit supported user settings, and verify saves against the backend. |
+| **Choose a language** | Switch between English, Simplified Chinese, and automatic detection in Settings → General → Language. Changes apply immediately and are saved locally. |
 | **Manage the account** | See the connected ChatGPT account and plan in the account menu; sign in through Codex-managed ChatGPT auth, cancel a pending login, and sign out behind a confirmation. |
 | **Manage skills & MCP** | Read the skills inventory with per-skill enable/disable receipts, list MCP servers with status, auth, tools and server extensions, reload servers, and complete OAuth logins with explicit waiting, success, failure, cancellation and disconnect states. |
 | **Manage plugins & apps** | Read the plugin catalog and the installed subset from the backend, search marketplaces, open a plugin's own detail (description, skills, MCP servers), install and uninstall behind a confirmation, manage marketplaces (add, update, remove), read shared plugins, and read a plugin skill's contents. Directory rows, badges and counts are always the served values; a plugin the server ships without artwork or description renders that way instead of a placeholder row. |
@@ -76,6 +77,8 @@ cargo run --release -- --theme=dark
 ```
 
 Use `--theme=light` for the light theme. `cargo run -- --theme=dark` uses the optimized development profile for local iteration. Launch from the repository root for the examples below.
+
+The interface defaults to automatic language detection: Chinese system locales use Simplified Chinese; other locales use English. Settings → General → Language saves an explicit choice. Use `--language=en`, `--language=zh-CN`, or `--language=auto` to override it for one launch without changing the saved preference. This changes application labels, not conversation messages, project names, file contents, or text supplied by the backend.
 
 Echora starts `codex app-server --stdio` and uses the local Codex installation for backend configuration and sessions. Git review requires Git; creating pull requests also requires an authenticated `gh`. Python, Node.js, and Electron are development verification tools, not requirements for running the native interface.
 
@@ -140,6 +143,7 @@ GPUI application · projects · conversations · native panels
 | [src/workspace.rs](src/workspace.rs), [src/workspace/](src/workspace/) | Workspace state and notification merging; pagination in `loaders.rs`, atomic UI preference storage in `preferences.rs`. |
 | [src/conversation/](src/conversation/) | Conversation state, event reduction, stream batching, and history restoration; no GPUI Entity or Context. |
 | [src/configuration.rs](src/configuration.rs) | Configuration drafts, save receipts, and readback verification, using types from `src/agent/config.rs`. |
+| [src/i18n.rs](src/i18n.rs), [src/i18n/](src/i18n/) | UI language selection, system locale detection, and app-owned translations; no GPUI or adapter dependency. |
 | [src/components/](src/components/) | Composer, timeline, approvals, files, terminal, review, and side-chat rendering and interaction. |
 | [src/git_review.rs](src/git_review.rs), [src/git_review/](src/git_review/) | Git/gh operations, diffs, version validation, process cleanup, and comments, independent of GPUI and agent adapters. |
 | [src/app.rs](src/app.rs), [src/app/](src/app/) | Service assembly, conversation hosts, panel mounting, project creation, and image preview. |
@@ -213,6 +217,7 @@ Full launch options are in [src/main.rs](src/main.rs).
 | `--file-panel-root=/absolute/workspace --open-file=/absolute/file` | Real file editing, saving, and conflict checks; use disposable files. |
 | `--review-root=/absolute/repository --review-filter=src/example.rs` | Real Git review; screenshots wait for the diff to load. |
 | `--settings-page=appearance` | Open a settings page; slugs are in `src/settings/mod.rs`. |
+| `--language=en\|zh-CN\|auto` | Select the UI language for this launch. Set it explicitly for reproducible captures. |
 | `--chat-search-state=initial\|selected\|hover\|query\|no-match` | Open the chat search dialog in a fixed state for capture; combine with `--chat-search-query=` and `--chat-search-index=`. |
 | `--image-generation-ui-state=running/completed/failed/load-error` | Fixed image-generation states; completed also uses `--image-generation-path=/absolute/image.png`. |
 | `--auto-approval-ui-state=inProgress/approved/denied/timedOut/aborted/strict/warning` | Automatic review; add `--auto-approval-expanded`, `--auto-approval-details-expanded`, or `--reduce-motion`. Long text and motion traces use `--auto-approval-rationale-file` and `--auto-approval-motion-output`. |

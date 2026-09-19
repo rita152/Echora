@@ -49,11 +49,11 @@ impl Render for ReviewPanel {
                             .text_size(px(16.))
                             .text_color(t.text)
                             .child(if self.loading {
-                                "正在加载更改…"
+                                crate::i18n::text("正在加载更改…")
                             } else if self.error.is_some() {
-                                "无法加载更改"
+                                crate::i18n::text("无法加载更改")
                             } else {
-                                "尚无文件更改"
+                                crate::i18n::text("尚无文件更改")
                             }),
                     )
                     .child(
@@ -62,9 +62,9 @@ impl Render for ReviewPanel {
                             .text_size(px(13.))
                             .text_color(t.text_tertiary)
                             .child(if self.scope == Scope::LastTurn {
-                                "此轮没有文件更改。"
+                                crate::i18n::text("此轮没有文件更改。")
                             } else {
-                                "此项目中的更改将显示在此处。"
+                                crate::i18n::text("此项目中的更改将显示在此处。")
                             }),
                     )
             })
@@ -94,7 +94,7 @@ impl Render for ReviewPanel {
                         div()
                             .id("review-horizontal-bar")
                             .role(Role::ScrollBar)
-                            .aria_label("水平滚动条")
+                            .aria_label(crate::i18n::text("水平滚动条"))
                             .aria_value(self.horizontal_offset.to_string())
                             .track_focus(&self.horizontal_focus)
                             .tab_stop(true)
@@ -170,7 +170,7 @@ impl Render for ReviewPanel {
                             .child(
                                 self.button(
                                     "review-discard-all",
-                                    "还原全部",
+                                    crate::i18n::text("还原全部"),
                                     None,
                                     Action::Confirm(Mutation::DiscardAll),
                                     cx,
@@ -181,9 +181,9 @@ impl Render for ReviewPanel {
                                 self.button(
                                     "review-stage-all",
                                     if self.scope == Scope::Staged {
-                                        "对全部取消暂存"
+                                        crate::i18n::text("对全部取消暂存")
                                     } else {
-                                        "暂存全部"
+                                        crate::i18n::text("暂存全部")
                                     },
                                     None,
                                     Action::Mutation(if self.scope == Scope::Staged {
@@ -203,7 +203,7 @@ impl Render for ReviewPanel {
         div()
             .id("workspace-review")
             .role(Role::Region)
-            .aria_label("审查文件更改")
+            .aria_label(crate::i18n::text("审查文件更改"))
             .size_full()
             .min_w(px(0.))
             .min_h(px(0.))
@@ -298,11 +298,16 @@ impl Render for ReviewPanel {
                             .items_center()
                             .gap(px(8.))
                             .child(icon("panel-review", t.text.into()))
-                            .child(div().flex_1().text_size(px(13.)).child("审查"))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .text_size(px(13.))
+                                    .child(crate::i18n::text("审查")),
+                            )
                             .child(
                                 self.button(
                                     "review-close",
-                                    "关闭审查标签页",
+                                    crate::i18n::text("关闭审查标签页"),
                                     Some("close-dialog"),
                                     Action::Close,
                                     cx,
@@ -318,7 +323,7 @@ impl Render for ReviewPanel {
                     })
                     .child(self.button(
                         "review-new-tab",
-                        "打开侧边面板标签页",
+                        crate::i18n::text("打开侧边面板标签页"),
                         Some("review-plus"),
                         Action::AddTab,
                         cx,
@@ -326,7 +331,7 @@ impl Render for ReviewPanel {
                     .child(div().flex_1())
                     .child(self.button(
                         "review-fullscreen",
-                        "进入或退出全屏",
+                        crate::i18n::text("进入或退出全屏"),
                         Some("settings-external"),
                         Action::Fullscreen,
                         cx,

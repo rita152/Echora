@@ -333,14 +333,14 @@ impl ConversationState {
                     let changed = self.mcp_server_startup_statuses.get(&key) != Some(&status);
                     self.mcp_server_startup_statuses.insert(key, status.clone());
                     if changed && status.state == AgentMcpServerStartupState::Failed {
-                        let mut message = format!("MCP 服务 `{}` 启动失败", status.name);
+                        let mut message = crate::i18n::format!("MCP 服务 `{}` 启动失败" => "MCP server `{}` failed to start", status.name);
                         if let Some(error) = status.error.filter(|error| !error.trim().is_empty()) {
                             message.push_str(&format!("：{error}"));
                         }
                         if status.failure_reason
                             == Some(AgentMcpServerStartupFailureReason::ReauthenticationRequired)
                         {
-                            message.push_str("；认证已失效，请重新连接该服务");
+                            message.push_str(crate::i18n::text("；认证已失效，请重新连接该服务"));
                         }
                         self.activities
                             .push(ConversationActivity::Warning { message });
@@ -643,7 +643,7 @@ impl ConversationState {
                     {
                         let review = DiffReviewPresentation::from_unified_diff(
                             format!("turn-diff-{}", activity.item_id),
-                            "上一轮",
+                            crate::i18n::text("上一轮"),
                             &diff,
                             Some(&self.cwd),
                         );
@@ -685,7 +685,7 @@ impl ConversationState {
                                 })
                                 .collect(),
                             allows_other: question.allows_other,
-                            other_placeholder: "其他".to_owned(),
+                            other_placeholder: crate::i18n::text("其他").to_owned(),
                             is_secret: question.is_secret,
                         })
                         .collect();
@@ -716,8 +716,9 @@ impl ConversationState {
                                 }
                                 None => {
                                     model.status = UserInputRequestStatus::Failed;
-                                    model.failure_message =
-                                        Some("用户输入 responder 不存在".to_owned());
+                                    model.failure_message = Some(
+                                        crate::i18n::text("用户输入 responder 不存在").to_owned(),
+                                    );
                                 }
                             }
                         }
@@ -770,8 +771,9 @@ impl ConversationState {
                                 }
                                 None => {
                                     model.status = PermissionApprovalStatus::Failed;
-                                    model.failure_message =
-                                        Some("权限审批 responder 不存在".to_owned());
+                                    model.failure_message = Some(
+                                        crate::i18n::text("权限审批 responder 不存在").to_owned(),
+                                    );
                                 }
                             }
                         }
@@ -786,9 +788,10 @@ impl ConversationState {
                         Some(expected) if expected == &request => {}
                         Some(expected) => {
                             self.activities.push(ConversationActivity::ProtocolError {
-                                message:
-                                    "serverRequest/resolved 标识与 Composer pending request 不一致"
-                                        .to_owned(),
+                                message: crate::i18n::text(
+                                    "serverRequest/resolved 标识与 Composer pending request 不一致",
+                                )
+                                .to_owned(),
                                 details: Some(format!("expected={expected:?}; actual={request:?}")),
                                 will_retry: false,
                             });
@@ -796,9 +799,10 @@ impl ConversationState {
                         }
                         None => {
                             self.activities.push(ConversationActivity::ProtocolError {
-                                message:
-                                    "serverRequest/resolved 在 Composer 中没有对应 pending request"
-                                        .to_owned(),
+                                message: crate::i18n::text(
+                                    "serverRequest/resolved 在 Composer 中没有对应 pending request",
+                                )
+                                .to_owned(),
                                 details: Some(format!("actual={request:?}")),
                                 will_retry: false,
                             });
@@ -856,9 +860,10 @@ impl ConversationState {
                         Some(expected) if expected == &request => {}
                         Some(expected) => {
                             self.activities.push(ConversationActivity::ProtocolError {
-                                message:
-                                    "server request 清理标识与 Composer pending request 不一致"
-                                        .to_owned(),
+                                message: crate::i18n::text(
+                                    "server request 清理标识与 Composer pending request 不一致",
+                                )
+                                .to_owned(),
                                 details: Some(format!("expected={expected:?}; actual={request:?}")),
                                 will_retry: false,
                             });
@@ -866,9 +871,10 @@ impl ConversationState {
                         }
                         None => {
                             self.activities.push(ConversationActivity::ProtocolError {
-                                message:
-                                    "server request 清理在 Composer 中没有对应 pending request"
-                                        .to_owned(),
+                                message: crate::i18n::text(
+                                    "server request 清理在 Composer 中没有对应 pending request",
+                                )
+                                .to_owned(),
                                 details: Some(format!("actual={request:?}")),
                                 will_retry: false,
                             });
@@ -943,8 +949,8 @@ impl ConversationState {
                     reason,
                 } => {
                     self.actual_model = Some(to_model.clone());
-                    self.model_status = Some(format!(
-                        "已从 {} 自动切换到 {}（{}）",
+                    self.model_status = Some(crate::i18n::format!(
+                        "已从 {} 自动切换到 {}（{}）" => "Automatically switched from {} to {} ({})",
                         self.model_display_name(&from_model),
                         self.model_display_name(&to_model),
                         reason
@@ -953,18 +959,18 @@ impl ConversationState {
                 }
                 AgentEvent::ModelVerificationRequired { verifications } => {
                     let requirements = if verifications.is_empty() {
-                        "未知验证".to_owned()
+                        crate::i18n::text("未知验证").to_owned()
                     } else {
                         verifications.join("、")
                     };
-                    let error = format!("所选模型需要额外账户验证：{requirements}");
+                    let error = crate::i18n::format!("所选模型需要额外账户验证：{requirements}" => "The selected model requires additional account verification: {requirements}");
                     self.assistant_message = error.clone();
                     self.activities
                         .push(ConversationActivity::Error { message: error });
                     self.assistant_message_time
                         .get_or_insert_with(current_local_time_label);
                     self.phase = ConversationPhase::Failed;
-                    self.model_status = Some("需要账户验证".to_owned());
+                    self.model_status = Some(crate::i18n::text("需要账户验证").to_owned());
                     self.safety_buffering = false;
                     finished = true;
                     continue;
@@ -979,7 +985,7 @@ impl ConversationState {
                     self.actual_model = Some(model);
                     self.safety_buffering = show_buffering_ui;
                     self.model_status = show_buffering_ui.then(|| {
-                        let mut message = "安全检查中".to_owned();
+                        let mut message = crate::i18n::text("安全检查中").to_owned();
                         if !use_cases.is_empty() || !reasons.is_empty() {
                             let detail = use_cases
                                 .into_iter()
@@ -989,8 +995,8 @@ impl ConversationState {
                             message.push_str(&format!("：{detail}"));
                         }
                         if let Some(faster_model) = faster_model {
-                            message.push_str(&format!(
-                                "；可改用 {}",
+                            message.push_str(&crate::i18n::format!(
+                                "；可改用 {}" => "; you can use {} instead",
                                 self.model_display_name(&faster_model)
                             ));
                         }
@@ -1066,8 +1072,9 @@ impl ConversationState {
             for submission in self.submissions.iter_mut().filter(|s| {
                 s.cycle == self.cycle && s.initial && s.status == super::SubmissionStatus::Sending
             }) {
-                submission.status =
-                    super::SubmissionStatus::Failed("提交未被接受。输入快照已保留。".into());
+                submission.status = super::SubmissionStatus::Failed(
+                    crate::i18n::text("提交未被接受。输入快照已保留。").into(),
+                );
             }
             self.active_turn.take();
         }

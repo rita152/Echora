@@ -133,9 +133,9 @@ pub(super) fn home(
                                     .font_weight(gpui::FontWeight::NORMAL)
                                     .text_color(theme.text)
                                     .child(if side_chat {
-                                        "侧边聊天"
+                                        crate::i18n::text("侧边聊天")
                                     } else {
-                                        "你想让我们在 coda 中构建什么？"
+                                        crate::i18n::text("你想让我们在 coda 中构建什么？")
                                     }),
                             )
                             .when(side_chat, |group| {
@@ -146,7 +146,9 @@ pub(super) fn home(
                                         .line_height(px(18.5714))
                                         .text_color(theme.text_secondary)
                                         .text_center()
-                                        .child("侧边聊天是临时聊天，关闭应用后会消失。"),
+                                        .child(crate::i18n::text(
+                                            "侧边聊天是临时聊天，关闭应用后会消失。",
+                                        )),
                                 )
                             }),
                     ),

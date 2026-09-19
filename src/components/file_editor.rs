@@ -248,7 +248,7 @@ impl FileEditor {
     /// or emits edits, and shares the editor's Unicode-aware hit testing.
     pub fn approval_preview(text: String, mode: ThemeMode, cx: &mut Context<Self>) -> Self {
         let mut editor = Self::new(text, None, mode, cx);
-        editor.prose_label = Some("命令预览，只读".to_owned());
+        editor.prose_label = Some(crate::i18n::text("命令预览，只读").to_owned());
         editor.read_only = true;
         editor.preview_collapsed = true;
         editor
@@ -270,6 +270,16 @@ impl FileEditor {
     }
     pub fn text(&self) -> &str {
         &self.buffer.text
+    }
+    fn placeholder_text(&self) -> &str {
+        crate::i18n::text(&self.placeholder)
+    }
+    fn accessible_label(&self) -> &str {
+        crate::i18n::text(
+            self.prose_label
+                .as_deref()
+                .unwrap_or("文件内容，可直接编辑并自动保存"),
+        )
     }
     pub fn set_accessible_name(&mut self, label: impl Into<String>) {
         self.prose_label = Some(label.into());
@@ -375,14 +385,14 @@ impl FileEditor {
         if self.buffer.text.len() - range.len() + text.len()
             > super::file_io::MAX_TEXT_BYTES as usize
         {
-            self.input_error = Some("输入后文件将超过 2 MB，请缩小粘贴内容");
+            self.input_error = Some(crate::i18n::text("输入后文件将超过 2 MB，请缩小粘贴内容"));
             cx.notify();
             return false;
         }
         let mut value = self.buffer.text.clone();
         value.replace_range(range.clone(), text);
         if value.lines().any(|line| line.len() > 65_536) {
-            self.input_error = Some("单行不能超过 64 KB，请拆分长行");
+            self.input_error = Some(crate::i18n::text("单行不能超过 64 KB，请拆分长行"));
             cx.notify();
             return false;
         }
@@ -742,11 +752,12 @@ impl FileEditor {
     fn paint(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
         let theme = Theme::for_mode(self.mode);
         if self.buffer.text.is_empty() && !self.placeholder.is_empty() {
-            let mut run = window.text_style().to_run(self.placeholder.len());
+            let placeholder = self.placeholder_text();
+            let mut run = window.text_style().to_run(placeholder.len());
             run.font = ui_font();
             run.color = theme.text_tertiary.into();
             let line = window.text_system().shape_line(
-                self.placeholder.clone().into(),
+                placeholder.to_owned().into(),
                 px(self.font_size()),
                 &[run],
                 None,
@@ -868,12 +879,8 @@ impl Render for FileEditor {
             })
             .track_focus(&self.focus)
             .role(gpui::Role::TextInput)
-            .aria_label(
-                self.prose_label
-                    .clone()
-                    .unwrap_or_else(|| "文件内容，可直接编辑并自动保存".into()),
-            )
-            .aria_placeholder(self.placeholder.clone())
+            .aria_label(self.accessible_label().to_owned())
+            .aria_placeholder(self.placeholder_text().to_owned())
             .aria_value(self.buffer.text.clone())
             .on_key_down(cx.listener(Self::handle_key))
             .on_action(cx.listener(|s, _: &EditorCopy, _, cx| {
@@ -1353,6 +1360,30 @@ mod tests {
         window.simulate_keystrokes("cmd-down");
         window.draw();
         assert!(window.read(|e, _| e.scroll > 0.));
+    }
+
+    #[test]
+    fn composer_language_changes_labels_without_changing_the_draft() {
+        use crate::i18n::{self, Language};
+        let previous = i18n::language();
+        i18n::set_language(Language::English);
+        let mut app = gpui::TestApp::new();
+        let mut window = app.open_window(|_, cx| FileEditor::composer(ThemeMode::Light, cx));
+        window.update(|editor, _, cx| {
+            editor.set_accessible_name("聊天输入框");
+            editor.set_text_silently("English draft — 中文", cx);
+        });
+        window.read(|editor, _| {
+            assert_eq!(editor.placeholder_text(), "Ask anything");
+            assert_eq!(editor.accessible_label(), "Chat input");
+        });
+        i18n::set_language(Language::SimplifiedChinese);
+        window.read(|editor, _| {
+            assert_eq!(editor.placeholder_text(), "随心输入");
+            assert_eq!(editor.accessible_label(), "聊天输入框");
+            assert_eq!(editor.text(), "English draft — 中文");
+        });
+        i18n::set_language(previous);
     }
 
     #[test]

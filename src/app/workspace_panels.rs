@@ -67,9 +67,14 @@ impl ChatApp {
             let answer = window_cx.update(|w, cx| {
                 w.prompt(
                     gpui::PromptLevel::Warning,
-                    "文件仍有未保存的编辑",
-                    Some("自动保存未完成或遇到冲突。返回编辑以保留当前内容。"),
-                    &["返回编辑", "放弃未保存的编辑并关闭"],
+                    crate::i18n::text("文件仍有未保存的编辑"),
+                    Some(crate::i18n::text(
+                        "自动保存未完成或遇到冲突。返回编辑以保留当前内容。",
+                    )),
+                    &[
+                        crate::i18n::text("返回编辑"),
+                        crate::i18n::text("放弃未保存的编辑并关闭"),
+                    ],
                     cx,
                 )
             });

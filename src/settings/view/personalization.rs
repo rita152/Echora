@@ -62,7 +62,7 @@ impl SettingsView {
                     .text_size(px(12.0))
                     .line_height(px(16.0))
                     .text_color(danger_text)
-                    .child("删除")
+                    .child(crate::i18n::text("删除"))
                     .into_any_element(),
             };
             memory_card = memory_card.child(
@@ -102,7 +102,7 @@ impl SettingsView {
                     .text_size(px(24.0))
                     .line_height(px(28.8))
                     .font_weight(gpui::FontWeight::NORMAL)
-                    .child(page.label),
+                    .child(crate::i18n::text(page.label)),
             )
             .child(
                 div()
@@ -119,7 +119,7 @@ impl SettingsView {
                                     .text_size(px(16.0))
                                     .line_height(px(24.875))
                                     .font_weight(gpui::FontWeight(500.0))
-                                    .child(instruction.title),
+                                    .child(crate::i18n::text(instruction.title)),
                             )
                             .child(
                                 div()
@@ -130,17 +130,23 @@ impl SettingsView {
                                     .text_size(px(13.0))
                                     .line_height(px(18.0))
                                     .text_color(theme.settings_description)
-                                    .child(
+                                    .child(crate::i18n::text(
                                         "向 ChatGPT 提供适用于此主机上所有聊天的额外说明和上下文。",
-                                    )
-                                    .child(div().text_color(link_color).child("了解更多")),
+                                    ))
+                                    .child(
+                                        div()
+                                            .text_color(link_color)
+                                            .child(crate::i18n::text("了解更多")),
+                                    ),
                             ),
                     )
-                    .child(
-                        div()
-                            .opacity(0.4)
-                            .child(self.reference_button("保存", 46.0, None, false, theme)),
-                    ),
+                    .child(div().opacity(0.4).child(self.reference_button(
+                        crate::i18n::text("保存"),
+                        46.0,
+                        None,
+                        false,
+                        theme,
+                    ))),
             )
             .child(
                 div()
@@ -154,7 +160,7 @@ impl SettingsView {
                     .text_size(px(13.0))
                     .line_height(px(18.0))
                     .text_color(theme.text_tertiary)
-                    .child("添加自定义指令…"),
+                    .child(crate::i18n::text("添加自定义指令…")),
             )
             .child(
                 div()
@@ -166,7 +172,7 @@ impl SettingsView {
                             .text_size(px(16.0))
                             .line_height(px(24.875))
                             .font_weight(gpui::FontWeight(500.0))
-                            .child(memory.title),
+                            .child(crate::i18n::text(memory.title)),
                     )
                     .child(
                         div()
@@ -177,8 +183,14 @@ impl SettingsView {
                             .text_size(px(13.0))
                             .line_height(px(18.0))
                             .text_color(theme.settings_description)
-                            .child("设置在此电脑上如何收集、保留和整合本地记忆。")
-                            .child(div().text_color(link_color).child("了解更多")),
+                            .child(crate::i18n::text(
+                                "设置在此电脑上如何收集、保留和整合本地记忆。",
+                            ))
+                            .child(
+                                div()
+                                    .text_color(link_color)
+                                    .child(crate::i18n::text("了解更多")),
+                            ),
                     ),
             )
             .child(div().mt(px(12.0)).child(memory_card))
@@ -204,7 +216,7 @@ impl SettingsView {
                             .text_size(px(13.0))
                             .line_height(px(18.0))
                             .text_color(theme.text)
-                            .child(page.sections[2].subtitle),
+                            .child(crate::i18n::text(page.sections[2].subtitle)),
                     ),
             )
             .child(div().mt(px(6.0)).child(self.agent_card(

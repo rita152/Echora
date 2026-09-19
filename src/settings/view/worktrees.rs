@@ -65,7 +65,7 @@ impl SettingsView {
                 } else {
                     primary_text
                 })
-                .child(value)
+                .child(crate::i18n::text(value))
                 .into_any_element()
         };
         let setting_row = |top: f32,
@@ -94,37 +94,36 @@ impl SettingsView {
                         .line_height(px(18.5625))
                         .font_weight(gpui::FontWeight(500.0))
                         .text_color(gpui::rgba(0x00000000))
-                        .child(title),
+                        .child(crate::i18n::text(title)),
                 );
-            label =
-                if height > 70.0 {
-                    label.child(
-                        div()
-                            .relative()
-                            .top(px(subtitle_nudge))
-                            .text_size(px(12.0))
-                            .line_height(px(16.0))
-                            .text_color(gpui::rgba(0x00000000))
-                            .flex()
-                            .flex_col()
-                            .child(div().h(px(16.0)).child(
-                                "要保留的托管工作树数量；超过后，较旧的工作树会自动被清理。ChatGPT",
-                            ))
-                            .child(div().h(px(16.0)).child(
-                                "会在删除工作树前创建快照，因此被清理的工作树应始终可以恢复。",
-                            )),
-                    )
-                } else {
-                    label.child(
-                        div()
-                            .relative()
-                            .top(px(subtitle_nudge))
-                            .text_size(px(12.0))
-                            .line_height(px(16.0))
-                            .text_color(gpui::rgba(0x00000000))
-                            .child(subtitle),
-                    )
-                };
+            label = if height > 70.0 {
+                label.child(
+                    div()
+                        .relative()
+                        .top(px(subtitle_nudge))
+                        .text_size(px(12.0))
+                        .line_height(px(16.0))
+                        .text_color(gpui::rgba(0x00000000))
+                        .flex()
+                        .flex_col()
+                        .child(div().h(px(16.0)).child(crate::i18n::text(
+                            "要保留的托管工作树数量；超过后，较旧的工作树会自动被清理。ChatGPT",
+                        )))
+                        .child(div().h(px(16.0)).child(crate::i18n::text(
+                            "会在删除工作树前创建快照，因此被清理的工作树应始终可以恢复。",
+                        ))),
+                )
+            } else {
+                label.child(
+                    div()
+                        .relative()
+                        .top(px(subtitle_nudge))
+                        .text_size(px(12.0))
+                        .line_height(px(16.0))
+                        .text_color(gpui::rgba(0x00000000))
+                        .child(crate::i18n::text(subtitle)),
+                )
+            };
             div()
                 .absolute()
                 .left_0()
@@ -185,7 +184,7 @@ impl SettingsView {
                         primary_text
                     }));
                 }
-                node.child(label).into_any_element()
+                node.child(crate::i18n::text(label)).into_any_element()
             };
 
         let rows = page.sections[0].rows;
@@ -259,7 +258,7 @@ impl SettingsView {
                     .line_height(px(28.8))
                     .font_weight(gpui::FontWeight::NORMAL)
                     .text_color(theme.text)
-                    .child(page.label),
+                    .child(crate::i18n::text(page.label)),
             )
             .child(div().mt(px(32.0)).child(config));
 
@@ -297,7 +296,7 @@ impl SettingsView {
                                         .text_size(px(13.0))
                                         .line_height(px(18.5714))
                                         .font_weight(gpui::FontWeight(500.0))
-                                        .child(section.subtitle),
+                                        .child(crate::i18n::text(section.subtitle)),
                                 )
                                 .child(
                                     div()
@@ -307,7 +306,7 @@ impl SettingsView {
                                         .text_size(px(12.0))
                                         .line_height(px(16.0))
                                         .text_color(secondary_text)
-                                        .child(section.title),
+                                        .child(crate::i18n::text(section.title)),
                                 )
                                 .child(
                                     div()
@@ -316,7 +315,7 @@ impl SettingsView {
                                         .text_size(px(12.0))
                                         .line_height(px(16.0))
                                         .text_color(secondary_text)
-                                        .child(section.rows[0].title),
+                                        .child(crate::i18n::text(section.rows[0].title)),
                                 ),
                         )
                         .child(
@@ -326,12 +325,12 @@ impl SettingsView {
                                 .items_center()
                                 .gap(px(8.0))
                                 .child(button(
-                                    "在此工作树中新建聊天",
+                                    crate::i18n::text("在此工作树中新建聊天"),
                                     178.0,
                                     Some(("icons/settings-new-chat-reference.svg", 16.0)),
                                     false,
                                 ))
-                                .child(button("删除", 46.0, None, true)),
+                                .child(button(crate::i18n::text("删除"), 46.0, None, true)),
                         ),
                 )
                 .child(
@@ -342,7 +341,7 @@ impl SettingsView {
                         .text_size(px(12.0))
                         .line_height(px(16.0))
                         .text_color(secondary_text)
-                        .child(section.rows[2].title),
+                        .child(crate::i18n::text(section.rows[2].title)),
                 )
                 .child(
                     div()
@@ -350,7 +349,7 @@ impl SettingsView {
                         .ml(px(8.0))
                         .text_size(px(13.0))
                         .line_height(px(18.5714))
-                        .child(section.rows[2].subtitle),
+                        .child(crate::i18n::text(section.rows[2].subtitle)),
                 );
             content = content.child(
                 div()
@@ -370,7 +369,7 @@ impl SettingsView {
                                     .text_size(px(13.0))
                                     .line_height(px(18.5714))
                                     .font_weight(gpui::FontWeight(500.0))
-                                    .child(section.title),
+                                    .child(crate::i18n::text(section.title)),
                             )
                             .child(
                                 div()

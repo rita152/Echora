@@ -56,7 +56,7 @@ impl ConversationState {
         self.models = catalog.models;
         self.model_catalog_error = None;
         if self.models.is_empty() {
-            self.set_model_catalog_error("Codex 未返回可用模型".to_owned());
+            self.set_model_catalog_error(crate::i18n::text("Codex 未返回可用模型").to_owned());
             return;
         }
 

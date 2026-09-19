@@ -43,11 +43,11 @@ impl McpLoginPhase {
 
     pub fn label(&self) -> &'static str {
         match self {
-            Self::Waiting => "等待授权",
-            Self::Succeeded => "登录成功",
-            Self::Failed(_) => "登录失败",
-            Self::Cancelled => "已取消",
-            Self::Interrupted(_) => "连接已断开",
+            Self::Waiting => crate::i18n::text("等待授权"),
+            Self::Succeeded => crate::i18n::text("登录成功"),
+            Self::Failed(_) => crate::i18n::text("登录失败"),
+            Self::Cancelled => crate::i18n::text("已取消"),
+            Self::Interrupted(_) => crate::i18n::text("连接已断开"),
         }
     }
 }
@@ -124,7 +124,7 @@ impl McpDirectory {
                     // rather than repeating the same page.
                     self.error = Some(AgentMcpError {
                         kind: crate::agent::AgentMcpErrorKind::Protocol,
-                        message: format!("mcpServerStatus/list 返回了重复的 cursor `{cursor}`"),
+                        message: crate::i18n::format!("mcpServerStatus/list 返回了重复的 cursor `{cursor}`" => "mcpServerStatus/list returned a repeated cursor `{cursor}`"),
                         data: None,
                         outcome_unknown: false,
                     });
@@ -227,7 +227,7 @@ impl McpDirectory {
         self.reloading = false;
         for login in self.logins.values_mut() {
             if login.generation == previous && login.phase.busy() {
-                login.phase = McpLoginPhase::Interrupted("连接已重建".into());
+                login.phase = McpLoginPhase::Interrupted(crate::i18n::text("连接已重建").into());
             }
         }
     }

@@ -77,12 +77,12 @@ impl McpElicitationStatus {
 
     fn label(self) -> &'static str {
         match self {
-            Self::Pending => "等待输入",
-            Self::Submitting => "正在提交…",
-            Self::Accepted => "已完成",
-            Self::Declined => "已拒绝",
-            Self::Cancelled => "已取消",
-            Self::Invalid => "请求已失效",
+            Self::Pending => crate::i18n::text("等待输入"),
+            Self::Submitting => crate::i18n::text("正在提交…"),
+            Self::Accepted => crate::i18n::text("已完成"),
+            Self::Declined => crate::i18n::text("已拒绝"),
+            Self::Cancelled => crate::i18n::text("已取消"),
+            Self::Invalid => crate::i18n::text("请求已失效"),
         }
     }
 }
@@ -173,7 +173,7 @@ impl McpElicitationFieldPresentation {
                 (Some(minimum), Some(maximum)) => format!("{minimum} – {maximum}"),
                 (Some(minimum), None) => format!("≥ {minimum}"),
                 (None, Some(maximum)) => format!("≤ {maximum}"),
-                (None, None) => "输入数字".to_owned(),
+                (None, None) => crate::i18n::text("输入数字").to_owned(),
             },
             _ => String::new(),
         }
@@ -184,15 +184,15 @@ impl McpElicitationFieldPresentation {
             McpElicitationFieldValueState::Text(text) => text.clone(),
             McpElicitationFieldValueState::Boolean(value) => {
                 if *value {
-                    "已开启".to_owned()
+                    crate::i18n::text("已开启").to_owned()
                 } else {
-                    "已关闭".to_owned()
+                    crate::i18n::text("已关闭").to_owned()
                 }
             }
             McpElicitationFieldValueState::Selection(index) => index
                 .and_then(|index| self.options().get(index))
                 .map(|option| option.title.clone())
-                .unwrap_or_else(|| "未选择".to_owned()),
+                .unwrap_or_else(|| crate::i18n::text("未选择").to_owned()),
             McpElicitationFieldValueState::MultiSelection(indices) => {
                 let titles = indices
                     .iter()
@@ -200,7 +200,7 @@ impl McpElicitationFieldPresentation {
                     .map(|option| option.title.clone())
                     .collect::<Vec<_>>();
                 if titles.is_empty() {
-                    "未选择".to_owned()
+                    crate::i18n::text("未选择").to_owned()
                 } else {
                     titles.join("、")
                 }
@@ -238,7 +238,9 @@ impl McpElicitationFieldPresentation {
             ) => {
                 let text = text.trim();
                 if text.is_empty() {
-                    return Err(format!("{title} 不能为空"));
+                    return Err(
+                        crate::i18n::format!("{title} 不能为空" => "{title} cannot be empty"),
+                    );
                 }
                 let number = text
                     .parse::<serde_json::Number>()
@@ -248,9 +250,11 @@ impl McpElicitationFieldPresentation {
                             .and_then(serde_json::Number::from_f64)
                             .ok_or(())
                     })
-                    .map_err(|_| format!("{title} 必须是数字"))?;
+                    .map_err(|_| crate::i18n::format!("{title} 必须是数字" => "{title} must be a number"))?;
                 if *integer && number.as_i64().is_none() && number.as_u64().is_none() {
-                    return Err(format!("{title} 必须是整数"));
+                    return Err(
+                        crate::i18n::format!("{title} 必须是整数" => "{title} must be an integer"),
+                    );
                 }
                 Ok(AgentMcpElicitationValue::Number(number))
             }
@@ -264,7 +268,7 @@ impl McpElicitationFieldPresentation {
             ) => {
                 let option = index
                     .and_then(|index| options.get(index))
-                    .ok_or_else(|| format!("{title} 需要选择一个选项"))?;
+                    .ok_or_else(|| crate::i18n::format!("{title} 需要选择一个选项" => "Select an option for {title}"))?;
                 Ok(AgentMcpElicitationValue::String(option.value.clone()))
             }
             (
@@ -275,12 +279,14 @@ impl McpElicitationFieldPresentation {
                 for index in indices {
                     let option = options
                         .get(*index)
-                        .ok_or_else(|| format!("{title} 包含无效选项"))?;
+                        .ok_or_else(|| crate::i18n::format!("{title} 包含无效选项" => "{title} contains an invalid option"))?;
                     values.push(option.value.clone());
                 }
                 Ok(AgentMcpElicitationValue::StringArray(values))
             }
-            _ => Err(format!("{title} 的输入类型与请求不一致")),
+            _ => Err(
+                crate::i18n::format!("{title} 的输入类型与请求不一致" => "{title} has an unexpected input type"),
+            ),
         }
     }
 }
@@ -711,7 +717,7 @@ fn validate_field(
         let text = field.text();
         if text.trim().is_empty() {
             return if field.required {
-                Err(format!("{title} 为必填项"))
+                Err(crate::i18n::format!("{title} 为必填项" => "{title} is required"))
             } else {
                 Ok(None)
             };
@@ -737,25 +743,33 @@ fn validate_field(
             }
             let parsed = field.domain_value()?;
             let AgentMcpElicitationValue::Number(number) = &parsed else {
-                return Err(format!("{title} 必须是数字"));
+                return Err(
+                    crate::i18n::format!("{title} 必须是数字" => "{title} must be a number"),
+                );
             };
             if *integer && number.as_i64().is_none() && number.as_u64().is_none() {
-                return Err(format!("{title} 必须是整数"));
+                return Err(
+                    crate::i18n::format!("{title} 必须是整数" => "{title} must be an integer"),
+                );
             }
-            let numeric = number
-                .as_f64()
-                .ok_or_else(|| format!("{title} 必须是数字"))?;
+            let numeric = number.as_f64().ok_or_else(
+                || crate::i18n::format!("{title} 必须是数字" => "{title} must be a number"),
+            )?;
             if let Some(minimum) = minimum
                 && let Ok(minimum) = minimum.parse::<f64>()
                 && numeric < minimum
             {
-                return Err(format!("{title} 不能小于 {minimum}"));
+                return Err(
+                    crate::i18n::format!("{title} 不能小于 {minimum}" => "{title} must be at least {minimum}"),
+                );
             }
             if let Some(maximum) = maximum
                 && let Ok(maximum) = maximum.parse::<f64>()
                 && numeric > maximum
             {
-                return Err(format!("{title} 不能大于 {maximum}"));
+                return Err(
+                    crate::i18n::format!("{title} 不能大于 {maximum}" => "{title} must be at most {maximum}"),
+                );
             }
             Ok(Some(parsed))
         }
@@ -768,7 +782,9 @@ fn validate_field(
         ) => {
             if index.is_none() {
                 return if field.required {
-                    Err(format!("{title} 需要选择一个选项"))
+                    Err(
+                        crate::i18n::format!("{title} 需要选择一个选项" => "Select an option for {title}"),
+                    )
                 } else {
                     Ok(None)
                 };
@@ -787,23 +803,31 @@ fn validate_field(
             if let Some(minimum) = min_items
                 && count < *minimum
             {
-                return Err(format!("{title} 至少需要选择 {minimum} 项"));
+                return Err(
+                    crate::i18n::format!("{title} 至少需要选择 {minimum} 项" => "Select at least {minimum} items for {title}"),
+                );
             }
             if let Some(maximum) = max_items
                 && count > *maximum
             {
-                return Err(format!("{title} 最多允许选择 {maximum} 项"));
+                return Err(
+                    crate::i18n::format!("{title} 最多允许选择 {maximum} 项" => "Select at most {maximum} items for {title}"),
+                );
             }
             if count == 0 {
                 return if field.required {
-                    Err(format!("{title} 至少需要选择一项"))
+                    Err(
+                        crate::i18n::format!("{title} 至少需要选择一项" => "Select at least one item for {title}"),
+                    )
                 } else {
                     Ok(None)
                 };
             }
             Ok(Some(field.domain_value()?))
         }
-        _ => Err(format!("{title} 的输入类型与请求不一致")),
+        _ => Err(
+            crate::i18n::format!("{title} 的输入类型与请求不一致" => "{title} has an unexpected input type"),
+        ),
     }
 }
 
@@ -1143,9 +1167,9 @@ pub fn render_mcp_elicitation_url_activity(
     let primary = url_action_button(
         &model.request_id,
         if opened_for_primary {
-            "继续"
+            crate::i18n::text("继续")
         } else {
-            "打开链接"
+            crate::i18n::text("打开链接")
         },
         true,
         false,
@@ -1165,7 +1189,7 @@ pub fn render_mcp_elicitation_url_activity(
     let decline_callback = callback.clone();
     let decline = url_action_button(
         &model.request_id,
-        "暂不",
+        crate::i18n::text("暂不"),
         false,
         false,
         button_style,
@@ -1239,7 +1263,7 @@ pub fn render_mcp_elicitation_url_activity(
                         .line_height(px(MCP_ELICITATION_TITLE_LINE_HEIGHT))
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(title_text)
-                        .child("需要采取行动"),
+                        .child(crate::i18n::text("需要采取行动")),
                 )
                 .child(description),
         );
@@ -1261,7 +1285,7 @@ pub fn render_mcp_elicitation_url_activity(
                 "activity",
             ))
             .role(Role::Form)
-            .aria_label(format!("需要采取行动，{}", message))
+            .aria_label(crate::i18n::format!("需要采取行动，{}" => "Action required, {}", message))
             .w_full()
             .overflow_hidden()
             // Uir.Root in ChatGPT uses `rounded-xl` (12px), unlike the
@@ -1410,7 +1434,7 @@ fn render_header(
                     "close",
                 ))
                 .role(Role::Button)
-                .aria_label("取消")
+                .aria_label(crate::i18n::text("取消"))
                 .size(px(28.0))
                 .flex_none()
                 .flex()
@@ -1818,7 +1842,7 @@ fn render_url_body(
                     "open",
                 ))
                 .role(Role::Button)
-                .aria_label("打开链接")
+                .aria_label(crate::i18n::text("打开链接"))
                 .h(px(MCP_ELICITATION_BUTTON_HEIGHT))
                 .px(px(12.0))
                 .flex()
@@ -1843,9 +1867,9 @@ fn render_url_body(
                         .text_size(px(13.0))
                         .line_height(px(18.0))
                         .child(if opened {
-                            "重新打开链接"
+                            crate::i18n::text("重新打开链接")
                         } else {
-                            "打开链接"
+                            crate::i18n::text("打开链接")
                         }),
                 ),
         )
@@ -1855,7 +1879,9 @@ fn render_url_body(
                     .text_size(px(12.0))
                     .line_height(px(18.0))
                     .text_color(palette.secondary)
-                    .child("已打开链接。请在浏览器中完成操作后再选择“继续”。"),
+                    .child(crate::i18n::text(
+                        "已打开链接。请在浏览器中完成操作后再选择“继续”。",
+                    )),
             )
         })
 }
@@ -1867,7 +1893,7 @@ fn render_footer(
 ) -> Div {
     // Reference labels: 跳过 is the protocol decline, 继续 is accept. Cancel
     // lives in the header so all three actions keep their own affordance.
-    let accept_label = "继续";
+    let accept_label = crate::i18n::text("继续");
     let has_errors = model.fields().iter().any(|field| field.error.is_some());
     let mut footer_palette = palette;
     if has_errors {
@@ -1889,7 +1915,7 @@ fn render_footer(
         .child(button(
             &model.request_id,
             "decline",
-            "跳过",
+            crate::i18n::text("跳过"),
             ButtonKind::Secondary,
             model.keyboard_focus == Some(McpElicitationFocus::Decline),
             footer_palette,
@@ -2031,7 +2057,9 @@ fn render_status_card(
                 .text_size(px(12.0))
                 .line_height(px(16.0))
                 .text_color(palette.secondary)
-                .child(format!("{} 请求输入", model.server_name)),
+                .child(
+                    crate::i18n::format!("{} 请求输入" => "{} requests input", model.server_name),
+                ),
         )
         .child(
             div()

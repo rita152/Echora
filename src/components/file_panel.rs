@@ -45,7 +45,7 @@ struct Document {
 impl Document {
     fn label(&self) -> String {
         if self.plan.is_some() {
-            "套餐".to_owned()
+            crate::i18n::text("套餐").to_owned()
         } else {
             self.path
                 .file_name()
@@ -338,7 +338,7 @@ impl FilePanel {
             });
             self.documents.push(Document {
                 id,
-                path: PathBuf::from("套餐"),
+                path: PathBuf::from(crate::i18n::text("套餐")),
                 plan: Some(plan),
                 editor: None,
                 saved: None,
@@ -632,9 +632,9 @@ impl FilePanel {
         let answer = dirty.then(|| {
             window.prompt(
                 gpui::PromptLevel::Warning,
-                "重新加载文件？",
-                Some("当前未保存的编辑将被磁盘内容替换。"),
-                &["取消", "重新加载"],
+                crate::i18n::text("重新加载文件？"),
+                Some(crate::i18n::text("当前未保存的编辑将被磁盘内容替换。")),
+                &[crate::i18n::text("取消"), crate::i18n::text("重新加载")],
                 cx,
             )
         });
@@ -802,7 +802,7 @@ impl Render for FilePanel {
                     div()
                         .id("file-panel-review-tab")
                         .role(Role::Tab)
-                        .aria_label("审查")
+                        .aria_label(crate::i18n::text("审查"))
                         .focusable()
                         .tab_stop(true)
                         .h(px(28.))
@@ -823,7 +823,7 @@ impl Render for FilePanel {
                             }
                         })
                         .child(icon("panel-review", theme.text_secondary.into()))
-                        .child("审查"),
+                        .child(crate::i18n::text("审查")),
                 )
             })
             .children(self.documents.iter().map(|d| {
@@ -843,7 +843,7 @@ impl Render for FilePanel {
                     .hover(move |s| s.bg(theme.sidebar_hover))
                     .role(Role::Tab)
                     .aria_selected(active)
-                    .aria_label(format!("文件 {}", d.label()))
+                    .aria_label(crate::i18n::format!("文件 {}" => "File {}", d.label()))
                     .tab_stop(true)
                     .on_click(cx.listener(move |s, _, _, cx| {
                         s.active = Some(id);
@@ -874,7 +874,7 @@ impl Render for FilePanel {
                     .child(
                         self.control(
                             ("close-file", id),
-                            &format!("关闭 {}", d.label()),
+                            &crate::i18n::format!("关闭 {}" => "Close {}", d.label()),
                             "close-dialog",
                             theme,
                         )
@@ -896,11 +896,11 @@ impl Render for FilePanel {
                         .items_center()
                         .gap(px(8.))
                         .child(icon("markdown-file-document", theme.text.into()).size(px(16.)))
-                        .child("打开文件"),
+                        .child(crate::i18n::text("打开文件")),
                 )
             })
             .child(
-                self.control("add-file", "打开文件", "add", theme)
+                self.control("add-file", crate::i18n::text("打开文件"), "add", theme)
                     .on_click(cx.listener(|s, _, _, cx| {
                         s.active = None;
                         s.show_picker(cx);
@@ -938,9 +938,9 @@ impl Render for FilePanel {
                             theme.text_tertiary
                         })
                         .child(if d.saving {
-                            "保存中…"
+                            crate::i18n::text("保存中…")
                         } else if d.dirty(cx) {
-                            "未保存"
+                            crate::i18n::text("未保存")
                         } else {
                             ""
                         }),
@@ -955,7 +955,11 @@ impl Render for FilePanel {
                 toolbar = toolbar.child(
                     self.control(
                         "file-preview",
-                        if preview { "查看源代码" } else { "预览" },
+                        if preview {
+                            crate::i18n::text("查看源代码")
+                        } else {
+                            crate::i18n::text("预览")
+                        },
                         if preview {
                             "panel-terminal"
                         } else {
@@ -965,7 +969,11 @@ impl Render for FilePanel {
                     )
                     .w(px(92.))
                     .gap(px(4.))
-                    .child(if preview { "查看源代码" } else { "预览" })
+                    .child(if preview {
+                        crate::i18n::text("查看源代码")
+                    } else {
+                        crate::i18n::text("预览")
+                    })
                     .on_click(cx.listener(move |s, _, window, cx| {
                         if let Some(d) = s.documents.iter_mut().find(|d| d.id == id) {
                             d.preview = !d.preview;
@@ -977,19 +985,29 @@ impl Render for FilePanel {
                 );
             }
             toolbar = toolbar.child(
-                self.control("reload-file", "重新加载", "settings-refresh", theme)
-                    .on_click(cx.listener(move |s, _, w, cx| s.reload(id, w, cx))),
+                self.control(
+                    "reload-file",
+                    crate::i18n::text("重新加载"),
+                    "settings-refresh",
+                    theme,
+                )
+                .on_click(cx.listener(move |s, _, w, cx| s.reload(id, w, cx))),
             );
         } else {
             toolbar = toolbar.child(div().flex_1().child("/"));
         }
         toolbar = toolbar.child(
-            self.control("toggle-file-tree", "切换文件树", "panel-files", theme)
-                .when(self.tree_open, |s| s.bg(theme.text.alpha(0.05)))
-                .on_click(cx.listener(|s, _, _, cx| {
-                    s.tree_open = !s.tree_open;
-                    cx.notify();
-                })),
+            self.control(
+                "toggle-file-tree",
+                crate::i18n::text("切换文件树"),
+                "panel-files",
+                theme,
+            )
+            .when(self.tree_open, |s| s.bg(theme.text.alpha(0.05)))
+            .on_click(cx.listener(|s, _, _, cx| {
+                s.tree_open = !s.tree_open;
+                cx.notify();
+            })),
         );
         let mut content = div()
             .id("file-content")
@@ -1020,7 +1038,7 @@ impl Render for FilePanel {
                                 .child(
                                     self.control(
                                         "retry-file-save",
-                                        "重试保存",
+                                        crate::i18n::text("重试保存"),
                                         "settings-refresh",
                                         theme,
                                     )
@@ -1029,7 +1047,7 @@ impl Render for FilePanel {
                                 .child(
                                     self.control(
                                         "copy-file-content",
-                                        "复制当前内容",
+                                        crate::i18n::text("复制当前内容"),
                                         "message-copy",
                                         theme,
                                     )
@@ -1058,7 +1076,7 @@ impl Render for FilePanel {
                         .items_center()
                         .justify_center()
                         .text_color(theme.text_tertiary)
-                        .child("正在读取文件…"),
+                        .child(crate::i18n::text("正在读取文件…")),
                 );
             } else if d.image {
                 content = content.child(
@@ -1088,10 +1106,15 @@ impl Render for FilePanel {
                 let text = plan.text.clone();
                 content = content.child(
                     div().absolute().top(px(12.0)).right(px(16.0)).child(
-                        self.control("plan-panel-copy", "复制计划", "plan-copy", theme)
-                            .on_click(move |_, _, cx| {
-                                cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.clone()))
-                            }),
+                        self.control(
+                            "plan-panel-copy",
+                            crate::i18n::text("复制计划"),
+                            "plan-copy",
+                            theme,
+                        )
+                        .on_click(move |_, _, cx| {
+                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.clone()))
+                        }),
                     ),
                 );
             } else if let Some(editor) = &d.editor {
@@ -1102,7 +1125,7 @@ impl Render for FilePanel {
                     } else {
                         body.p(px(24.))
                             .text_color(theme.text_tertiary)
-                            .child("正在加载预览…")
+                            .child(crate::i18n::text("正在加载预览…"))
                     });
                 } else {
                     content = content.child(
@@ -1128,7 +1151,7 @@ impl Render for FilePanel {
                             .bg(theme.surface)
                             .flex()
                             .child(
-                                self.control("file-undo", "撤销", "back", theme)
+                                self.control("file-undo", crate::i18n::text("撤销"), "back", theme)
                                     .opacity(if editor.read(cx).can_undo() { 1. } else { 0.4 })
                                     .on_click(cx.listener(move |s, _, _, cx| {
                                         if let Some(e) = s
@@ -1142,9 +1165,15 @@ impl Render for FilePanel {
                                     })),
                             )
                             .child(
-                                self.control("file-redo", "重做", "forward", theme)
-                                    .opacity(if editor.read(cx).can_redo() { 1. } else { 0.4 })
-                                    .on_click(cx.listener(move |s, _, _, cx| {
+                                self.control(
+                                    "file-redo",
+                                    crate::i18n::text("重做"),
+                                    "forward",
+                                    theme,
+                                )
+                                .opacity(if editor.read(cx).can_redo() { 1. } else { 0.4 })
+                                .on_click(cx.listener(
+                                    move |s, _, _, cx| {
                                         if let Some(e) = s
                                             .documents
                                             .iter()
@@ -1153,7 +1182,8 @@ impl Render for FilePanel {
                                         {
                                             e.update(cx, |e, cx| e.redo(cx));
                                         }
-                                    })),
+                                    },
+                                )),
                             ),
                     );
                 }
@@ -1177,7 +1207,7 @@ impl Render for FilePanel {
                         .child(
                             self.control(
                                 "open-file-external",
-                                "在默认应用中打开",
+                                crate::i18n::text("在默认应用中打开"),
                                 "settings-external",
                                 theme,
                             )
@@ -1197,11 +1227,15 @@ impl Render for FilePanel {
                     .justify_center()
                     .gap(px(12.))
                     .child(icon("panel-files", theme.text_secondary.into()).size(px(32.)))
-                    .child(div().text_size(px(16.)).child("打开文件"))
+                    .child(
+                        div()
+                            .text_size(px(16.))
+                            .child(crate::i18n::text("打开文件")),
+                    )
                     .child(
                         div()
                             .text_color(theme.text_secondary)
-                            .child("从工作区目录树中选择文件"),
+                            .child(crate::i18n::text("从工作区目录树中选择文件")),
                     ),
             );
         }
@@ -1241,7 +1275,7 @@ impl Render for FilePanel {
                             bar.child(
                                 self.control(
                                     "clear-file-filter",
-                                    "清除文件筛选",
+                                    crate::i18n::text("清除文件筛选"),
                                     "close-dialog",
                                     theme,
                                 )
@@ -1264,7 +1298,7 @@ impl Render for FilePanel {
                 div()
                     .id("file-tree-navigation")
                     .role(Role::Tree)
-                    .aria_label("工作区目录树")
+                    .aria_label(crate::i18n::text("工作区目录树"))
                     .flex_1()
                     .min_h(px(0.))
                     .px(px(8.))
@@ -1272,13 +1306,13 @@ impl Render for FilePanel {
                     .when(count == 0, |t| {
                         t.child(div().p(px(12.)).text_color(theme.text_tertiary).child(
                             if self.searching || !self.loading.is_empty() {
-                                "正在加载…".to_string()
+                                crate::i18n::text("正在加载…").to_string()
                             } else if let Some(Err(e)) = self.directories.get(&self.cwd) {
-                                format!("无法读取目录：{e}")
+                                crate::i18n::format!("无法读取目录：{e}" => "Could not read directory: {e}")
                             } else if !self.query.is_empty() {
-                                "没有匹配的文件".into()
+                                crate::i18n::text("没有匹配的文件").into()
                             } else {
-                                "空目录".into()
+                                crate::i18n::text("空目录").into()
                             },
                         ))
                     })
@@ -1317,9 +1351,9 @@ impl Render for FilePanel {
                         .text_size(px(11.))
                         .text_color(theme.text_tertiary)
                         .child(if count == 500 {
-                            "显示前 500 个结果".into()
+                            crate::i18n::text("显示前 500 个结果").into()
                         } else {
-                            format!("{count} 个文件")
+                            crate::i18n::format!("{count} 个文件" => "{count} files")
                         }),
                 )
             });
@@ -1359,7 +1393,7 @@ impl Render for FilePanel {
                     .p(px(12.))
                     .border_t_1()
                     .border_color(theme.border)
-                    .child("未能保存文件，保留编辑或放弃更改？")
+                    .child(crate::i18n::text("未能保存文件，保留编辑或放弃更改？"))
                     .child(
                         div()
                             .flex()
@@ -1367,7 +1401,7 @@ impl Render for FilePanel {
                             .child(
                                 self.control(
                                     "cancel-file-close",
-                                    "保留编辑",
+                                    crate::i18n::text("保留编辑"),
                                     "close-dialog",
                                     theme,
                                 )
@@ -1381,7 +1415,7 @@ impl Render for FilePanel {
                             .child(
                                 self.control(
                                     "discard-file-changes",
-                                    "放弃更改并关闭",
+                                    crate::i18n::text("放弃更改并关闭"),
                                     "close-dialog",
                                     theme,
                                 )
@@ -1445,7 +1479,7 @@ impl FilePanel {
                 "{}{}",
                 label,
                 if row.entry.directory {
-                    " 文件夹"
+                    crate::i18n::text(" 文件夹")
                 } else {
                     ""
                 }

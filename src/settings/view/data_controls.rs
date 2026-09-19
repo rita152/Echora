@@ -104,7 +104,7 @@ impl SettingsView {
                     .size(px(18.0))
                     .text_color(theme.settings_description),
             )
-            .child("搜索已归档聊天");
+            .child(crate::i18n::text("搜索已归档聊天"));
         let scope = div()
             .w(px(144.0))
             .h(px(28.0))
@@ -133,7 +133,7 @@ impl SettingsView {
                         div()
                             .text_size(px(14.0))
                             .line_height(px(18.0))
-                            .child("全部聊天"),
+                            .child(crate::i18n::text("全部聊天")),
                     ),
             )
             .child(
@@ -170,7 +170,7 @@ impl SettingsView {
                         div()
                             .text_size(px(14.0))
                             .line_height(px(18.0))
-                            .child("所有项目"),
+                            .child(crate::i18n::text("所有项目")),
                     ),
             )
             .child(
@@ -232,7 +232,7 @@ impl SettingsView {
                 .line_height(px(18.5714))
                 .font_weight(gpui::FontWeight(500.0))
                 .text_color(gpui::rgba(0x00000000))
-                .child(row.title);
+                .child(crate::i18n::text(row.title));
             archive = archive.child(
                 div()
                     .h(px(60.5625))
@@ -273,7 +273,7 @@ impl SettingsView {
                                     .text_size(px(12.0))
                                     .line_height(px(16.0))
                                     .text_color(gpui::rgba(0x00000000))
-                                    .child(row.subtitle),
+                                    .child(crate::i18n::text(row.subtitle)),
                             ),
                     )
                     .child(
@@ -285,7 +285,7 @@ impl SettingsView {
                             .items_center()
                             .gap(px(8.0))
                             .child(icon_button("icons/settings-trash.svg", 16.0))
-                            .child(button("取消归档", 74.0, None, false)),
+                            .child(button(crate::i18n::text("取消归档"), 74.0, None, false)),
                     ),
             );
         }
@@ -322,10 +322,10 @@ impl SettingsView {
                             .text_size(px(24.0))
                             .line_height(px(28.8))
                             .font_weight(gpui::FontWeight::NORMAL)
-                            .child(page.label),
+                            .child(crate::i18n::text(page.label)),
                     )
                     .child(button(
-                        "全部删除",
+                        crate::i18n::text("全部删除"),
                         94.0,
                         Some(("icons/settings-trash.svg", 16.0)),
                         true,
@@ -367,7 +367,7 @@ impl SettingsView {
                                     .text_size(px(14.0))
                                     .line_height(px(21.0))
                                     .font_weight(gpui::FontWeight(500.0))
-                                    .child(page.sections[1].title),
+                                    .child(crate::i18n::text(page.sections[1].title)),
                             ),
                     )
                     .child(
@@ -380,7 +380,7 @@ impl SettingsView {
                                     .text_size(px(13.0))
                                     .line_height(px(18.5714))
                                     .text_color(theme.settings_description)
-                                    .child(page.sections[1].subtitle),
+                                    .child(crate::i18n::text(page.sections[1].subtitle)),
                             )
                             .child(icon_button("icons/more-horizontal.svg", 16.0)),
                     ),

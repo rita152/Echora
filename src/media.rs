@@ -5,7 +5,7 @@ use std::{fs, path::Path};
 use anyhow::{Context as _, Result};
 
 pub(crate) fn read_image_dimensions(path: &Path) -> Result<Option<(u32, u32)>> {
-    let bytes = fs::read(path).with_context(|| format!("无法读取生成的图像 {}", path.display()))?;
+    let bytes = fs::read(path).with_context(|| crate::i18n::format!("无法读取生成的图像 {}" => "Could not read generated image {}", path.display()))?;
     Ok(encoded_image_dimensions(&bytes))
 }
 

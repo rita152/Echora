@@ -28,7 +28,7 @@ impl ChatApp {
                 .await;
             if let Err(error) = result {
                 let _ = this.update(cx, |this, cx| {
-                    this.plan_export_error = Some(format!("无法保存计划：{error}"));
+                    this.plan_export_error = Some(crate::i18n::format!("无法保存计划：{error}" => "Could not save plan: {error}"));
                     cx.notify();
                 });
             }

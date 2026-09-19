@@ -43,7 +43,7 @@ impl SettingsView {
                                     .text_size(px(24.0))
                                     .line_height(px(31.0))
                                     .font_weight(gpui::FontWeight::NORMAL)
-                                    .child(page.label),
+                                    .child(crate::i18n::text(page.label)),
                             )
                             .child(
                                 div()
@@ -56,9 +56,14 @@ impl SettingsView {
                                     .text_size(px(14.0))
                                     .line_height(px(21.0))
                                     .text_color(theme.settings_description)
-                                    .child("通过配置和已启用的插件管理生命周期钩子。")
+                                    .child(crate::i18n::text(
+                                        "通过配置和已启用的插件管理生命周期钩子。",
+                                    ))
                                     .child(
-                                        div().ml(px(8.0)).text_color(link_color).child("了解更多"),
+                                        div()
+                                            .ml(px(8.0))
+                                            .text_color(link_color)
+                                            .child(crate::i18n::text("了解更多")),
                                     ),
                             ),
                     )
@@ -110,7 +115,7 @@ impl SettingsView {
                                             .text_size(px(13.0))
                                             .line_height(px(18.5625))
                                             .font_weight(gpui::FontWeight(500.0))
-                                            .child(empty.title),
+                                            .child(crate::i18n::text(empty.title)),
                                     )
                                     .child(
                                         div()
@@ -119,7 +124,7 @@ impl SettingsView {
                                             .text_size(px(12.0))
                                             .line_height(px(16.0))
                                             .text_color(theme.settings_description)
-                                            .child(empty.subtitle),
+                                            .child(crate::i18n::text(empty.subtitle)),
                                     ),
                             ),
                     ),

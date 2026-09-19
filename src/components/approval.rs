@@ -103,9 +103,9 @@ impl ApprovalRequestPresentation {
 
     pub fn title(&self) -> &'static str {
         match self {
-            Self::Command { .. } => "终端",
-            Self::WriteStdin { .. } => "终端",
-            Self::Network { .. } => "互联网访问",
+            Self::Command { .. } => crate::i18n::text("终端"),
+            Self::WriteStdin { .. } => crate::i18n::text("终端"),
+            Self::Network { .. } => crate::i18n::text("互联网访问"),
         }
     }
 
@@ -125,10 +125,12 @@ impl ApprovalRequestPresentation {
         }
 
         match self {
-            Self::Command { .. } => "是否允许 ChatGPT 运行此命令？".to_owned(),
-            Self::WriteStdin { .. } => "是否允许 ChatGPT 向正在运行的终端发送此输入？".to_owned(),
+            Self::Command { .. } => crate::i18n::text("是否允许 ChatGPT 运行此命令？").to_owned(),
+            Self::WriteStdin { .. } => {
+                crate::i18n::text("是否允许 ChatGPT 向正在运行的终端发送此输入？").to_owned()
+            }
             Self::Network { destination, .. } => {
-                format!("允许 ChatGPT 与 {destination} 建立连接？")
+                crate::i18n::format!("允许 ChatGPT 与 {destination} 建立连接？" => "Allow ChatGPT to connect to {destination}?")
             }
         }
     }
@@ -167,9 +169,9 @@ pub enum ApprovalScope {
 impl ApprovalScope {
     pub fn label(self) -> &'static str {
         match self {
-            Self::SimilarCommands => "允许类似命令",
-            Self::InternetAccess => "互联网访问",
-            Self::Session => "允许此对话",
+            Self::SimilarCommands => crate::i18n::text("允许类似命令"),
+            Self::InternetAccess => crate::i18n::text("互联网访问"),
+            Self::Session => crate::i18n::text("允许此对话"),
         }
     }
 }
@@ -378,7 +380,7 @@ impl ApprovalCardViewModel {
         if self.allow_once {
             choices.push(ApprovalChoicePresentation {
                 decision: ApprovalDecision::AllowOnce,
-                label: "允许一次".into(),
+                label: crate::i18n::text("允许一次").into(),
                 description: None,
                 is_rejection: false,
                 kind: ApprovalChoiceKind::Once,
@@ -396,7 +398,7 @@ impl ApprovalCardViewModel {
         if let Some(decision) = self.rejection_decision() {
             choices.push(ApprovalChoicePresentation {
                 decision,
-                label: "拒绝".into(),
+                label: crate::i18n::text("拒绝").into(),
                 description: None,
                 is_rejection: true,
                 kind: if self.decline {

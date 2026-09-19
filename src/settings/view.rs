@@ -13,6 +13,7 @@ mod environments;
 mod git;
 mod hooks;
 mod keyboard;
+mod language;
 mod navigation;
 mod personalization;
 mod plugins;
@@ -35,6 +36,7 @@ use crate::theme::{Theme, ThemeMode, UI_FONT_FAMILY};
 
 pub struct CloseSettings;
 pub struct ChangeTheme(pub ThemeMode);
+pub struct ChangeLanguage(pub crate::i18n::Language);
 pub struct ConfigSaveFinished;
 
 /// Segment of the plugins settings page. Plugins and apps keep the reference
@@ -54,6 +56,10 @@ pub struct SettingsView {
     content_scroll: ScrollHandle,
     switch_overrides: HashMap<(&'static str, usize, usize), bool>,
     appearance_theme: usize,
+    language_menu_open: bool,
+    language_menu_index: usize,
+    language_focus: gpui::FocusHandle,
+    language_bounds: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
     backend: std::sync::Arc<dyn crate::agent::AgentBackend>,
     config_cwd: std::path::PathBuf,
     config_editor: crate::configuration::ConfigEditor,
@@ -100,6 +106,7 @@ pub struct SettingsView {
 
 impl EventEmitter<CloseSettings> for SettingsView {}
 impl EventEmitter<ChangeTheme> for SettingsView {}
+impl EventEmitter<ChangeLanguage> for SettingsView {}
 impl EventEmitter<ConfigSaveFinished> for SettingsView {}
 
 impl SettingsView {
@@ -220,6 +227,10 @@ impl SettingsView {
         })
         .detach();
         Self {
+            language_menu_open: false,
+            language_menu_index: 0,
+            language_focus: cx.focus_handle().tab_stop(true),
+            language_bounds: Default::default(),
             config_choices,
             config_field_focus,
             config_return_focus: None,
@@ -263,6 +274,7 @@ impl SettingsView {
     }
 
     pub fn select(&mut self, slug: &'static str, cx: &mut Context<Self>) {
+        self.language_menu_open = false;
         self.selected = slug;
         self.config_menu = None;
         if matches!(slug, "agent" | "personalization") && self.config_editor.snapshot.is_none() {
@@ -428,6 +440,7 @@ impl Render for SettingsView {
                     this.save_config(cx);
                     cx.stop_propagation();
                 } else if event.keystroke.key == "escape" {
+                    this.language_menu_open = false;
                     this.config_menu = None;
                     this.config_custom_key = None;
                     if !this.dismiss_manage_overlays(cx) {
@@ -479,7 +492,7 @@ impl Render for SettingsView {
                                 ])
                             })
                             .role(gpui::Role::Button)
-                            .aria_label("返回应用")
+                            .aria_label(crate::i18n::text("返回应用"))
                             .focusable()
                             .tab_stop(true)
                             .on_key_down(cx.listener(|_, event: &gpui::KeyDownEvent, _, cx| {
@@ -510,7 +523,7 @@ impl Render for SettingsView {
                                     .size(px(16.0))
                                     .text_color(theme.settings_description),
                             )
-                            .child("返回应用"),
+                            .child(crate::i18n::text("返回应用")),
                     )
                     .child(
                         div()
@@ -534,7 +547,7 @@ impl Render for SettingsView {
                                     .size(px(18.0))
                                     .text_color(theme.text_tertiary),
                             )
-                            .child("搜索设置…"),
+                            .child(crate::i18n::text("搜索设置…")),
                     )
                     .child(
                         div()
@@ -556,7 +569,7 @@ impl Render for SettingsView {
                             .flex_col()
                             .gap(px(16.0))
                             .child(self.nav_group(
-                                "个人",
+                                crate::i18n::text("个人"),
                                 &[
                                     "general-settings",
                                     "profile",
@@ -570,7 +583,7 @@ impl Render for SettingsView {
                                 cx,
                             ))
                             .child(self.nav_group(
-                                "集成",
+                                crate::i18n::text("集成"),
                                 &[
                                     "computer-use",
                                     "chronicle",
@@ -582,7 +595,7 @@ impl Render for SettingsView {
                                 cx,
                             ))
                             .child(self.nav_group(
-                                "编码",
+                                crate::i18n::text("编码"),
                                 &[
                                     "hooks-settings",
                                     "connections",
@@ -593,7 +606,12 @@ impl Render for SettingsView {
                                 theme,
                                 cx,
                             ))
-                            .child(self.nav_group("已归档", &["data-controls"], theme, cx)),
+                            .child(self.nav_group(
+                                crate::i18n::text("已归档"),
+                                &["data-controls"],
+                                theme,
+                                cx,
+                            )),
                     )
                     .child(Self::sidebar_edge_shade(theme, &nav_scroll)),
             )

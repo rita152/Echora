@@ -22,7 +22,7 @@ pub(crate) fn restore_tab(id: &'static str, theme: Theme) -> gpui::Stateful<Div>
     div()
         .id(id)
         .role(Role::Tab)
-        .aria_label("返回侧边聊天")
+        .aria_label(crate::i18n::text("返回侧边聊天"))
         .focusable()
         .tab_stop(true)
         .h(px(28.0))
@@ -44,7 +44,7 @@ pub(crate) fn restore_tab(id: &'static str, theme: Theme) -> gpui::Stateful<Div>
             }
         })
         .child(icon("side-chat", theme.text_secondary.into()))
-        .child("侧边聊天")
+        .child(crate::i18n::text("侧边聊天"))
 }
 
 impl Render for SideChatTabDrag {
@@ -96,7 +96,7 @@ impl SideChatPanel {
         let mut tabs = div()
             .id("side-chat-tabs")
             .role(Role::TabList)
-            .aria_label("侧边聊天标签页")
+            .aria_label(crate::i18n::text("侧边聊天标签页"))
             .flex()
             .items_center()
             .gap(px(4.0))
@@ -107,7 +107,7 @@ impl SideChatPanel {
             let id = tab.id;
             let active = self.active == Some(id);
             let title = tab.title.clone();
-            let close_label = format!("关闭{}标签页", tab.title);
+            let close_label = crate::i18n::format!("关闭{}标签页" => "Close {} tab", tab.title);
             let owner = cx.entity_id();
             let drag = SideChatTabDrag {
                 owner,
@@ -183,7 +183,7 @@ impl SideChatPanel {
                             div()
                                 .id(("side-chat-unread", id))
                                 .role(Role::Status)
-                                .aria_label("未读回复")
+                                .aria_label(crate::i18n::text("未读回复"))
                                 .size(px(5.0))
                                 .rounded_full()
                                 .bg(theme.markdown_link),
@@ -238,16 +238,22 @@ impl SideChatPanel {
             .gap(px(4.0))
             .child(tabs)
             .child(
-                button("side-chat-add-tab", "打开侧边面板标签页", "add", theme)
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.menu_open = !this.menu_open;
-                        this.menu_index = 4;
-                        if this.menu_open {
-                            this.menu_focus.focus(window, cx);
-                        }
-                        cx.notify();
-                    }))
-                    .on_key_down(cx.listener(|this, e: &gpui::KeyDownEvent, window, cx| {
+                button(
+                    "side-chat-add-tab",
+                    crate::i18n::text("打开侧边面板标签页"),
+                    "add",
+                    theme,
+                )
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.menu_open = !this.menu_open;
+                    this.menu_index = 4;
+                    if this.menu_open {
+                        this.menu_focus.focus(window, cx);
+                    }
+                    cx.notify();
+                }))
+                .on_key_down(cx.listener(
+                    |this, e: &gpui::KeyDownEvent, window, cx| {
                         if matches!(e.keystroke.key.as_str(), "enter" | "space" | "down") {
                             this.menu_open = true;
                             this.menu_index = 4;
@@ -255,16 +261,17 @@ impl SideChatPanel {
                             cx.notify();
                             cx.stop_propagation();
                         }
-                    })),
+                    },
+                )),
             )
             .child(div().flex_1())
             .child(
                 button(
                     "side-chat-fullscreen",
                     if self.fullscreen {
-                        "退出全屏"
+                        crate::i18n::text("退出全屏")
                     } else {
-                        "进入全屏"
+                        crate::i18n::text("进入全屏")
                     },
                     "settings-external",
                     theme,
@@ -334,7 +341,7 @@ impl SideChatPanel {
                     .hover(move |s| s.bg(theme.sidebar_hover))
                     .on_click(cx.listener(move |this, _, _, cx| this.select_menu(index, cx)))
                     .child(icon(glyph, theme.text_secondary.into()).size(px(16.0)))
-                    .child(div().flex_1().child(*label))
+                    .child(div().flex_1().child(crate::i18n::text(label)))
                     .child(div().text_color(theme.text_tertiary).child(*shortcut)),
             );
         }
@@ -356,7 +363,7 @@ impl SideChatPanel {
             .id("side-chat-remember-close")
             .track_focus(&self.remember_focus)
             .role(Role::CheckBox)
-            .aria_label("不再询问")
+            .aria_label(crate::i18n::text("不再询问"))
             .aria_toggled(if self.remember_close {
                 gpui::Toggled::True
             } else {
@@ -385,7 +392,11 @@ impl SideChatPanel {
                             .child(icon("check", theme.button_text.into()).size(px(14.0)))
                     }),
             )
-            .child(div().text_size(px(13.0)).child("不再询问"));
+            .child(
+                div()
+                    .text_size(px(13.0))
+                    .child(crate::i18n::text("不再询问")),
+            );
         let action = |id: &'static str, label: &'static str, danger: bool| {
             div()
                 .id(id)
@@ -426,7 +437,7 @@ impl SideChatPanel {
                         .id("side-chat-close-dialog")
                         .key_context("SideChatCloseDialog")
                         .role(Role::Dialog)
-                        .aria_label("关闭侧边聊天？")
+                        .aria_label(crate::i18n::text("关闭侧边聊天？"))
                         .w(px(400.0))
                         .max_w_full()
                         .p(px(24.0))
@@ -463,14 +474,16 @@ impl SideChatPanel {
                                 .text_size(px(18.0))
                                 .line_height(px(25.0))
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .child("关闭侧边聊天？"),
+                                .child(crate::i18n::text("关闭侧边聊天？")),
                         )
                         .child(
                             div()
                                 .text_size(px(13.0))
                                 .line_height(px(20.0))
                                 .text_color(theme.text_secondary)
-                                .child("此侧边聊天将消失且无法恢复。确定要关闭吗？"),
+                                .child(crate::i18n::text(
+                                    "此侧边聊天将消失且无法恢复。确定要关闭吗？",
+                                )),
                         )
                         .child(checkbox)
                         .child(
@@ -479,20 +492,28 @@ impl SideChatPanel {
                                 .justify_end()
                                 .gap(px(8.0))
                                 .child(
-                                    action("side-chat-close-cancel", "取消", false)
-                                        .track_focus(&self.cancel_focus)
-                                        .on_click(cx.listener(|this, _, _, cx| {
+                                    action(
+                                        "side-chat-close-cancel",
+                                        crate::i18n::text("取消"),
+                                        false,
+                                    )
+                                    .track_focus(&self.cancel_focus)
+                                    .on_click(cx.listener(
+                                        |this, _, _, cx| {
                                             this.close_confirmation = None;
                                             this.focus_pending = true;
                                             cx.notify();
-                                        })),
+                                        },
+                                    )),
                                 )
                                 .child(
-                                    action("side-chat-close-confirm", "关闭侧边聊天", true)
-                                        .track_focus(&self.confirm_focus)
-                                        .on_click(
-                                            cx.listener(|this, _, _, cx| this.confirm_close(cx)),
-                                        ),
+                                    action(
+                                        "side-chat-close-confirm",
+                                        crate::i18n::text("关闭侧边聊天"),
+                                        true,
+                                    )
+                                    .track_focus(&self.confirm_focus)
+                                    .on_click(cx.listener(|this, _, _, cx| this.confirm_close(cx))),
                                 ),
                         ),
                 )
@@ -548,7 +569,7 @@ impl Render for SideChatPanel {
                     div()
                         .id("side-chat-retry-turn")
                         .role(Role::Button)
-                        .aria_label("重试回复")
+                        .aria_label(crate::i18n::text("重试回复"))
                         .focusable()
                         .tab_stop(true)
                         .absolute()
@@ -563,7 +584,7 @@ impl Render for SideChatPanel {
                         .cursor_pointer()
                         .text_size(px(13.0))
                         .text_color(theme.text)
-                        .child("重试回复")
+                        .child(crate::i18n::text("重试回复"))
                         .on_click(move |_, _, cx| {
                             composer.update(cx, |composer, cx| composer.retry_side_prompt(cx))
                         })
@@ -595,13 +616,13 @@ impl Render for SideChatPanel {
                                 div()
                                     .id("side-chat-retry-open")
                                     .role(Role::Button)
-                                    .aria_label("重试")
+                                    .aria_label(crate::i18n::text("重试"))
                                     .focusable()
                                     .tab_stop(true)
                                     .mt(px(8.0))
                                     .cursor_pointer()
                                     .text_color(theme.text)
-                                    .child("重试")
+                                    .child(crate::i18n::text("重试"))
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.open_tab(id, cx);
                                         cx.notify();

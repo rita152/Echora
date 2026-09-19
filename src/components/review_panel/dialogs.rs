@@ -46,17 +46,17 @@ impl ReviewPanel {
                                     .items_center()
                                     .justify_center()
                                     .text_size(px(9.))
-                                    .child("你"),
+                                    .child(crate::i18n::text("你")),
                             )
-                            .child("你")
+                            .child(crate::i18n::text("你"))
                             .when(!c.path.is_empty(), |d| {
                                 d.child(div().min_w(px(0.)).text_ellipsis().child(c.path.clone()))
                             })
                             .child(div().flex_1())
                             .child(if self.compact() {
-                                format!("{} 行", c.location())
+                                crate::i18n::format!("{} 行" => "{} lines", c.location())
                             } else {
-                                format!("第 {}{range} 行的本地评论", if c.old { "L" } else { "R" })
+                                crate::i18n::format!("第 {}{range} 行的本地评论" => "Local comment on line {}{range}", if c.old { "L" } else { "R" })
                             }),
                     )
                     .when(draft, |d| {
@@ -79,7 +79,7 @@ impl ReviewPanel {
                             .when(draft, |d| {
                                 d.child(self.button(
                                     "review-comment-cancel",
-                                    "取消",
+                                    crate::i18n::text("取消"),
                                     None,
                                     Action::CancelComment,
                                     cx,
@@ -87,7 +87,7 @@ impl ReviewPanel {
                                 .child(
                                     self.button(
                                         "review-comment-save",
-                                        "注释",
+                                        crate::i18n::text("注释"),
                                         None,
                                         Action::SaveComment,
                                         cx,
@@ -102,14 +102,14 @@ impl ReviewPanel {
                             .when(!draft, |d| {
                                 d.child(self.button(
                                     format!("review-comment-edit-{}", c.id),
-                                    "编辑评论",
+                                    crate::i18n::text("编辑评论"),
                                     None,
                                     Action::EditComment(c.id),
                                     cx,
                                 ))
                                 .child(self.button(
                                     format!("review-comment-delete-{}", c.id),
-                                    "删除",
+                                    crate::i18n::text("删除"),
                                     None,
                                     Action::DeleteComment(c.id),
                                     cx,
@@ -127,9 +127,9 @@ impl ReviewPanel {
         let confirm = self.confirm.clone();
         let commit = self.commit_open;
         let title = if commit {
-            "提交或推送"
+            crate::i18n::text("提交或推送")
         } else {
-            "还原更改？"
+            crate::i18n::text("还原更改？")
         };
         let (adds, dels) = if self.commit_all {
             (
@@ -165,7 +165,7 @@ impl ReviewPanel {
                     self.button(
                         "review-commit-branch",
                         if self.new_branch {
-                            "新分支".into()
+                            crate::i18n::text("新分支").into()
                         } else {
                             self.snapshot.branch.clone()
                         },
@@ -201,9 +201,9 @@ impl ReviewPanel {
                         .child(self.button(
                             "review-commit-all",
                             if self.commit_all {
-                                "☑ 包含未暂存的更改"
+                                crate::i18n::text("☑ 包含未暂存的更改")
                             } else {
-                                "☐ 包含未暂存的更改"
+                                crate::i18n::text("☐ 包含未暂存的更改")
                             },
                             None,
                             Action::CommitAll,
@@ -229,9 +229,9 @@ impl ReviewPanel {
                     self.button(
                         "review-dialog-confirm",
                         if self.busy {
-                            "正在提交…"
+                            crate::i18n::text("正在提交…")
                         } else {
-                            "提交"
+                            crate::i18n::text("提交")
                         },
                         None,
                         Action::SaveCommit,
@@ -245,7 +245,7 @@ impl ReviewPanel {
                 .child(
                     self.button(
                         "review-commit-and-push",
-                        "提交并推送",
+                        crate::i18n::text("提交并推送"),
                         None,
                         Action::CommitAndPush,
                         cx,
@@ -258,7 +258,7 @@ impl ReviewPanel {
                 .child(
                     self.button(
                         "review-push-only",
-                        "推送",
+                        crate::i18n::text("推送"),
                         None,
                         Action::Mutation(Mutation::Push),
                         cx,
@@ -277,8 +277,8 @@ impl ReviewPanel {
                         .line_height(px(20.))
                         .text_color(t.text_secondary)
                         .child(match &confirm {
-                            Some(Mutation::Discard(path)) => format!("这将还原 {path} 中的更改。"),
-                            _ => "这将还原当前列表中的所有文件更改。".into(),
+                            Some(Mutation::Discard(path)) => crate::i18n::format!("这将还原 {path} 中的更改。" => "This will restore changes in {path}."),
+                            _ => crate::i18n::text("这将还原当前列表中的所有文件更改。").into(),
                         }),
                 )
                 .child(
@@ -288,7 +288,7 @@ impl ReviewPanel {
                         .gap(px(8.))
                         .child(self.button(
                             "review-dialog-cancel",
-                            "取消",
+                            crate::i18n::text("取消"),
                             None,
                             Action::CancelDialog,
                             cx,
@@ -296,7 +296,7 @@ impl ReviewPanel {
                         .child(
                             self.button(
                                 "review-dialog-confirm",
-                                "还原更改",
+                                crate::i18n::text("还原更改"),
                                 None,
                                 Action::Mutation(confirm.unwrap_or(Mutation::DiscardAll)),
                                 cx,
@@ -362,7 +362,7 @@ impl ReviewPanel {
         let mut card = div()
             .id("review-pr-dialog")
             .role(Role::Dialog)
-            .aria_label("创建 PR")
+            .aria_label(crate::i18n::text("创建 PR"))
             .w(px(420.))
             .max_w_full()
             .m(px(16.))
@@ -387,7 +387,7 @@ impl ReviewPanel {
                         self.button(
                             "review-pr-head",
                             if self.new_branch {
-                                "新分支".into()
+                                crate::i18n::text("新分支").into()
                             } else {
                                 self.snapshot.branch.clone()
                             },
@@ -439,9 +439,9 @@ impl ReviewPanel {
                         .child(self.button(
                             "review-pr-include",
                             if self.commit_all {
-                                "☑ 提交并推送本地更改"
+                                crate::i18n::text("☑ 提交并推送本地更改")
                             } else {
-                                "☐ 提交并推送本地更改"
+                                crate::i18n::text("☐ 提交并推送本地更改")
                             },
                             None,
                             Action::CommitAll,
@@ -467,9 +467,9 @@ impl ReviewPanel {
                     self.button(
                         "review-create-draft-pr",
                         if self.busy {
-                            "正在创建…"
+                            crate::i18n::text("正在创建…")
                         } else {
-                            "创建草稿 PR"
+                            crate::i18n::text("创建草稿 PR")
                         },
                         None,
                         Action::CreatePullRequest(true),
@@ -483,7 +483,7 @@ impl ReviewPanel {
                 .child(
                     self.button(
                         "review-create-pr",
-                        "创建 Pull Request   ⌘⏎",
+                        crate::i18n::text("创建 Pull Request   ⌘⏎"),
                         None,
                         Action::CreatePullRequest(false),
                         cx,
@@ -500,7 +500,7 @@ impl ReviewPanel {
                     .min_h(px(100.))
                     .text_size(px(13.))
                     .text_color(t.text_tertiary)
-                    .child("此分支已存在 Pull Request"),
+                    .child(crate::i18n::text("此分支已存在 Pull Request")),
             );
         }
         card = card
@@ -508,7 +508,7 @@ impl ReviewPanel {
                 d.child(
                     self.button(
                         "review-open-pr",
-                        "在浏览器中打开 PR",
+                        crate::i18n::text("在浏览器中打开 PR"),
                         None,
                         Action::OpenPr(url),
                         cx,
