@@ -8,6 +8,7 @@ mod git_review;
 mod mcp;
 mod media;
 mod plugins;
+mod pull_requests;
 mod settings;
 mod skills;
 #[cfg(feature = "screenshot")]
@@ -305,6 +306,188 @@ fn schedule_review_screenshot(
             }
         },
     );
+}
+
+/// Ready frames the Pull Requests capture waits for before saving.
+#[cfg(feature = "screenshot")]
+const PULL_REQUESTS_STABLE_FRAMES: usize = 90;
+
+/// How often the capture re-activates its window while waiting for the page.
+/// Activating on every frame fights whatever app the user is working in, so it
+/// only happens while the window is not yet key.
+#[cfg(feature = "screenshot")]
+const PULL_REQUESTS_ACTIVATE_EVERY: usize = 30;
+
+/// Keeps waiting for the Pull Requests page after a probe rejected the current
+/// frame, until the capture deadline runs out.
+#[cfg(feature = "screenshot")]
+fn retry_pull_requests_screenshot(
+    window: &mut gpui::Window,
+    app: gpui::Entity<ChatApp>,
+    path: String,
+    deadline: Instant,
+    frame: usize,
+) {
+    if Instant::now() < deadline {
+        window.refresh();
+        schedule_pull_requests_screenshot(
+            window,
+            app,
+            path,
+            deadline,
+            PULL_REQUESTS_STABLE_FRAMES,
+            frame + 1,
+        );
+    } else {
+        eprintln!("pull requests window never painted the page");
+        std::process::exit(1);
+    }
+}
+
+#[cfg(feature = "screenshot")]
+/// Waits until the Pull Requests page has finished loading, then saves the
+/// window and exits. Used for the reference/GPUI pixel comparisons so captures
+/// never depend on pointer position or timing.
+#[cfg(feature = "screenshot")]
+fn schedule_pull_requests_screenshot(
+    window: &mut gpui::Window,
+    app: gpui::Entity<ChatApp>,
+    path: String,
+    deadline: Instant,
+    stable: usize,
+    frame: usize,
+) {
+    if frame == 0 {
+        // A window that never becomes visible stops delivering frames, so the
+        // frame-driven deadline cannot fire. Watch the clock from a thread.
+        let watchdog_deadline = deadline;
+        let watchdog_path = path.clone();
+        std::thread::spawn(move || {
+            while Instant::now() < watchdog_deadline {
+                std::thread::sleep(Duration::from_millis(250));
+            }
+            eprintln!("pull requests screenshot timed out: {watchdog_path}");
+            std::process::exit(1);
+        });
+    }
+    window.on_next_frame(move |window, cx| {
+        if std::env::var("GPUI_PR_DEBUG").is_ok() {
+            eprintln!(
+                "PR-DEBUG frame={frame} active={} ready={} {}",
+                window.is_window_active(),
+                app.read(cx).pull_requests_capture_ready(cx),
+                app.read(cx).pull_requests_diagnostics(cx)
+            );
+        }
+
+        // A background launch can leave the window unpresented, and macOS only
+        // makes a window key when the application itself is active. The capture
+        // therefore counts ready frames whether or not the window is key, and
+        // validates the rendered pixels below instead of trusting activation:
+        // an unpresented window renders the flat grey startup view, which the
+        // probe refuses to save.
+        if app.read(cx).pull_requests_capture_ready(cx) {
+            if stable == 0 {
+                match window.render_to_image() {
+                    Ok(image) => {
+                        if let Ok(dump) = std::env::var("GPUI_PR_DUMP") {
+                            let _ = image.save(format!("{dump}.probe.png"));
+                        }
+                        // An unpresented window renders a flat fill, so sample
+                        // points across the whole frame and refuse to save a
+                        // capture whose samples are all the same colour. A real
+                        // page always differs between its panes.
+                        let flat = {
+                            let mut samples = Vec::new();
+                            for (fx, fy) in
+                                [(0.1, 0.1), (0.3, 0.5), (0.5, 0.25), (0.7, 0.7), (0.9, 0.9)]
+                            {
+                                let x = ((image.width() as f32) * fx) as u32;
+                                let y = ((image.height() as f32) * fy) as u32;
+                                samples.push(image.get_pixel(
+                                    x.min(image.width() - 1),
+                                    y.min(image.height() - 1),
+                                ));
+                            }
+                            samples.windows(2).all(|pair| {
+                                (0..3)
+                                    .all(|channel| pair[0][channel].abs_diff(pair[1][channel]) <= 2)
+                            })
+                        };
+                        if flat {
+                            eprintln!("pull requests capture saw the startup view; waiting");
+                            retry_pull_requests_screenshot(window, app, path, deadline, frame);
+                            return;
+                        }
+                    }
+                    Err(error) => {
+                        eprintln!("pull requests render probe failed: {error}; waiting");
+                        retry_pull_requests_screenshot(window, app, path, deadline, frame);
+                        return;
+                    }
+                }
+                if let Err(error) = save_screenshot(window, &path) {
+                    eprintln!("pull requests screenshot failed: {error}");
+                    std::process::exit(1);
+                }
+                let audit = serde_json::json!({
+                    "viewportWidth": f32::from(window.viewport_size().width),
+                    "viewportHeight": f32::from(window.viewport_size().height),
+                    "dpr": window.scale_factor(),
+                    "source": "GPUI render_to_image; no resizing or alignment",
+                    "diagnostics": app.read(cx).pull_requests_diagnostics(cx),
+                });
+                let _ = std::fs::write(
+                    format!("{path}.render.json"),
+                    serde_json::to_vec_pretty(&audit).unwrap(),
+                );
+                println!("{path}");
+                cx.quit();
+            } else if Instant::now() < deadline {
+                // Require the page to be ready on `stable + 1` consecutive
+                // frames so the capture never saves a frame the window rendered
+                // before the startup gate cleared.
+                window.refresh();
+                schedule_pull_requests_screenshot(
+                    window,
+                    app,
+                    path,
+                    deadline,
+                    stable - 1,
+                    frame + 1,
+                );
+            } else {
+                eprintln!("pull requests screenshot did not stabilize");
+                std::process::exit(1);
+            }
+            return;
+        }
+        if Instant::now() >= deadline {
+            eprintln!("pull requests page did not become ready");
+            std::process::exit(1);
+        }
+        // `render_to_image` rasterizes the last drawn scene, so the window must
+        // actually be on screen and drawing. Bring it forward until it is key:
+        // an occluded window never draws, and `render_to_image` only rasterizes
+        // the last drawn scene, so the capture would otherwise save the startup
+        // view. Re-activating every frame would keep stealing focus from
+        // whatever the user is working in, so this backs off once the window is
+        // key and only repeats periodically.
+        let activate = !window.is_window_active();
+        if activate && (frame.is_multiple_of(PULL_REQUESTS_ACTIVATE_EVERY) || frame < 2) {
+            window.activate_window();
+            cx.activate(true);
+        }
+        window.refresh();
+        schedule_pull_requests_screenshot(
+            window,
+            app,
+            path,
+            deadline,
+            stable,
+            frame.wrapping_add(1),
+        );
+    });
 }
 
 #[cfg(feature = "screenshot")]
@@ -793,6 +976,48 @@ fn main() {
         || permission_menu_state.is_some()
         || permission_confirmation_open;
     let settings_open = args.iter().any(|arg| arg == "--settings-open");
+    // Deterministic entry for the Pull Requests page: `--pull-requests` opens the
+    // page on launch, and `--pull-requests-select=N` selects the Nth visible row
+    // so captures do not depend on pointer races.
+    let pull_requests_open = args.iter().any(|arg| arg == "--pull-requests");
+    let pull_requests_select = args.iter().find_map(|arg| {
+        arg.strip_prefix("--pull-requests-select=")
+            .and_then(|value| value.parse::<usize>().ok())
+    });
+    let pull_requests_title = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--pull-requests-title="))
+        .map(ToOwned::to_owned);
+    let pull_requests_tab = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--pull-requests-tab="))
+        .map(ToOwned::to_owned);
+    let pull_requests_file_tree = args.iter().any(|arg| arg == "--pull-requests-file-tree");
+    let pull_requests_status = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--pull-requests-status="))
+        .map(ToOwned::to_owned);
+    let pull_requests_list_tab = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--pull-requests-list-tab="))
+        .map(ToOwned::to_owned);
+    let pull_requests_search = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--pull-requests-search="))
+        .map(ToOwned::to_owned);
+    let pull_requests_collapsed_group = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--pull-requests-collapse-group="))
+        .map(ToOwned::to_owned);
+    let pull_requests_action = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--pull-requests-action="))
+        .map(ToOwned::to_owned);
+    let pull_requests_comment_menu = args.iter().any(|arg| arg == "--pull-requests-comment-menu");
+    let pull_requests_scroll = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--pull-requests-scroll="))
+        .and_then(|value| value.parse::<f32>().ok());
     let mut account_ready_capture = false;
     let settings_page = args.iter().find_map(|arg| {
         arg.strip_prefix("--settings-page=")
@@ -1127,6 +1352,49 @@ fn main() {
                         } else if settings_open {
                             app.open_settings(cx);
                         }
+                        if pull_requests_open {
+                            app.complete_startup_for_capture(cx);
+                            app.open_pull_requests_for_capture(cx);
+                            if let Some(status) = pull_requests_status.as_deref() {
+                                let filter = match status {
+                                    "merged" => crate::pull_requests::StatusFilter::Merged,
+                                    "closed" => crate::pull_requests::StatusFilter::Closed,
+                                    "all" => crate::pull_requests::StatusFilter::All,
+                                    _ => crate::pull_requests::StatusFilter::Open,
+                                };
+                                app.set_pull_requests_status_filter(filter, cx);
+                            }
+                            if let Some(tab) = pull_requests_list_tab.as_deref() {
+                                app.set_pull_requests_list_tab(tab, cx);
+                            }
+                            if let Some(query) = pull_requests_search.as_deref() {
+                                app.set_pull_requests_search(query, cx);
+                            }
+                            if let Some(group) = pull_requests_collapsed_group.as_deref() {
+                                app.collapse_pull_requests_group(group, cx);
+                            }
+                            if let Some(tab) = pull_requests_tab.clone() {
+                                app.open_pull_requests_tab(&tab, cx);
+                            }
+                            if let Some(offset) = pull_requests_scroll {
+                                app.scroll_pull_requests_detail(offset, cx);
+                            }
+                            if pull_requests_comment_menu {
+                                app.open_pull_requests_action("comment-menu", cx);
+                            }
+                            if let Some(action) = pull_requests_action.as_deref() {
+                                app.open_pull_requests_action(action, cx);
+                            }
+                            if pull_requests_file_tree {
+                                app.set_pull_requests_file_tree(true, cx);
+                            }
+                            if let Some(index) = pull_requests_select {
+                                app.select_pull_request_index(index, cx);
+                            }
+                            if let Some(title) = pull_requests_title.as_deref() {
+                                app.select_pull_request_title(title, cx);
+                            }
+                        }
                         app.apply_manage_capture_flags(
                             plugins_segment.as_deref(),
                             mcp_detail.as_deref(),
@@ -1211,6 +1479,18 @@ fn main() {
                                 path,
                                 0,
                                 CHAT_SEARCH_STABLE_FRAMES,
+                            );
+                        } else if pull_requests_open {
+                            // The page can be model-ready before the window has
+                            // painted its first real frame; hold the capture for
+                            // about a second of ready frames.
+                            schedule_pull_requests_screenshot(
+                                window,
+                                app.clone(),
+                                path,
+                                Instant::now() + Duration::from_secs(60),
+                                PULL_REQUESTS_STABLE_FRAMES,
+                                0,
                             );
                         } else if let Some(thread_id) = resume_thread.clone() {
                             schedule_resumed_thread_screenshot(

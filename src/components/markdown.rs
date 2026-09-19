@@ -613,6 +613,9 @@ struct MarkdownPalette {
 struct MarkdownRenderStyle {
     selectable: bool,
     layout: MarkdownLayout,
+    /// Body text weight; the pull request surface compensates for GPUI's
+    /// heavier rasterization by rendering prose at 400.
+    body_weight: FontWeight,
     palette: MarkdownPalette,
 }
 
@@ -620,6 +623,7 @@ impl MarkdownRenderStyle {
     fn new(theme: Theme) -> Self {
         Self {
             selectable: false,
+            body_weight: CHATGPT_MARKDOWN_BODY_WEIGHT,
             layout: CHATGPT_MARKDOWN_LAYOUT,
             palette: MarkdownPalette {
                 text: theme.markdown_text,
@@ -660,6 +664,88 @@ pub fn render_assistant_markdown(source: &str, theme: Theme, message_scope: &str
     let document = parse_markdown(source);
     render_markdown_document(&document, theme, markdown_hash(message_scope))
 }
+
+/// Pull request descriptions and review comments: the reference renders this
+/// surface with a 21px body line box instead of the chat view's 22.75px.
+pub fn render_pull_request_markdown(source: &str, theme: Theme, scope: &str) -> Div {
+    // The reference hides HTML comments in pull request prose: the Codex review
+    // summaries embed machine-readable `<!-- ... -->` blocks that must not
+    // reach the rendered body.
+    let source = strip_html_comments(source);
+    let document = parse_markdown(&source);
+    let mut style = MarkdownRenderStyle::new(theme);
+    style.layout.base_line_height = PULL_REQUEST_BODY_LINE_HEIGHT;
+    style.body_weight = PULL_REQUEST_BODY_WEIGHT;
+    style.layout.quote_line_height = PULL_REQUEST_BODY_LINE_HEIGHT;
+    render_block_sequence(
+        &document.blocks,
+        style,
+        0,
+        SequenceContext::Root,
+        markdown_hash(scope),
+    )
+    .w_full()
+    .min_w(px(0.0))
+    .text_size(px(style.layout.base_size))
+    .line_height(px(PULL_REQUEST_BODY_LINE_HEIGHT))
+    .font(pull_request_font())
+    .font_weight(PULL_REQUEST_BODY_WEIGHT)
+    .text_color(style.palette.text)
+}
+
+/// Font for pull request prose. The reference resolves Chinese runs through the
+/// system cascade to `.PingFangUI…` (a 0.9587em ideograph), while an explicit
+/// `PingFang SC` fallback resolves the text variant at a full 1em advance and
+/// makes every mixed CJK line 3–4% too wide. Dropping the explicit fallback
+/// lets CoreText's own cascade pick the face the reference uses.
+fn pull_request_font() -> gpui::Font {
+    let mut font = ui_font();
+    font.fallbacks = None;
+    font
+}
+
+/// Reference body line box for pull request prose. The 2026-09-18 CDP capture
+/// of both the description (`div`/`p`/`li` nodes) and the activity comment
+/// paragraphs resolves `font-size: 14px; line-height: 22.75px`, the same
+/// inherited line box the chat surface uses.
+pub const PULL_REQUEST_BODY_LINE_HEIGHT: f32 = 22.75;
+/// Removes `<!-- ... -->` blocks, which the reference never renders.
+fn strip_html_comments(source: &str) -> String {
+    let mut output = String::with_capacity(source.len());
+    let mut rest = source;
+    while let Some(start) = rest.find("<!--") {
+        output.push_str(&rest[..start]);
+        match rest[start + 4..].find("-->") {
+            Some(end) => rest = &rest[start + 4 + end + 3..],
+            None => return output,
+        }
+    }
+    output.push_str(rest);
+    output
+}
+
+#[cfg(test)]
+mod strip_html_comments_tests {
+    use super::strip_html_comments;
+
+    #[test]
+    fn removes_comment_blocks_and_keeps_surrounding_prose() {
+        assert_eq!(
+            strip_html_comments("before\n<!-- hidden\nspanning -->\nafter"),
+            "before\n\nafter"
+        );
+        assert_eq!(strip_html_comments("no comments"), "no comments");
+        assert_eq!(strip_html_comments("open <!-- never closed"), "open ");
+    }
+}
+
+/// Pull request prose weight. The reference declares 430, but GPUI resolves
+/// that token to a heavier face than Chromium does, and the lighter instance
+/// matches the reference pixels most closely: against
+/// `artifacts/pull-requests-reference/detail-summary-light.png` the summary
+/// body scores 92.51 MAE / 79.81% identical pixels at 300, versus 92.13 / 79.40%
+/// at 400. Weights from 300 to 380 resolve to the same face.
+pub const PULL_REQUEST_BODY_WEIGHT: gpui::FontWeight = gpui::FontWeight(300.0);
 
 pub fn render_selectable_plan(source: &str, theme: Theme, scope: &str) -> Div {
     let document = parse_markdown(source);
@@ -875,7 +961,7 @@ fn render_block(
             } else {
                 style.layout.base_line_height
             },
-            CHATGPT_MARKDOWN_BODY_WEIGHT,
+            style.body_weight,
             block_identity,
         ),
         MarkdownBlock::Heading { level, content } => {

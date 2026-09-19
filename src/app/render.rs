@@ -369,6 +369,18 @@ impl Render for ChatApp {
                 if let Ok(path) = std::env::var("GPUI_CAPTURE_OUTPUT") { crate::capture_frame(_window,path,3); }
             }))
             .on_action(cx.listener(|this, _: &DismissPermissionUi, window, cx| {
+                if this.showing_pull_requests {
+                    let fullscreen = this.pull_requests.read(cx).is_fullscreen();
+                    if fullscreen {
+                        this.pull_requests.update(cx, |view, cx| view.set_fullscreen(false, cx));
+                        cx.stop_propagation();
+                        return;
+                    }
+                    if this.pull_requests.update(cx, |view, cx| view.dismiss_menus(cx)) {
+                        cx.stop_propagation();
+                        return;
+                    }
+                }
                 if this.showing_settings {
                     this.settings.update(cx, |settings, cx| settings.dismiss_transient(window, cx));
                     cx.stop_propagation(); return;
@@ -449,7 +461,20 @@ impl Render for ChatApp {
                                     .min_h(px(0.0))
                                     .flex_1()
                                     .flex()
-                                    .when(!review_fullscreen,|row|row.child(
+                                    .when(!review_fullscreen && self.showing_pull_requests, |row| {
+                                        // The Pull Requests page owns the whole content
+                                        // area: the reference keeps its list/detail
+                                        // panes flush with the workspace edges.
+                                        row.child(
+                                            div()
+                                                .flex_1()
+                                                .min_w(px(0.0))
+                                                .h_full()
+                                                .bg(theme.surface)
+                                                .child(self.pull_requests.clone()),
+                                        )
+                                    })
+                                    .when(!review_fullscreen && !self.showing_pull_requests,|row|row.child(
                                         div()
                                             .flex_1()
                                             .min_w(px(0.0))
@@ -673,6 +698,10 @@ impl Render for ChatApp {
                             .right(px(8.0))
                             .flex()
                             .gap(px(6.0))
+                            // The reference Pull Requests page owns the whole
+                            // content area and shows no panel controls there.
+                            .when(!self.showing_pull_requests, |controls| {
+                                controls
                             .child(
                                 titlebar_icon_button(
                                     "bottom-panel",
@@ -702,7 +731,8 @@ impl Render for ChatApp {
                                     cx.stop_propagation();
                                     this.toggle_right_panel(cx);
                                 })),
-                            ),
+                            )
+                            }),
                     )
             })
             .when(self.project_creation.open, |shell| {

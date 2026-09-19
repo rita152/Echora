@@ -64,7 +64,7 @@ fn read_limited(mut input: impl Read, limit: usize) -> std::io::Result<Vec<u8>> 
     }
 }
 
-pub(super) fn run(
+pub(crate) fn run(
     command: &mut Command,
     input: Option<&[u8]>,
     timeout: Duration,

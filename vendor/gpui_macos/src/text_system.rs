@@ -87,6 +87,10 @@ struct MacTextSystemState {
     font_ids_by_native_font: HashMap<NativeFontKey, FontId>,
     font_ids_by_font_key: HashMap<FontKey, SmallVec<[FontId; 4]>>,
     postscript_names_by_font_id: HashMap<FontId, String>,
+    /// Hidden system UI faces resolved from CoreText's cascade, keyed by family,
+    /// size, and CSS weight. `+[NSFont fontWithName:size:]` logs a CoreText note
+    /// per call, so each face is resolved once and reused.
+    hidden_fonts: HashMap<(String, u32, u32), CTFont>,
 }
 
 impl MacTextSystem {
@@ -102,6 +106,7 @@ impl MacTextSystem {
             font_ids_by_native_font: HashMap::default(),
             font_ids_by_font_key: HashMap::default(),
             postscript_names_by_font_id: HashMap::default(),
+            hidden_fonts: HashMap::default(),
         }))
     }
 }
@@ -240,6 +245,17 @@ fn font_smoothing_allowed_by_user() -> bool {
 }
 
 impl MacTextSystemState {
+    /// Resolves (and caches) a hidden system UI face for `family`.
+    fn hidden_font(&mut self, family: &str, size: f32, weight: f32) -> Option<CTFont> {
+        let key = (family.to_owned(), size.to_bits(), weight.to_bits());
+        if let Some(font) = self.hidden_fonts.get(&key) {
+            return Some(font.clone());
+        }
+        let font = hidden_ui_font(family, size.into(), weight)?;
+        self.hidden_fonts.insert(key, font.clone());
+        Some(font)
+    }
+
     fn select_font(&mut self, font: &Font) -> Result<FontId> {
         if let Some(id) = self.font_selections.get(font) {
             return Ok(*id);
@@ -702,6 +718,22 @@ impl MacTextSystemState {
                                 emoji_font_at_size(&font, actual_font_size.into())
                             } else if family == base.family_name() {
                                 fallback
+                            } else if family.starts_with('.') {
+                                // Hidden UI families (`.PingFang UI SC`,
+                                // `.AppleSymbols`, …) are not reachable through
+                                // the public family list, so re-selecting them
+                                // would fall back to a different public face.
+                                // `+[NSFont fontWithName:size:]` resolves them
+                                // exactly like Blink: for Simplified Chinese that
+                                // is `.PingFang UI Display SC` with 0.9587em
+                                // ideographs, matching the reference app's text
+                                // width instead of the 1em public `PingFang SC`.
+                                self.hidden_font(
+                                    &family,
+                                    f32::from(actual_font_size),
+                                    request.weight.0,
+                                )
+                                .unwrap_or(fallback)
                             } else if let Ok(id) = self.select_font(&fallback_request) {
                                 self.fonts[id.0]
                                     .native_font()
@@ -792,6 +824,72 @@ impl MacTextSystemState {
             len: text.len(),
         }
     }
+}
+
+/// Resolves a hidden system font family the way Blink does.
+///
+/// `CTFontCreateWithName` refuses names that start with a dot (it returns Times
+/// New Roman), and font-kit only lists public families, so the system UI faces
+/// cannot be reached through either path. `+[NSFont fontWithName:size:]` does
+/// resolve them, including the Display optical size that Chromium uses for
+/// Chinese text.
+fn hidden_ui_font(family: &str, size: CGFloat, weight: f32) -> Option<CTFont> {
+    use core_text::font::CTFontRef;
+    use core_text::font_descriptor::{kCTFontVariationAttribute, new_from_attributes};
+    use objc::{class, msg_send, sel, sel_impl};
+
+    let name = CFString::new(family);
+    let base = unsafe {
+        let font: *mut objc::runtime::Object = msg_send![
+            class!(NSFont),
+            fontWithName: name.as_concrete_TypeRef()
+            size: size
+        ];
+        if font.is_null() {
+            return None;
+        }
+        CTFont::wrap_under_get_rule(font as CTFontRef)
+    };
+    // The family exposes static faces at 400/500/600/700, and Blink's CSS font
+    // matching picks the nearest one: 400 for 430, 500 for 500, 600 for bold
+    // text. The plain face is already the 400 instance.
+    let target = if weight < 450.0 {
+        400.0
+    } else if weight < 550.0 {
+        500.0
+    } else if weight < 650.0 {
+        600.0
+    } else {
+        700.0
+    };
+    if target == 400.0 {
+        return Some(base);
+    }
+    let variations = CFDictionary::from_CFType_pairs(&[(
+        CFNumber::from(i32::from_be_bytes(*b"wght")),
+        CFNumber::from(target),
+    )]);
+    let attributes = CFDictionary::from_CFType_pairs(&[(
+        unsafe { CFString::wrap_under_get_rule(kCTFontVariationAttribute) },
+        variations.as_CFType(),
+    )]);
+    let descriptor = new_from_attributes(&attributes);
+    unsafe extern "C" {
+        fn CTFontCreateCopyWithAttributes(
+            font: CTFontRef,
+            size: CGFloat,
+            matrix: *const core_graphics::geometry::CGAffineTransform,
+            attributes: core_text::font_descriptor::CTFontDescriptorRef,
+        ) -> CTFontRef;
+    }
+    Some(unsafe {
+        CTFont::wrap_under_create_rule(CTFontCreateCopyWithAttributes(
+            base.as_concrete_TypeRef(),
+            size,
+            std::ptr::null(),
+            descriptor.as_concrete_TypeRef(),
+        ))
+    })
 }
 
 // Skia's exact-copy attributes suppress CoreText's extra emoji tracking and

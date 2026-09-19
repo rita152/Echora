@@ -1,0 +1,259 @@
+//! Page shell: pane layout, overlays, and the shared page background.
+
+use gpui::{Div, SharedString, div, prelude::*, px};
+
+use super::{PullRequestsView, theme::*};
+use crate::components::icons::icon;
+use crate::theme::ui_font;
+
+impl gpui::Render for PullRequestsView {
+    fn render(
+        &mut self,
+        window: &mut gpui::Window,
+        cx: &mut gpui::Context<Self>,
+    ) -> impl IntoElement {
+        let theme = self.theme();
+        self.measure_code_width(window);
+        self.take_capture_offset();
+        self.apply_pending_file_scroll(cx);
+        let fullscreen = self.fullscreen;
+        let detail = if fullscreen {
+            None
+        } else {
+            Some(self.list_pane(cx))
+        };
+        let view = cx.entity();
+        let dismiss = view.clone();
+        let mut page = div()
+            .id("pull-requests-page")
+            .relative()
+            .size_full()
+            .flex()
+            .font(ui_font())
+            .text_color(theme.text)
+            .bg(theme.surface)
+            .track_focus(&self.focus)
+            .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+                dismiss.update(cx, |view, cx| {
+                    view.dismiss_menus(cx);
+                });
+            });
+        if let Some(detail) = detail {
+            // The reference layers its resize strip over the pane boundary, so the
+            // two panes sit flush: list 518 + detail 646 at a 1440px window.
+            page = page.child(detail);
+        }
+        page = page.child(self.detail_pane(window, cx));
+        page = page.child(
+            div()
+                .absolute()
+                .left(px(LIST_PANE_WIDTH - 0.5))
+                .top(px(0.0))
+                .w(px(1.0))
+                .h_full()
+                .bg(theme.border),
+        );
+
+        if !fullscreen {
+            page = page.child(
+                div()
+                    .absolute()
+                    .top(px(0.0))
+                    .left(px(0.0))
+                    .w(px(LIST_PANE_WIDTH))
+                    .h(px(0.0))
+                    .children(self.filter_overlays(cx)),
+            );
+        }
+        if self.reviewers_open {
+            page = page.child(self.reviewers_dialog(cx));
+        }
+        if let Some(notice) = self.notice.clone() {
+            page = page.child(
+                div()
+                    .absolute()
+                    .bottom(px(24.0))
+                    .left(px(0.0))
+                    .right(px(0.0))
+                    .flex()
+                    .justify_center()
+                    .child(
+                        div()
+                            .px(px(12.0))
+                            .py(px(6.0))
+                            .rounded(px(12.0))
+                            .bg(theme.menu_surface)
+                            .text_size(px(13.0))
+                            .text_color(theme.text)
+                            .shadow(vec![
+                                gpui::BoxShadow::new(px(0.0), px(8.0), theme.menu_shadow.into())
+                                    .blur_radius(px(16.0))
+                                    .spread_radius(px(-4.0)),
+                            ])
+                            .child(notice),
+                    ),
+            );
+        }
+        page
+    }
+}
+
+impl PullRequestsView {
+    /// Everything positioned over the page: the filter popover and its submenu,
+    /// the status and description menus of the detail pane, and the diff
+    /// toolbar menus.
+    fn filter_overlays(&self, cx: &mut gpui::Context<Self>) -> Vec<Div> {
+        let mut overlays = Vec::new();
+        if self.list_menu.is_some() {
+            overlays.push(
+                div()
+                    .absolute()
+                    .top(px(0.0))
+                    .right(px(31.0))
+                    .child(self.filter_menu(cx)),
+            );
+            if let Some(submenu) = self.filter_submenu(cx) {
+                overlays.push(
+                    div()
+                        .absolute()
+                        .top(px(0.0))
+                        .left(px(LIST_PANE_WIDTH - 31.0))
+                        .child(submenu),
+                );
+            }
+        }
+        overlays
+    }
+
+    /// The reference's reviewer picker: a popover anchored under the
+    /// `Reviewers` meta row (x 751.5 → 1040, y 241.5 → 341.5 at the reference
+    /// window size). It has no scrim, no title, and no submit buttons: the
+    /// search field sits above a divider, and choosing a user requests it.
+    pub(super) fn reviewers_dialog(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
+        let theme = self.theme();
+        let view = cx.entity();
+        let query_is_empty = self
+            .reviewers_query
+            .as_ref()
+            .is_none_or(|query| query.read(cx).text().trim().is_empty());
+        let mut results = div().flex().flex_col().px(px(14.0)).py(px(18.0));
+        if self.reviewers_results.is_empty() {
+            results = results.child(
+                div()
+                    .text_size(px(14.0))
+                    .text_color(theme.text_muted)
+                    .child(if query_is_empty {
+                        "Search by name or GitHub username"
+                    } else {
+                        "No users found"
+                    }),
+            );
+        }
+        for user in &self.reviewers_results {
+            let login = user.login.clone();
+            let selected = self.reviewers_selected.contains(&login);
+            let select_view = view.clone();
+            results = results.child(
+                div()
+                    .id(SharedString::from(format!("pr-reviewer-{login}")))
+                    .h(px(28.5))
+                    .px(px(4.0))
+                    .py(px(5.0))
+                    .rounded(px(8.0))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .cursor_pointer()
+                    .when(selected, |row| row.bg(theme.menu_hover))
+                    .hover(move |style| style.bg(theme.menu_hover))
+                    .role(gpui::Role::MenuItem)
+                    .on_click(move |_, _, cx| {
+                        select_view.update(cx, |view, cx| view.toggle_reviewer(login.clone(), cx));
+                    })
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.0))
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .child(user.login.clone()),
+                    )
+                    .when(selected, |row| {
+                        row.child(icon("check", theme.text.into()).size(px(14.0)))
+                    }),
+            );
+        }
+        div()
+            .absolute()
+            // Page-relative position of the reference popover: x 751.5 → 1040
+            // in window coordinates, with the page starting at x 276. The row
+            // anchor sits at y 241.5 for an unscrolled detail column, so the
+            // panel follows the detail scroll exactly like a floating popover.
+            .top(px(241.5 - f32::from(self.detail_scroll.offset().y)))
+            .left(px(475.5))
+            .w(px(288.5))
+            .rounded(px(20.0))
+            .bg(theme.popover_surface)
+            .shadow(vec![
+                gpui::BoxShadow::new(px(0.0), px(0.0), theme.border.into())
+                    .blur_radius(px(0.0))
+                    .spread_radius(px(0.5)),
+                gpui::BoxShadow::new(px(0.0), px(16.0), theme.menu_shadow.into())
+                    .blur_radius(px(32.0))
+                    .spread_radius(px(-8.0)),
+            ])
+            .flex()
+            .flex_col()
+            .overflow_hidden()
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .child(
+                div()
+                    .id("pr-reviewers-dialog")
+                    .h(px(47.0))
+                    .px(px(13.5))
+                    .flex()
+                    .items_center()
+                    .gap(px(3.5))
+                    .child(icon("search", theme.icon_muted.into()).size(px(20.0)))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.0))
+                            .children(self.reviewers_query.clone()),
+                    ),
+            )
+            .child(div().h(px(1.0)).bg(theme.border))
+            .child(results)
+    }
+
+    /// Shared pill button used by the detail header (`h-7 rounded-full px-2`).
+    pub(super) fn header_pill(
+        id: &'static str,
+        label: &'static str,
+        theme: PrTheme,
+        filled: bool,
+    ) -> gpui::Stateful<Div> {
+        div()
+            .id(id)
+            .h(px(28.0))
+            .px(px(8.0))
+            .flex()
+            .items_center()
+            .gap(px(4.0))
+            .rounded(px(12.5))
+            .text_size(px(13.0))
+            .cursor_pointer()
+            .when(filled, |button| {
+                button
+                    .bg(theme.inverted_surface)
+                    .text_color(theme.inverted_text)
+            })
+            .when(!filled, |button| {
+                button
+                    .bg(theme.control)
+                    .text_color(theme.text)
+                    .hover(move |style| style.bg(theme.control_hover))
+            })
+            .child(label)
+    }
+}

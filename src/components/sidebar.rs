@@ -28,6 +28,9 @@ use crate::{
 
 pub struct OpenSettings;
 pub struct OpenProjectCreation;
+/// The sidebar `Pull requests` entry asks the host to open the Pull Requests
+/// page in the main content area.
+pub struct OpenPullRequests;
 /// The sidebar search button asks the host to open the chat search dialog.
 pub struct OpenChatSearch;
 
@@ -60,6 +63,7 @@ pub struct NewConversation {
 }
 
 impl gpui::EventEmitter<OpenSettings> for SidebarView {}
+impl gpui::EventEmitter<OpenPullRequests> for SidebarView {}
 impl gpui::EventEmitter<AccountAction> for SidebarView {}
 impl gpui::EventEmitter<OpenProjectCreation> for SidebarView {}
 impl gpui::EventEmitter<OpenChatSearch> for SidebarView {}
@@ -78,7 +82,8 @@ fn new_conversation_target(project: Option<&Project>) -> (Option<ProjectId>, Pat
 }
 
 // These values come from the live ChatGPT desktop app at 127.0.0.1:9222.
-const SIDEBAR_WIDTH: f32 = 240.0;
+/// Matches the reference shell's `--codex-sidebar-preferred-width` (275px).
+pub(crate) const SIDEBAR_WIDTH: f32 = 275.0;
 const SIDEBAR_TITLEBAR_SAFE_TOP: f32 = 46.0;
 const ROW_HEIGHT: f32 = 30.0;
 const ROW_RADIUS: f32 = 12.5;
@@ -374,6 +379,8 @@ pub struct SidebarView {
     account: AccountView,
     activity_open: bool,
     archived_open: bool,
+    /// True while the main content area shows the Pull Requests page.
+    pull_requests_open: bool,
     local_error: Option<String>,
 }
 
@@ -430,8 +437,18 @@ impl SidebarView {
             account: AccountView::default(),
             activity_open: false,
             archived_open: false,
+            pull_requests_open: false,
             local_error: None,
         }
+    }
+
+    /// Highlights the `Pull requests` row while that page owns the main area.
+    pub fn set_pull_requests_open(&mut self, open: bool, cx: &mut Context<Self>) {
+        if self.pull_requests_open == open {
+            return;
+        }
+        self.pull_requests_open = open;
+        cx.notify();
     }
 
     pub fn set_mode(&mut self, mode: ThemeMode, cx: &mut Context<Self>) {
@@ -710,6 +727,42 @@ impl SidebarView {
             .hover(move |style| style.bg(theme.sidebar_hover))
             .child(icon(glyph, theme.sidebar_text.into()))
             .child(div().relative().left(px(0.25)).child(label))
+            .child(div().flex_1())
+    }
+
+    /// Sidebar entry that switches the main content area to the Pull Requests
+    /// page; the reference highlights the row while that page is open.
+    pub(super) fn pull_requests_nav_row(
+        &self,
+        theme: Theme,
+        selected: bool,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<Div> {
+        let view = cx.entity();
+        div()
+            .id("sidebar-pull-requests")
+            .flex_none()
+            .relative()
+            .top(px(1.0))
+            .h(px(30.0))
+            .w_full()
+            .px(px(8.0))
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .rounded(px(10.0))
+            .text_size(px(14.0))
+            .text_color(theme.sidebar_text)
+            .cursor_pointer()
+            .role(gpui::Role::Button)
+            .aria_label("Pull requests")
+            .when(selected, |row| row.bg(theme.sidebar_hover))
+            .hover(move |style| style.bg(theme.sidebar_hover))
+            .on_click(move |_, _, cx| {
+                view.update(cx, |_, cx| cx.emit(OpenPullRequests));
+            })
+            .child(icon("pull-request", theme.sidebar_text.into()))
+            .child(div().relative().left(px(0.25)).child("拉取请求"))
             .child(div().flex_1())
     }
 
@@ -1694,12 +1747,7 @@ impl SidebarView {
                     .flex()
                     .flex_col()
                     .gap(px(1.0))
-                    .child(Self::static_nav_row(
-                        "sidebar-pull-requests",
-                        "拉取请求",
-                        "pull-request",
-                        theme,
-                    ))
+                    .child(self.pull_requests_nav_row(theme, self.pull_requests_open, cx))
                     .child(Self::static_nav_row(
                         "sidebar-sites",
                         "站点",
@@ -2739,7 +2787,7 @@ mod tests {
             window.read(|sidebar, _| sidebar.selected_thread_id.clone()),
             Some("thread-stable-id".to_owned())
         );
-        assert_eq!(SIDEBAR_WIDTH, 240.0);
+        assert_eq!(SIDEBAR_WIDTH, 275.0);
         assert_eq!(SIDEBAR_TITLEBAR_SAFE_TOP, 46.0);
         assert_eq!(ROW_HEIGHT, 30.0);
         assert_eq!(ROW_RADIUS, 12.5);

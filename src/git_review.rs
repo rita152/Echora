@@ -4,7 +4,7 @@
 //! and mutations check that the displayed snapshot is still current first.
 
 mod comments;
-mod process;
+pub(crate) mod process;
 pub use comments::{ReviewComment, comments_prompt};
 
 use std::{

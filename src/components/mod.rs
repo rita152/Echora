@@ -14,6 +14,7 @@ pub mod markdown;
 pub mod mcp_elicitation;
 pub mod permissions_approval;
 pub mod prompt_input;
+pub mod pull_requests;
 pub mod review_panel;
 pub mod side_chat;
 pub mod sidebar;

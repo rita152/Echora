@@ -53,6 +53,7 @@ Both images are captured from the current native application using the dedicated
 | **Work with files** | Browse the local file tree, filter paths, edit in tabs, preview Markdown and images, and follow file links to a line. |
 | **Use the terminal** | Run the local shell in the conversation directory, with tabs, scrollback, text selection, and clipboard support. |
 | **Review & ship changes** | Inspect Git diffs, comment on lines, stage, restore, commit, create branches, push, and open pull requests through the local `gh` CLI. |
+| **Browse pull requests** | Open the sidebar's `Pull requests` page: list and filter pull requests, read the summary, activity, commits and checks, browse the diff with its file tree, review lines inline, and open a review tab from the change stats. |
 | **Explore in side chats** | Fork temporary conversations from the main thread, with their own input, model, permissions, and stop controls. |
 | **Configure Codex** | Read effective configuration and its sources, inspect managed restrictions, edit supported user settings, and verify saves against the backend. |
 | **Manage the account** | See the connected ChatGPT account and plan in the account menu; sign in through Codex-managed ChatGPT auth, cancel a pending login, and sign out behind a confirmation. |
@@ -218,8 +219,11 @@ Full launch options are in [src/main.rs](src/main.rs).
 | `--runtime-ui-state=completed/running/turnless/auth-started/auth-completed/interrupted/disconnected/history/long/deprecation` | Deterministic Hook, hookPrompt, authentication, and app-notice states, without hooks or model requests. Set `GPUI_RUNTIME_AUDIT_OUTPUT` for raw state and local completion reasons. |
 | `--progress-ui-state=running/streaming/completed/interrupted` | Plan, search, and wait reduction; streaming emits timed updates and completion, and running can be interrupted. |
 | `--typography-specimen --typography-display=N` | Font samples and display selection; see `src/typography.rs`. |
+| `--pull-requests [--pull-requests-select=N \| --pull-requests-title=TEXT] [--pull-requests-tab=code\|review] [--pull-requests-list-tab=all\|reviewing\|authored] [--pull-requests-status=open\|merged\|closed\|all] [--pull-requests-search=TEXT] [--pull-requests-file-tree] [--pull-requests-scroll=px] [--pull-requests-action=...] [--pull-requests-comment-menu]` | Deterministic Pull Requests states: list, tabs, search, filters, groups, detail sections, diff, file tree, review tab, and the interaction states `scripts/capture_pull_requests_gpui.sh` uses. |
 
 `--approval-replay=/absolute/fixture.json` replays offline JSON-RPC through production parsing and response handling. The fixture contains an `events` array from `turn/started` through items and approval requests, with optional `cwd`, `userMessage`, `assistantMessage`, and `failWrites`. Responses are written to an adjacent `.responses.jsonl`; replay does not execute commands or modify approved files.
+
+The Pull Requests page is captured with `scripts/capture_pull_requests_reference.sh` (reference, per-theme app appearance) and `scripts/capture_pull_requests_gpui.sh both full` (native), then scored per component with `scripts/compare_pull_requests_suite.py`; `scripts/verify_pull_requests_ux_reference.mjs` drives the reference through the acceptance sequence. Keep every raw capture, log, and score in `artifacts/`.
 
 Visual scripts require Python 3 with Pillow, NumPy, and websocket-client. CDP scripts need Node.js with global WebSocket support. Settings checks additionally need Electron (`npm ci`) and `jq`. Capture ChatGPT references only from a dedicated debug instance using a newly allocated port:
 

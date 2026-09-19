@@ -53,6 +53,7 @@ use crate::{
         home::{
             HomeView, OpenDiffReview, OpenImagePreview, OpenSubAgentPanel, RetryImageGeneration,
         },
+        pull_requests::{OpenChatForPullRequest, OpenPullRequestFile, PullRequestsView},
         review_panel::ReviewPanel,
         side_chat::SideChatPanel,
         sidebar::{
@@ -84,6 +85,12 @@ pub struct ChatApp {
     home: Entity<HomeView>,
     settings: Entity<SettingsView>,
     showing_settings: bool,
+    pull_requests: Entity<PullRequestsView>,
+    /// True while the main content area shows the Pull Requests page.
+    showing_pull_requests: bool,
+    /// Capture-only: keep the Pull Requests page open even if the startup
+    /// sequence later selects a conversation.
+    capture_pull_requests_locked: bool,
     sidebar_layout: SidebarLayoutState,
     bottom_panel: BottomPanelState,
     terminal_panels: HashMap<ConversationKey, Entity<TerminalPanel>>,
@@ -178,6 +185,7 @@ impl ChatApp {
         #[cfg(not(test))]
         let workspace_receiver = workspace_store.subscribe();
         let settings = cx.new(|cx| SettingsView::new(mode, agent_backend.clone(), cx));
+        let pull_requests = cx.new(|cx| PullRequestsView::new(mode, None, cx));
         let chat_search = cx.new(|cx| {
             ChatSearchView::new(mode, workspace_store.clone(), agent_backend.clone(), cx)
         });
@@ -225,6 +233,47 @@ impl ChatApp {
             this.open_settings(cx);
         })
         .detach();
+        cx.subscribe(
+            &sidebar,
+            |this, _, _: &crate::components::sidebar::OpenPullRequests, cx| {
+                this.open_pull_requests(cx);
+            },
+        )
+        .detach();
+        cx.subscribe(
+            &pull_requests,
+            |this, _, event: &OpenChatForPullRequest, cx| {
+                let prompt = event.prompt.clone();
+                let cwd = this
+                    .conversation_hosts
+                    .get(&this.active_conversation)
+                    .map(|host| host.cwd.clone())
+                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+                this.showing_pull_requests = false;
+                this.start_draft(None, cwd, cx);
+                let key = this.active_conversation.clone();
+                if let Some(host) = this.conversation_hosts.get(&key) {
+                    host.composer.update(cx, |composer, cx| {
+                        composer.set_draft_text(&prompt, cx);
+                    });
+                }
+                cx.notify();
+            },
+        )
+        .detach();
+        cx.subscribe(
+            &pull_requests,
+            |this, _, event: &OpenPullRequestFile, cx| {
+                this.open_files(cx);
+                let path = PathBuf::from(event.path.clone());
+                let line = event.line.map(|line| line as usize);
+                if let Some(panel) = this.file_panels.get(&this.active_conversation) {
+                    panel.update(cx, |panel, cx| panel.open_path(path.clone(), line, cx));
+                }
+                cx.notify();
+            },
+        )
+        .detach();
         cx.subscribe(&sidebar, |this, _, event: &AccountAction, cx| {
             this.handle_account_intent(event.0.clone(), cx);
         })
@@ -258,15 +307,18 @@ impl ChatApp {
         })
         .detach();
         cx.subscribe(&sidebar, |this, _, event: &SelectThread, cx| {
+            this.close_pull_requests(cx);
             this.select_conversation(event.thread_id.clone(), cx);
         })
         .detach();
         cx.subscribe(&sidebar, |this, _, event: &NewConversation, cx| {
+            this.close_pull_requests(cx);
             this.start_draft(event.project_id.clone(), event.cwd.clone(), cx);
         })
         .detach();
         cx.subscribe(&settings, |this, _, _: &CloseSettings, cx| {
             this.showing_settings = false;
+            this.showing_pull_requests = false;
             if let Some(host) = this.conversation_hosts.get(&this.active_conversation) {
                 host.composer
                     .update(cx, |composer, cx| composer.refresh_draft_defaults(cx));
@@ -418,6 +470,9 @@ impl ChatApp {
             home,
             settings,
             showing_settings: false,
+            pull_requests,
+            showing_pull_requests: false,
+            capture_pull_requests_locked: false,
             sidebar_layout: SidebarLayoutState::default(),
             bottom_panel: BottomPanelState::new(cx),
             terminal_panels: HashMap::new(),
@@ -641,6 +696,177 @@ impl ChatApp {
             settings.ensure_plugins_segment_loaded(cx);
         });
         self.showing_settings = true;
+        self.showing_pull_requests = false;
+        self.sidebar
+            .update(cx, |sidebar, cx| sidebar.set_pull_requests_open(false, cx));
+        cx.notify();
+    }
+
+    /// Capture-only: opens the Pull Requests page and keeps it open while the
+    /// rest of the startup sequence runs.
+    pub fn open_pull_requests_for_capture(&mut self, cx: &mut Context<Self>) {
+        self.capture_pull_requests_locked = true;
+        self.open_pull_requests(cx);
+    }
+
+    /// Opens the Pull Requests page in the main content area; the sidebar stays
+    /// visible and highlights its own `Pull requests` row.
+    pub fn open_pull_requests(&mut self, cx: &mut Context<Self>) {
+        self.showing_settings = false;
+        self.showing_pull_requests = true;
+        self.sidebar
+            .update(cx, |sidebar, cx| sidebar.set_pull_requests_open(true, cx));
+        self.pull_requests.update(cx, |view, cx| {
+            view.set_mode(self.mode, cx);
+            view.refresh(cx);
+        });
+        cx.notify();
+    }
+
+    /// Capture helper: selects the Nth row the list currently renders.
+    #[cfg(feature = "screenshot")]
+    pub fn select_pull_request_index(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.pull_requests
+            .update(cx, |view, cx| view.select_index(index, cx));
+    }
+
+    #[cfg(not(feature = "screenshot"))]
+    pub fn select_pull_request_index(&mut self, _index: usize, _cx: &mut Context<Self>) {}
+
+    /// Capture helper: selects the row whose title contains `needle`.
+    #[cfg(feature = "screenshot")]
+    pub fn select_pull_request_title(&mut self, needle: &str, cx: &mut Context<Self>) {
+        self.pull_requests
+            .update(cx, |view, cx| view.select_title(needle, cx));
+    }
+
+    #[cfg(not(feature = "screenshot"))]
+    pub fn select_pull_request_title(&mut self, _needle: &str, _cx: &mut Context<Self>) {}
+
+    /// Capture helper: applies a status filter to the list before it loads.
+    #[cfg(feature = "screenshot")]
+    pub fn set_pull_requests_status_filter(
+        &mut self,
+        status: crate::pull_requests::StatusFilter,
+        cx: &mut Context<Self>,
+    ) {
+        self.pull_requests.update(cx, |view, cx| {
+            view.set_status_filter_for_capture(status, cx)
+        });
+    }
+
+    #[cfg(not(feature = "screenshot"))]
+    pub fn set_pull_requests_status_filter(
+        &mut self,
+        _status: crate::pull_requests::StatusFilter,
+        _cx: &mut Context<Self>,
+    ) {
+    }
+
+    /// Capture helper: picks the list tab before the list loads.
+    #[cfg(feature = "screenshot")]
+    pub fn set_pull_requests_list_tab(&mut self, tab: &str, cx: &mut Context<Self>) {
+        use crate::pull_requests::ListTab;
+        let tab = match tab {
+            "reviewing" => ListTab::Reviewing,
+            "authored" => ListTab::Authored,
+            _ => ListTab::All,
+        };
+        self.pull_requests
+            .update(cx, |view, cx| view.set_list_tab_for_capture(tab, cx));
+    }
+
+    #[cfg(not(feature = "screenshot"))]
+    pub fn set_pull_requests_list_tab(&mut self, _tab: &str, _cx: &mut Context<Self>) {}
+
+    /// Capture helper: types a query into the Pull Requests search field.
+    #[cfg(feature = "screenshot")]
+    pub fn set_pull_requests_search(&mut self, query: &str, cx: &mut Context<Self>) {
+        self.pull_requests
+            .update(cx, |view, cx| view.set_search_for_capture(query, cx));
+    }
+
+    #[cfg(not(feature = "screenshot"))]
+    pub fn set_pull_requests_search(&mut self, _query: &str, _cx: &mut Context<Self>) {}
+
+    /// Capture helper: collapses one list grouping header.
+    #[cfg(feature = "screenshot")]
+    pub fn collapse_pull_requests_group(&mut self, group: &str, cx: &mut Context<Self>) {
+        use crate::pull_requests::GroupKind;
+        let kind = match group {
+            "previously-reviewed" | "reviewed" => GroupKind::PreviouslyReviewed,
+            _ => GroupKind::Authored,
+        };
+        self.pull_requests
+            .update(cx, |view, cx| view.collapse_group_for_capture(kind, cx));
+    }
+
+    #[cfg(not(feature = "screenshot"))]
+    pub fn collapse_pull_requests_group(&mut self, _group: &str, _cx: &mut Context<Self>) {}
+
+    /// Capture helper: scrolls the detail column to an offset.
+    #[cfg(feature = "screenshot")]
+    pub fn scroll_pull_requests_detail(&mut self, offset: f32, cx: &mut Context<Self>) {
+        self.pull_requests
+            .update(cx, |view, cx| view.scroll_detail_for_capture(offset, cx));
+    }
+
+    #[cfg(not(feature = "screenshot"))]
+    pub fn scroll_pull_requests_detail(&mut self, _offset: f32, _cx: &mut Context<Self>) {}
+
+    /// Capture helper: opens one Pull Requests interaction state.
+    #[cfg(feature = "screenshot")]
+    pub fn open_pull_requests_action(&mut self, action: &str, cx: &mut Context<Self>) {
+        self.pull_requests
+            .update(cx, |view, cx| view.open_action_for_capture(action, cx));
+    }
+
+    #[cfg(not(feature = "screenshot"))]
+    pub fn open_pull_requests_action(&mut self, _action: &str, _cx: &mut Context<Self>) {}
+
+    /// Capture helper: opens a detail tab (`summary`, `code`, `review`).
+    #[cfg(feature = "screenshot")]
+    pub fn open_pull_requests_tab(&mut self, tab: &str, cx: &mut Context<Self>) {
+        self.pull_requests
+            .update(cx, |view, cx| view.open_tab_for_capture(tab, cx));
+    }
+
+    #[cfg(not(feature = "screenshot"))]
+    pub fn open_pull_requests_tab(&mut self, _tab: &str, _cx: &mut Context<Self>) {}
+
+    /// Capture helper: shows or hides the diff file tree.
+    #[cfg(feature = "screenshot")]
+    pub fn set_pull_requests_file_tree(&mut self, open: bool, cx: &mut Context<Self>) {
+        self.pull_requests
+            .update(cx, |view, cx| view.set_file_tree_for_capture(open, cx));
+    }
+
+    #[cfg(not(feature = "screenshot"))]
+    pub fn set_pull_requests_file_tree(&mut self, _open: bool, _cx: &mut Context<Self>) {}
+
+    /// Capture diagnostics for the Pull Requests page.
+    pub fn pull_requests_diagnostics(&self, cx: &gpui::App) -> String {
+        self.pull_requests.read(cx).capture_diagnostics()
+    }
+
+    /// Capture helper: whether the Pull Requests page finished loading.
+    pub fn pull_requests_capture_ready(&self, cx: &gpui::App) -> bool {
+        // The startup gate must have cleared: the page can be fully loaded while
+        // the window still paints the loading view.
+        self.startup_model_catalog_resolved
+            && self.startup_sidebar_resolved
+            && self.startup_minimum_duration_elapsed
+            && self.showing_pull_requests
+            && self.pull_requests.read(cx).capture_ready()
+    }
+
+    pub fn close_pull_requests(&mut self, cx: &mut Context<Self>) {
+        if self.capture_pull_requests_locked || !self.showing_pull_requests {
+            return;
+        }
+        self.showing_pull_requests = false;
+        self.sidebar
+            .update(cx, |sidebar, cx| sidebar.set_pull_requests_open(false, cx));
         cx.notify();
     }
 

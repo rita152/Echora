@@ -53,6 +53,7 @@
 | **处理文件** | 浏览本地文件树、筛选路径、多标签编辑、预览 Markdown 和图片，以及通过文件链接定位到行。 |
 | **使用终端** | 在会话目录运行本机 shell，支持多标签、回看、文字选择和剪贴板。 |
 | **审查与交付** | 查看 Git diff、逐行评论、暂存、还原、提交、创建分支、推送，并通过本机 `gh` 创建 PR。 |
+| **浏览 Pull Request** | 打开侧边栏 `Pull requests` 页面：列表与过滤、Summary、Activity、提交与检查、带文件树的 diff、行内评论，以及从变更统计按钮打开的 Review 标签页。 |
 | **侧边探索** | 从主会话派生临时对话，分别控制输入、模型、权限与停止操作。 |
 | **配置 Codex** | 读取有效配置与来源，查看受管限制，编辑已支持的用户层设置，并通过后端回读核验保存结果。 |
 | **账户** | 账户菜单与登录流程都由连接级账户快照驱动：缺失的套餐显示为未知而不是杜撰；登录保留服务端返回的 `loginId` 直到完成通知到达；退出登录先确认再发请求。只提供 Codex 管理的 ChatGPT 登录，API key、外部 token 与 Bedrock 变体返回明确错误。 |
@@ -217,8 +218,11 @@ Computer Use 先枚举应用，连接 **GPUI Capture**，读取可访问性树�
 | `--runtime-ui-state=completed/running/turnless/auth-started/auth-completed/interrupted/disconnected/history/long/deprecation` | 确定性 Hook、hookPrompt、认证与应用提示，不执行 Hook 或模型请求；`GPUI_RUNTIME_AUDIT_OUTPUT` 输出原始状态与本地收束原因。 |
 | `--progress-ui-state=running/streaming/completed/interrupted` | 计划、搜索与等待归约；streaming 定时产生更新和完成，running 可中断。 |
 | `--typography-specimen --typography-display=N` | 字体样本与显示器选择，见 `src/typography.rs`。 |
+| `--pull-requests [--pull-requests-select=N \| --pull-requests-title=TEXT] [--pull-requests-tab=code\|review] [--pull-requests-list-tab=all\|reviewing\|authored] [--pull-requests-status=open\|merged\|closed\|all] [--pull-requests-search=TEXT] [--pull-requests-file-tree] [--pull-requests-scroll=px] [--pull-requests-action=...] [--pull-requests-comment-menu]` | Pull Requests 页面确定性状态：列表、标签、搜索、过滤、分组、详情分节、diff、文件树、Review 标签，以及 `scripts/capture_pull_requests_gpui.sh` 使用的交互状态。 |
 
 `--approval-replay=/absolute/fixture.json` 通过生产解析与响应路径回放离线 JSON-RPC。fixture 包含从 `turn/started` 到 item 和审批请求的 `events` 数组，可选 `cwd`、`userMessage`、`assistantMessage` 与 `failWrites`。响应写入相邻 `.responses.jsonl`；回放不执行命令，也不修改被审批文件。
+
+Pull Requests 页面由 `scripts/capture_pull_requests_reference.sh`（参考端，逐主题切换应用外观）和 `scripts/capture_pull_requests_gpui.sh both full`（本机端）采集，再用 `scripts/compare_pull_requests_suite.py` 逐组件打分；`scripts/verify_pull_requests_ux_reference.mjs` 驱动参考端执行验收序列。原始截图、日志与分数保留在 `artifacts/`。
 
 视觉脚本需要 Python 3、Pillow、NumPy 和 websocket-client。CDP 脚本需要支持全局 WebSocket 的 Node.js。设置验证另需 Electron（`npm ci`）和 `jq`。ChatGPT 参考截图只使用专用调试实例，并分配新端口：
 

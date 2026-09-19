@@ -426,6 +426,15 @@ impl ComposerView {
         self.conversation.clear_history_stale();
     }
 
+    /// Writes text into the composer without sending it; the Pull Requests page
+    /// uses this when `Chat` starts a conversation for a pull request.
+    pub fn set_draft_text(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.prompt_editor
+            .update(cx, |editor, cx| editor.set_text_silently(text, cx));
+        self.draft_revision = self.draft_revision.wrapping_add(1);
+        cx.notify();
+    }
+
     /// Enters the reference's rewrite mode for the newest user message and
     /// returns its text for the transcript's inline editor. The transcript owns
     /// the editor; the composer only owns the revert that submitting it runs.
