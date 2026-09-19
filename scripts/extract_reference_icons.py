@@ -36,7 +36,6 @@ ARIA_ICONS = {
     "sidebar-toggle": ("隐藏边栏", 0),
     "back": ("返回", 0),
     "forward": ("前进", 0),
-    "bottom-panel": ("切换底部面板显示", 0),
     "right-sidebar": ("显示/隐藏侧边栏", 0),
     "help": "打开帮助菜单",
 }

@@ -1,4 +1,3 @@
-mod bottom_panel;
 mod capture;
 mod conversations;
 mod image_preview;
@@ -18,8 +17,7 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 use gpui::{Context, Entity, WindowAppearance, prelude::*};
 
 use state::{
-    BottomPanelMode, BottomPanelState, ImagePreviewState, ProjectCreationState, RightPanelMode,
-    RightPanelState, SidebarLayoutState,
+    ImagePreviewState, ProjectCreationState, RightPanelMode, RightPanelState, SidebarLayoutState,
 };
 
 gpui::actions!(
@@ -92,7 +90,6 @@ pub struct ChatApp {
     /// sequence later selects a conversation.
     capture_pull_requests_locked: bool,
     sidebar_layout: SidebarLayoutState,
-    bottom_panel: BottomPanelState,
     terminal_panels: HashMap<ConversationKey, Entity<TerminalPanel>>,
     file_panels: HashMap<ConversationKey, Entity<FilePanel>>,
     review_panels: HashMap<ConversationKey, Entity<ReviewPanel>>,
@@ -138,15 +135,6 @@ impl Drop for ChatApp {
         self.codex_app_server.shutdown();
     }
 }
-
-const BOTTOM_PANEL_ITEMS: &[(BottomPanelMode, &str, &str, &str)] = &[
-    (BottomPanelMode::Review, "审查", "⌃⇧G", "panel-review"),
-    (BottomPanelMode::Terminal, "终端", "⌃`", "panel-terminal"),
-    (BottomPanelMode::Browser, "浏览器", "⌘T", "panel-browser"),
-    (BottomPanelMode::Files, "文件", "⌘P", "panel-files"),
-    (BottomPanelMode::SideChat, "侧边聊天", "⌥⌘S", "side-chat"),
-];
-const BOTTOM_PANEL_HEIGHT: f32 = 280.0;
 
 const RIGHT_PANEL_ITEMS: &[(RightPanelMode, &str, &str, &str)] = &[
     (RightPanelMode::SideChat, "侧边聊天", "⌥⌘S", "side-chat"),
@@ -459,7 +447,6 @@ impl ChatApp {
             showing_pull_requests: false,
             capture_pull_requests_locked: false,
             sidebar_layout: SidebarLayoutState::default(),
-            bottom_panel: BottomPanelState::new(cx),
             terminal_panels: HashMap::new(),
             file_panels: HashMap::new(),
             review_panels: HashMap::new(),

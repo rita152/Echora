@@ -541,7 +541,7 @@ impl SettingsView {
                                 .when(
                                     slug == "general-settings"
                                         && section_index == 1
-                                        && row_index == 7,
+                                        && row_index == 5,
                                     |subtitle| subtitle.relative().left(px(-1.0)),
                                 )
                                 .child(crate::i18n::text(row.subtitle)),
@@ -562,8 +562,7 @@ impl SettingsView {
                         |control| {
                             control.relative().left(px(match row_index {
                                 0 => 1.0,
-                                1 | 2 | 7 => 2.0,
-                                5 => -1.0,
+                                1 | 2 | 5 => 2.0,
                                 _ => 0.0,
                             }))
                         },
@@ -571,7 +570,7 @@ impl SettingsView {
                     .when(
                         slug == "general-settings"
                             && section_index == 1
-                            && matches!(row_index, 2 | 4),
+                            && row_index == 2,
                         |control| control.relative().top(px(-1.0)),
                     )
                     .child(self.control(

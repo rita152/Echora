@@ -253,10 +253,6 @@ impl Render for ChatApp {
             self.right_panel.focus.focus(window, cx);
             self.right_panel.focus_pending = false;
         }
-        if self.bottom_panel.add_menu_open && self.bottom_panel.focus_pending {
-            self.bottom_panel.focus.focus(window, cx);
-            self.bottom_panel.focus_pending = false;
-        }
         let sidebar_width = self.sidebar.read(cx).width();
         let sidebar_reveal = self.sidebar_layout.reveal.clamp(0.0, 1.0);
         let revealed_sidebar_width = sidebar_width * sidebar_reveal;
@@ -322,7 +318,6 @@ impl Render for ChatApp {
                 this.home.update(cx, |home, cx| home.close_model_picker(cx));
                 this.sidebar
                     .update(cx, |sidebar, cx| sidebar.close_transient_menus(cx));
-                this.close_bottom_panel_menu(cx);
                 if this.right_panel.subagent_menu_open {
                     this.right_panel.subagent_menu_open = false;
                     cx.notify();
@@ -405,8 +400,6 @@ impl Render for ChatApp {
                     this.image_preview.zoom = 1.0;
                     cx.stop_propagation();
                     cx.notify();
-                } else if this.bottom_panel.add_menu_open {
-                    this.close_bottom_panel_menu(cx);
                 } else if this.project_creation.open {
                     this.close_project_creation(cx);
                 } else {
@@ -504,10 +497,7 @@ impl Render for ChatApp {
                                             cx,
                                         ))
                                     }),
-                            )
-                            .when(self.bottom_panel.open, |workspace| {
-                                workspace.child(self.bottom_panel(theme, cx))
-                            }),
+                            ),
                     )
             })
             .when_some(review_overlay,|shell,overlay|shell.child(overlay))
@@ -702,21 +692,6 @@ impl Render for ChatApp {
                             // content area and shows no panel controls there.
                             .when(!self.showing_pull_requests, |controls| {
                                 controls
-                            .child(
-                                titlebar_icon_button(
-                                    "bottom-panel",
-                                    false,
-                                    self.bottom_panel.open,
-                                    theme,
-                                )
-                                .on_mouse_down(MouseButton::Left, |_, _, cx| {
-                                    cx.stop_propagation()
-                                })
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    cx.stop_propagation();
-                                    this.toggle_bottom_panel(cx);
-                                })),
-                            )
                             .child(
                                 titlebar_icon_button(
                                     "right-sidebar",

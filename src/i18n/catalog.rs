@@ -379,7 +379,6 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "切换听写快捷键" => "Toggle dictation shortcut",
         "切换审阅" => "Toggle review",
         "切换审阅面板" => "Toggle review panel",
-        "切换底部面板" => "Toggle bottom panel",
         "切换快速模式" => "Toggle fast mode",
         "切换文件差异对比" => "Toggle file diff",
         "切换文件树" => "Toggle file tree",
@@ -484,7 +483,6 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
             "This may include communications. Audio and private browsing are never included. You can pause, clear history, and manage what is included at any time. This increases token usage. Learn more"
         }
         "可见性" => "Visibility",
-        "右侧" => "Right",
         "合并" => "Merge",
         "合并 PR" => "Merge PR",
         "同时按下两个 ⌘ 键" => "Press both ⌘ keys together",
@@ -555,9 +553,6 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "在后台发送消息" => "Send message in background",
         "在导航历史记录中前进" => "Go forward in navigation history",
         "在导航历史记录中返回" => "Go back in navigation history",
-        "在应用标题栏中显示底部面板控件" => {
-            "Show bottom panel controls in the app title bar"
-        }
         "在当前编辑器中开启或关闭快速模式" => {
             "Enable or disable fast mode in the current composer"
         }
@@ -823,8 +818,6 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "应用请求连接在返回结果前关闭" => {
             "The app request connection closed before returning a response"
         }
-        "底部" => "Bottom",
-        "底部面板" => "Bottom panel",
         "建立连接？" => "?",
         "开发者模式" => "Developer mode",
         "开启" => "Enable",
@@ -1177,7 +1170,6 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "显示当前可用的快捷键" => "Show currently available shortcuts",
         "显示或隐藏侧边栏" => "Show or hide the sidebar",
         "显示或隐藏已固定的摘要" => "Show or hide the pinned summary",
-        "显示或隐藏底部面板" => "Show or hide the bottom panel",
         "显示或隐藏当前 Git 支持的聊天中的“审阅”" => {
             "Show or hide Review for the current Git-backed chat"
         }
@@ -1895,9 +1887,6 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         }
         "选择模型" => "Choose model",
         "选择模型和思考强度" => "Choose model and reasoning effort",
-        "选择终端快捷键和环境操作在何处打开终端标签页" => {
-            "Choose where terminal shortcuts and environment actions open terminal tabs"
-        }
         "选择项目" => "Choose project",
         "通知" => "Notifications",
         "通过搜索项目文件和已连接的应用，建议下一步操作" => {
@@ -2020,7 +2009,6 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "默认权限配置" => "Default permission profile",
         "默认模型" => "Default model",
         "默认浏览器" => "Default browser",
-        "默认终端位置" => "Default terminal location",
         "默认速度" => "Default speed",
         "（无输出）" => "(no output)",
         "；会话静态默认值" => "; static session default",

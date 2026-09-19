@@ -31,16 +31,6 @@ const GENERAL_ROWS: &[RowSpec] = &[
         ControlSpec::Switch(true),
     ),
     RowSpec::new(
-        "底部面板",
-        "在应用标题栏中显示底部面板控件",
-        ControlSpec::Switch(true),
-    ),
-    RowSpec::new(
-        "默认终端位置",
-        "选择终端快捷键和环境操作在何处打开终端标签页",
-        ControlSpec::Segmented(&["底部", "右侧"], 0),
-    ),
-    RowSpec::new(
         "运行时防止系统休眠",
         "在 ChatGPT 运行任务时，让电脑保持唤醒状态",
         ControlSpec::Switch(false),

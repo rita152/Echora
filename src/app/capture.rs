@@ -434,18 +434,6 @@ impl ChatApp {
         self.project_creation.step = ProjectCreationStep::Remote;
         cx.notify();
     }
-    pub fn append_bottom_panel_item_for_capture(&mut self, name: &str, cx: &mut Context<Self>) {
-        self.open_bottom_panel(cx);
-        let index = match name {
-            "review" => 0,
-            "terminal" => 1,
-            "browser" => 2,
-            "files" => 3,
-            "side-chat" => 4,
-            _ => return,
-        };
-        self.select_bottom_panel_item(index, cx);
-    }
     #[cfg(feature = "screenshot")]
     pub fn capture_files(&mut self, root: PathBuf, path: Option<PathBuf>, cx: &mut Context<Self>) {
         let panel = cx.new(|cx| FilePanel::new(root, self.mode, cx));

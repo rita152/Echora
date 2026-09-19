@@ -14,15 +14,6 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum BottomPanelMode {
-    Review,
-    Terminal,
-    Browser,
-    Files,
-    SideChat,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum RightPanelMode {
     Review,
     Files,
@@ -76,34 +67,6 @@ impl Default for SidebarLayoutState {
             animation_started_at: None,
             animation_duration: Duration::ZERO,
             animation_running: false,
-        }
-    }
-}
-
-pub(super) struct BottomPanelState {
-    pub(super) open: bool,
-    pub(super) tabs: Vec<BottomPanelMode>,
-    pub(super) active_tab: Option<usize>,
-    pub(super) hovered_tab: Option<usize>,
-    pub(super) add_menu_open: bool,
-    pub(super) focused_item: usize,
-    pub(super) keyboard_focus: bool,
-    pub(super) focus: FocusHandle,
-    pub(super) focus_pending: bool,
-}
-
-impl BottomPanelState {
-    pub(super) fn new(cx: &mut Context<ChatApp>) -> Self {
-        Self {
-            open: false,
-            tabs: Vec::new(),
-            active_tab: None,
-            hovered_tab: None,
-            add_menu_open: false,
-            focused_item: 0,
-            keyboard_focus: false,
-            focus: cx.focus_handle().tab_stop(true),
-            focus_pending: false,
         }
     }
 }

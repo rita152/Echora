@@ -424,7 +424,7 @@ fn collaboration_event_opens_a_read_only_subagent_panel_without_switching_parent
 }
 
 #[test]
-fn bottom_panel_matches_the_persistent_native_titlebar_toggle() {
+fn remaining_titlebar_panel_toggle_uses_its_full_hit_area() {
     let mut app = TestApp::new();
     let mut window = app.open_window_with_options(
         WindowOptions {
@@ -437,127 +437,27 @@ fn bottom_panel_matches_the_persistent_native_titlebar_toggle() {
         |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
     );
 
-    window.draw();
-    let trigger = point(px(844.0), px(23.0));
-    window.simulate_click(trigger, MouseButton::Left);
-    assert!(window.read(|chat, _| chat.bottom_panel.open));
-    assert_eq!(
-        window.read(|chat, _| chat.bottom_panel.tabs.clone()),
-        vec![super::BottomPanelMode::Terminal]
-    );
-    assert_eq!(window.read(|chat, _| chat.bottom_panel.active_tab), Some(0));
+    // The removed control's entire former hit area is now titlebar space.
+    for x in [831.0, 844.0, 857.0] {
+        for y in [10.0, 23.0, 36.0] {
+            window.draw();
+            window.simulate_click(point(px(x), px(y)), MouseButton::Left);
+            assert!(!window.read(|chat, _| chat.right_panel.open));
+        }
+    }
 
-    window.draw();
-    window.simulate_click(point(px(400.0), px(300.0)), MouseButton::Left);
-    assert!(window.read(|chat, _| chat.bottom_panel.open));
-    window.simulate_keystroke("escape");
-    assert!(window.read(|chat, _| chat.bottom_panel.open));
-
-    window.draw();
-    window.simulate_click(trigger, MouseButton::Left);
-    assert!(!window.read(|chat, _| chat.bottom_panel.open));
-}
-
-#[test]
-fn bottom_panel_add_menu_closes_on_toggle_outside_and_escape() {
-    let mut app = TestApp::new();
-    let mut window = app.open_window_with_options(
-        WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(Bounds {
-                origin: point(px(0.0), px(0.0)),
-                size: size(px(900.0), px(700.0)),
-            })),
-            ..Default::default()
-        },
-        |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
-    );
-
-    window.update(|chat, _, cx| {
-        chat.open_bottom_panel(cx);
-        chat.toggle_bottom_panel_menu(cx);
-    });
-    assert!(window.read(|chat, _| chat.bottom_panel.add_menu_open));
-
-    window.update(|chat, _, cx| chat.toggle_bottom_panel_menu(cx));
-    assert!(!window.read(|chat, _| chat.bottom_panel.add_menu_open));
-
-    window.update(|chat, _, cx| chat.toggle_bottom_panel_menu(cx));
-    window.draw();
-    window.simulate_click(point(px(400.0), px(300.0)), MouseButton::Left);
-    assert!(!window.read(|chat, _| chat.bottom_panel.add_menu_open));
-
-    window.update(|chat, _, cx| chat.toggle_bottom_panel_menu(cx));
-    window.draw();
-    window.simulate_keystroke("escape");
-    assert!(!window.read(|chat, _| chat.bottom_panel.add_menu_open));
-    assert!(window.read(|chat, _| chat.bottom_panel.open));
-}
-
-#[test]
-fn bottom_panel_add_menu_supports_keyboard_selection() {
-    let mut app = TestApp::new();
-    let mut window = app.open_window_with_options(
-        WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(Bounds {
-                origin: point(px(0.0), px(0.0)),
-                size: size(px(900.0), px(700.0)),
-            })),
-            ..Default::default()
-        },
-        |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
-    );
-
-    window.update(|chat, _, cx| {
-        chat.open_bottom_panel(cx);
-        chat.toggle_bottom_panel_menu(cx);
-    });
-    window.draw();
-    window.simulate_keystroke("down");
-    window.simulate_keystroke("down");
-    assert_eq!(window.read(|chat, _| chat.bottom_panel.focused_item), 1);
-    window.simulate_keystroke("enter");
-    assert_eq!(
-        window.read(|chat, _| chat.bottom_panel.tabs.clone()),
-        vec![
-            super::BottomPanelMode::Terminal,
-            super::BottomPanelMode::Terminal
-        ]
-    );
-    assert_eq!(window.read(|chat, _| chat.bottom_panel.active_tab), Some(1));
-    assert!(!window.read(|chat, _| chat.bottom_panel.add_menu_open));
-}
-
-#[test]
-fn bottom_panel_add_menu_appends_after_the_default_terminal() {
-    let mut app = TestApp::new();
-    let mut window = app.open_window_with_options(
-        WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(Bounds {
-                origin: point(px(0.0), px(0.0)),
-                size: size(px(900.0), px(700.0)),
-            })),
-            ..Default::default()
-        },
-        |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
-    );
-
-    window.update(|chat, _, cx| {
-        chat.open_bottom_panel(cx);
-        chat.select_bottom_panel_item(2, cx);
-    });
-
-    assert_eq!(
-        window.read(|chat, _| chat.bottom_panel.tabs.clone()),
-        vec![
-            super::BottomPanelMode::Terminal,
-            super::BottomPanelMode::Browser
-        ]
-    );
-    assert_eq!(window.read(|chat, _| chat.bottom_panel.active_tab), Some(1));
-    assert_eq!(
-        super::bottom_panel::bottom_panel_tab_spec(super::BottomPanelMode::Browser).0,
-        "新标签页"
-    );
+    // The remaining toggle keeps its original position and 28 px hit area.
+    for x in [865.0, 878.0, 891.0] {
+        for y in [10.0, 23.0, 36.0] {
+            let trigger = point(px(x), px(y));
+            window.draw();
+            window.simulate_click(trigger, MouseButton::Left);
+            assert!(window.read(|chat, _| chat.right_panel.open));
+            window.draw();
+            window.simulate_click(trigger, MouseButton::Left);
+            assert!(!window.read(|chat, _| chat.right_panel.open));
+        }
+    }
 }
 
 #[test]
@@ -1266,10 +1166,10 @@ fn project_creation_trigger_opens_and_the_same_screen_position_closes_on_the_ove
 
     window.draw();
     // CDP-derived layout: 46 px titlebar safe area, 38 px brand header,
-    // 31 px new-chat row, the restored four-row navigation block, and the
+    // 31 px new-chat row, the three-row navigation block, and the
     // reference sidebar width (275 px), so the trigger sits inside the
     // `Projects` section header.
-    let trigger = point(px(250.0), px(282.5));
+    let trigger = point(px(250.0), px(251.5));
     window.simulate_mouse_move(trigger);
     window.draw();
     window.simulate_click(trigger, MouseButton::Left);

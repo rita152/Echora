@@ -95,7 +95,7 @@ The sidebar navigation shows New conversation, Pull requests, Scheduled, and Plu
 | Toggle the terminal | Right panel → Terminal; `Ctrl+Backtick` |
 | Open files | Right panel → Files; `Cmd+P` |
 | Open Git review | Right panel → Review; `Ctrl+Shift+G` |
-| Open a side chat | Right/bottom panel menu; `Option+Cmd+S` |
+| Open a side chat | Right panel menu; `Option+Cmd+S` |
 | Open settings | Account menu → Settings; `Cmd+,` |
 | Sign in / sign out | Account menu → the sign-in row, or `Log out` with the in-app confirmation |
 | Send / add input to an active turn | `Enter`; `Shift+Enter` inserts a newline |
