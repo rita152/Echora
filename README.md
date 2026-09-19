@@ -86,6 +86,8 @@ The Cargo package and executable are still named `gpui-chat-clone`, so the exist
 
 ## Find your way around
 
+The sidebar navigation shows New conversation, Pull requests, Scheduled, and Plugins.
+
 | Action | Entry point / shortcut |
 |---|---|
 | Open a conversation | Sidebar projects, recent items, archive, or search |

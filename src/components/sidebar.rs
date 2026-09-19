@@ -1808,12 +1808,6 @@ impl SidebarView {
                     .gap(px(1.0))
                     .child(self.pull_requests_nav_row(theme, self.pull_requests_open, cx))
                     .child(Self::static_nav_row(
-                        "sidebar-sites",
-                        crate::i18n::text("站点"),
-                        "sites",
-                        theme,
-                    ))
-                    .child(Self::static_nav_row(
                         "sidebar-scheduled",
                         crate::i18n::text("已安排"),
                         "scheduled",
@@ -2853,9 +2847,9 @@ mod tests {
         );
         window.draw();
         // 46 px titlebar safe area + 38 px brand + 31 px new-chat row,
-        // followed by the restored 4-row navigation block, project heading,
+        // followed by the 3-row navigation block, project heading,
         // project row, and the first server-backed thread row.
-        window.simulate_click(point(px(80.0), px(340.0)), MouseButton::Left);
+        window.simulate_click(point(px(80.0), px(309.0)), MouseButton::Left);
         assert_eq!(
             window.read(|sidebar, _| sidebar.selected_thread_id.clone()),
             Some("thread-stable-id".to_owned())
