@@ -845,11 +845,13 @@ impl ChatApp {
     pub fn set_pull_requests_file_tree(&mut self, _open: bool, _cx: &mut Context<Self>) {}
 
     /// Capture diagnostics for the Pull Requests page.
+    #[cfg(feature = "screenshot")]
     pub fn pull_requests_diagnostics(&self, cx: &gpui::App) -> String {
         self.pull_requests.read(cx).capture_diagnostics()
     }
 
     /// Capture helper: whether the Pull Requests page finished loading.
+    #[cfg(feature = "screenshot")]
     pub fn pull_requests_capture_ready(&self, cx: &gpui::App) -> bool {
         // The startup gate must have cleared: the page can be fully loaded while
         // the window still paints the loading view.

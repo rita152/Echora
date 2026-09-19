@@ -173,6 +173,7 @@ pub struct PullRequestsView {
     file_lines_loading: HashSet<String>,
     /// Capture-only: the launch asked for a specific row, so "ready" must wait
     /// for that selection to land.
+    #[cfg(feature = "screenshot")]
     capture_expect_selection: bool,
     /// Capture-only: interaction to open once the detail loads.
     capture_action: Option<String>,
@@ -291,6 +292,7 @@ impl PullRequestsView {
             code_width: 500.0,
             file_lines: std::collections::HashMap::new(),
             file_lines_loading: HashSet::new(),
+            #[cfg(feature = "screenshot")]
             capture_expect_selection: false,
             capture_action: None,
         };
@@ -352,10 +354,9 @@ impl PullRequestsView {
         self.code_width
     }
 
-    /// True when the page has finished every load the current tab needs, so a
-    /// screenshot capture is stable.
     /// Capture diagnostics: the readiness inputs, printed by the screenshot
     /// scheduler when `GPUI_PR_DEBUG` is set.
+    #[cfg(feature = "screenshot")]
     pub fn capture_diagnostics(&self) -> String {
         format!(
             "list_loading={} groups={} selected={} detail_loading={} detail={} detail_error={:?} diff_loading={} diff={} intent={} expect_selection={} pending_scroll={:?}",
@@ -373,6 +374,9 @@ impl PullRequestsView {
         )
     }
 
+    /// True when the page has finished every load the current tab needs, so a
+    /// screenshot capture is stable.
+    #[cfg(feature = "screenshot")]
     pub fn capture_ready(&self) -> bool {
         if self.list_loading || self.detail_loading || self.diff_loading {
             return false;
@@ -397,6 +401,7 @@ impl PullRequestsView {
 
     /// Selects a tab and (for the review tab) opens it, for deterministic
     /// captures. `tab` accepts `summary`, `code`, or `review`.
+    #[cfg(feature = "screenshot")]
     pub fn open_tab_for_capture(&mut self, tab: &str, cx: &mut Context<Self>) {
         if self.detail_loading || self.detail.is_none() {
             self.capture_intent = Some((Some(tab.to_string()), false));
@@ -411,12 +416,14 @@ impl PullRequestsView {
     }
 
     /// Capture helper: opens one interaction state after the detail loads.
+    #[cfg(feature = "screenshot")]
     pub fn open_action_for_capture(&mut self, action: &str, cx: &mut Context<Self>) {
         self.capture_action = Some(action.to_string());
         cx.notify();
     }
 
     /// Capture helper: applies a status filter before the list loads.
+    #[cfg(feature = "screenshot")]
     pub fn set_status_filter_for_capture(
         &mut self,
         status: crate::pull_requests::StatusFilter,
@@ -428,6 +435,7 @@ impl PullRequestsView {
 
     /// Capture helper: switches the list between the `All`, `Reviewing`, and
     /// `Authored` tabs before the list loads.
+    #[cfg(feature = "screenshot")]
     pub fn set_list_tab_for_capture(&mut self, tab: ListTab, cx: &mut Context<Self>) {
         if self.tab == tab {
             return;
@@ -438,6 +446,7 @@ impl PullRequestsView {
 
     /// Capture helper: types a query into the search field so the filtered
     /// list and the empty state can be captured.
+    #[cfg(feature = "screenshot")]
     pub fn set_search_for_capture(&mut self, query: &str, cx: &mut Context<Self>) {
         self.search.update(cx, |input, cx| {
             input.set_text_silently(query.to_string(), cx)
@@ -448,12 +457,14 @@ impl PullRequestsView {
 
     /// Capture helper: collapses one grouping header (`Previously reviewed` or
     /// `Authored`) without a pointer.
+    #[cfg(feature = "screenshot")]
     pub fn collapse_group_for_capture(&mut self, kind: GroupKind, cx: &mut Context<Self>) {
         self.collapsed_groups.insert(kind);
         cx.notify();
     }
 
     /// Capture helper: scrolls the detail column once it has content.
+    #[cfg(feature = "screenshot")]
     pub fn scroll_detail_for_capture(&mut self, offset: f32, cx: &mut Context<Self>) {
         self.pending_detail_scroll = Some((offset, 8));
         cx.notify();
@@ -469,6 +480,8 @@ impl PullRequestsView {
         }
     }
 
+    /// Capture helper: shows or hides the diff file tree.
+    #[cfg(feature = "screenshot")]
     pub fn set_file_tree_for_capture(&mut self, open: bool, cx: &mut Context<Self>) {
         if self.detail_loading || self.detail.is_none() {
             let tab = self.capture_intent.take().and_then(|(tab, _)| tab);
@@ -783,6 +796,7 @@ impl PullRequestsView {
 
     /// Capture helper: selects a row by position in the filtered list, waiting
     /// for the list to load first.
+    #[cfg(feature = "screenshot")]
     pub fn select_index(&mut self, index: usize, cx: &mut Context<Self>) {
         self.select_matching(Some(index), None, cx);
     }
@@ -790,10 +804,12 @@ impl PullRequestsView {
     /// Capture helper: selects the row whose title contains `needle`, which
     /// keeps the reference and the native capture on the same pull request even
     /// when their list orders differ.
+    #[cfg(feature = "screenshot")]
     pub fn select_title(&mut self, needle: &str, cx: &mut Context<Self>) {
         self.select_matching(None, Some(needle.to_string()), cx);
     }
 
+    #[cfg(feature = "screenshot")]
     fn select_matching(
         &mut self,
         index: Option<usize>,
