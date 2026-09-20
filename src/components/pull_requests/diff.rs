@@ -444,14 +444,7 @@ impl PullRequestsView {
                     .into_any_element(),
             ];
         }
-        let filter = self.tree_filter.read(cx).text().trim().to_lowercase();
-        let files: Vec<(usize, &FileDiff)> = self
-            .diff
-            .iter()
-            .enumerate()
-            .filter(|(_, file)| filter.is_empty() || file.path.to_lowercase().contains(&filter))
-            .collect();
-        if files.is_empty() {
+        if self.diff_viewport.rows.is_empty() {
             return vec![
                 div()
                     .flex_1()
