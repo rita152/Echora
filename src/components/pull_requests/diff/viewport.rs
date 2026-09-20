@@ -249,6 +249,14 @@ impl PullRequestsView {
             self.diff_viewport
                 .scroll
                 .splice_focusable(0..old_count, handles);
+            // Seed off-screen rows without measuring them. Otherwise GPUI's
+            // pixel scrolling is limited to the small measured prefix. These
+            // are estimates: wrapped lines/editors replace them on measurement.
+            self.diff_viewport.scroll = self
+                .diff_viewport
+                .scroll
+                .clone()
+                .with_uniform_item_height(px(LINE_HEIGHT));
             self.diff_viewport.rows = rows;
             // Source indices from another PR/scope are not valid anchors.
             let same_data = self
@@ -475,6 +483,8 @@ impl PullRequestsView {
         div()
             .id(("pr-virtual-row", index))
             .w_full()
+            .flex()
+            .flex_col()
             .child(element)
             .on_scroll_wheel(cx.listener(|view, event: &gpui::ScrollWheelEvent, _, cx| {
                 let delta = event.delta.pixel_delta(px(LINE_HEIGHT));

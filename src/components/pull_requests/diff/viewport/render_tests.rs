@@ -63,7 +63,7 @@ fn a_large_hunk_only_highlights_the_viewport_and_reuses_warm_runs(cx: &mut TestA
         window.refresh();
         window.draw(cx).clear(cx);
     });
-    inner.update(&mut visual, |view, _| {
+    inner.update(&mut visual, |view, cx| {
         let cache = view.diff_viewport.syntax.borrow();
         for (key, runs) in &warm {
             assert!(Rc::ptr_eq(
@@ -71,10 +71,19 @@ fn a_large_hunk_only_highlights_the_viewport_and_reuses_warm_runs(cx: &mut TestA
                 cache.entries.get(key).expect("warm line was evicted")
             ));
         }
-        view.diff_viewport.scroll.scroll_to(ListOffset {
-            item_ix: 6000,
-            offset_in_item: px(5.0),
-        });
+        drop(cache);
+        // Exercise pixel-based movement as well as direct logical-row jumps.
+        // With no off-screen height hints this seeks past the measured prefix
+        // straight to the end, rather than approximately three thousand rows.
+        view.diff_viewport
+            .scroll
+            .scroll_by(px(LINE_HEIGHT * 3000.0));
+        let top = view.diff_viewport.scroll.logical_scroll_top().item_ix;
+        assert!(
+            (2900..3100).contains(&top),
+            "pixel scroll lost its off-screen estimates: {top}"
+        );
+        cx.notify();
     });
     visual.update(|window, cx| {
         window.refresh();
@@ -82,6 +91,27 @@ fn a_large_hunk_only_highlights_the_viewport_and_reuses_warm_runs(cx: &mut TestA
     });
     inner.update(&mut visual, |view, cx| {
         assert!(view.diff_viewport.syntax.borrow().entries.len() < 600);
+        view.diff_viewport.scroll.scroll_to(ListOffset {
+            item_ix: 6000,
+            offset_in_item: px(5.0),
+        });
+        cx.notify();
+    });
+    visual.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    inner.update(&mut visual, |view, cx| {
+        let cache = view.diff_viewport.syntax.borrow();
+        assert!(cache.entries.len() < 600);
+        assert!(
+            cache
+                .entries
+                .keys()
+                .any(|key| key.0.starts_with("let new_")),
+            "the distant viewport did not render"
+        );
+        drop(cache);
         view.scrolled_to_file = Some("last.rs".into());
         view.apply_pending_file_scroll(cx);
         assert_eq!(
