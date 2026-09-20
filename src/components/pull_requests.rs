@@ -172,6 +172,7 @@ pub struct PullRequestsView {
     /// Frame-local capture offset read by the detail surfaces.
     pub(super) capture_offset: f32,
     diff_scroll: gpui::ScrollHandle,
+    diff_viewport: diff::DiffViewport,
     /// Width available to diff code text, recomputed every frame so wrapped
     /// rows break exactly where the reference viewer breaks them.
     code_width: f32,
@@ -317,6 +318,7 @@ impl PullRequestsView {
             pending_detail_scroll: None,
             capture_offset: 0.0,
             diff_scroll: gpui::ScrollHandle::new(),
+            diff_viewport: Default::default(),
             code_width: 500.0,
             file_lines: std::collections::HashMap::new(),
             file_lines_loading: HashSet::new(),
@@ -951,6 +953,7 @@ impl PullRequestsView {
         self.diff_generation += 1;
         self.file_generation += 1;
         self.diff.clear();
+        self.diff_viewport = Default::default();
         self.diff_loading = false;
         self.diff_error = None;
         self.file_lines.clear();

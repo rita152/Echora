@@ -1,5 +1,8 @@
 //! `Code` and review tabs: toolbar, file headers, hunks, and the file tree.
 
+mod viewport;
+pub(super) use viewport::DiffViewport;
+
 use gpui::{Div, SharedString, div, prelude::*, px};
 
 use super::{DetailTab, PullRequestsView, ReviewScope, theme::LIST_PANE_WIDTH};
@@ -52,76 +55,93 @@ fn tree_children(prefix: &str, files: &[&FileDiff]) -> (bool, Vec<String>) {
 }
 
 impl PullRequestsView {
-    /// Syntax-highlighted diff text using the reference viewer's token colors.
-    fn code_text(&self, text: &str, language: Option<&str>) -> gpui::StyledText {
-        let theme = self.theme();
-        let mut base = crate::theme::Theme::for_mode(self.mode);
-        base.file_editor_text = theme.syntax_plain;
-        base.markdown_syntax_comment = theme.syntax_comment;
-        base.markdown_syntax_keyword = theme.syntax_keyword;
-        base.markdown_syntax_literal = theme.syntax_type;
-        base.markdown_syntax_string = theme.syntax_string;
-        base.markdown_syntax_variable = theme.syntax_type;
-        base.markdown_syntax_attribute = theme.syntax_operator;
-        base.markdown_syntax_name = theme.syntax_name;
-        base.markdown_syntax_error = theme.syntax_error;
-        let runs = crate::components::markdown::file_editor_runs(text, language, base)
-            .into_iter()
-            .map(|(_, run)| run)
-            .collect();
-        gpui::StyledText::new(text.to_owned()).with_runs(runs)
+    /// Bounded, diff-local syntax runs. The shared Markdown cache only retains
+    /// sixteen blocks and is not a suitable per-line scrolling working set.
+    fn code_runs(
+        &self,
+        text: &str,
+        language: Option<&'static str>,
+    ) -> std::rc::Rc<Vec<gpui::TextRun>> {
+        self.diff_viewport.syntax_runs(text, language, None, || {
+            let theme = self.theme();
+            let mut base = crate::theme::Theme::for_mode(self.mode);
+            base.file_editor_text = theme.syntax_plain;
+            base.markdown_syntax_comment = theme.syntax_comment;
+            base.markdown_syntax_keyword = theme.syntax_keyword;
+            base.markdown_syntax_literal = theme.syntax_type;
+            base.markdown_syntax_string = theme.syntax_string;
+            base.markdown_syntax_variable = theme.syntax_type;
+            base.markdown_syntax_attribute = theme.syntax_operator;
+            base.markdown_syntax_name = theme.syntax_name;
+            base.markdown_syntax_error = theme.syntax_error;
+            crate::components::markdown::file_editor_runs(text, language, base)
+                .into_iter()
+                .map(|(_, run)| run)
+                .collect()
+        })
     }
 
-    fn highlighted_line(&self, file: &FileDiff, hunk: usize, index: usize) -> gpui::StyledText {
+    fn code_text(&self, text: &str, language: Option<&'static str>) -> gpui::StyledText {
+        gpui::StyledText::new(text.to_owned())
+            .with_runs(self.code_runs(text, language).as_ref().clone())
+    }
+
+    fn highlighted_line(
+        &self,
+        file_index: usize,
+        file: &FileDiff,
+        hunk: usize,
+        index: usize,
+    ) -> gpui::StyledText {
         let line = &file.hunks[hunk].lines[index];
-        if !self.words {
-            return self.code_text(&line.text, Self::language_for(&file.path));
-        }
-        let pair = split_pairs(&file.hunks[hunk].lines)
-            .into_iter()
-            .find_map(|(left, right)| {
-                if left == Some(index) && right != Some(index) {
-                    right
-                } else if right == Some(index) && left != Some(index) {
-                    left
-                } else {
-                    None
-                }
-            });
+        let language = Self::language_for(&file.path);
+        let pair = self
+            .words
+            .then(|| self.diff_viewport.partner(file_index, hunk, index))
+            .flatten();
         let Some(pair) = pair else {
-            return self.code_text(&line.text, Self::language_for(&file.path));
+            return self.code_text(&line.text, language);
         };
         let span = changed_span(&line.text, &file.hunks[hunk].lines[pair].text);
+        let deleted = line.kind == LineKind::Deleted;
         let theme = self.theme();
-        let color = if line.kind == LineKind::Deleted {
+        let color = if deleted {
             theme.diff_deleted_emphasis
         } else {
             theme.diff_added_emphasis
         };
-        let mut runs = Vec::new();
-        for (range, run) in crate::components::markdown::file_editor_runs(
+        let runs = self.diff_viewport.syntax_runs(
             &line.text,
-            Self::language_for(&file.path),
-            crate::theme::Theme::for_mode(self.mode),
-        ) {
-            let mut cuts = vec![range.start, range.end];
-            cuts.extend(
-                [span.start, span.end]
-                    .into_iter()
-                    .filter(|cut| *cut > range.start && *cut < range.end),
-            );
-            cuts.sort_unstable();
-            cuts.dedup();
-            for cut in cuts.windows(2) {
-                let mut run = run.clone();
-                run.len = cut[1] - cut[0];
-                if span.contains(&cut[0]) {
-                    run.background_color = Some(color.into());
+            language,
+            Some((span.start, span.end, deleted)),
+            || {
+                let mut runs = Vec::new();
+                for (range, run) in crate::components::markdown::file_editor_runs(
+                    &line.text,
+                    language,
+                    crate::theme::Theme::for_mode(self.mode),
+                ) {
+                    let mut cuts = vec![range.start, range.end];
+                    cuts.extend(
+                        [span.start, span.end]
+                            .into_iter()
+                            .filter(|cut| *cut > range.start && *cut < range.end),
+                    );
+                    cuts.sort_unstable();
+                    cuts.dedup();
+                    for cut in cuts.windows(2) {
+                        let mut run = run.clone();
+                        run.len = cut[1] - cut[0];
+                        if span.contains(&cut[0]) {
+                            run.background_color = Some(color.into());
+                        }
+                        runs.push(run);
+                    }
                 }
-                runs.push(run);
-            }
-        }
-        gpui::StyledText::new(line.text.clone()).with_runs(runs)
+                runs
+            },
+        );
+        gpui::StyledText::new(line.text.clone()).with_runs(runs.as_ref().clone())
     }
 
     /// Language name for the syntax highlighter, derived from the file suffix.
@@ -179,30 +199,26 @@ impl PullRequestsView {
         TREE_WIDTH.min(self.pane_width * 0.42)
     }
 
-    /// Reveals a file the user asked for: the file tree rows and the activity
-    /// cards' `Open <file> in Code` buttons both switch to the diff and scroll
-    /// it to that file. The scroll handle addresses the diff's direct children,
-    /// which are the rendered file sections, so the request waits until the diff
-    /// and its tab are ready.
-    pub(super) fn apply_pending_file_scroll(&mut self, cx: &mut gpui::Context<Self>) {
-        let Some(path) = self.scrolled_to_file.clone() else {
+    /// File navigation addresses a header in the flattened virtual row index,
+    /// not the original file index (which no longer denotes a scroll child).
+    pub(super) fn apply_pending_file_scroll(&mut self, _cx: &mut gpui::Context<Self>) {
+        let Some(path) = self.scrolled_to_file.as_ref() else {
             return;
         };
-        if self.detail_tab != DetailTab::Code && self.review_tab.is_none() {
+        if (self.detail_tab != DetailTab::Code && self.review_tab.is_none()) || self.diff_loading {
             return;
         }
-        if self.diff_loading {
-            return;
-        }
-        let filter = self.tree_filter.read(cx).text().trim().to_lowercase();
-        let index = self
+        let row = self
             .diff
             .iter()
-            .filter(|file| filter.is_empty() || file.path.to_lowercase().contains(&filter))
-            .position(|file| file.path == path);
-        match index {
-            Some(index) => {
-                self.diff_scroll.scroll_to_item(index);
+            .position(|file| &file.path == path)
+            .and_then(|file| self.diff_viewport.file_row(file));
+        match row {
+            Some(item_ix) => {
+                self.diff_viewport.scroll.scroll_to(gpui::ListOffset {
+                    item_ix,
+                    offset_in_item: px(0.0),
+                });
                 self.scrolled_to_file = None;
             }
             None if !self.diff.is_empty() => self.scrolled_to_file = None,
@@ -226,7 +242,8 @@ impl PullRequestsView {
                     .id("pr-diff-scroll")
                     .flex_1()
                     .min_h(px(0.0))
-                    .overflow_scroll()
+                    .min_w(px(0.0))
+                    .overflow_x_scroll()
                     .track_scroll(&self.diff_scroll)
                     .children(self.diff_body(cx)),
             );
@@ -378,9 +395,8 @@ impl PullRequestsView {
             .child(icon(glyph, theme.text.into()).size(px(18.0)))
     }
 
-    /// The diff column's direct children: one section per changed file, so the
-    /// scroll handle can address them by index (`scroll_to_item`) when a review
-    /// comment or the file tree asks to reveal one.
+    /// Loading/error/empty states remain regular elements; actual diff rows
+    /// are built on demand by a single variable-height virtual list.
     fn diff_body(&self, cx: &mut gpui::Context<Self>) -> Vec<gpui::AnyElement> {
         let theme = self.theme();
         if self.diff_loading {
@@ -448,19 +464,16 @@ impl PullRequestsView {
                     .into_any_element(),
             ];
         }
-        files
-            .into_iter()
-            .map(|(index, file)| self.file_section(index, file, cx).into_any_element())
-            .collect()
+        vec![self.virtual_diff_list(cx)]
     }
 
-    fn file_section(&self, index: usize, file: &FileDiff, cx: &mut gpui::Context<Self>) -> Div {
+    fn file_header(&self, index: usize, file: &FileDiff, cx: &mut gpui::Context<Self>) -> Div {
         let theme = self.theme();
         let collapsed = self.collapsed_files.contains(&file.path);
         let selected = self.selected_file.as_deref() == Some(file.path.as_str());
         let path = file.path.clone();
         let view = cx.entity();
-        let mut section = div().flex_none().flex().flex_col().child(
+        let section = div().flex_none().flex().flex_col().child(
             div()
                 .id(SharedString::from(format!("pr-file-{}", file.path)))
                 .group("pr-file-header")
@@ -519,59 +532,48 @@ impl PullRequestsView {
                 )
                 .child(self.file_header_actions(index, &path, collapsed, cx)),
         );
-        if !collapsed && self.rich && file.path.ends_with(".md") && file.status != 'D' {
-            section = section.child(
-                div()
-                    .p(px(16.0))
-                    .child(match self.context_lines(&file.path) {
-                        Some(lines) => crate::components::markdown::render_pull_request_markdown(
-                            &lines.join("\n"),
-                            crate::theme::Theme::for_mode(self.mode),
-                            &format!("pr-preview-{}", file.path),
-                        ),
-                        None => div()
-                            .child(
-                                self.file_errors
-                                    .get(&file.path)
-                                    .cloned()
-                                    .unwrap_or_else(|| "Loading Markdown preview…".into()),
-                            )
-                            .when(self.file_errors.contains_key(&file.path), |body| {
-                                body.child(
-                                    div()
-                                        .id(SharedString::from(format!(
-                                            "pr-preview-retry-{}",
-                                            file.path
-                                        )))
-                                        .role(gpui::Role::Button)
-                                        .aria_label("Retry Markdown preview")
-                                        .cursor_pointer()
-                                        .child("Retry")
-                                        .on_click({
-                                            let view = cx.entity();
-                                            let path = file.path.clone();
-                                            move |_, _, cx| {
-                                                view.update(cx, |view, cx| {
-                                                    view.load_file_lines(path.clone(), cx)
-                                                });
-                                            }
-                                        }),
-                                )
-                            }),
-                    }),
-            );
-        } else if !collapsed && file.binary {
-            section = section.child(
-                div()
-                    .p(px(16.0))
-                    .child("Binary file changed. Open file to view it on GitHub."),
-            );
-        } else if !collapsed {
-            for (hunk_index, hunk) in file.hunks.iter().enumerate() {
-                section = section.child(self.hunk_section(index, file, hunk_index, hunk, cx));
-            }
-        }
         section
+    }
+
+    fn file_preview(&self, file: &FileDiff, cx: &mut gpui::Context<Self>) -> Div {
+        div()
+            .p(px(16.0))
+            .child(match self.context_lines(&file.path) {
+                Some(lines) => crate::components::markdown::render_pull_request_markdown(
+                    &lines.join("\n"),
+                    crate::theme::Theme::for_mode(self.mode),
+                    &format!("pr-preview-{}", file.path),
+                ),
+                None => div()
+                    .child(
+                        self.file_errors
+                            .get(&file.path)
+                            .cloned()
+                            .unwrap_or_else(|| "Loading Markdown preview…".into()),
+                    )
+                    .when(self.file_errors.contains_key(&file.path), |body| {
+                        body.child(
+                            div()
+                                .id(SharedString::from(format!(
+                                    "pr-preview-retry-{}",
+                                    file.path
+                                )))
+                                .role(gpui::Role::Button)
+                                .aria_label("Retry Markdown preview")
+                                .cursor_pointer()
+                                .child("Retry")
+                                .on_click({
+                                    let view = cx.entity();
+                                    let path = file.path.clone();
+                                    move |_, _, cx| {
+                                        view.update(cx, |view, cx| {
+                                            view.load_file_lines(path.clone(), cx)
+                                        });
+                                    }
+                                }),
+                        )
+                    }),
+            })
     }
 
     /// The three nested buttons of a file header: `Copy path`,
@@ -626,104 +628,39 @@ impl PullRequestsView {
         row
     }
 
-    fn hunk_section(
+    fn hunk_expander(
         &self,
         file_index: usize,
         file: &FileDiff,
         hunk_index: usize,
-        hunk: &crate::git_review::Hunk,
+        gap: u32,
         cx: &mut gpui::Context<Self>,
-    ) -> Div {
+    ) -> gpui::Stateful<Div> {
         let theme = self.theme();
         let key = format!("{}:{hunk_index}", file.path);
-        let expanded = self.expanded_context.contains(&key);
-        // The reference shows an `N unmodified lines` bar for the gap between the
-        // previous hunk and this one (the hunk header's first old line minus the
-        // lines already rendered), then renders every line of the hunk.
-        let first_old = hunk_new_start(&hunk.header).unwrap_or(1);
-        let previous_end = if hunk_index == 0 {
-            None
-        } else {
-            file.hunks
-                .get(hunk_index - 1)
-                .and_then(|previous| hunk_new_end(&previous.header))
-        };
-        let gap = match previous_end {
-            Some(end) if first_old > end + 1 => first_old - end - 1,
-            None if first_old > 1 => first_old - 1,
-            _ => 0,
-        };
-        let mut section = div().flex().flex_col();
-        if gap > 0 && !expanded {
-            let toggle_key = key.clone();
-            let view = cx.entity();
-            section = section.child(
+        let view = cx.entity();
+        div()
+            .id(SharedString::from(format!("pr-expander-{key}")))
+            .h(px(32.0))
+            .flex()
+            .items_center()
+            .cursor_pointer()
+            .bg(theme.diff_expander_surface)
+            .role(gpui::Role::Button)
+            .aria_label(SharedString::from(format!("{gap} unmodified lines")))
+            .on_click(move |_, _, cx| {
+                view.update(cx, |view, cx| {
+                    view.expand_context(file_index, key.clone(), cx)
+                });
+            })
+            .child(div().w(px(GUTTER_WIDTH)).flex_none())
+            .child(
                 div()
-                    .id(SharedString::from(format!("pr-expander-{key}")))
-                    .h(px(32.0))
-                    .flex()
-                    .items_center()
-                    .cursor_pointer()
-                    .bg(theme.diff_expander_surface)
-                    .role(gpui::Role::Button)
-                    .aria_label(SharedString::from(format!("{gap} unmodified lines")))
-                    .on_click(move |_, _, cx| {
-                        let key = toggle_key.clone();
-                        view.update(cx, |view, cx| view.expand_context(file_index, key, cx));
-                    })
-                    .child(div().w(px(GUTTER_WIDTH)).flex_none())
-                    .child(
-                        div()
-                            .pl(px(14.0))
-                            .text_size(px(12.0))
-                            .text_color(theme.diff_gutter_text)
-                            .child(format!("{gap} unmodified lines")),
-                    ),
-            );
-        } else if expanded {
-            let lines = self.context_lines(&file.path);
-            if let Some(lines) = lines {
-                let start = previous_end.map(|end| end + 1).unwrap_or(1);
-                for (offset, text) in lines
-                    .iter()
-                    .skip(start.saturating_sub(1) as usize)
-                    .take(gap as usize)
-                    .enumerate()
-                {
-                    let number = start + offset as u32;
-                    section = section.child(self.context_line(&key, number, text, cx));
-                }
-            }
-        }
-        if self.split {
-            for (left, right) in split_pairs(&hunk.lines) {
-                let mut row = div().w_full().flex().items_stretch();
-                for (index, old) in [(left, true), (right, false)] {
-                    let mut cell = div().flex_1().min_w(px(0.0));
-                    if let Some(index) = index {
-                        cell = cell
-                            .child(self.diff_line(file_index, file, hunk_index, index, old, cx));
-                    }
-                    row = row.child(cell);
-                    if old {
-                        row = row.child(div().flex_none().w(px(1.0)).bg(theme.border));
-                    }
-                }
-                section = section.child(row);
-            }
-        } else {
-            for (line_index, line) in hunk.lines.iter().enumerate() {
-                section = section.child(self.diff_line(
-                    file_index,
-                    file,
-                    hunk_index,
-                    line_index,
-                    line.kind == LineKind::Deleted,
-                    cx,
-                ));
-            }
-        }
-        section
+                    .pl(px(14.0))
+                    .text_size(px(12.0))
+                    .text_color(theme.diff_gutter_text)
+                    .child(format!("{gap} unmodified lines")),
+            )
     }
 
     /// A real file line revealed by an expander.
@@ -842,7 +779,7 @@ impl PullRequestsView {
                             code.w(px(self.code_width())).whitespace_normal()
                         })
                         .when(!self.wrap, |code| code.whitespace_nowrap())
-                        .child(self.highlighted_line(file, hunk_index, line_index)),
+                        .child(self.highlighted_line(file_index, file, hunk_index, line_index)),
                 );
         div()
             .relative()
