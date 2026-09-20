@@ -4,6 +4,9 @@ on:
     branches: [fix/pr-code-scroll-performance]
 permissions:
   contents: write
+concurrency:
+  group: pr-scroll-validation
+  cancel-in-progress: true
 jobs:
   repair:
     runs-on: macos-14
@@ -14,18 +17,29 @@ jobs:
           ref: fix/pr-code-scroll-performance
       - name: Apply reviewed scrolling patch
         run: |
-          if [ -f scripts/apply_pr_scroll_fix.py ]; then
-            python3 scripts/apply_pr_scroll_fix.py
-            cargo fmt --all
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add src/components/pull_requests.rs src/components/pull_requests/
-            if ! git diff --cached --quiet; then
-              git commit -m 'fix: virtualize pull request code scrolling'
-              git push origin HEAD:fix/pr-code-scroll-performance
-            fi
-            cargo test components::pull_requests -- --nocapture
-          else
-            rustc --version
-            cargo --version
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/apply_pr_scroll_fix.py')
+          source = p.read_text().replace('preview = old[preview_start:preview_end].strip()', 'preview = old[preview_start:preview_end].strip().removesuffix(",")')
+          exec(compile(source, str(p), 'exec'))
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/components/pull_requests/diff/viewport.rs')
+          source = p.read_text()
+          if 'mod render_tests;' not in source:
+              p.write_text(source + '\n#[cfg(test)]\nmod render_tests;\n')
+          PY
+          rustfmt --edition 2024 --config skip_children=true src/components/pull_requests.rs src/components/pull_requests/diff.rs src/components/pull_requests/render.rs src/components/pull_requests/diff/viewport.rs src/components/pull_requests/diff/viewport/render_tests.rs
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/pull_requests.rs src/components/pull_requests/
+          if ! git diff --cached --quiet; then
+            git commit -m 'fix: virtualize pull request code scrolling'
+            git push origin HEAD:fix/pr-code-scroll-performance
           fi
+      - name: Compile and run PR regression tests
+        env:
+          CARGO_PROFILE_TEST_DEBUG: '0'
+        run: cargo test components::pull_requests -- --nocapture
