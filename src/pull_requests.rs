@@ -12,7 +12,7 @@ mod model;
 
 pub use gh::{GhClient, search_users};
 pub use model::{
-    CheckState, Comment, GroupKind, ListTab, PullRequestDetail, PullRequestFilter,
+    CheckState, GroupKind, ListTab, NewReviewComment, PullRequestDetail, PullRequestFilter,
     PullRequestGroup, PullRequestStatus, PullRequestSummary, StatusFilter, TimelineEntry,
     TimelineKind, User, filter_groups,
 };

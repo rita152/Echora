@@ -4,16 +4,14 @@ use gpui::{Div, SharedString, div, prelude::*, px};
 
 use super::{FilterSubmenu, PullRequestsView, theme::*};
 use crate::components::icons::icon;
-use crate::pull_requests::{
-    GroupKind, ListTab, PullRequestStatus, PullRequestSummary, StatusFilter,
-};
+use crate::pull_requests::{GroupKind, ListTab, PullRequestSummary, StatusFilter};
 
 impl PullRequestsView {
     pub(super) fn list_pane(&self, cx: &mut gpui::Context<Self>) -> Div {
         let theme = self.theme();
         div()
-            .w(px(LIST_PANE_WIDTH))
-            .min_w(px(LIST_PANE_WIDTH))
+            .w(px(self.list_width))
+            .min_w(px(self.list_width))
             .h_full()
             .flex()
             .flex_col()
@@ -130,6 +128,8 @@ impl PullRequestsView {
         let open = self.list_menu.is_some();
         div()
             .id("pr-filter")
+            .relative()
+            .child(self.control_anchor("pr-filter"))
             .flex_none()
             .size(px(28.0))
             .flex()
@@ -167,7 +167,31 @@ impl PullRequestsView {
                 .justify_center()
                 .text_size(px(13.0))
                 .text_color(theme.text_muted)
-                .child(message);
+                .flex_col()
+                .gap(px(12.0))
+                .px(px(16.0))
+                .child(message)
+                .children(
+                    self.list_error
+                        .clone()
+                        .map(|error| div().text_size(px(12.0)).child(error)),
+                )
+                .when(self.list_error.is_some(), |body| {
+                    body.child(
+                        div()
+                            .id("pr-retry-list")
+                            .role(gpui::Role::Button)
+                            .aria_label("Retry loading pull requests")
+                            .cursor_pointer()
+                            .child("Retry")
+                            .on_click({
+                                let view = cx.entity();
+                                move |_, _, cx| {
+                                    view.update(cx, |view, cx| view.reload(cx));
+                                }
+                            }),
+                    )
+                });
         }
         let groups = crate::pull_requests::filter_groups(&self.groups, &self.filter, &self.query);
         if groups.is_empty() {
@@ -399,8 +423,6 @@ impl PullRequestsView {
         let view = cx.entity();
         let mut menu = div()
             .id("pr-filter-menu")
-            .absolute()
-            .top(px(98.0))
             .w(px(208.0))
             .p(px(4.0))
             .rounded(px(20.0))
@@ -430,6 +452,16 @@ impl PullRequestsView {
             menu = menu.child(
                 div()
                     .id(SharedString::from(format!("pr-filter-{label}")))
+                    .relative()
+                    .child(self.control_anchor(format!("pr-filter-{label}")))
+                    .on_click({
+                        let view = view.clone();
+                        move |_, _, cx| {
+                            view.update(cx, |view, cx| {
+                                view.hover_filter_submenu(Some(submenu), cx)
+                            });
+                        }
+                    })
                     .h(px(28.5))
                     .px(px(8.0))
                     .py(px(5.0))
@@ -442,10 +474,9 @@ impl PullRequestsView {
                     .hover(move |style| style.bg(theme.menu_hover))
                     .on_hover(move |hovered, _, cx| {
                         hover_view.update(cx, |view, cx| {
-                            view.hover_filter_submenu(
-                                if *hovered { Some(submenu) } else { None },
-                                cx,
-                            );
+                            if *hovered {
+                                view.hover_filter_submenu(Some(submenu), cx);
+                            }
                         });
                     })
                     .role(gpui::Role::MenuItem)
@@ -467,8 +498,6 @@ impl PullRequestsView {
         let view = cx.entity();
         let mut menu = div()
             .id("pr-filter-submenu")
-            .absolute()
-            .top(px(98.0))
             .p(px(4.0))
             .w(px(180.0))
             .rounded(px(20.0))
@@ -491,10 +520,9 @@ impl PullRequestsView {
                 .collect(),
             FilterSubmenu::Repository => {
                 let mut entries = vec![(
-                    self.filter.repository_label().to_string(),
+                    "All repositories".to_string(),
                     self.filter.repository.is_none(),
                 )];
-                let _ = &entries;
                 entries.extend(self.repositories.iter().map(|repository| {
                     (
                         repository.clone(),
@@ -554,7 +582,6 @@ impl PullRequestsView {
             // `All states` carries the current-status affordance in the
             // reference; the check mark above already marks the active row.
         }
-        let _ = PullRequestStatus::Draft;
         Some(menu)
     }
 }

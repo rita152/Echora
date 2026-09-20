@@ -11,7 +11,10 @@ mod detail;
 mod diff;
 mod list;
 mod menus;
+mod mutations;
 mod render;
+#[cfg(test)]
+mod tests;
 mod theme;
 
 use std::{collections::HashSet, path::PathBuf, sync::Arc, time::Duration};
@@ -25,7 +28,7 @@ use crate::{
     git_review::FileDiff,
     pull_requests::{
         GhClient, GroupKind, ListTab, PullRequestDetail, PullRequestFilter, PullRequestGroup,
-        PullRequestStatus, PullRequestSummary, User,
+        PullRequestSummary, User,
     },
     theme::ThemeMode,
 };
@@ -37,15 +40,7 @@ pub struct OpenChatForPullRequest {
     pub prompt: String,
 }
 
-/// Opens a file from the diff view, file tree, or a review comment.
-#[derive(Clone, Debug)]
-pub struct OpenPullRequestFile {
-    pub path: String,
-    pub line: Option<u32>,
-}
-
 impl EventEmitter<OpenChatForPullRequest> for PullRequestsView {}
-impl EventEmitter<OpenPullRequestFile> for PullRequestsView {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DetailTab {
@@ -83,6 +78,7 @@ pub struct InlineComment {
     pub path: String,
     pub line: u32,
     pub file: usize,
+    pub old: bool,
 }
 
 pub struct PullRequestsView {
@@ -90,6 +86,18 @@ pub struct PullRequestsView {
     client: Arc<GhClient>,
     focus: FocusHandle,
     generation: u64,
+    detail_generation: u64,
+    diff_generation: u64,
+    file_generation: u64,
+    reviewers_generation: u64,
+    mutation_pending: bool,
+    reviewers_loading: bool,
+    reviewers_error: Option<String>,
+    pane_width: f32,
+    list_width: f32,
+    control_bounds: std::rc::Rc<
+        std::cell::RefCell<std::collections::HashMap<String, gpui::Bounds<gpui::Pixels>>>,
+    >,
 
     // List pane.
     tab: ListTab,
@@ -171,6 +179,7 @@ pub struct PullRequestsView {
     /// expander can render the lines it reveals.
     file_lines: std::collections::HashMap<String, Vec<String>>,
     file_lines_loading: HashSet<String>,
+    file_errors: std::collections::HashMap<String, String>,
     /// Capture-only: the launch asked for a specific row, so "ready" must wait
     /// for that selection to land.
     #[cfg(feature = "screenshot")]
@@ -187,6 +196,10 @@ impl Focusable for PullRequestsView {
 
 impl PullRequestsView {
     pub fn new(mode: ThemeMode, cwd: Option<PathBuf>, cx: &mut Context<Self>) -> Self {
+        Self::build(mode, cwd, true, cx)
+    }
+
+    fn build(mode: ThemeMode, cwd: Option<PathBuf>, load: bool, cx: &mut Context<Self>) -> Self {
         let search = cx.new(|cx| {
             let mut input = PromptInput::inline_other(mode, "Search pull requests", false, cx);
             input.set_accessible_name("Search pull requests");
@@ -205,6 +218,11 @@ impl PullRequestsView {
             editor.set_accessible_name("Pull request comment");
             editor
         });
+        cx.subscribe(
+            &comment_box,
+            |_, _, _: &super::file_editor::EditorEvent, cx| cx.notify(),
+        )
+        .detach();
         cx.subscribe(
             &search,
             |this, input, _: &super::prompt_input::PromptChanged, cx| {
@@ -225,6 +243,16 @@ impl PullRequestsView {
             client: Arc::new(GhClient::new(cwd)),
             focus: cx.focus_handle(),
             generation: 0,
+            detail_generation: 0,
+            diff_generation: 0,
+            file_generation: 0,
+            reviewers_generation: 0,
+            mutation_pending: false,
+            reviewers_loading: false,
+            reviewers_error: None,
+            pane_width: 646.0,
+            list_width: theme::LIST_PANE_WIDTH,
+            control_bounds: Default::default(),
             tab: ListTab::All,
             filter: PullRequestFilter::default(),
             repositories: Vec::new(),
@@ -292,11 +320,14 @@ impl PullRequestsView {
             code_width: 500.0,
             file_lines: std::collections::HashMap::new(),
             file_lines_loading: HashSet::new(),
+            file_errors: Default::default(),
             #[cfg(feature = "screenshot")]
             capture_expect_selection: false,
             capture_action: None,
         };
-        view.reload(cx);
+        if load {
+            view.reload(cx);
+        }
         view
     }
 
@@ -335,6 +366,7 @@ impl PullRequestsView {
     /// Re-enters the page: refresh the list and the selected detail so the data
     /// matches the reference, which reloads whenever the page is shown.
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
+        self.reset_diff(cx);
         self.reload(cx);
         if let Some(summary) = self.selected.clone() {
             self.load_detail(summary.repository, summary.number, cx);
@@ -531,7 +563,7 @@ impl PullRequestsView {
                             .first()
                             .and_then(|hunk| hunk.lines.iter().find_map(|line| line.new))
                             .unwrap_or(1);
-                        self.begin_inline_comment(0, path, line, cx);
+                        self.begin_inline_comment(0, path, line, false, cx);
                     }
                 }
                 _ => {}
@@ -580,6 +612,7 @@ impl PullRequestsView {
                     return;
                 }
                 view.list_loading = false;
+                view.filter_loading = false;
                 match result {
                     Ok(groups) => {
                         view.groups = groups;
@@ -607,20 +640,17 @@ impl PullRequestsView {
             .collect();
         repositories.sort();
         repositories.dedup();
-        if self.repositories != repositories {
-            self.repositories = repositories;
-        }
+        self.repositories.extend(repositories);
+        self.repositories.sort();
+        self.repositories.dedup();
     }
 
     fn load_detail(&mut self, repository: String, number: u64, cx: &mut Context<Self>) {
-        self.generation += 1;
-        let generation = self.generation;
+        self.detail_generation += 1;
+        let generation = self.detail_generation;
         let client = self.client.clone();
         self.detail_loading = true;
-        self.detail = None;
         self.detail_error = None;
-        self.review_tab = None;
-        self.detail_tab = DetailTab::Summary;
         cx.notify();
         cx.spawn(async move |this, cx| {
             let result = cx
@@ -632,19 +662,19 @@ impl PullRequestsView {
                 })
                 .await;
             let _ = this.update(cx, |view, cx| {
-                if view.generation != generation {
+                if view.detail_generation != generation {
                     return;
                 }
                 view.detail_loading = false;
                 match result {
                     Ok(detail) => {
+                        view.selected = Some(detail.summary.clone());
                         view.detail = Some(detail);
                         view.detail_error = None;
+                        if view.detail_tab == DetailTab::Code || view.review_tab.is_some() {
+                            view.load_diff(cx);
+                        }
                         view.apply_capture_intent(cx);
-                        // The activity feed shows each inline review comment's
-                        // file above it, so fetch those files as soon as the
-                        // detail lands.
-                        view.prefetch_thread_files(cx);
                     }
                     Err(error) => {
                         view.detail = None;
@@ -664,22 +694,30 @@ impl PullRequestsView {
         if !self.diff.is_empty() || self.diff_loading {
             return;
         }
+        self.diff_generation += 1;
+        let scope = self
+            .review_tab
+            .as_ref()
+            .map(|tab| tab.scope.clone())
+            .unwrap_or(ReviewScope::AllChanges);
         self.diff_loading = true;
         self.diff_error = None;
         let client = self.client.clone();
-        let generation = self.generation;
+        let generation = self.diff_generation;
         cx.notify();
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    client
-                        .diff(&summary.repository, summary.number)
-                        .map_err(|error| format!("{error:#}"))
+                    match scope {
+                        ReviewScope::AllChanges => client.diff(&summary.repository, summary.number),
+                        ReviewScope::Commit(sha) => client.commit_diff(&summary.repository, &sha),
+                    }
+                    .map_err(|error| format!("{error:#}"))
                 })
                 .await;
             let _ = this.update(cx, |view, cx| {
-                if view.generation != generation {
+                if view.diff_generation != generation {
                     return;
                 }
                 view.diff_loading = false;
@@ -687,6 +725,17 @@ impl PullRequestsView {
                     Ok(files) => {
                         view.diff = files;
                         view.diff_error = None;
+                        if view.rich {
+                            let paths: Vec<_> = view
+                                .diff
+                                .iter()
+                                .filter(|file| file.path.ends_with(".md") && file.status != 'D')
+                                .map(|file| file.path.clone())
+                                .collect();
+                            for path in paths {
+                                view.load_file_lines(path, cx);
+                            }
+                        }
                     }
                     Err(error) => {
                         view.diff = Vec::new();
@@ -701,10 +750,11 @@ impl PullRequestsView {
 
     fn show_notice(&mut self, text: String, cx: &mut Context<Self>) {
         self.notice = Some(text);
+        cx.notify();
         self.notice_serial += 1;
         let serial = self.notice_serial;
         cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(Duration::from_secs(2)).await;
+            cx.background_executor().timer(Duration::from_secs(8)).await;
             let _ = this.update(cx, |view, cx| {
                 if view.notice_serial == serial {
                     view.notice = None;
@@ -758,24 +808,7 @@ impl PullRequestsView {
         self.filter_submenu = None;
         self.filter_loading = true;
         cx.notify();
-        let generation = self.generation;
-        let this_generation = generation + 1;
         self.reload(cx);
-        let _ = this_generation;
-        self.finish_filter_loading(cx);
-    }
-
-    fn finish_filter_loading(&mut self, cx: &mut Context<Self>) {
-        cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(600))
-                .await;
-            let _ = this.update(cx, |view, cx| {
-                view.filter_loading = false;
-                cx.notify();
-            });
-        })
-        .detach();
     }
 
     pub fn apply_repository_filter(&mut self, repository: Option<String>, cx: &mut Context<Self>) {
@@ -784,7 +817,6 @@ impl PullRequestsView {
         self.filter_submenu = None;
         self.filter_loading = true;
         self.reload(cx);
-        self.finish_filter_loading(cx);
     }
 
     pub fn toggle_group(&mut self, kind: GroupKind, cx: &mut Context<Self>) {
@@ -884,23 +916,56 @@ impl PullRequestsView {
     }
 
     pub fn select(&mut self, summary: PullRequestSummary, cx: &mut Context<Self>) {
-        if self.selected.as_ref().is_some_and(|current| {
+        let deselect = self.selected.as_ref().is_some_and(|current| {
             current.number == summary.number && current.repository == summary.repository
-        }) {
-            self.selected = None;
-            self.detail = None;
-            self.diff.clear();
-            cx.notify();
-            return;
+        });
+        self.detail_generation += 1;
+        self.reset_diff(cx);
+        self.detail = None;
+        self.detail_loading = false;
+        self.detail_error = None;
+        self.review_tab = None;
+        self.detail_tab = DetailTab::Summary;
+        self.title_edit = None;
+        self.description_edit = None;
+        self.comment_edit = None;
+        self.reply = None;
+        self.reply_target = None;
+        self.comment_box
+            .update(cx, |editor, cx| editor.set_text_silently("", cx));
+        self.dismiss_menus(cx);
+        self.detail_scroll
+            .set_offset(gpui::point(gpui::px(0.0), gpui::px(0.0)));
+        self.selected = if deselect {
+            None
+        } else {
+            Some(summary.clone())
+        };
+        if !deselect {
+            self.load_detail(summary.repository, summary.number, cx);
         }
-        self.selected = Some(summary.clone());
+        cx.notify();
+    }
+
+    fn reset_diff(&mut self, cx: &mut Context<Self>) {
+        self.diff_generation += 1;
+        self.file_generation += 1;
         self.diff.clear();
+        self.diff_loading = false;
+        self.diff_error = None;
+        self.file_lines.clear();
+        self.file_lines_loading.clear();
+        self.file_errors.clear();
         self.collapsed_files.clear();
         self.expanded_context.clear();
         self.selected_file = None;
         self.inline_comment = None;
+        self.inline_editor = None;
         self.scrolled_to_file = None;
-        self.load_detail(summary.repository, summary.number, cx);
+        self.tree_filter
+            .update(cx, |input, cx| input.set_text_silently("", cx));
+        self.diff_scroll
+            .set_offset(gpui::point(gpui::px(0.0), gpui::px(0.0)));
     }
 
     // ------------------------------------------------------------------
@@ -908,6 +973,14 @@ impl PullRequestsView {
     // ------------------------------------------------------------------
 
     pub fn set_detail_tab(&mut self, tab: DetailTab, cx: &mut Context<Self>) {
+        if self
+            .review_tab
+            .as_ref()
+            .is_some_and(|tab| matches!(tab.scope, ReviewScope::Commit(_)))
+        {
+            self.reset_diff(cx);
+        }
+        self.dismiss_menus(cx);
         self.detail_tab = tab;
         self.review_tab = None;
         if tab == DetailTab::Code {
@@ -917,8 +990,7 @@ impl PullRequestsView {
     }
 
     pub fn close_review_tab(&mut self, cx: &mut Context<Self>) {
-        self.review_tab = None;
-        cx.notify();
+        self.set_detail_tab(self.detail_tab, cx);
     }
 
     pub fn open_review_tab(&mut self, cx: &mut Context<Self>) {
@@ -943,8 +1015,12 @@ impl PullRequestsView {
     }
 
     pub fn set_review_scope(&mut self, scope: ReviewScope, cx: &mut Context<Self>) {
-        if let Some(tab) = self.review_tab.as_mut() {
+        if let Some(tab) = self.review_tab.as_mut()
+            && tab.scope != scope
+        {
             tab.scope = scope;
+            self.reset_diff(cx);
+            self.load_diff(cx);
         }
         self.scope_menu_open = false;
         cx.notify();
@@ -1027,11 +1103,6 @@ impl PullRequestsView {
             self.scope_menu_open = false;
             dismissed = true;
         }
-        if self.inline_comment.is_some() {
-            self.inline_comment = None;
-            self.inline_editor = None;
-            dismissed = true;
-        }
         if self.reviewers_open {
             // `Esc` closes the reviewer popover, matching the reference.
             self.close_reviewers(cx);
@@ -1082,6 +1153,11 @@ impl PullRequestsView {
             input.set_text_silently(&title, cx);
             input
         });
+        cx.subscribe(
+            &input,
+            |view, _, _: &super::prompt_input::PromptSubmitted, cx| view.save_title(cx),
+        )
+        .detach();
         self.title_edit = Some(input.clone());
         cx.notify();
         let focus = input;
@@ -1093,51 +1169,6 @@ impl PullRequestsView {
     pub fn cancel_title_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.title_edit = None;
         self.focus.focus(window, cx);
-        cx.notify();
-    }
-
-    pub fn save_title(&mut self, cx: &mut Context<Self>) {
-        let Some(input) = self.title_edit.clone() else {
-            return;
-        };
-        let title = input.read(cx).text().trim().to_string();
-        let Some(summary) = self.selected.clone() else {
-            return;
-        };
-        if title.is_empty() {
-            return;
-        }
-        self.title_edit = None;
-        let client = self.client.clone();
-        let generation = self.generation;
-        cx.spawn(async move |this, cx| {
-            let title_call = title.clone();
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    client
-                        .edit_title(&summary.repository, summary.number, &title_call)
-                        .map_err(|error| format!("{error:#}"))
-                })
-                .await;
-            let _ = this.update(cx, |view, cx| {
-                match result {
-                    Ok(()) => {
-                        if let Some(detail) = view.detail.as_mut() {
-                            detail.summary.title = title.clone();
-                        }
-                        if let Some(selected) = view.selected.as_mut() {
-                            selected.title = title.clone();
-                        }
-                        view.show_notice("Title saved".to_string(), cx);
-                    }
-                    Err(error) => view.show_notice(error, cx),
-                }
-                let _ = generation;
-                cx.notify();
-            });
-        })
-        .detach();
         cx.notify();
     }
 
@@ -1153,6 +1184,10 @@ impl PullRequestsView {
             editor.set_text_silently(&body, cx);
             editor
         });
+        cx.subscribe(&editor, |_, _, _: &super::file_editor::EditorEvent, cx| {
+            cx.notify()
+        })
+        .detach();
         self.description_edit = Some(editor);
         self.description_menu = false;
         cx.notify();
@@ -1161,102 +1196,6 @@ impl PullRequestsView {
     pub fn cancel_description_edit(&mut self, cx: &mut Context<Self>) {
         self.description_edit = None;
         cx.notify();
-    }
-
-    pub fn save_description(&mut self, cx: &mut Context<Self>) {
-        let Some(editor) = self.description_edit.clone() else {
-            return;
-        };
-        let body = editor.read(cx).text().to_string();
-        let Some(summary) = self.selected.clone() else {
-            return;
-        };
-        self.description_edit = None;
-        let client = self.client.clone();
-        cx.spawn(async move |this, cx| {
-            let body_call = body.clone();
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    client
-                        .edit_body(&summary.repository, summary.number, &body_call)
-                        .map_err(|error| format!("{error:#}"))
-                })
-                .await;
-            let _ = this.update(cx, |view, cx| {
-                match result {
-                    Ok(()) => {
-                        if let Some(detail) = view.detail.as_mut() {
-                            detail.body = body.clone();
-                        }
-                        view.show_notice("Description saved".to_string(), cx);
-                    }
-                    Err(error) => view.show_notice(error, cx),
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-        cx.notify();
-    }
-
-    pub fn set_status(&mut self, status: PullRequestStatus, cx: &mut Context<Self>) {
-        let Some(summary) = self.selected.clone() else {
-            return;
-        };
-        self.status_menu = false;
-        let client = self.client.clone();
-        let generation = self.generation;
-        cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    client
-                        .set_status(&summary.repository, summary.number, status)
-                        .map_err(|error| format!("{error:#}"))
-                })
-                .await;
-            let _ = this.update(cx, |view, cx| {
-                match result {
-                    Ok(()) => {
-                        if let Some(detail) = view.detail.as_mut() {
-                            detail.summary.status = status;
-                        }
-                        if let Some(selected) = view.selected.as_mut() {
-                            selected.status = status;
-                        }
-                        view.show_notice(format!("Status set to {}", status.label()), cx);
-                    }
-                    Err(error) => view.show_notice(error, cx),
-                }
-                let _ = generation;
-                cx.notify();
-            });
-        })
-        .detach();
-        cx.notify();
-    }
-
-    pub fn merge(&mut self, cx: &mut Context<Self>) {
-        let Some(summary) = self.selected.clone() else {
-            return;
-        };
-        let client = self.client.clone();
-        cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    client
-                        .merge(&summary.repository, summary.number)
-                        .map_err(|error| format!("{error:#}"))
-                })
-                .await;
-            let _ = this.update(cx, |view, cx| match result {
-                Ok(()) => view.show_notice("Pull request merged".to_string(), cx),
-                Err(error) => view.show_notice(error, cx),
-            });
-        })
-        .detach();
     }
 
     /// `Chat` creates a conversation for the pull request, prefilled but not
@@ -1279,6 +1218,9 @@ impl PullRequestsView {
     }
 
     pub fn open_reviewers(&mut self, cx: &mut Context<Self>) {
+        self.reviewers_generation += 1;
+        self.reviewers_loading = false;
+        self.reviewers_error = None;
         self.reviewers_open = true;
         self.reviewers_results.clear();
         self.reviewers_selected.clear();
@@ -1306,6 +1248,8 @@ impl PullRequestsView {
     }
 
     pub fn close_reviewers(&mut self, cx: &mut Context<Self>) {
+        self.reviewers_generation += 1;
+        self.reviewers_loading = false;
         self.reviewers_open = false;
         self.reviewers_results.clear();
         self.reviewers_selected.clear();
@@ -1315,32 +1259,46 @@ impl PullRequestsView {
 
     fn search_reviewers(&mut self, query: String, cx: &mut Context<Self>) {
         let query = query.trim().to_string();
+        self.reviewers_generation += 1;
+        let serial = self.reviewers_generation;
+        self.reviewers_results.clear();
+        self.reviewers_error = None;
+        self.reviewers_loading = !query.is_empty();
+        cx.notify();
         if query.is_empty() {
-            self.reviewers_results.clear();
-            cx.notify();
             return;
         }
         let repository = self
             .selected
             .as_ref()
-            .map(|summary| summary.repository.clone())
+            .map(|s| s.repository.clone())
             .unwrap_or_default();
-        let serial = {
-            self.notice_serial += 1;
-            self.notice_serial
-        };
         cx.spawn(async move |this, cx| {
             let results = cx
                 .background_executor()
                 .spawn(async move {
-                    crate::pull_requests::search_users(&repository, &query).unwrap_or_default()
+                    crate::pull_requests::search_users(&repository, &query)
+                        .map_err(|error| format!("{error:#}"))
                 })
                 .await;
             let _ = this.update(cx, |view, cx| {
-                if view.notice_serial != serial {
+                if view.reviewers_generation != serial || !view.reviewers_open {
                     return;
                 }
-                view.reviewers_results = results;
+                view.reviewers_loading = false;
+                match results {
+                    Ok(users) => {
+                        view.reviewers_results = users
+                            .into_iter()
+                            .filter(|user| {
+                                view.selected
+                                    .as_ref()
+                                    .is_none_or(|pr| pr.author != user.login)
+                            })
+                            .collect()
+                    }
+                    Err(error) => view.reviewers_error = Some(error),
+                }
                 cx.notify();
             });
         })
@@ -1355,99 +1313,14 @@ impl PullRequestsView {
         self.submit_reviewers(cx);
     }
 
-    pub fn submit_reviewers(&mut self, cx: &mut Context<Self>) {
-        let Some(summary) = self.selected.clone() else {
-            return;
-        };
-        let logins: Vec<String> = self.reviewers_selected.iter().cloned().collect();
-        if logins.is_empty() {
-            return;
-        }
-        let client = self.client.clone();
-        self.reviewers_open = false;
-        let logins_call = logins.clone();
-        cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    client
-                        .request_reviewers(&summary.repository, summary.number, &logins_call)
-                        .map_err(|error| format!("{error:#}"))
-                })
-                .await;
-            let _ = this.update(cx, |view, cx| {
-                match result {
-                    Ok(()) => {
-                        if let Some(detail) = view.detail.as_mut() {
-                            for login in &logins {
-                                if !detail
-                                    .requested_reviewers
-                                    .iter()
-                                    .any(|user| &user.login == login)
-                                {
-                                    detail.requested_reviewers.push(User {
-                                        login: login.clone(),
-                                        name: None,
-                                        avatar_url: None,
-                                        is_self: false,
-                                    });
-                                }
-                            }
-                        }
-                        view.show_notice("Review requested".to_string(), cx);
-                    }
-                    Err(error) => view.show_notice(error, cx),
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-        cx.notify();
-    }
-
-    pub fn post_comment(&mut self, cx: &mut Context<Self>) {
-        let body = self.comment_box.read(cx).text().trim().to_string();
-        if body.is_empty() {
-            return;
-        }
-        let Some(summary) = self.selected.clone() else {
-            return;
-        };
-        let client = self.client.clone();
-        cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    client
-                        .comment(&summary.repository, summary.number, &body)
-                        .map_err(|error| format!("{error:#}"))
-                })
-                .await;
-            let _ = this.update(cx, |view, cx| {
-                match result {
-                    Ok(()) => {
-                        view.comment_box
-                            .update(cx, |editor, cx| editor.reload(String::new(), cx));
-                        view.show_notice("Comment posted".to_string(), cx);
-                    }
-                    Err(error) => view.show_notice(error, cx),
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
     pub fn begin_comment_edit(&mut self, id: String, cx: &mut Context<Self>) {
         let Some(detail) = self.detail.as_ref() else {
             return;
         };
-        let body = detail
-            .comments
-            .iter()
-            .find(|comment| comment.id == id)
-            .map(|comment| comment.body.clone())
-            .unwrap_or_default();
+        let Some(comment) = detail.comment(&id).filter(|comment| comment.can_edit) else {
+            return;
+        };
+        let body = comment.body.clone();
         let mode = self.mode;
         let editor = cx.new(|cx| {
             let mut editor = FileEditor::prose(mode, "Edit pull request comment", cx);
@@ -1455,6 +1328,10 @@ impl PullRequestsView {
             editor.set_text_silently(&body, cx);
             editor
         });
+        cx.subscribe(&editor, |_, _, _: &super::file_editor::EditorEvent, cx| {
+            cx.notify()
+        })
+        .detach();
         self.comment_edit = Some((id, editor));
         self.comment_menu = None;
         cx.notify();
@@ -1465,78 +1342,22 @@ impl PullRequestsView {
         cx.notify();
     }
 
-    pub fn save_comment_edit(&mut self, cx: &mut Context<Self>) {
-        let Some((id, editor)) = self.comment_edit.clone() else {
-            return;
-        };
-        let body = editor.read(cx).text().to_string();
-        let client = self.client.clone();
-        self.comment_edit = None;
-        let id_call = id.clone();
-        let body_call = body.clone();
-        cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    client
-                        .edit_comment(&id_call, &body_call)
-                        .map_err(|error| format!("{error:#}"))
-                })
-                .await;
-            let _ = this.update(cx, |view, cx| {
-                match result {
-                    Ok(()) => {
-                        if let Some(detail) = view.detail.as_mut()
-                            && let Some(comment) =
-                                detail.comments.iter_mut().find(|comment| comment.id == id)
-                        {
-                            comment.body = body.clone();
-                        }
-                        view.show_notice("Comment updated".to_string(), cx);
-                    }
-                    Err(error) => view.show_notice(error, cx),
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    pub fn delete_comment(&mut self, id: String, cx: &mut Context<Self>) {
-        let client = self.client.clone();
-        let id_call = id.clone();
-        self.comment_menu = None;
-        cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    client
-                        .delete_comment(&id_call)
-                        .map_err(|error| format!("{error:#}"))
-                })
-                .await;
-            let _ = this.update(cx, |view, cx| {
-                match result {
-                    Ok(()) => {
-                        if let Some(detail) = view.detail.as_mut() {
-                            detail.comments.retain(|comment| comment.id != id);
-                        }
-                        view.show_notice("Comment deleted".to_string(), cx);
-                    }
-                    Err(error) => view.show_notice(error, cx),
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
     pub fn begin_reply(
         &mut self,
         thread: Option<String>,
         quote: Option<String>,
         cx: &mut Context<Self>,
     ) {
+        if thread.is_none() {
+            self.comment_box.update(cx, |editor, cx| {
+                editor.set_text_silently(quote.as_deref().unwrap_or(""), cx)
+            });
+            self.comment_menu = None;
+            self.detail_scroll
+                .set_offset(gpui::point(gpui::px(0.0), gpui::px(-1_000_000.0)));
+            cx.notify();
+            return;
+        }
         let mode = self.mode;
         let editor = cx.new(|cx| {
             let mut editor = FileEditor::prose(mode, "Pull request reply", cx);
@@ -1546,6 +1367,10 @@ impl PullRequestsView {
             }
             editor
         });
+        cx.subscribe(&editor, |_, _, _: &super::file_editor::EditorEvent, cx| {
+            cx.notify()
+        })
+        .detach();
         self.reply = Some((thread.clone(), editor));
         self.reply_target = thread;
         self.comment_menu = None;
@@ -1558,74 +1383,24 @@ impl PullRequestsView {
         cx.notify();
     }
 
-    pub fn post_reply(&mut self, cx: &mut Context<Self>) {
-        let Some((thread, editor)) = self.reply.clone() else {
+    pub fn open_file(&mut self, path: String, line: Option<u32>, cx: &mut Context<Self>) {
+        let Some(summary) = &self.selected else {
             return;
         };
-        let body = editor.read(cx).text().trim().to_string();
-        if body.is_empty() {
-            return;
+        let sha = self.content_sha();
+        if let Ok(mut url) = url::Url::parse(&format!(
+            "https://github.com/{}/blob/{sha}/",
+            summary.repository
+        )) {
+            if let Ok(mut segments) = url.path_segments_mut() {
+                segments.pop_if_empty();
+                segments.extend(path.split('/'));
+            }
+            if let Some(line) = line {
+                url.set_fragment(Some(&format!("L{line}")));
+            }
+            cx.open_url(url.as_str());
         }
-        let client = self.client.clone();
-        let thread_call = thread.clone();
-        self.reply = None;
-        self.reply_target = None;
-        cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    let outcome = match thread_call {
-                        Some(thread) => client.reply_to_thread(&thread, &body),
-                        None => Ok(()),
-                    };
-                    outcome.map_err(|error| format!("{error:#}"))
-                })
-                .await;
-            let _ = this.update(cx, |view, cx| {
-                match result {
-                    Ok(()) => view.show_notice("Reply posted".to_string(), cx),
-                    Err(error) => view.show_notice(error, cx),
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    pub fn resolve_thread(&mut self, thread: String, cx: &mut Context<Self>) {
-        let client = self.client.clone();
-        let thread_call = thread.clone();
-        cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    client
-                        .resolve_thread(&thread_call)
-                        .map_err(|error| format!("{error:#}"))
-                })
-                .await;
-            let _ = this.update(cx, |view, cx| {
-                match result {
-                    Ok(()) => {
-                        if let Some(detail) = view.detail.as_mut() {
-                            for thread_state in detail.review_threads.iter_mut() {
-                                if thread_state.id == thread {
-                                    thread_state.resolved = true;
-                                }
-                            }
-                        }
-                        view.show_notice("Conversation resolved".to_string(), cx);
-                    }
-                    Err(error) => view.show_notice(error, cx),
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    pub fn open_file(&mut self, path: String, line: Option<u32>, cx: &mut Context<Self>) {
-        cx.emit(OpenPullRequestFile { path, line });
     }
 
     pub fn copy_path(&mut self, path: String, cx: &mut Context<Self>) {
@@ -1660,6 +1435,17 @@ impl PullRequestsView {
         cx.notify();
     }
 
+    fn content_sha(&self) -> String {
+        match self.review_tab.as_ref().map(|tab| &tab.scope) {
+            Some(ReviewScope::Commit(sha)) => sha.clone(),
+            _ => self
+                .detail
+                .as_ref()
+                .map(|detail| detail.head_sha.clone())
+                .unwrap_or_default(),
+        }
+    }
+
     pub fn toggle_split(&mut self, cx: &mut Context<Self>) {
         self.split = !self.split;
         cx.notify();
@@ -1672,6 +1458,17 @@ impl PullRequestsView {
 
     pub fn toggle_rich(&mut self, cx: &mut Context<Self>) {
         self.rich = !self.rich;
+        if self.rich {
+            let paths: Vec<_> = self
+                .diff
+                .iter()
+                .filter(|file| file.path.ends_with(".md") && file.status != 'D')
+                .map(|file| file.path.clone())
+                .collect();
+            for path in paths {
+                self.load_file_lines(path, cx);
+            }
+        }
         cx.notify();
     }
 
@@ -1695,8 +1492,10 @@ impl PullRequestsView {
 
     /// Expands an `N unmodified lines` bar: fetch the file at the head commit
     /// (once per path) and then reveal the lines it hides.
-    pub fn expand_context(&mut self, _file: usize, key: String, cx: &mut Context<Self>) {
-        let path = key.split(':').next().unwrap_or_default().to_string();
+    pub fn expand_context(&mut self, file: usize, key: String, cx: &mut Context<Self>) {
+        let Some(path) = self.diff.get(file).map(|file| file.path.clone()) else {
+            return;
+        };
         self.expanded_context.insert(key.clone());
         if self.file_lines.contains_key(&path) || self.file_lines_loading.contains(&path) {
             cx.notify();
@@ -1711,43 +1510,18 @@ impl PullRequestsView {
         self.file_lines.get(path)
     }
 
-    /// Fetches the files that inline review comments belong to, so the activity
-    /// cards can show the code the comment is anchored to.
-    fn prefetch_thread_files(&mut self, cx: &mut Context<Self>) {
-        let paths: Vec<String> = self
-            .detail
-            .as_ref()
-            .map(|detail| {
-                detail
-                    .review_threads
-                    .iter()
-                    .map(|thread| thread.path.clone())
-                    .filter(|path| !path.is_empty())
-                    .collect()
-            })
-            .unwrap_or_default();
-        for path in paths {
-            if self.file_lines.contains_key(&path) || self.file_lines_loading.contains(&path) {
-                continue;
-            }
-            self.load_file_lines(path, cx);
-        }
-    }
-
     /// Loads one file's lines at the head commit (shared by the context
     /// expanders and the activity code previews).
     fn load_file_lines(&mut self, path: String, cx: &mut Context<Self>) {
         let Some(summary) = self.selected.clone() else {
             return;
         };
-        let sha = self
-            .detail
-            .as_ref()
-            .map(|detail| detail.head_sha.clone())
-            .unwrap_or_default();
+        let sha = self.content_sha();
+        let generation = self.file_generation;
         if sha.is_empty() {
             return;
         }
+        self.file_errors.remove(&path);
         self.file_lines_loading.insert(path.clone());
         let client = self.client.clone();
         let path_call = path.clone();
@@ -1761,12 +1535,20 @@ impl PullRequestsView {
                 })
                 .await;
             let _ = this.update(cx, |view, cx| {
+                if view.file_generation != generation {
+                    return;
+                }
                 view.file_lines_loading.remove(&path);
                 match result {
                     Ok(lines) => {
                         view.file_lines.insert(path.clone(), lines);
                     }
-                    Err(error) => view.show_notice(error, cx),
+                    Err(error) => {
+                        view.file_errors.insert(path.clone(), error.clone());
+                        view.expanded_context
+                            .retain(|key| !key.starts_with(&format!("{path}:")));
+                        view.show_notice(error, cx);
+                    }
                 }
                 cx.notify();
             });
@@ -1779,6 +1561,7 @@ impl PullRequestsView {
         file: usize,
         path: String,
         line: u32,
+        old: bool,
         cx: &mut Context<Self>,
     ) {
         let mode = self.mode;
@@ -1787,8 +1570,17 @@ impl PullRequestsView {
             editor.set_accessible_name("Request change");
             editor
         });
+        cx.subscribe(&editor, |_, _, _: &super::file_editor::EditorEvent, cx| {
+            cx.notify()
+        })
+        .detach();
         self.inline_editor = Some(editor);
-        self.inline_comment = Some(InlineComment { path, line, file });
+        self.inline_comment = Some(InlineComment {
+            path,
+            line,
+            file,
+            old,
+        });
         cx.notify();
     }
 
@@ -1796,48 +1588,5 @@ impl PullRequestsView {
         self.inline_comment = None;
         self.inline_editor = None;
         cx.notify();
-    }
-
-    pub fn submit_inline_comment(&mut self, cx: &mut Context<Self>) {
-        let Some(target) = self.inline_comment.clone() else {
-            return;
-        };
-        let Some(editor) = self.inline_editor.clone() else {
-            return;
-        };
-        let body = editor.read(cx).text().trim().to_string();
-        if body.is_empty() {
-            return;
-        }
-        let Some(summary) = self.selected.clone() else {
-            return;
-        };
-        self.inline_comment = None;
-        self.inline_editor = None;
-        let client = self.client.clone();
-        cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    client
-                        .add_review_comment(
-                            &summary.repository,
-                            summary.number,
-                            &target.path,
-                            target.line,
-                            &body,
-                        )
-                        .map_err(|error| format!("{error:#}"))
-                })
-                .await;
-            let _ = this.update(cx, |view, cx| {
-                match result {
-                    Ok(()) => view.show_notice("Comment added".to_string(), cx),
-                    Err(error) => view.show_notice(error, cx),
-                }
-                cx.notify();
-            });
-        })
-        .detach();
     }
 }

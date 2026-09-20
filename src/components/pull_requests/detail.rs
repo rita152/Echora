@@ -38,7 +38,12 @@ impl PullRequestsView {
     fn detail_header(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let theme = self.theme();
         let has_detail = self.selected.is_some();
-        let mut tabs = div().flex().items_center().gap(px(2.0));
+        let mut tabs = div()
+            .flex_1()
+            .min_w(px(0.0))
+            .flex()
+            .items_center()
+            .gap(px(2.0));
         if has_detail {
             for (tab, label) in [(DetailTab::Summary, "Summary"), (DetailTab::Code, "Code")] {
                 let selected = self.review_tab.is_none() && self.detail_tab == tab;
@@ -84,6 +89,9 @@ impl PullRequestsView {
                 tabs = tabs.child(
                     div()
                         .id("pr-review-tab")
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .overflow_hidden()
                         .h(px(28.0))
                         .px(px(8.0))
                         .flex()
@@ -96,7 +104,10 @@ impl PullRequestsView {
                         .child(icon("panel-review", theme.text_muted.into()).size(px(14.0)))
                         .child(
                             div()
+                                .flex_1()
+                                .min_w(px(0.0))
                                 .max_w(px(220.0))
+                                .text_ellipsis()
                                 .overflow_hidden()
                                 .whitespace_nowrap()
                                 .child(label.clone()),
@@ -104,6 +115,8 @@ impl PullRequestsView {
                         .child(
                             div()
                                 .id("pr-review-tab-scope")
+                                .relative()
+                                .child(self.control_anchor("pr-review-tab-scope"))
                                 .size(px(18.0))
                                 .flex()
                                 .items_center()
@@ -153,13 +166,9 @@ impl PullRequestsView {
             .detail
             .as_ref()
             .is_some_and(|detail| detail.summary.status == PullRequestStatus::Draft);
-        let merged = self
-            .detail
-            .as_ref()
-            .is_some_and(|detail| detail.summary.status == PullRequestStatus::Merged);
         let view = cx.entity();
-        let mut actions = div().flex().items_center().gap(px(4.0));
-        if has_detail && !merged {
+        let mut actions = div().flex_none().flex().items_center().gap(px(4.0));
+        if has_detail {
             let browser_view = view.clone();
             actions = actions.child(
                 div()
@@ -197,21 +206,49 @@ impl PullRequestsView {
                     .text_size(px(13.0))
                     .bg(theme.inverted_surface)
                     .text_color(theme.inverted_text)
-                    .when(!draft, |button| {
-                        button.cursor_pointer().on_click(move |_, _, cx| {
-                            merge_view.update(cx, |view, cx| view.merge(cx));
-                        })
-                    })
-                    .when(draft, |button| button.opacity(0.4))
+                    .when(
+                        !draft
+                            && self.detail.is_some()
+                            && !self.mutation_pending
+                            && self
+                                .selected
+                                .as_ref()
+                                .is_some_and(|pr| pr.status == PullRequestStatus::Open),
+                        |button| {
+                            button.cursor_pointer().on_click(move |_, _, cx| {
+                                merge_view.update(cx, |view, cx| view.merge(cx));
+                            })
+                        },
+                    )
+                    .when(
+                        draft
+                            || self.detail.is_none()
+                            || self.mutation_pending
+                            || self
+                                .selected
+                                .as_ref()
+                                .is_some_and(|pr| pr.status != PullRequestStatus::Open),
+                        |button| button.opacity(0.4),
+                    )
                     .role(gpui::Role::Button)
-                    .aria_label(if draft {
+                    .aria_label(if self.mutation_pending {
+                        "Saving to GitHub"
+                    } else if self.detail.is_none() {
+                        "Merge unavailable: details are loading"
+                    } else if self.selected.as_ref().is_some_and(|pr| {
+                        matches!(
+                            pr.status,
+                            PullRequestStatus::Closed | PullRequestStatus::Merged
+                        )
+                    }) {
+                        "Merge unavailable: pull request is closed"
+                    } else if draft {
                         "Merge unavailable: Mark as \"Ready for review\" to merge"
                     } else {
                         "Merge"
                     })
                     .child(icon("pr-merge", theme.inverted_text.into()).size(px(18.0)))
-                    .child("Merge")
-                    .child(icon("section-chevron", theme.inverted_text.into()).size(px(14.0))),
+                    .child("Merge"),
             );
         }
         if has_detail {
@@ -250,8 +287,29 @@ impl PullRequestsView {
             .when(has_detail, |header| {
                 header.child(icon("pull-request", theme.text_muted.into()).size(px(18.0)))
             })
+            .when(self.compact(), |header| {
+                header.child(
+                    div()
+                        .id("pr-back-list")
+                        .flex_none()
+                        .px(px(6.0))
+                        .role(gpui::Role::Button)
+                        .aria_label("Back to pull requests")
+                        .cursor_pointer()
+                        .child("Back")
+                        .on_click({
+                            let view = cx.entity();
+                            move |_, _, cx| {
+                                view.update(cx, |view, cx| {
+                                    if let Some(pr) = view.selected.clone() {
+                                        view.select(pr, cx);
+                                    }
+                                });
+                            }
+                        }),
+                )
+            })
             .child(tabs)
-            .child(div().flex_1())
             .child(actions)
     }
 
@@ -291,6 +349,26 @@ impl PullRequestsView {
                 .text_size(px(13.0))
                 .text_color(theme.warning)
                 .child(error)
+                .flex_col()
+                .gap(px(12.0))
+                .child(
+                    div()
+                        .id("pr-retry-detail.rs")
+                        .role(gpui::Role::Button)
+                        .aria_label("Retry loading pull request")
+                        .cursor_pointer()
+                        .child("Retry")
+                        .on_click({
+                            let view = cx.entity();
+                            move |_, _, cx| {
+                                view.update(cx, |view, cx| {
+                                    if let Some(pr) = view.selected.clone() {
+                                        view.load_detail(pr.repository, pr.number, cx);
+                                    }
+                                });
+                            }
+                        }),
+                )
                 .into_any_element();
         }
         if self.detail_tab == DetailTab::Code || self.review_tab.is_some() {
@@ -379,7 +457,11 @@ impl PullRequestsView {
                     .flex()
                     .flex_col()
                     .gap(px(8.0))
-                    .child(editor)
+                    .child(Self::editor_frame(
+                        editor,
+                        280.0,
+                        "pr-description-editor-frame",
+                    ))
                     .child(self.description_edit_actions(cx))
             } else {
                 div().px(px(8.0)).child(markdown)
@@ -563,7 +645,10 @@ impl PullRequestsView {
             .gap(px(8.0))
             .child(
                 div()
+                    .flex_1()
+                    .min_w(px(0.0))
                     .max_w(px(260.0))
+                    .text_ellipsis()
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .child(detail.summary.head_branch.clone()),
@@ -583,6 +668,7 @@ impl PullRequestsView {
                 let (additions, deletions) = (detail.summary.additions, detail.summary.deletions);
                 div()
                     .id("pr-review-changes")
+                    .flex_none()
                     .h(px(24.0))
                     .pl(px(6.0))
                     .pr(px(24.0))
@@ -615,6 +701,8 @@ impl PullRequestsView {
         let reviewers: gpui::AnyElement = if detail.requested_reviewers.is_empty() {
             div()
                 .id("pr-request-reviewers")
+                .relative()
+                .child(self.control_anchor("pr-request-reviewers"))
                 .h(px(24.0))
                 .px(px(8.0))
                 .flex()
@@ -679,6 +767,8 @@ impl PullRequestsView {
         let status_menu_view = cx.entity();
         let status_row = div()
             .id("pr-status")
+            .relative()
+            .child(self.control_anchor("pr-status"))
             .h(px(24.0))
             .px(px(8.0))
             .flex()
@@ -757,6 +847,8 @@ impl PullRequestsView {
         let view = cx.entity();
         div()
             .id("pr-description-actions")
+            .relative()
+            .child(self.control_anchor("pr-description-actions"))
             .size(px(28.0))
             .flex()
             .items_center()
@@ -1014,7 +1106,8 @@ impl PullRequestsView {
     fn comment_composer(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let theme = self.theme();
         let view = cx.entity();
-        let has_text = !self.comment_box.read(cx).text().trim().is_empty();
+        let has_text =
+            !self.mutation_pending && !self.comment_box.read(cx).text().trim().is_empty();
         // The reference draws the composer as one bordered card: the editor on
         // top and a footer with the author avatar and a round send button.
         div()
@@ -1026,7 +1119,11 @@ impl PullRequestsView {
             .px(px(12.0))
             .pb(px(12.0))
             .flex_col()
-            .child(div().min_h(px(20.0)).child(self.comment_box.clone()))
+            .child(Self::editor_frame(
+                self.comment_box.clone(),
+                96.0,
+                "pr-comment-composer-frame",
+            ))
             .child(
                 div()
                     .mt(px(8.0))

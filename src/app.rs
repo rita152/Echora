@@ -51,7 +51,7 @@ use crate::{
         home::{
             HomeView, OpenDiffReview, OpenImagePreview, OpenSubAgentPanel, RetryImageGeneration,
         },
-        pull_requests::{OpenChatForPullRequest, OpenPullRequestFile, PullRequestsView},
+        pull_requests::{OpenChatForPullRequest, PullRequestsView},
         review_panel::ReviewPanel,
         side_chat::SideChatPanel,
         sidebar::{
@@ -244,19 +244,6 @@ impl ChatApp {
                     host.composer.update(cx, |composer, cx| {
                         composer.set_draft_text(&prompt, cx);
                     });
-                }
-                cx.notify();
-            },
-        )
-        .detach();
-        cx.subscribe(
-            &pull_requests,
-            |this, _, event: &OpenPullRequestFile, cx| {
-                this.open_files(cx);
-                let path = PathBuf::from(event.path.clone());
-                let line = event.line.map(|line| line as usize);
-                if let Some(panel) = this.file_panels.get(&this.active_conversation) {
-                    panel.update(cx, |panel, cx| panel.open_path(path.clone(), line, cx));
                 }
                 cx.notify();
             },

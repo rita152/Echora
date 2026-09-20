@@ -5,23 +5,8 @@ use gpui::{Div, SharedString, div, prelude::*, px};
 
 use super::{PullRequestsView, diff::file_name};
 use crate::components::icons::icon;
-use crate::pull_requests::{Comment, PullRequestDetail, TimelineEntry, TimelineKind};
+use crate::pull_requests::{PullRequestDetail, TimelineEntry, TimelineKind};
 use crate::theme::Theme;
-
-/// Finds a comment by id across the issue comments and the review threads.
-fn find_comment<'a>(detail: &'a PullRequestDetail, id: &str) -> Option<&'a Comment> {
-    detail
-        .comments
-        .iter()
-        .find(|comment| comment.id == id)
-        .or_else(|| {
-            detail
-                .review_threads
-                .iter()
-                .flat_map(|thread| thread.comments.iter())
-                .find(|comment| comment.id == id)
-        })
-}
 
 impl PullRequestsView {
     /// Timeline cards for the inline review comments of every review thread.
@@ -89,7 +74,7 @@ impl PullRequestsView {
             let Some(comment) = entry
                 .comment_id
                 .as_deref()
-                .and_then(|id| find_comment(detail, id))
+                .and_then(|id| detail.comment(id))
             else {
                 continue;
             };
@@ -197,11 +182,16 @@ impl PullRequestsView {
                                 .role(gpui::Role::Link)
                                 .aria_label("Copy link to comment")
                                 .on_click({
-                                    let url = format!(
-                                        "{}#issuecomment-{}",
-                                        detail.summary.url, comment.id
-                                    );
-                                    move |_, _, cx| cx.open_url(&url)
+                                    let url = comment.url.clone();
+                                    let view = view.clone();
+                                    move |_, _, cx| {
+                                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                            url.clone(),
+                                        ));
+                                        view.update(cx, |view, cx| {
+                                            view.show_notice("Comment link copied".into(), cx)
+                                        });
+                                    }
                                 })
                                 .child(
                                     icon("markdown-link", theme.text_muted.into()).size(px(16.0)),
@@ -212,7 +202,9 @@ impl PullRequestsView {
             if !collapsed {
                 if editing {
                     let (_, editor) = self.comment_edit.clone().unwrap();
-                    entry = entry.child(editor).child(self.comment_edit_actions(cx));
+                    entry = entry
+                        .child(Self::editor_frame(editor, 160.0, "pr-comment-editor-frame"))
+                        .child(self.comment_edit_actions(cx));
                 } else {
                     if comment.is_review
                         && let Some(path) = comment.path.clone()
@@ -223,7 +215,7 @@ impl PullRequestsView {
                     // opens with an HTML comment (the Codex review summaries):
                     // both observed review-summary comments show the header card
                     // alone, so mirror that instead of drawing the raw payload.
-                    if !comment.body.trim_start().starts_with("<!--") {
+                    if !comment.body.trim().is_empty() {
                         entry = entry
                             .child(div().pt(px(12.0)).pl(px(47.0)).pr(px(13.0)).child(markdown));
                     }
@@ -254,6 +246,8 @@ impl PullRequestsView {
         let view = cx.entity();
         div()
             .id(SharedString::from(format!("pr-comment-actions-{id}")))
+            .relative()
+            .child(self.control_anchor(format!("pr-comment-actions-{id}")))
             .w(px(18.0))
             .h(px(26.0))
             .flex()
@@ -328,47 +322,34 @@ impl PullRequestsView {
                         .child(name),
                 ),
             );
-        if let Some(lines) = self.context_lines(path) {
-            let mut body = div().flex().flex_col();
-            for (index, line) in lines.iter().enumerate() {
-                body = body.child(
-                    div()
-                        .h(px(21.6))
-                        .flex()
-                        .items_center()
-                        .child(
-                            div()
-                                .w(px(78.1))
-                                .h_full()
-                                .pr(px(10.0))
-                                .flex()
-                                .justify_end()
-                                .items_center()
-                                .bg(theme.diff_added_emphasis)
-                                .font_family(crate::theme::UI_MONOSPACE_FONT_FAMILY)
-                                .text_size(px(12.0))
-                                .text_color(theme.diff_added_text)
-                                .child(format!("{}", index + 1)),
-                        )
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w(px(0.0))
-                                .h_full()
-                                .pl(px(8.0))
-                                .flex()
-                                .items_center()
-                                .overflow_hidden()
-                                .whitespace_nowrap()
-                                .bg(theme.diff_added_surface)
-                                .font_family(crate::theme::UI_MONOSPACE_FONT_FAMILY)
-                                .text_size(px(12.0))
-                                .text_color(theme.diff_context_text)
-                                .child(line.clone()),
-                        ),
-                );
-            }
-            container = container.child(body);
+        if let Some(comment) = self
+            .detail
+            .as_ref()
+            .and_then(|detail| detail.comment(comment_id))
+            && !comment.diff_hunk.is_empty()
+        {
+            container = container.child(
+                div()
+                    .id(SharedString::from(format!("pr-thread-hunk-{comment_id}")))
+                    .max_h(px(190.0))
+                    .overflow_scroll()
+                    .font_family(crate::theme::UI_MONOSPACE_FONT_FAMILY)
+                    .text_size(px(12.0))
+                    .line_height(px(21.6))
+                    .children(comment.diff_hunk.lines().map(|line| {
+                        div()
+                            .px(px(12.0))
+                            .whitespace_nowrap()
+                            .bg(if line.starts_with('+') {
+                                theme.diff_added_surface
+                            } else if line.starts_with('-') {
+                                theme.diff_deleted_surface
+                            } else {
+                                theme.surface
+                            })
+                            .child(line.to_string())
+                    })),
+            );
         }
         container
     }
@@ -546,7 +527,13 @@ impl PullRequestsView {
                 })
                 .child("Reply"),
         );
-        if let Some(thread_id) = thread.clone() {
+        if let Some(thread_id) = thread.clone().filter(|id| {
+            self.detail.as_ref().is_some_and(|d| {
+                d.review_threads
+                    .iter()
+                    .any(|thread| thread.id == *id && !thread.resolved)
+            })
+        }) {
             let resolve_view = view.clone();
             actions = actions.child(
                 div()
@@ -574,10 +561,11 @@ impl PullRequestsView {
         if reply_open {
             let cancel_view = view.clone();
             let post_view = view.clone();
-            let has_text = self
-                .reply
-                .as_ref()
-                .is_some_and(|(_, editor)| !editor.read(cx).text().trim().is_empty());
+            let has_text = !self.mutation_pending
+                && self
+                    .reply
+                    .as_ref()
+                    .is_some_and(|(_, editor)| !editor.read(cx).text().trim().is_empty());
             actions = div()
                 .flex()
                 .flex_col()
@@ -589,7 +577,9 @@ impl PullRequestsView {
                         .bg(theme.field_surface)
                         .border(px(1.0))
                         .border_color(theme.field_border)
-                        .children(self.reply.as_ref().map(|(_, editor)| editor.clone())),
+                        .children(self.reply.as_ref().map(|(_, editor)| {
+                            Self::editor_frame(editor.clone(), 160.0, "pr-reply-editor-frame")
+                        })),
                 )
                 .child(
                     div()
@@ -648,52 +638,31 @@ impl PullRequestsView {
     }
 
     /// Overlays anchored inside the detail pane.
-    pub(super) fn detail_overlays(&self, cx: &mut gpui::Context<Self>) -> Vec<Div> {
+    pub(super) fn detail_overlays(&self, cx: &mut gpui::Context<Self>) -> Vec<gpui::AnyElement> {
         let mut overlays = Vec::new();
         if self.status_menu {
-            overlays.push(
-                div()
-                    .absolute()
-                    .left(px(150.0))
-                    .top(px(310.0))
-                    .child(self.status_menu(cx)),
-            );
+            overlays.push(self.popup("pr-status", self.status_menu(cx)));
         }
         if self.description_menu {
-            overlays.push(
-                div()
-                    .absolute()
-                    .right(px(24.0))
-                    .top(px(380.0))
-                    .child(self.description_menu(cx)),
-            );
+            overlays.push(self.popup("pr-description-actions", self.description_menu(cx)));
         }
         if self.review_options_open {
-            overlays.push(
-                div()
-                    .absolute()
-                    .right(px(120.0))
-                    .top(px(44.0))
-                    .child(self.review_options_menu(cx)),
-            );
+            overlays.push(self.popup("pr-review-options", self.review_options_menu(cx)));
         }
         if self.scope_menu_open {
-            overlays.push(
-                div()
-                    .absolute()
-                    .left(px(120.0))
-                    .top(px(44.0))
-                    .child(self.scope_menu(cx)),
-            );
+            overlays.push(self.popup("pr-review-tab-scope", self.scope_menu(cx)));
         }
-        if let Some(id) = self.comment_menu.clone() {
-            let has_comment = self
+        if let Some(id) = &self.comment_menu
+            && self
                 .detail
                 .as_ref()
-                .is_some_and(|detail| detail.comments.iter().any(|comment| comment.id == id));
-            if has_comment {
-                overlays.push(self.comment_menu_overlay(id, cx));
-            }
+                .and_then(|detail| detail.comment(id))
+                .is_some()
+        {
+            overlays.push(self.popup(
+                &format!("pr-comment-actions-{id}"),
+                self.comment_menu_overlay(id.clone(), cx),
+            ));
         }
         overlays
     }
@@ -717,8 +686,16 @@ impl PullRequestsView {
             ])
             .text_size(px(13.0))
             .text_color(theme.text);
-        let entries = ["Edit", "Quote reply", "Delete"];
-        for entry in entries {
+        let comment = self.detail.as_ref().and_then(|detail| detail.comment(&id));
+        let entries = [
+            ("Edit", comment.is_some_and(|c| c.can_edit)),
+            ("Quote reply", comment.is_some_and(|c| c.can_quote)),
+            ("Delete", comment.is_some_and(|c| c.can_delete)),
+        ];
+        for (entry, enabled) in entries {
+            if !enabled {
+                continue;
+            }
             let view = view.clone();
             let id = id.clone();
             menu = menu.child(
@@ -738,13 +715,10 @@ impl PullRequestsView {
                         view.update(cx, |view, cx| match entry {
                             "Edit" => view.begin_comment_edit(id.clone(), cx),
                             "Quote reply" => {
-                                let comment = view.detail.as_ref().and_then(|detail| {
-                                    detail
-                                        .comments
-                                        .iter()
-                                        .find(|comment| comment.id == id)
-                                        .cloned()
-                                });
+                                let comment = view
+                                    .detail
+                                    .as_ref()
+                                    .and_then(|detail| detail.comment(&id).cloned());
                                 let quote = comment
                                     .as_ref()
                                     .map(|comment| {
@@ -768,6 +742,6 @@ impl PullRequestsView {
                     .child(entry),
             );
         }
-        div().absolute().right(px(24.0)).top(px(120.0)).child(menu)
+        div().child(menu)
     }
 }

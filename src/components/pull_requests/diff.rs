@@ -72,6 +72,58 @@ impl PullRequestsView {
         gpui::StyledText::new(text.to_owned()).with_runs(runs)
     }
 
+    fn highlighted_line(&self, file: &FileDiff, hunk: usize, index: usize) -> gpui::StyledText {
+        let line = &file.hunks[hunk].lines[index];
+        if !self.words {
+            return self.code_text(&line.text, Self::language_for(&file.path));
+        }
+        let pair = split_pairs(&file.hunks[hunk].lines)
+            .into_iter()
+            .find_map(|(left, right)| {
+                if left == Some(index) && right != Some(index) {
+                    right
+                } else if right == Some(index) && left != Some(index) {
+                    left
+                } else {
+                    None
+                }
+            });
+        let Some(pair) = pair else {
+            return self.code_text(&line.text, Self::language_for(&file.path));
+        };
+        let span = changed_span(&line.text, &file.hunks[hunk].lines[pair].text);
+        let theme = self.theme();
+        let color = if line.kind == LineKind::Deleted {
+            theme.diff_deleted_emphasis
+        } else {
+            theme.diff_added_emphasis
+        };
+        let mut runs = Vec::new();
+        for (range, run) in crate::components::markdown::file_editor_runs(
+            &line.text,
+            Self::language_for(&file.path),
+            crate::theme::Theme::for_mode(self.mode),
+        ) {
+            let mut cuts = vec![range.start, range.end];
+            cuts.extend(
+                [span.start, span.end]
+                    .into_iter()
+                    .filter(|cut| *cut > range.start && *cut < range.end),
+            );
+            cuts.sort_unstable();
+            cuts.dedup();
+            for cut in cuts.windows(2) {
+                let mut run = run.clone();
+                run.len = cut[1] - cut[0];
+                if span.contains(&cut[0]) {
+                    run.background_color = Some(color.into());
+                }
+                runs.push(run);
+            }
+        }
+        gpui::StyledText::new(line.text.clone()).with_runs(runs)
+    }
+
     /// Language name for the syntax highlighter, derived from the file suffix.
     fn language_for(path: &str) -> Option<&'static str> {
         let extension = path.rsplit('.').next().unwrap_or_default();
@@ -98,13 +150,33 @@ impl PullRequestsView {
     /// and the 14px padding on each side of the code.
     pub(super) fn measure_code_width(&mut self, window: &gpui::Window) {
         let viewport = f32::from(window.viewport_size().width);
-        let pane = if self.is_fullscreen() {
+        let page = if self.is_fullscreen() {
             viewport
         } else {
-            viewport - crate::components::sidebar::SIDEBAR_WIDTH - LIST_PANE_WIDTH - 1.0
+            viewport - crate::components::sidebar::SIDEBAR_WIDTH
         };
-        let tree = if self.file_tree_open { TREE_WIDTH } else { 0.0 };
-        self.set_code_width((pane - tree - GUTTER_WIDTH - 28.0).max(80.0));
+        let compact = page < 850.0;
+        self.list_width = if compact {
+            if self.selected.is_none() { page } else { 0.0 }
+        } else {
+            LIST_PANE_WIDTH.min(page * 0.445)
+        };
+        self.pane_width = if self.fullscreen || (compact && self.selected.is_some()) {
+            page
+        } else {
+            page - self.list_width
+        };
+        let tree = if self.file_tree_open {
+            self.tree_width()
+        } else {
+            0.0
+        };
+        let cell = (self.pane_width - tree) / if self.split { 2.0 } else { 1.0 };
+        self.set_code_width((cell - GUTTER_WIDTH).max(40.0));
+    }
+
+    fn tree_width(&self) -> f32 {
+        TREE_WIDTH.min(self.pane_width * 0.42)
     }
 
     /// Reveals a file the user asked for: the file tree rows and the activity
@@ -154,7 +226,7 @@ impl PullRequestsView {
                     .id("pr-diff-scroll")
                     .flex_1()
                     .min_h(px(0.0))
-                    .overflow_y_scroll()
+                    .overflow_scroll()
                     .track_scroll(&self.diff_scroll)
                     .children(self.diff_body(cx)),
             );
@@ -283,6 +355,9 @@ impl PullRequestsView {
             || (id == "pr-file-tree" && self.file_tree_open);
         div()
             .id(id)
+            .relative()
+            .child(self.control_anchor(id))
+            .flex_none()
             .size(px(28.0))
             .flex()
             .items_center()
@@ -332,6 +407,24 @@ impl PullRequestsView {
                     .text_size(px(13.0))
                     .text_color(theme.warning)
                     .child(error)
+                    .flex_col()
+                    .gap(px(12.0))
+                    .child(
+                        div()
+                            .id("pr-retry-diff.rs")
+                            .role(gpui::Role::Button)
+                            .aria_label("Retry loading diff")
+                            .cursor_pointer()
+                            .child("Retry")
+                            .on_click({
+                                let view = cx.entity();
+                                move |_, _, cx| {
+                                    view.update(cx, |view, cx| {
+                                        view.load_diff(cx);
+                                    });
+                                }
+                            }),
+                    )
                     .into_any_element(),
             ];
         }
@@ -381,6 +474,7 @@ impl PullRequestsView {
                 .child(
                     div()
                         .id(SharedString::from(format!("pr-file-name-{}", file.path)))
+                        .h_full()
                         .flex_1()
                         .min_w(px(0.0))
                         .flex()
@@ -425,7 +519,54 @@ impl PullRequestsView {
                 )
                 .child(self.file_header_actions(index, &path, collapsed, cx)),
         );
-        if !collapsed {
+        if !collapsed && self.rich && file.path.ends_with(".md") && file.status != 'D' {
+            section = section.child(
+                div()
+                    .p(px(16.0))
+                    .child(match self.context_lines(&file.path) {
+                        Some(lines) => crate::components::markdown::render_pull_request_markdown(
+                            &lines.join("\n"),
+                            crate::theme::Theme::for_mode(self.mode),
+                            &format!("pr-preview-{}", file.path),
+                        ),
+                        None => div()
+                            .child(
+                                self.file_errors
+                                    .get(&file.path)
+                                    .cloned()
+                                    .unwrap_or_else(|| "Loading Markdown preview…".into()),
+                            )
+                            .when(self.file_errors.contains_key(&file.path), |body| {
+                                body.child(
+                                    div()
+                                        .id(SharedString::from(format!(
+                                            "pr-preview-retry-{}",
+                                            file.path
+                                        )))
+                                        .role(gpui::Role::Button)
+                                        .aria_label("Retry Markdown preview")
+                                        .cursor_pointer()
+                                        .child("Retry")
+                                        .on_click({
+                                            let view = cx.entity();
+                                            let path = file.path.clone();
+                                            move |_, _, cx| {
+                                                view.update(cx, |view, cx| {
+                                                    view.load_file_lines(path.clone(), cx)
+                                                });
+                                            }
+                                        }),
+                                )
+                            }),
+                    }),
+            );
+        } else if !collapsed && file.binary {
+            section = section.child(
+                div()
+                    .p(px(16.0))
+                    .child("Binary file changed. Open file to view it on GitHub."),
+            );
+        } else if !collapsed {
             for (hunk_index, hunk) in file.hunks.iter().enumerate() {
                 section = section.child(self.hunk_section(index, file, hunk_index, hunk, cx));
             }
@@ -499,13 +640,13 @@ impl PullRequestsView {
         // The reference shows an `N unmodified lines` bar for the gap between the
         // previous hunk and this one (the hunk header's first old line minus the
         // lines already rendered), then renders every line of the hunk.
-        let first_old = hunk_start(&hunk.header).unwrap_or(1);
+        let first_old = hunk_new_start(&hunk.header).unwrap_or(1);
         let previous_end = if hunk_index == 0 {
             None
         } else {
             file.hunks
                 .get(hunk_index - 1)
-                .and_then(|previous| hunk_end(&previous.header))
+                .and_then(|previous| hunk_new_end(&previous.header))
         };
         let gap = match previous_end {
             Some(end) if first_old > end + 1 => first_old - end - 1,
@@ -554,9 +695,33 @@ impl PullRequestsView {
                 }
             }
         }
-        for (line_index, line) in hunk.lines.iter().enumerate() {
-            section =
-                section.child(self.diff_line(file_index, file, hunk_index, line_index, line, cx));
+        if self.split {
+            for (left, right) in split_pairs(&hunk.lines) {
+                let mut row = div().w_full().flex().items_stretch();
+                for (index, old) in [(left, true), (right, false)] {
+                    let mut cell = div().flex_1().min_w(px(0.0));
+                    if let Some(index) = index {
+                        cell = cell
+                            .child(self.diff_line(file_index, file, hunk_index, index, old, cx));
+                    }
+                    row = row.child(cell);
+                    if old {
+                        row = row.child(div().flex_none().w(px(1.0)).bg(theme.border));
+                    }
+                }
+                section = section.child(row);
+            }
+        } else {
+            for (line_index, line) in hunk.lines.iter().enumerate() {
+                section = section.child(self.diff_line(
+                    file_index,
+                    file,
+                    hunk_index,
+                    line_index,
+                    line.kind == LineKind::Deleted,
+                    cx,
+                ));
+            }
         }
         section
     }
@@ -609,74 +774,76 @@ impl PullRequestsView {
         file: &FileDiff,
         hunk_index: usize,
         line_index: usize,
-        line: &crate::git_review::Line,
+        old: bool,
         cx: &mut gpui::Context<Self>,
     ) -> Div {
+        let line = &file.hunks[hunk_index].lines[line_index];
         let theme = self.theme();
-        let selected = self
-            .inline_comment
-            .as_ref()
-            .is_some_and(|inline| inline.path == file.path && inline.line == line.new.unwrap_or(0));
+        let selected = self.inline_comment.as_ref().is_some_and(|inline| {
+            inline.path == file.path
+                && inline.old == old
+                && inline.line == if old { line.old } else { line.new }.unwrap_or(0)
+        });
         let view = cx.entity();
         let path = file.path.clone();
         // Review comments anchor to the new-file line, and to the old-file line
         // for deletions; a row without either number offers no comment button.
-        let anchor = line.new.or(line.old);
+        let anchor = if old { line.old } else { line.new };
         let line_number = anchor.unwrap_or(0);
-        let row = div()
-            .min_h(px(LINE_HEIGHT))
-            .flex()
-            .items_stretch()
-            .bg(match line.kind {
-                LineKind::Added => theme.diff_added_surface,
-                LineKind::Deleted => theme.diff_deleted_surface,
-                LineKind::Context => theme.surface,
-            })
-            .child(
-                div()
-                    .w(px(GUTTER_WIDTH))
-                    .flex_none()
-                    .flex()
-                    .justify_end()
-                    .pr(px(10.0))
-                    .bg(match line.kind {
-                        LineKind::Added => theme.diff_added_emphasis,
-                        LineKind::Deleted => theme.diff_deleted_emphasis,
-                        LineKind::Context => theme.surface,
-                    })
-                    .text_size(px(12.0))
-                    .font_family(UI_MONOSPACE_FONT_FAMILY)
-                    .text_color(match line.kind {
-                        LineKind::Added => theme.diff_added_text,
-                        LineKind::Deleted => theme.diff_deleted_text,
-                        LineKind::Context => theme.diff_gutter_text,
-                    })
-                    .when(line.new.is_some(), |gutter| {
-                        gutter.child(
-                            div().h(px(LINE_HEIGHT)).flex().items_center().child(
-                                line.new
-                                    .map(|number| number.to_string())
-                                    .unwrap_or_default(),
-                            ),
-                        )
-                    }),
-            )
-            .child(
-                // Wrapping needs a definite width on a block that directly
-                // holds the text; a flex child would be measured unconstrained.
-                div()
-                    .min_w(px(0.0))
-                    .px(px(14.0))
-                    .font_family(UI_MONOSPACE_FONT_FAMILY)
-                    .text_size(px(12.0))
-                    .text_color(theme.diff_context_text)
-                    .line_height(px(CODE_LINE_HEIGHT))
-                    .when(self.wrap, |code| {
-                        code.w(px(self.code_width())).whitespace_normal()
-                    })
-                    .when(!self.wrap, |code| code.whitespace_nowrap())
-                    .child(self.code_text(&line.text, Self::language_for(&file.path))),
-            );
+        let row =
+            div()
+                .min_h(px(LINE_HEIGHT))
+                .min_w(px(0.0))
+                .flex()
+                .items_stretch()
+                .bg(match line.kind {
+                    LineKind::Added => theme.diff_added_surface,
+                    LineKind::Deleted => theme.diff_deleted_surface,
+                    LineKind::Context => theme.surface,
+                })
+                .child(
+                    div()
+                        .w(px(GUTTER_WIDTH))
+                        .flex_none()
+                        .flex()
+                        .justify_end()
+                        .pr(px(10.0))
+                        .bg(match line.kind {
+                            LineKind::Added => theme.diff_added_emphasis,
+                            LineKind::Deleted => theme.diff_deleted_emphasis,
+                            LineKind::Context => theme.surface,
+                        })
+                        .text_size(px(12.0))
+                        .font_family(UI_MONOSPACE_FONT_FAMILY)
+                        .text_color(match line.kind {
+                            LineKind::Added => theme.diff_added_text,
+                            LineKind::Deleted => theme.diff_deleted_text,
+                            LineKind::Context => theme.diff_gutter_text,
+                        })
+                        .when(anchor.is_some(), |gutter| {
+                            gutter.child(
+                                div().h(px(LINE_HEIGHT)).flex().items_center().child(
+                                    anchor.map(|number| number.to_string()).unwrap_or_default(),
+                                ),
+                            )
+                        }),
+                )
+                .child(
+                    // Wrapping needs a definite width on a block that directly
+                    // holds the text; a flex child would be measured unconstrained.
+                    div()
+                        .min_w(px(0.0))
+                        .px(px(14.0))
+                        .font_family(UI_MONOSPACE_FONT_FAMILY)
+                        .text_size(px(12.0))
+                        .text_color(theme.diff_context_text)
+                        .line_height(px(CODE_LINE_HEIGHT))
+                        .when(self.wrap, |code| {
+                            code.w(px(self.code_width())).whitespace_normal()
+                        })
+                        .when(!self.wrap, |code| code.whitespace_nowrap())
+                        .child(self.highlighted_line(file, hunk_index, line_index)),
+                );
         div()
             .relative()
             .group("pr-line")
@@ -687,7 +854,7 @@ impl PullRequestsView {
                     // same new-file number, and duplicate ids abort the a11y
                     // tree in debug builds.
                     .id(SharedString::from(format!(
-                        "pr-line-add-{}-{hunk_index}-{line_index}",
+                        "pr-line-add-{}-{hunk_index}-{line_index}-{old}",
                         file.path
                     )))
                     .absolute()
@@ -715,6 +882,7 @@ impl PullRequestsView {
                                     file_index,
                                     path.clone(),
                                     line_number,
+                                    old,
                                     cx,
                                 );
                             });
@@ -734,10 +902,11 @@ impl PullRequestsView {
     fn inline_comment_box(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let theme = self.theme();
         let view = cx.entity();
-        let has_text = self
-            .inline_editor
-            .as_ref()
-            .is_some_and(|editor| !editor.read(cx).text().trim().is_empty());
+        let has_text = !self.mutation_pending
+            && self
+                .inline_editor
+                .as_ref()
+                .is_some_and(|editor| !editor.read(cx).text().trim().is_empty());
         let cancel = view.clone();
         div()
             .p(px(8.0))
@@ -753,7 +922,11 @@ impl PullRequestsView {
                     .flex()
                     .flex_col()
                     .gap(px(8.0))
-                    .children(self.inline_editor.clone())
+                    .children(
+                        self.inline_editor.clone().map(|editor| {
+                            Self::editor_frame(editor, 120.0, "pr-inline-editor-frame")
+                        }),
+                    )
                     .child(
                         div()
                             .flex()
@@ -824,7 +997,7 @@ impl PullRequestsView {
         let rows = self.tree_rows("", &files, 0, cx);
         div()
             .flex_none()
-            .w(px(TREE_WIDTH))
+            .w(px(self.tree_width()))
             .h_full()
             .flex()
             .flex_col()
@@ -943,25 +1116,20 @@ impl PullRequestsView {
                     row.child(icon("check", theme.text.into()).size(px(14.0)))
                 }),
         );
-        let commit_selected = matches!(scope, ReviewScope::Commit(_));
-        let mut commits_row = div()
-            .id("pr-scope-commits")
-            .h(px(28.5))
-            .px(px(8.0))
-            .rounded(px(15.0))
+        menu = menu.child(
+            div()
+                .px(px(8.0))
+                .py(px(6.0))
+                .text_color(theme.text_muted)
+                .child("Commits"),
+        );
+        let mut children = div()
+            .id("pr-scope-commit-list")
+            .max_h(px(300.0))
+            .overflow_y_scroll()
             .flex()
-            .items_center()
-            .gap(px(8.0))
-            .cursor_pointer()
-            .hover(move |style| style.bg(theme.menu_hover))
-            .role(gpui::Role::MenuItem)
-            .child(div().flex_1().child("Commits"))
-            .child(icon("settings-chevron-next", theme.text_muted.into()).size(px(14.0)))
-            .when(commit_selected, |row| {
-                row.child(icon("check", theme.text.into()).size(px(14.0)))
-            });
-        let mut children = div();
-        for (sha, subject) in commits.iter().take(20) {
+            .flex_col();
+        for (sha, subject) in &commits {
             let sha = sha.clone();
             let sha_label = sha.clone();
             let select_view = view.clone();
@@ -969,6 +1137,8 @@ impl PullRequestsView {
             children = children.child(
                 div()
                     .id(SharedString::from(format!("pr-scope-commit-{sha}")))
+                    .flex_none()
+                    .aria_label(format!("Commit {}: {subject}", &sha[..7.min(sha.len())]))
                     .h(px(28.5))
                     .px(px(8.0))
                     .rounded(px(15.0))
@@ -1003,8 +1173,7 @@ impl PullRequestsView {
                     }),
             );
         }
-        commits_row = commits_row.child(children);
-        menu = menu.child(commits_row);
+        menu = menu.child(children);
         menu
     }
 
@@ -1024,9 +1193,9 @@ impl PullRequestsView {
             ),
             (
                 if self.rich {
-                    "Disable rich preview"
+                    "Disable Markdown preview"
                 } else {
-                    "Enable rich preview"
+                    "Enable Markdown preview"
                 },
                 "rich",
                 self.rich,
@@ -1058,6 +1227,14 @@ impl PullRequestsView {
             .text_size(px(13.0))
             .text_color(theme.text);
         for (label, action, checked) in entries {
+            if action == "rich"
+                && !self
+                    .diff
+                    .iter()
+                    .any(|file| file.path.ends_with(".md") && file.status != 'D')
+            {
+                continue;
+            }
             let view = view.clone();
             menu = menu.child(
                 div()
@@ -1115,7 +1292,9 @@ impl PullRequestsView {
             .text_size(px(13.0))
             .text_color(theme.text);
         for status in crate::pull_requests::PullRequestStatus::selectable() {
-            let disabled = status == current;
+            let disabled = status == current
+                || current == crate::pull_requests::PullRequestStatus::Merged
+                || self.mutation_pending;
             let view = view.clone();
             menu = menu.child(
                 div()
@@ -1151,7 +1330,7 @@ impl PullRequestsView {
     pub(super) fn description_menu(&self, cx: &mut gpui::Context<Self>) -> gpui::Stateful<Div> {
         let theme = self.theme();
         let view = cx.entity();
-        let entries = ["Edit description", "Generate with Codex"];
+        let entries = ["Edit description", "Draft description in chat"];
         let mut menu = div()
             .id("pr-description-menu")
             .p(px(4.0))
@@ -1189,10 +1368,9 @@ impl PullRequestsView {
                                 view.begin_description_edit(cx);
                             } else {
                                 view.description_menu = false;
-                                view.show_notice(
-                                    "Generating description with Codex".to_string(),
-                                    cx,
-                                );
+                                if let Some(summary) = &view.selected {
+                                    cx.emit(super::OpenChatForPullRequest { prompt: format!("Draft a pull request description for {}. Read the changes and summarize their behavior and validation. Return the draft for me to review.", summary.url) });
+                                }
                             }
                         });
                     })
@@ -1204,16 +1382,16 @@ impl PullRequestsView {
 }
 
 /// First old-file line of a `@@ -a,b +c,d @@` header.
-fn hunk_start(header: &str) -> Option<u32> {
+fn hunk_new_start(header: &str) -> Option<u32> {
     let rest = header.split("@@").nth(1)?;
-    let old = rest.split_whitespace().next()?.trim_start_matches('-');
+    let old = rest.split_whitespace().nth(1)?.trim_start_matches('+');
     old.split(',').next()?.parse().ok()
 }
 
 /// Last old-file line of a hunk header.
-fn hunk_end(header: &str) -> Option<u32> {
+fn hunk_new_end(header: &str) -> Option<u32> {
     let rest = header.split("@@").nth(1)?;
-    let old = rest.split_whitespace().next()?.trim_start_matches('-');
+    let old = rest.split_whitespace().nth(1)?.trim_start_matches('+');
     let mut parts = old.split(',');
     let start: u32 = parts.next()?.parse().ok()?;
     match parts.next().and_then(|count| count.parse::<u32>().ok()) {
@@ -1428,4 +1606,51 @@ impl PullRequestsView {
                 }),
         )
     }
+}
+
+/// Align each contiguous deletion/addition block without pairing across context.
+pub(super) fn split_pairs(
+    lines: &[crate::git_review::Line],
+) -> Vec<(Option<usize>, Option<usize>)> {
+    let mut rows = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        if lines[i].kind == LineKind::Context {
+            rows.push((Some(i), Some(i)));
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < lines.len() && lines[i].kind == LineKind::Deleted {
+            i += 1;
+        }
+        let added = i;
+        while i < lines.len() && lines[i].kind == LineKind::Added {
+            i += 1;
+        }
+        for offset in 0..(added - start).max(i - added) {
+            rows.push((
+                (start + offset < added).then_some(start + offset),
+                (added + offset < i).then_some(added + offset),
+            ));
+        }
+    }
+    rows
+}
+
+pub(super) fn changed_span(a: &str, b: &str) -> std::ops::Range<usize> {
+    let prefix: usize = a
+        .chars()
+        .zip(b.chars())
+        .take_while(|(a, b)| a == b)
+        .map(|(a, _)| a.len_utf8())
+        .sum();
+    let suffix: usize = a[prefix..]
+        .chars()
+        .rev()
+        .zip(b[prefix..].chars().rev())
+        .take_while(|(a, b)| a == b)
+        .map(|(a, _)| a.len_utf8())
+        .sum();
+    prefix..a.len() - suffix
 }

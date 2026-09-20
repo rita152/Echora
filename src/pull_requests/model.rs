@@ -133,6 +133,7 @@ impl PullRequestStatus {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum GroupKind {
+    ReviewRequested,
     PreviouslyReviewed,
     Authored,
 }
@@ -140,6 +141,7 @@ pub enum GroupKind {
 impl GroupKind {
     pub fn label(self) -> &'static str {
         match self {
+            Self::ReviewRequested => "Review requested",
             Self::PreviouslyReviewed => "Previously reviewed",
             Self::Authored => "Authored",
         }
@@ -233,6 +235,7 @@ impl Commit {
 pub struct Comment {
     pub id: String,
     pub database_id: Option<u64>,
+    pub url: String,
     pub author: String,
     pub avatar_url: Option<String>,
     pub body: String,
@@ -244,10 +247,20 @@ pub struct Comment {
     pub path: Option<String>,
     pub line: Option<u32>,
     pub thread_id: Option<String>,
+    pub diff_hunk: String,
     pub resolved: bool,
     pub can_edit: bool,
     pub can_delete: bool,
     pub can_quote: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct NewReviewComment {
+    pub path: String,
+    pub line: u32,
+    pub old: bool,
+    pub commit: String,
+    pub body: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -312,6 +325,19 @@ pub struct PullRequestDetail {
     pub deletions: u64,
     /// Head commit, used to fetch file contents for expanded diff context.
     pub head_sha: String,
+}
+
+impl PullRequestDetail {
+    pub fn comment(&self, id: &str) -> Option<&Comment> {
+        self.comments
+            .iter()
+            .chain(
+                self.review_threads
+                    .iter()
+                    .flat_map(|thread| &thread.comments),
+            )
+            .find(|comment| comment.id == id)
+    }
 }
 
 /// Formats a GitHub timestamp the way the reference app does: the largest

@@ -55,23 +55,12 @@ fn gh(args: &[&str], input: Option<&[u8]>, cwd: Option<&Path>) -> Result<String>
 }
 
 fn graphql(query: &str, variables: &[(&str, Value)]) -> Result<Value> {
-    let mut args: Vec<String> = vec![
-        "api".to_string(),
-        "graphql".to_string(),
-        "-f".to_string(),
-        format!("query={query}"),
-    ];
-    for (name, value) in variables {
-        let rendered = match value {
-            Value::Number(number) => number.to_string(),
-            Value::String(text) => text.clone(),
-            other => other.to_string(),
-        };
-        args.push("-F".to_string());
-        args.push(format!("{name}={rendered}"));
-    }
-    let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
-    let raw = gh(&borrowed, None, None)?;
+    let variables: serde_json::Map<String, Value> = variables
+        .iter()
+        .map(|(key, value)| ((*key).to_string(), value.clone()))
+        .collect();
+    let input = serde_json::to_vec(&serde_json::json!({"query": query, "variables": variables}))?;
+    let raw = gh(&["api", "graphql", "--input", "-"], Some(&input), None)?;
     let value: Value = serde_json::from_str(&raw).context(crate::i18n::text("无法解析 gh 输出"))?;
     if let Some(errors) = value.get("errors").and_then(Value::as_array)
         && let Some(first) = errors.first()
@@ -153,23 +142,44 @@ fn summary_from(node: &Value) -> PullRequestSummary {
 }
 
 fn search(query: &str) -> Result<Vec<PullRequestSummary>> {
-    let value = graphql(
-        &format!(
-            "query($searchQuery: String!) {{ search(query: $searchQuery, type: ISSUE, first: 50) {{ nodes {{ ... on PullRequest {{ {SEARCH_FIELDS} }} }} }} }}"
-        ),
-        &[("searchQuery", Value::String(query.to_string()))],
-    )?;
-    // Search can answer with nodes that are not readable pull requests (for
-    // example a repository the token cannot see); they carry no repository and
-    // must not reach the list.
-    Ok(nodes(&value, "/data/search")
-        .iter()
-        .map(summary_from)
-        .filter(|summary| !summary.repository.is_empty() && !summary.title.is_empty())
-        .collect())
+    let mut results = Vec::new();
+    let mut cursor = Value::Null;
+    loop {
+        let value = graphql(
+            &format!(
+                "query($searchQuery: String!, $after: String) {{ search(query: $searchQuery, type: ISSUE, first: 100, after: $after) {{ pageInfo {{ hasNextPage endCursor }} nodes {{ ... on PullRequest {{ {SEARCH_FIELDS} }} }} }} }}"
+            ),
+            &[
+                ("searchQuery", Value::from(query)),
+                ("after", cursor.clone()),
+            ],
+        )?;
+        results.extend(
+            nodes(&value, "/data/search")
+                .iter()
+                .map(summary_from)
+                .filter(|summary| !summary.repository.is_empty() && !summary.title.is_empty()),
+        );
+        if value
+            .pointer("/data/search/pageInfo/hasNextPage")
+            .and_then(Value::as_bool)
+            != Some(true)
+        {
+            break;
+        }
+        let next = value
+            .pointer("/data/search/pageInfo/endCursor")
+            .cloned()
+            .context("GitHub omitted the next search cursor")?;
+        if next.is_null() || next == cursor {
+            bail!("GitHub returned a repeated search cursor");
+        }
+        cursor = next;
+    }
+    Ok(results)
 }
 
-fn query_for(tab: ListTab, filter: &PullRequestFilter, relation: &str) -> String {
+fn query_for(_tab: ListTab, filter: &PullRequestFilter, relation: &str) -> String {
     let mut query = format!("is:pr {relation} archived:false");
     let status = filter.status.query();
     if !status.is_empty() {
@@ -180,9 +190,6 @@ fn query_for(tab: ListTab, filter: &PullRequestFilter, relation: &str) -> String
         query.push_str(" repo:");
         query.push_str(repository);
     }
-    if tab == ListTab::Reviewing {
-        query.push_str(" review-requested:@me");
-    }
     query.push_str(" sort:updated-desc");
     query
 }
@@ -190,25 +197,19 @@ fn query_for(tab: ListTab, filter: &PullRequestFilter, relation: &str) -> String
 /// Users available in the reviewer picker: assignable users of the repository,
 /// filtered locally the way the reference dialog filters as you type.
 pub fn search_users(repository: &str, query: &str) -> Result<Vec<User>> {
-    let raw = gh(
+    let (owner, name) = repository.split_once('/').context("Invalid repository")?;
+    let value = graphql(
+        "query($owner: String!, $name: String!, $query: String!) { repository(owner: $owner, name: $name) { assignableUsers(query: $query, first: 30) { nodes { login name avatarUrl } } } }",
         &[
-            "api",
-            &format!("search/users?q={query}+type:user"),
-            "--jq",
-            ".items[] | {login: .login, avatarUrl: .avatar_url}",
+            ("owner", Value::from(owner)),
+            ("name", Value::from(name)),
+            ("query", Value::from(query)),
         ],
-        None,
-        None,
     )?;
-    let mut users = Vec::new();
-    for line in raw.lines().filter(|line| !line.trim().is_empty()) {
-        let value: Value = serde_json::from_str(line)?;
-        if let Some(user) = user_from(&value) {
-            users.push(user);
-        }
-    }
-    let _ = repository;
-    Ok(users)
+    Ok(nodes(&value, "/data/repository/assignableUsers")
+        .iter()
+        .filter_map(user_from)
+        .collect())
 }
 
 pub struct GhClient {
@@ -222,10 +223,16 @@ impl GhClient {
 
     /// Lists the groups the reference app renders for a tab.
     pub fn list(&self, tab: ListTab, filter: &PullRequestFilter) -> Result<Vec<PullRequestGroup>> {
-        let _ = &self.cwd;
         match tab {
             ListTab::All => {
                 let mut groups = Vec::new();
+                let requested = search(&query_for(tab, filter, "review-requested:@me"))?;
+                if !requested.is_empty() {
+                    groups.push(PullRequestGroup {
+                        kind: GroupKind::ReviewRequested,
+                        items: requested,
+                    });
+                }
                 let reviewed = search(&query_for(tab, filter, "reviewed-by:@me"))?;
                 if !reviewed.is_empty() {
                     groups.push(PullRequestGroup {
@@ -248,7 +255,7 @@ impl GhClient {
                     Vec::new()
                 } else {
                     vec![PullRequestGroup {
-                        kind: GroupKind::PreviouslyReviewed,
+                        kind: GroupKind::ReviewRequested,
                         items,
                     }]
                 })
@@ -280,12 +287,12 @@ query($owner: String!, $name: String!, $number: Int!) {
       body
       author { login avatarUrl }
       reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login name avatarUrl } } } }
-      reviews(first: 50) { nodes { id author { login avatarUrl } body submittedAt state } }
-      comments(first: 50) { nodes { id databaseId author { login avatarUrl } body createdAt } }
+      reviews(first: 50) { nodes { id url viewerCanUpdate viewerCanDelete author { login avatarUrl } body submittedAt state } }
+      comments(first: 50) { nodes { id databaseId url viewerCanUpdate viewerCanDelete author { login avatarUrl } body createdAt } }
       reviewThreads(first: 50) {
         nodes {
           id isResolved path line
-          comments(first: 30) { nodes { id databaseId author { login avatarUrl } body createdAt } }
+          comments(first: 30) { nodes { diffHunk line originalLine id databaseId url viewerCanUpdate viewerCanDelete author { login avatarUrl } body createdAt } }
         }
       }
       commits(first: 100) {
@@ -376,7 +383,11 @@ query($owner: String!, $name: String!, $number: Int!) {
                 .unwrap_or(false);
             let thread_comments: Vec<Comment> = nodes(&node, "/comments")
                 .iter()
-                .map(|comment| comment_from(comment, Some((&thread_id, &path, line))))
+                .map(|comment| {
+                    let mut comment = comment_from(comment, Some((&thread_id, &path, line)));
+                    comment.resolved = resolved;
+                    comment
+                })
                 .collect();
             review_threads.push(ReviewThread {
                 id: thread_id,
@@ -565,20 +576,14 @@ query($owner: String!, $name: String!, $number: Int!) {
     /// Whole file contents at the pull request head commit, used to fill in the
     /// context lines an `N unmodified lines` expander reveals.
     pub fn file_lines(&self, repository: &str, path: &str, sha: &str) -> Result<Vec<String>> {
+        let endpoint = contents_endpoint(repository, path, sha)?;
         let raw = gh(
-            &[
-                "api",
-                &format!("repos/{repository}/contents/{path}?ref={sha}"),
-                "--jq",
-                ".content",
-            ],
+            &["api", &endpoint, "--jq", ".content"],
             None,
             self.cwd.as_deref(),
         )?;
         let cleaned: String = raw.chars().filter(|c| !c.is_whitespace()).collect();
-        if cleaned.is_empty() {
-            bail!(crate::i18n::text("文件内容不可用"));
-        }
+
         let bytes = decode_base64(&cleaned)?;
         let text = String::from_utf8_lossy(&bytes);
         Ok(text.lines().map(str::to_string).collect())
@@ -588,29 +593,93 @@ query($owner: String!, $name: String!, $number: Int!) {
         &self,
         repository: &str,
         number: u64,
+        current: PullRequestStatus,
         status: PullRequestStatus,
     ) -> Result<()> {
+        if current == PullRequestStatus::Merged || status == PullRequestStatus::Merged {
+            bail!("Merged pull requests cannot change status");
+        }
         let number = number.to_string();
-        let args: Vec<&str> = match status {
+        if current == PullRequestStatus::Closed && status != PullRequestStatus::Closed {
+            gh(
+                &["pr", "reopen", &number, "--repo", repository],
+                None,
+                self.cwd.as_deref(),
+            )?;
+        }
+        match status {
             PullRequestStatus::Draft => {
-                vec!["pr", "ready", &number, "--repo", repository, "--undo"]
+                gh(
+                    &["pr", "ready", &number, "--repo", repository, "--undo"],
+                    None,
+                    self.cwd.as_deref(),
+                )?;
             }
-            PullRequestStatus::Open => vec!["pr", "ready", &number, "--repo", repository],
-            PullRequestStatus::Closed => vec!["pr", "close", &number, "--repo", repository],
-            PullRequestStatus::Merged => vec!["pr", "reopen", &number, "--repo", repository],
-        };
-        gh(&args, None, self.cwd.as_deref())?;
+            PullRequestStatus::Open => {
+                let draft = if current == PullRequestStatus::Closed {
+                    gh(
+                        &[
+                            "pr", "view", &number, "--repo", repository, "--json", "isDraft",
+                            "--jq", ".isDraft",
+                        ],
+                        None,
+                        self.cwd.as_deref(),
+                    )?
+                    .trim()
+                        == "true"
+                } else {
+                    current == PullRequestStatus::Draft
+                };
+                if draft {
+                    gh(
+                        &["pr", "ready", &number, "--repo", repository],
+                        None,
+                        self.cwd.as_deref(),
+                    )?;
+                }
+            }
+            PullRequestStatus::Closed => {
+                gh(
+                    &["pr", "close", &number, "--repo", repository],
+                    None,
+                    self.cwd.as_deref(),
+                )?;
+            }
+            PullRequestStatus::Merged => unreachable!(),
+        }
         Ok(())
     }
 
-    pub fn merge(&self, repository: &str, number: u64) -> Result<()> {
-        let number = number.to_string();
+    pub fn merge(&self, repository: &str, number: u64, head: &str) -> Result<()> {
         gh(
-            &["pr", "merge", &number, "--repo", repository],
+            &[
+                "pr",
+                "merge",
+                &number.to_string(),
+                "--repo",
+                repository,
+                "--merge",
+                "--match-head-commit",
+                head,
+            ],
             None,
             self.cwd.as_deref(),
         )?;
         Ok(())
+    }
+
+    pub fn commit_diff(&self, repository: &str, sha: &str) -> Result<Vec<FileDiff>> {
+        let raw = gh(
+            &[
+                "api",
+                &format!("repos/{repository}/commits/{sha}"),
+                "-H",
+                "Accept: application/vnd.github.diff",
+            ],
+            None,
+            self.cwd.as_deref(),
+        )?;
+        Ok(crate::git_review::parse_unified(&raw))
     }
 
     pub fn edit_title(&self, repository: &str, number: u64, title: &str) -> Result<()> {
@@ -663,29 +732,48 @@ query($owner: String!, $name: String!, $number: Int!) {
         Ok(())
     }
 
-    pub fn edit_comment(&self, comment_id: &str, body: &str) -> Result<()> {
-        let mutation = r#"
-mutation($id: ID!, $body: String!) {
-  updatePullRequestReviewComment(input: { pullRequestReviewCommentId: $id, body: $body }) {
-    clientMutationId
-  }
-}"#;
+    pub fn edit_comment(&self, comment: &Comment, body: &str) -> Result<()> {
+        let (action, field, response) = if comment.thread_id.is_some() {
+            (
+                "updatePullRequestReviewComment",
+                "pullRequestReviewCommentId",
+                "pullRequestReviewComment { id }",
+            )
+        } else if comment.is_review {
+            (
+                "updatePullRequestReview",
+                "pullRequestReviewId",
+                "pullRequestReview { id }",
+            )
+        } else {
+            ("updateIssueComment", "id", "issueComment { id }")
+        };
         graphql(
-            mutation,
+            &format!(
+                "mutation($id: ID!, $body: String!) {{ {action}(input: {{ {field}: $id, body: $body }}) {{ {response} }} }}"
+            ),
             &[
-                ("id", Value::String(comment_id.to_string())),
-                ("body", Value::String(body.to_string())),
+                ("id", Value::from(comment.id.clone())),
+                ("body", Value::from(body)),
             ],
         )?;
         Ok(())
     }
 
-    pub fn delete_comment(&self, comment_id: &str) -> Result<()> {
-        let mutation = r#"
-mutation($id: ID!) {
-  deletePullRequestReviewComment(input: { id: $id }) { clientMutationId }
-}"#;
-        graphql(mutation, &[("id", Value::String(comment_id.to_string()))])?;
+    pub fn delete_comment(&self, comment: &Comment) -> Result<()> {
+        let (action, field) = if comment.thread_id.is_some() {
+            ("deletePullRequestReviewComment", "id")
+        } else if comment.is_review {
+            ("deletePullRequestReview", "pullRequestReviewId")
+        } else {
+            ("deleteIssueComment", "id")
+        };
+        graphql(
+            &format!(
+                "mutation($id: ID!) {{ {action}(input: {{ {field}: $id }}) {{ clientMutationId }} }}"
+            ),
+            &[("id", Value::from(comment.id.clone()))],
+        )?;
         Ok(())
     }
 
@@ -719,54 +807,42 @@ mutation($id: ID!) {
         &self,
         repository: &str,
         number: u64,
-        path: &str,
-        line: u32,
-        body: &str,
+        comment: &super::model::NewReviewComment,
     ) -> Result<()> {
-        let (owner, name) = repository
-            .split_once('/')
-            .with_context(|| crate::i18n::format!("仓库名称必须是 owner/name（收到 {repository:?}）" => "Repository name must be owner/name (received {repository:?})"))?;
-        let head = gh(
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "body": comment.body, "commit_id": comment.commit, "path": comment.path,
+            "line": comment.line, "side": if comment.old { "LEFT" } else { "RIGHT" },
+        }))?;
+        gh(
             &[
                 "api",
-                &format!("repos/{repository}/pulls/{number}"),
-                "--jq",
-                ".head.sha",
+                &format!("repos/{repository}/pulls/{number}/comments"),
+                "--method",
+                "POST",
+                "--input",
+                "-",
             ],
-            None,
+            Some(&payload),
             self.cwd.as_deref(),
-        )?;
-        let mutation = r#"
-mutation($pullRequestId: ID!, $body: String!, $path: String!, $line: Int!, $commitId: String!) {
-  addPullRequestReviewThread(input: { pullRequestId: $pullRequestId, body: $body, path: $path, line: $line, commitOID: $commitId }) {
-    thread { id }
-  }
-}"#;
-        let pull_id = graphql(
-            "query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id } } }",
-            &[
-                ("owner", Value::String(owner.to_string())),
-                ("name", Value::String(name.to_string())),
-                ("number", Value::from(number)),
-            ],
-        )?;
-        let pull_id = pull_id
-            .pointer("/data/repository/pullRequest/id")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        graphql(
-            mutation,
-            &[
-                ("pullRequestId", Value::String(pull_id)),
-                ("body", Value::String(body.to_string())),
-                ("path", Value::String(path.to_string())),
-                ("line", Value::from(line)),
-                ("commitId", Value::String(head.trim().to_string())),
-            ],
         )?;
         Ok(())
     }
+}
+
+fn contents_endpoint(repository: &str, path: &str, sha: &str) -> Result<String> {
+    let mut url = url::Url::parse(&format!(
+        "https://api.github.com/repos/{repository}/contents/"
+    ))?;
+    url.path_segments_mut()
+        .map_err(|_| anyhow::anyhow!("Invalid file URL"))?
+        .pop_if_empty()
+        .extend(path.split('/'));
+    url.query_pairs_mut().append_pair("ref", sha);
+    Ok(format!(
+        "{}?{}",
+        url.path().trim_start_matches('/'),
+        url.query().unwrap_or_default()
+    ))
 }
 
 fn decode_base64(input: &str) -> Result<Vec<u8>> {
@@ -808,6 +884,7 @@ fn comment_from(node: &Value, thread: Option<(&str, &str, Option<u32>)>) -> Comm
     Comment {
         id: text(node, "id").unwrap_or_default(),
         database_id: node.get("databaseId").and_then(Value::as_u64),
+        url: text(node, "url").unwrap_or_default(),
         author: login.clone(),
         avatar_url: text(author, "avatarUrl"),
         body: body.clone(),
@@ -815,11 +892,46 @@ fn comment_from(node: &Value, thread: Option<(&str, &str, Option<u32>)>) -> Comm
         at,
         is_review: thread.is_some(),
         path: thread.map(|(_, path, _)| path.to_string()),
-        line: thread.and_then(|(_, _, line)| line),
+        line: node
+            .get("line")
+            .or_else(|| node.get("originalLine"))
+            .and_then(Value::as_u64)
+            .map(|line| line as u32)
+            .or_else(|| thread.and_then(|(_, _, line)| line)),
+        diff_hunk: text(node, "diffHunk").unwrap_or_default(),
         thread_id: thread.map(|(id, _, _)| id.to_string()),
         resolved: false,
-        can_edit: !login.is_empty(),
-        can_delete: !login.is_empty(),
+        can_edit: node
+            .get("viewerCanUpdate")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        can_delete: node
+            .get("viewerCanDelete")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
         can_quote: !body.trim().is_empty(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn comment_permissions_and_links_come_from_github() {
+        let node = serde_json::json!({"id":"IC_node", "author":{"login":"someone"}, "body":"body", "url":"https://github.com/a/b/pull/1#issuecomment-2", "viewerCanUpdate":false, "viewerCanDelete":false});
+        let comment = comment_from(&node, None);
+        assert!(!comment.can_edit && !comment.can_delete);
+        assert_eq!(comment.url, "https://github.com/a/b/pull/1#issuecomment-2");
+        assert!(comment.can_quote);
+    }
+    #[test]
+    fn contents_url_keeps_special_characters_inside_the_path_and_ref() {
+        let endpoint = contents_endpoint("owner/repo", "dir/a #?文.md", "topic/a&b").unwrap();
+        let url = url::Url::parse(&format!("https://api.github.com/{endpoint}")).unwrap();
+        assert!(url.path().contains("%23%3F"));
+        assert_eq!(
+            url.query_pairs().collect::<Vec<_>>(),
+            vec![("ref".into(), "topic/a&b".into())]
+        );
     }
 }
