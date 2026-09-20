@@ -155,7 +155,9 @@ impl Render for BranchPicker {
             .id("review-branch-scroll")
             .w_full()
             .min_w(px(0.))
-            .h(px((self.matches.len().max(1) as f32 * ROW_HEIGHT).min(MAX_LIST_HEIGHT)))
+            .h(px(
+                (self.matches.len().max(1) as f32 * ROW_HEIGHT).min(MAX_LIST_HEIGHT)
+            ))
             .max_h(px(MAX_LIST_HEIGHT))
             .flex_none()
             .overflow_x_hidden()

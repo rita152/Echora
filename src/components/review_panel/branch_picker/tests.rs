@@ -73,7 +73,7 @@ fn long_branch_rows_have_uniform_bounds_in_both_themes_and_widths() {
                 let picker = h.picker.read(cx);
                 assert_eq!(picker.scroll.children_count(), 8);
                 assert_eq!(picker.scroll.bounds().size.height, px(8. * ROW_HEIGHT));
-                assert_eq!(picker.scroll.max_offset().height, px(0.));
+                assert_eq!(picker.scroll.max_offset().y, px(0.));
                 let first = picker.scroll.bounds_for_item(0).unwrap();
                 for index in 0..8 {
                     let row = picker.scroll.bounds_for_item(index).unwrap();
@@ -131,12 +131,15 @@ fn searching_is_case_insensitive_and_keeps_unicode_and_ref_identity() {
     window.read(|h, _| {
         assert_eq!(
             h.events,
-            vec![BranchPickerEvent::Selected("codex/command-approval-variants".into())]
+            vec![BranchPickerEvent::Selected(
+                "codex/command-approval-variants".into()
+            )]
         );
     });
     window.update(|h, _, cx| {
         h.picker.update(cx, |p, cx| {
-            p.input.update(cx, |input, cx| input.set_text("支持中文", cx));
+            p.input
+                .update(cx, |input, cx| input.set_text("支持中文", cx));
         });
     });
     window.draw();
@@ -205,7 +208,8 @@ fn empty_results_do_not_activate_and_reopening_resets_search_and_scroll() {
     window.draw();
     window.read(|h, _| assert_eq!(h.events, vec![BranchPickerEvent::Dismissed]));
     window.update(|h, _, cx| {
-        h.picker.update(cx, |picker, cx| picker.prepare(&names(), "main", cx));
+        h.picker
+            .update(cx, |picker, cx| picker.prepare(&names(), "main", cx));
     });
     window.draw();
     window.read(|h, cx| {
