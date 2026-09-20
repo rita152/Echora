@@ -5,6 +5,9 @@ use gpui::{
     ClipboardItem, Div, MouseButton, Render, Role, SharedString, Stateful, div, prelude::*, rgba,
 };
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Clone)]
 pub(super) enum Action {
     Menu(Menu),
@@ -241,7 +244,7 @@ impl ReviewPanel {
                 {
                     return;
                 }
-                if let Some(url) = &self.pr_existing {
+                if let Some(url) = self.existing_pr_for_head() {
                     cx.open_url(url);
                     return;
                 }
@@ -285,7 +288,10 @@ impl ReviewPanel {
             .focusable()
             .tab_stop(true)
             .h(px(28.))
-            .px(px(if glyph.is_some() { 6. } else { 8. }))
+            // Callers also use 20px icon buttons. Padding must not squeeze
+            // their 16px glyphs; keep the default toolbar hit area at 28px.
+            .px(px(if glyph.is_some() { 0. } else { 8. }))
+            .when(glyph.is_some(), |b| b.w(px(28.)))
             .flex_none()
             .flex()
             .items_center()
@@ -315,7 +321,7 @@ impl ReviewPanel {
                 }
             }))
             .when_some(glyph, |b, g| {
-                b.child(icon(g, t.text_secondary.into()).size(px(16.)))
+                b.child(icon(g, t.text_secondary.into()).size(px(16.)).flex_none())
             })
             .when(glyph.is_none(), |b| b.child(label))
     }
