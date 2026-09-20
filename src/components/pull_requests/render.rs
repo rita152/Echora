@@ -15,6 +15,7 @@ impl gpui::Render for PullRequestsView {
         let theme = self.theme();
         self.measure_code_width(window);
         self.take_capture_offset();
+        self.prepare_diff_viewport(window, cx);
         self.apply_pending_file_scroll(cx);
         let fullscreen = self.fullscreen || (self.compact() && self.selected.is_some());
         let detail = if fullscreen {
