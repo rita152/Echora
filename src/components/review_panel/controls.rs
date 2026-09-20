@@ -508,6 +508,20 @@ impl ReviewPanel {
     }
 
     pub(super) fn popup(&self, m: Menu, cx: &Context<Self>) -> Stateful<Div> {
+        if m == Menu::Branch {
+            return div()
+                .id("review-popup")
+                .absolute()
+                .top(px(112.))
+                .left(px(8.))
+                .w(px(branch_picker::WIDTH))
+                .max_w(px((self.panel_width - 16.).max(0.)))
+                .on_mouse_down_out(cx.listener(|s, _, _, cx| {
+                    s.menu = None;
+                    cx.notify();
+                }))
+                .child(self.branch_picker.clone());
+        }
         let t = Theme::for_mode(self.mode);
         let width = if m == Menu::Jump || m == Menu::Commits {
             360.
@@ -726,7 +740,7 @@ impl ReviewPanel {
     }
 }
 
-struct ReviewTooltip(SharedString);
+pub(super) struct ReviewTooltip(pub(super) SharedString);
 impl Render for ReviewTooltip {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         div()
