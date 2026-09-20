@@ -466,7 +466,7 @@ impl PullRequestsView {
         let selected = self.selected_file.as_deref() == Some(file.path.as_str());
         let path = file.path.clone();
         let view = cx.entity();
-        let section = div().flex_none().flex().flex_col().child(
+        div().flex_none().flex().flex_col().child(
             div()
                 .id(SharedString::from(format!("pr-file-{}", file.path)))
                 .group("pr-file-header")
@@ -524,8 +524,7 @@ impl PullRequestsView {
                         ),
                 )
                 .child(self.file_header_actions(index, &path, collapsed, cx)),
-        );
-        section
+        )
     }
 
     fn file_preview(&self, file: &FileDiff, cx: &mut gpui::Context<Self>) -> Div {

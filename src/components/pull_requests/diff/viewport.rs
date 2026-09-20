@@ -553,11 +553,13 @@ mod tests {
         };
         assert!(deleted.same_anchor(split));
         assert!(!deleted.same_anchor(Row { file: 7, ..split }));
-        let mut viewport = DiffViewport::default();
-        viewport.rows = vec![Row {
-            file: 2,
-            kind: RowKind::Header,
-        }];
+        let viewport = DiffViewport {
+            rows: vec![Row {
+                file: 2,
+                kind: RowKind::Header,
+            }],
+            ..Default::default()
+        };
         viewport.scroll.reset(1);
         viewport.restore(Some(deleted), px(11.0));
         let top = viewport.scroll.logical_scroll_top();
