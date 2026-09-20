@@ -3,6 +3,7 @@
 
 #[cfg(test)]
 mod benchmarks;
+mod branch_picker;
 mod cache;
 mod comments;
 mod controls;
@@ -118,6 +119,7 @@ pub struct ReviewPanel {
     menu_selected: usize,
     filter: Entity<PromptInput>,
     jump: Entity<PromptInput>,
+    branch_picker: Entity<branch_picker::BranchPicker>,
     input: Entity<super::file_editor::FileEditor>,
     branch_input: Entity<PromptInput>,
     commit_input: Entity<super::file_editor::FileEditor>,
@@ -182,6 +184,23 @@ impl ReviewPanel {
             i.set_accessible_name("跳转到文件");
             i
         });
+        let branch_picker = cx.new(|cx| branch_picker::BranchPicker::new(mode, cx));
+        cx.subscribe(
+            &branch_picker,
+            |s, _, event: &branch_picker::BranchPickerEvent, cx| {
+                match event {
+                    branch_picker::BranchPickerEvent::Selected(branch) => {
+                        s.history_pinned = false;
+                        s.last_turn = s.latest_turn.clone();
+                        s.change_scope(Scope::Branch(branch.clone()), cx);
+                    }
+                    branch_picker::BranchPickerEvent::Dismissed => s.menu = None,
+                }
+                s.focus_pending = true;
+                cx.notify();
+            },
+        )
+        .detach();
         let input = cx.new(|cx| super::file_editor::FileEditor::prose(mode, "请求更改", cx));
         let commit_input = cx.new(|cx| super::file_editor::FileEditor::prose(mode, "提交信息", cx));
         let pr_title = cx.new(|cx| {
@@ -260,6 +279,7 @@ impl ReviewPanel {
             menu_selected: 0,
             filter,
             jump,
+            branch_picker,
             input,
             branch_input,
             commit_input,
@@ -335,6 +355,8 @@ impl ReviewPanel {
 
     pub fn set_mode(&mut self, mode: ThemeMode, cx: &mut Context<Self>) {
         self.mode = mode;
+        self.branch_picker
+            .update(cx, |picker, cx| picker.set_mode(mode, cx));
         self.input.update(cx, |i, cx| i.set_mode(mode, cx));
         self.commit_input.update(cx, |i, cx| i.set_mode(mode, cx));
         for i in [&self.filter, &self.jump, &self.branch_input, &self.pr_title] {
@@ -743,6 +765,15 @@ impl ReviewPanel {
         cx.notify();
     }
     fn toggle_menu(&mut self, m: Menu, cx: &mut Context<Self>) {
+        if m == Menu::Branch && self.menu.as_ref() != Some(&m) {
+            let current = match &self.scope {
+                Scope::Branch(base) => base.as_str(),
+                _ => "",
+            };
+            self.branch_picker.update(cx, |picker, cx| {
+                picker.prepare(&self.snapshot.branches, current, cx);
+            });
+        }
         self.menu = if self.menu.as_ref() == Some(&m) {
             None
         } else {
@@ -968,6 +999,11 @@ impl ReviewPanel {
         if key == "escape" {
             self.dismiss_transient(w, cx);
             cx.stop_propagation();
+            return;
+        }
+        // The searchable picker owns navigation and text editing. Its result
+        // indices differ from the unfiltered generic menu_actions list.
+        if self.menu == Some(Menu::Branch) {
             return;
         }
         if cmd && key == "enter" && self.commit_open {
