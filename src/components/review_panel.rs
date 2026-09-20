@@ -714,6 +714,17 @@ impl ReviewPanel {
         if i >= self.snapshot.files.len() {
             return;
         }
+        // Jump searches all files, independently of the tree filter. Reveal
+        // a filtered-out target for both menu clicks and input submission.
+        if !self.snapshot.files[i]
+            .path
+            .to_lowercase()
+            .contains(&self.query.to_lowercase())
+        {
+            self.query.clear();
+            self.filter
+                .update(cx, |input, cx| input.set_text_silently("", cx));
+        }
         self.selected_file = i;
         self.menu = None;
         self.focus_pending = true;
@@ -869,7 +880,9 @@ impl ReviewPanel {
                 .spawn(async move { git_review::existing_pull_request(&root) })
                 .await;
             let _ = this.update(cx, |s, cx| {
-                if s.pr_open && !s.new_branch {
+                if s.pr_open {
+                    // Cache the checked-out branch's result even when the user
+                    // selects a new branch while this lookup is in flight.
                     s.pr_existing = existing;
                     cx.notify();
                 }
@@ -877,6 +890,11 @@ impl ReviewPanel {
         })
         .detach();
         cx.notify();
+    }
+    fn existing_pr_for_head(&self) -> Option<&str> {
+        // The lookup describes the checked-out branch, never a branch that
+        // has not been created yet. Keep the cache when switching back.
+        self.pr_existing.as_deref().filter(|_| !self.new_branch)
     }
     fn display_error(&self) -> Option<String> {
         self.operation_error.clone().or_else(|| self.error.clone())

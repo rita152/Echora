@@ -413,7 +413,7 @@ impl ReviewPanel {
                         .truncate(),
                     ),
             );
-        if self.pr_existing.is_none() {
+        if self.existing_pr_for_head().is_none() {
             card = card
                 .when(self.new_branch, |d| {
                     d.child(
@@ -504,7 +504,7 @@ impl ReviewPanel {
             );
         }
         card = card
-            .when_some(self.pr_existing.clone(), |d, url| {
+            .when_some(self.existing_pr_for_head().map(str::to_owned), |d, url| {
                 d.child(
                     self.button(
                         "review-open-pr",
