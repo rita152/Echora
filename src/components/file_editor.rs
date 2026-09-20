@@ -1,12 +1,15 @@
 use std::{
+    cell::Cell,
     ops::Range,
+    rc::Rc,
     time::{Duration, Instant},
 };
 
 use gpui::{
-    App, Bounds, ClipboardItem, Context, CursorStyle, ElementInputHandler, EntityInputHandler,
-    FocusHandle, Focusable, KeyDownEvent, MouseButton, Pixels, Point, ShapedLine, TextRun,
-    UTF16Selection, Window, canvas, div, fill, point, prelude::*, px, size,
+    Animation, AnimationExt, AnyElement, App, Bounds, ClipboardItem, Context, CursorStyle,
+    ElementId, ElementInputHandler, EntityInputHandler, FocusHandle, Focusable, KeyDownEvent,
+    MouseButton, Pixels, Point, ShapedLine, TextRun, UTF16Selection, Window, canvas, div, fill,
+    point, prelude::*, px, size,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -162,6 +165,7 @@ pub struct FileEditor {
     ensure_cursor: bool,
     desired_x: Option<f32>,
     last_input: Option<(Instant, usize)>,
+    caret_blink_generation: u64,
     input_error: Option<&'static str>,
 }
 struct Row {
@@ -227,6 +231,7 @@ impl FileEditor {
             ensure_cursor: false,
             desired_x: None,
             last_input: None,
+            caret_blink_generation: 0,
             input_error: None,
         }
     }
@@ -338,6 +343,7 @@ impl FileEditor {
         self.buffer.anchor = self.buffer.cursor;
         self.marked = None;
         self.layout_dirty = true;
+        self.reset_caret_blink();
         cx.notify();
     }
     pub fn can_undo(&self) -> bool {
@@ -375,8 +381,13 @@ impl FileEditor {
         self.layout_dirty = true;
         self.ensure_cursor = true;
         self.desired_x = None;
+        self.reset_caret_blink();
         cx.emit(EditorEvent::Changed);
         cx.notify();
+    }
+
+    fn reset_caret_blink(&mut self) {
+        self.caret_blink_generation = self.caret_blink_generation.wrapping_add(1);
     }
     fn accepts(&mut self, range: &Range<usize>, text: &str, cx: &mut Context<Self>) -> bool {
         if self.read_only {
@@ -440,6 +451,7 @@ impl FileEditor {
         }
         self.ensure_cursor = true;
         self.marked = None;
+        self.reset_caret_blink();
         cx.notify();
     }
     fn row_for(&self, offset: usize) -> usize {
@@ -749,7 +761,13 @@ impl FileEditor {
         }
         let _ = cx;
     }
-    fn paint(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+    fn paint(
+        &mut self,
+        bounds: Bounds<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        caret_visible: bool,
+    ) {
         let theme = Theme::for_mode(self.mode);
         if self.buffer.text.is_empty() && !self.placeholder.is_empty() {
             let placeholder = self.placeholder_text();
@@ -833,6 +851,7 @@ impl FileEditor {
             if !self.read_only
                 && self.focus.is_focused(window)
                 && selection.is_empty()
+                && caret_visible
                 && index == self.row_for(self.buffer.cursor)
             {
                 let x = row.line.x_for_index(row.display(self.buffer.cursor));
@@ -962,6 +981,7 @@ impl Render for FileEditor {
                 MouseButton::Left,
                 cx.listener(|s, e: &gpui::MouseDownEvent, w, cx| {
                     s.focus.focus(w, cx);
+                    s.reset_caret_blink();
                     let p = s.offset_at(e.position);
                     if !e.modifiers.shift {
                         s.buffer.anchor = p;
@@ -1047,12 +1067,15 @@ impl Render for FileEditor {
                         .child(error),
                 )
             })
-            .child(
-                canvas(
+            .child({
+                let caret_visible = Rc::new(Cell::new(true));
+                let caret_visible_for_paint = caret_visible.clone();
+                let canvas = canvas(
                     move |b, w, cx| {
                         entity.update(cx, |s, cx| s.prepare(b, w, cx));
                     },
                     move |b, _, w, cx| {
+                        let caret_visible = caret_visible_for_paint.get();
                         paint_entity.update(cx, |s, cx| {
                             if !s.read_only {
                                 w.handle_input(
@@ -1061,12 +1084,30 @@ impl Render for FileEditor {
                                     cx,
                                 );
                             }
-                            s.paint(b, w, cx);
+                            s.paint(b, w, cx, caret_visible);
                         });
                     },
                 )
-                .size_full(),
-            )
+                .size_full();
+                let canvas: AnyElement = if self.read_only {
+                    canvas.into_any_element()
+                } else {
+                    canvas
+                        .with_animation(
+                            ElementId::named_usize(
+                                "file-editor-caret-blink",
+                                self.caret_blink_generation as usize,
+                            ),
+                            Animation::new(Duration::from_millis(1_000)).repeat(),
+                            move |canvas, progress| {
+                                caret_visible.set(progress < 0.5);
+                                canvas
+                            },
+                        )
+                        .into_any_element()
+                };
+                canvas
+            })
     }
 }
 impl EntityInputHandler for FileEditor {
