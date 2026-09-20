@@ -15,6 +15,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: fix/pr-code-scroll-performance
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: pr-scroll-macos-rust-197-${{ github.run_id }}
+          restore-keys: pr-scroll-macos-rust-197-
       - name: Apply reviewed scrolling patch
         run: |
           python3 - <<'PY'
@@ -30,6 +38,8 @@ jobs:
           if 'mod render_tests;' not in source:
               p.write_text(source + '\n#[cfg(test)]\nmod render_tests;\n')
           PY
+          if [ -f scripts/validate_pr_scroll.py ]; then python3 scripts/validate_pr_scroll.py; fi
+          rustup component add rustfmt
           rustfmt --edition 2024 --config skip_children=true src/components/pull_requests.rs src/components/pull_requests/diff.rs src/components/pull_requests/render.rs src/components/pull_requests/diff/viewport.rs src/components/pull_requests/diff/viewport/render_tests.rs
           git diff --check
           git config user.name 'github-actions[bot]'
@@ -43,3 +53,11 @@ jobs:
         env:
           CARGO_PROFILE_TEST_DEBUG: '0'
         run: cargo test components::pull_requests -- --nocapture
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: pr-scroll-macos-rust-197-${{ github.run_id }}
