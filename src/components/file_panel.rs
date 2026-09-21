@@ -1,3 +1,5 @@
+mod file_icons;
+
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
@@ -859,14 +861,11 @@ impl Render for FilePanel {
                         }
                     }))
                     .child(
-                        icon(
-                            if d.plan.is_some() {
-                                "plan"
-                            } else {
-                                file_icon(&d.path)
-                            },
-                            theme.text_tertiary.into(),
-                        )
+                        (if d.plan.is_some() {
+                            icon("plan", theme.text_tertiary.into())
+                        } else {
+                            file_icon(&d.path, self.mode)
+                        })
                         .size(px(16.))
                         .flex_none(),
                     )
@@ -1496,18 +1495,18 @@ impl FilePanel {
             )
             .on_click(cx.listener(move |s, _, _, cx| s.activate_row(index, cx)))
             .child(
-                icon(
-                    if row.entry.directory {
+                (if row.entry.directory {
+                    icon(
                         if expanded {
                             "chevron-down"
                         } else {
                             "settings-chevron-right"
-                        }
-                    } else {
-                        file_icon(&row.entry.path)
-                    },
-                    theme.text_tertiary.into(),
-                )
+                        },
+                        theme.text_tertiary.into(),
+                    )
+                } else {
+                    file_icon(&row.entry.path, self.mode)
+                })
                 .size(px(16.))
                 .flex_none(),
             )
@@ -1521,13 +1520,14 @@ impl FilePanel {
             )
     }
 }
-fn file_icon(path: &std::path::Path) -> &'static str {
-    match path.extension().and_then(|e| e.to_str()) {
-        Some("rs") => "markdown-file-rust",
-        Some("py") => "markdown-file-python",
-        Some("json") => "markdown-file-json",
-        _ => "markdown-file-document",
-    }
+fn file_icon(path: &std::path::Path, mode: ThemeMode) -> gpui::Svg {
+    let descriptor = file_icons::for_path(path);
+    // GPUI renders SVGs as alpha masks. Supply the file-type palette instead of
+    // the shared UI text color; embedded SVG fills alone cannot color this element.
+    gpui::svg()
+        .path(descriptor.asset)
+        .size(px(16.))
+        .text_color(gpui::rgb(descriptor.color(mode == ThemeMode::Light)))
 }
 
 #[cfg(test)]

@@ -1,0 +1,33 @@
+Seti file icons for Echora
+=========================
+
+Source: https://github.com/jesseweed/seti-ui
+Pinned revision: 2d6c5e68b4ded73c92dac291845ee44e1182d511
+Copyright (c) 2014 Jesse Weed. MIT license; see LICENSE in this directory.
+
+The 22 SVGs are derived from icons/<same filename>.svg at that revision.
+The palette is based on styles/ui-variables.less and the associations on
+styles/components/icons/mapping.less. Seti is the source of VS Code's built-in
+Seti file-icon theme; see microsoft/vscode/extensions/theme-seti/build/
+update-icon-theme.js. No VS Code font files are included.
+
+Adaptations:
+- All view boxes are normalized to "4 4 24 24" for the existing 16px icon slot.
+- default.svg and zip.svg use translate(-3.2 0) scale(.032) to normalize their
+  original 1200x1000 coordinates; vue.svg uses translate(-2 1) scale(.03).
+- docker.svg is inset by translate(1.6 1.6) scale(.9) to avoid edge clipping.
+- Embedded fills match the dark palette. GPUI's Svg element renders an alpha
+  mask, so file_panel.rs explicitly supplies the per-type color from
+  src/components/file_panel/file_icons.rs; SVG fills alone are insufficient.
+- zip.svg's white zipper details become transparent cutouts via a luminance
+  mask so the zipper survives GPUI's alpha-mask rendering in either theme.
+- Rust is orange, configuration files purple, and Git files red, intentionally
+  replacing Seti's gray variants for those frequently encountered file types.
+- Colored glyphs use VS Code Seti's 90%-per-channel adjustment in light mode.
+  Unknown files instead use a legible neutral gray on light backgrounds.
+- The resolver is a curated, case-insensitive set of common extensions and
+  filenames, not a full port of VS Code's language registry or every icon theme.
+  Unknown formats have a generic fallback. Related formats may share a glyph.
+
+These are bundled local assets; there are no runtime network requests or new
+package dependencies. Preserve this notice and LICENSE when updating assets.
