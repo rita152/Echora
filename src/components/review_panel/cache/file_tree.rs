@@ -102,10 +102,12 @@ mod tests {
             .map(|i| format!("src/group-{}/file-{i}.rs", i / 100))
             .collect();
         let visits = Cell::new(0);
-        let iter = || paths.iter().map(|path| {
-            visits.set(visits.get() + 1);
-            path.as_str()
-        });
+        let iter = || {
+            paths.iter().map(|path| {
+                visits.set(visits.get() + 1);
+                path.as_str()
+            })
+        };
         let collapsed = HashSet::new();
         let mut cache = TreeCache::default();
         let first = cache.prepare("", &collapsed, iter());
@@ -119,20 +121,38 @@ mod tests {
 
     #[test]
     fn filter_and_folder_changes_keep_snapshot_indices_and_unicode_names() {
-        let paths = ["src/深/Alpha.rs", "src/深/Beta.rs", "src/other.rs", "README.md"];
+        let paths = [
+            "src/深/Alpha.rs",
+            "src/深/Beta.rs",
+            "src/other.rs",
+            "README.md",
+        ];
         let mut cache = TreeCache::default();
         let mut collapsed = HashSet::new();
         let all = cache.prepare("", &collapsed, paths);
         assert_eq!(indices(&all), vec![0, 1, 2, 3]);
-        assert_eq!(all.iter().filter(|r| matches!(r, TreeRow::Folder { .. })).count(), 2);
+        assert_eq!(
+            all.iter()
+                .filter(|r| matches!(r, TreeRow::Folder { .. }))
+                .count(),
+            2
+        );
         let filtered = cache.prepare("BETA", &collapsed, paths);
         assert_eq!(indices(&filtered), vec![1]);
-        assert!(matches!(&filtered[1], TreeRow::Folder { path, name, depth: 1, .. }
-            if path == "src/深" && name == "深"));
+        assert!(
+            matches!(&filtered[1], TreeRow::Folder { path, name, depth: 1, .. }
+            if path == "src/深" && name == "深")
+        );
         collapsed.insert("src/深".into());
         let folded = cache.prepare("", &collapsed, paths);
         assert_eq!(indices(&folded), vec![2, 3]);
-        assert!(matches!(&folded[1], TreeRow::Folder { collapsed: true, .. }));
+        assert!(matches!(
+            &folded[1],
+            TreeRow::Folder {
+                collapsed: true,
+                ..
+            }
+        ));
         collapsed.insert("src".into());
         let parent_folded = cache.prepare("", &collapsed, paths);
         assert_eq!(parent_folded.len(), 2);
@@ -157,6 +177,9 @@ mod tests {
         let never_visited = std::iter::from_fn(|| -> Option<&str> {
             panic!("a cached empty result must not rescan the snapshot")
         });
-        assert!(Arc::ptr_eq(&empty, &cache.prepare("", &collapsed, never_visited)));
+        assert!(Arc::ptr_eq(
+            &empty,
+            &cache.prepare("", &collapsed, never_visited)
+        ));
     }
 }

@@ -170,13 +170,7 @@ impl ReviewPanel {
                         cx.stop_propagation();
                     }))
                     .child(icon(file_glyph(&file.path), t.text_secondary.into()).size(px(16.)))
-                    .child(
-                        div()
-                            .min_w(px(0.))
-                            .flex_1()
-                            .truncate()
-                            .child(name.clone()),
-                    )
+                    .child(div().min_w(px(0.)).flex_1().truncate().child(name.clone()))
                     .child(
                         div()
                             .text_color(if file.status == 'A' {
