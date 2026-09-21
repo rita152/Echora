@@ -9,6 +9,8 @@ mod comments;
 mod controls;
 mod dialogs;
 mod files;
+#[cfg(test)]
+mod refresh_tests;
 mod render;
 mod scroll;
 #[cfg(test)]
@@ -110,6 +112,9 @@ pub struct ReviewPanel {
     last_render: std::time::Instant,
     active: bool,
     loading: bool,
+    // Empty results are loaded snapshots too; polling must not replace them
+    // with the initial loading placeholder.
+    snapshot_loaded: bool,
     busy: bool,
     generation: u64,
     focus: FocusHandle,
@@ -270,6 +275,7 @@ impl ReviewPanel {
             last_render: std::time::Instant::now(),
             active: true,
             loading: false,
+            snapshot_loaded: false,
             busy: false,
             generation: 0,
             focus: cx.focus_handle().tab_stop(true),
@@ -496,6 +502,7 @@ impl ReviewPanel {
         let mut snap = (*self.snapshot).clone();
         snap.files = self.last_turn.clone();
         self.snapshot = Arc::new(snap);
+        self.snapshot_loaded = true;
         self.rebuild(cx);
         self.restore_scroll(anchor);
     }
@@ -527,40 +534,58 @@ impl ReviewPanel {
                     .map_err(|e| format!("{e:#}"))
                 })
                 .await;
-            let _ = this.update(cx, |s, cx| {
-                if generation != s.generation {
-                    return;
-                }
-                s.loading = false;
-                match result {
-                    Ok(mut snapshot) => {
-                        if s.scope == Scope::LastTurn {
-                            snapshot.files = s.last_turn.clone();
-                        }
-                        if snapshot != *s.snapshot {
-                            let anchor = s.scroll_anchor();
-                            for file in &snapshot.files {
-                                if s.viewed.get(&file.path).is_some_and(|p| p != &file.patch) {
-                                    s.viewed.remove(&file.path);
-                                    s.collapsed.remove(&file.path);
-                                }
-                            }
-                            s.snapshot = Arc::new(snapshot);
-                            s.previews.clear();
-                            s.rebuild(cx);
-                            s.restore_scroll(anchor);
-                        }
-                        s.error = None;
-                    }
-                    Err(e) => {
-                        s.error = Some(e);
-                    }
-                }
-                cx.notify();
-            });
+            let _ = this.update(cx, |s, cx| s.finish_refresh(generation, result, cx));
         })
         .detach();
     }
+    fn show_initial_loading(&self) -> bool {
+        // Keep an error visible during retries instead of flashing back to
+        // "Loading changes" on each poll.
+        self.loading && !self.snapshot_loaded && self.error.is_none()
+    }
+
+    fn finish_refresh(
+        &mut self,
+        generation: u64,
+        result: Result<Snapshot, String>,
+        cx: &mut Context<Self>,
+    ) {
+        if generation != self.generation {
+            return;
+        }
+        self.loading = false;
+        match result {
+            Ok(mut snapshot) => {
+                if self.scope == Scope::LastTurn {
+                    snapshot.files = self.last_turn.clone();
+                }
+                self.snapshot_loaded = true;
+                if snapshot != *self.snapshot {
+                    let anchor = self.scroll_anchor();
+                    for file in &snapshot.files {
+                        if self
+                            .viewed
+                            .get(&file.path)
+                            .is_some_and(|p| p != &file.patch)
+                        {
+                            self.viewed.remove(&file.path);
+                            self.collapsed.remove(&file.path);
+                        }
+                    }
+                    self.snapshot = Arc::new(snapshot);
+                    self.previews.clear();
+                    self.rebuild(cx);
+                    self.restore_scroll(anchor);
+                }
+                self.error = None;
+            }
+            Err(e) => {
+                self.error = Some(e);
+            }
+        }
+        cx.notify();
+    }
+
     fn change_scope(&mut self, scope: Scope, cx: &mut Context<Self>) {
         self.scope = scope;
         self.menu = None;
@@ -569,6 +594,8 @@ impl ReviewPanel {
         self.selection = None;
         self.generation += 1;
         self.loading = false;
+        self.snapshot_loaded = false;
+        self.error = None;
         self.collapsed.clear();
         self.selected_file = 0;
         self.scroll.scroll_to(ListOffset::default());
