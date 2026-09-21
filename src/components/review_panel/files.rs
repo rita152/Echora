@@ -14,86 +14,133 @@ use gpui::{
     AnyElement, Div, MouseButton, Role, SharedString, Stateful, StyledText, div, prelude::*, rgba,
 };
 
+#[cfg(test)]
+mod tree_tests;
+
 impl ReviewPanel {
-    pub(super) fn tree(&self, cx: &Context<Self>) -> Stateful<Div> {
+    pub(super) fn tree(&mut self, cx: &Context<Self>) -> Stateful<Div> {
         let t = Theme::for_mode(self.mode);
-        let mut rows = div()
-            .id("review-tree-scroll")
+        let rows = self.render_cache.tree.prepare(
+            &self.query,
+            &self.folder_collapsed,
+            self.snapshot.files.iter().map(|file| file.path.as_str()),
+        );
+        let entity = cx.entity();
+        let content = if rows.is_empty() {
+            div()
+                .p(px(16.))
+                .text_size(px(13.))
+                .text_color(t.text_tertiary)
+                .child(crate::i18n::text("没有匹配的文件"))
+                .into_any_element()
+        } else {
+            // Diff wheel events redraw this panel too. Build only the tree's
+            // visible range, not a GPUI element (and listeners) for every file.
+            gpui::uniform_list("review-tree-scroll", rows.len(), move |range, _, cx| {
+                entity.update(cx, |panel, cx| {
+                    range
+                        .map(|i| panel.tree_row(&rows[i], cx))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .track_scroll(&self.render_cache.tree_scroll)
             .min_h(px(0.))
             .flex_1()
-            .overflow_y_scroll()
+            .w_full()
             .p(px(8.))
+            .into_any_element()
+        };
+        div()
+            .id("review-file-tree")
+            .role(Role::Tree)
+            .aria_label(crate::i18n::text("审查文件"))
+            .w(px(250.))
+            .min_w(px(160.))
+            .max_w(gpui::relative(0.4))
+            .h_full()
+            .flex_none()
+            .border_l_1()
+            .border_color(t.border)
             .flex()
-            .flex_col();
-        let mut folders = HashSet::new();
-        let matched = self.matching_files(&self.query);
-        for i in matched.iter().copied() {
-            let file = &self.snapshot.files[i];
-            let parts = file.path.split('/').collect::<Vec<_>>();
-            let mut hidden = false;
-            for depth in 0..parts.len().saturating_sub(1) {
-                let path = parts[..=depth].join("/");
-                if hidden {
-                    break;
-                }
-                if folders.insert(path.clone()) {
-                    let collapsed = self.folder_collapsed.contains(&path);
-                    let id: SharedString = format!("review-folder-{path}").into();
-                    let toggle = path.clone();
-                    rows = rows.child(
-                        div()
-                            .id(id)
-                            .role(Role::TreeItem)
-                            .aria_label(path.clone())
-                            .h(px(28.))
-                            .pl(px(6. + depth as f32 * 14.))
-                            .flex_none()
-                            .flex()
-                            .items_center()
-                            .gap(px(6.))
-                            .rounded(px(6.))
-                            .text_size(px(13.))
-                            .text_color(t.text_secondary)
-                            .cursor_pointer()
-                            .hover(move |b| b.bg(t.sidebar_hover))
-                            .on_click(cx.listener(move |s, _, _, cx| {
-                                if !s.folder_collapsed.remove(&toggle) {
-                                    s.folder_collapsed.insert(toggle.clone());
-                                }
-                                cx.notify();
-                            }))
-                            .child(
-                                icon(
-                                    if collapsed {
-                                        "settings-chevron-right"
-                                    } else {
-                                        "chevron-down"
-                                    },
-                                    t.text_tertiary.into(),
-                                )
-                                .size(px(12.)),
-                            )
-                            .child(parts[depth].to_owned()),
-                    );
-                }
-                if self.folder_collapsed.contains(&path) {
-                    hidden = true;
-                }
+            .flex_col()
+            .child(
+                div()
+                    .m(px(8.))
+                    .h(px(28.))
+                    .flex_none()
+                    .px(px(8.))
+                    .rounded(px(10.))
+                    .border_1()
+                    .border_color(t.border)
+                    .bg(t.text.alpha(0.03))
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .child(icon("review-jump", t.text_tertiary.into()).size(px(14.)))
+                    .child(div().min_w(px(0.)).flex_1().child(self.filter.clone())),
+            )
+            .child(content)
+    }
+
+    fn tree_row(&self, row: &cache::TreeRow, cx: &Context<Self>) -> Stateful<Div> {
+        #[cfg(test)]
+        tree_tests::record_row();
+        let t = Theme::for_mode(self.mode);
+        match row {
+            cache::TreeRow::Folder {
+                path,
+                name,
+                depth,
+                collapsed,
+            } => {
+                let id: SharedString = format!("review-folder-{path}").into();
+                let toggle = path.clone();
+                div()
+                    .id(id)
+                    .role(Role::TreeItem)
+                    .aria_label(path.clone())
+                    .h(px(28.))
+                    .pl(px(6. + *depth as f32 * 14.))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .rounded(px(6.))
+                    .text_size(px(13.))
+                    .text_color(t.text_secondary)
+                    .cursor_pointer()
+                    .hover(move |b| b.bg(t.sidebar_hover))
+                    .on_click(cx.listener(move |s, _, _, cx| {
+                        if !s.folder_collapsed.remove(&toggle) {
+                            s.folder_collapsed.insert(toggle.clone());
+                        }
+                        cx.notify();
+                    }))
+                    .child(
+                        icon(
+                            if *collapsed {
+                                "settings-chevron-right"
+                            } else {
+                                "chevron-down"
+                            },
+                            t.text_tertiary.into(),
+                        )
+                        .size(px(12.)),
+                    )
+                    .child(div().min_w(px(0.)).flex_1().truncate().child(name.clone()))
             }
-            if hidden {
-                continue;
-            }
-            let selected = i == self.selected_file;
-            let path = file.path.clone();
-            rows = rows.child(
+            cache::TreeRow::File { index, name, depth } => {
+                let i = *index;
+                let file = &self.snapshot.files[i];
+                let selected = i == self.selected_file;
                 div()
                     .id(("review-tree-file", i))
                     .role(Role::TreeItem)
-                    .aria_label(path)
+                    .aria_label(file.path.clone())
                     .focusable()
                     .tab_stop(true)
                     .h(px(28.))
-                    .pl(px(7. + parts.len().saturating_sub(1) as f32 * 14.))
+                    .pl(px(7. + *depth as f32 * 14.))
                     .pr(px(5.))
                     .flex_none()
                     .flex()
@@ -128,7 +175,7 @@ impl ReviewPanel {
                             .min_w(px(0.))
                             .flex_1()
                             .truncate()
-                            .child(parts.last().unwrap_or(&"").to_string()),
+                            .child(name.clone()),
                     )
                     .child(
                         div()
@@ -142,47 +189,9 @@ impl ReviewPanel {
                                 'D' => "⊟",
                                 _ => "⊡",
                             }),
-                    ),
-            );
+                    )
+            }
         }
-        if matched.is_empty() {
-            rows = rows.child(
-                div()
-                    .p(px(8.))
-                    .text_size(px(13.))
-                    .text_color(t.text_tertiary)
-                    .child(crate::i18n::text("没有匹配的文件")),
-            );
-        }
-        div()
-            .id("review-file-tree")
-            .role(Role::Tree)
-            .aria_label(crate::i18n::text("审查文件"))
-            .w(px(250.))
-            .min_w(px(160.))
-            .max_w(gpui::relative(0.4))
-            .h_full()
-            .flex_none()
-            .border_l_1()
-            .border_color(t.border)
-            .flex()
-            .flex_col()
-            .child(
-                div()
-                    .m(px(8.))
-                    .h(px(28.))
-                    .px(px(8.))
-                    .rounded(px(10.))
-                    .border_1()
-                    .border_color(t.border)
-                    .bg(t.text.alpha(0.03))
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .child(icon("review-jump", t.text_tertiary.into()).size(px(14.)))
-                    .child(div().min_w(px(0.)).flex_1().child(self.filter.clone())),
-            )
-            .child(rows)
     }
 
     pub(super) fn file_header(&self, i: usize, cx: &Context<Self>) -> Stateful<Div> {

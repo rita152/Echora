@@ -8,6 +8,9 @@ use crate::{components::markdown::file_editor_runs, theme::Theme};
 use gpui::TextRun;
 use std::{collections::VecDeque, ops::Range, rc::Rc, sync::Weak};
 
+mod file_tree;
+pub(super) use file_tree::TreeRow;
+
 const MAX_SYNTAX_BYTES: usize = 4 * 1024 * 1024;
 const MAX_SYNTAX_LINES: usize = 1024;
 pub(super) type SyntaxRuns = Vec<(Range<usize>, TextRun)>;
@@ -37,6 +40,8 @@ struct CachedSyntax {
 #[derive(Default)]
 pub(super) struct RenderCache {
     snapshot: Weak<Snapshot>,
+    pub(super) tree: file_tree::TreeCache,
+    pub(super) tree_scroll: gpui::UniformListScrollHandle,
     mode: Option<ThemeMode>,
     languages: Vec<Option<String>>,
     words: HashMap<LineKey, Range<usize>>,
@@ -53,6 +58,7 @@ impl RenderCache {
     pub(super) fn prepare(&mut self, snapshot: &Arc<Snapshot>, mode: ThemeMode) {
         if self.snapshot.as_ptr() != Arc::as_ptr(snapshot) {
             self.snapshot = Arc::downgrade(snapshot);
+            self.tree.invalidate();
             self.languages.clear();
             self.words.clear();
             self.clear_syntax();
@@ -199,6 +205,39 @@ mod tests {
             files: git_review::parse_unified(patch),
             ..Default::default()
         })
+    }
+
+    #[test]
+    fn tree_cache_invalidates_with_snapshot_but_not_theme() {
+        let original = snapshot(
+            "diff --git a/before.rs b/before.rs\n--- a/before.rs\n+++ b/before.rs\n@@ -1 +1 @@\n-old\n+new\n",
+        );
+        let mut cache = RenderCache::default();
+        let collapsed = HashSet::new();
+        cache.prepare(&original, ThemeMode::Dark);
+        let first = cache.tree.prepare(
+            "",
+            &collapsed,
+            original.files.iter().map(|file| file.path.as_str()),
+        );
+        cache.prepare(&original, ThemeMode::Light);
+        let recolored = cache.tree.prepare(
+            "",
+            &collapsed,
+            original.files.iter().map(|file| file.path.as_str()),
+        );
+        assert!(Arc::ptr_eq(&first, &recolored));
+        let changed = snapshot(
+            "diff --git a/after.rs b/after.rs\n--- a/after.rs\n+++ b/after.rs\n@@ -1 +1 @@\n-old\n+new\n",
+        );
+        cache.prepare(&changed, ThemeMode::Light);
+        let replaced = cache.tree.prepare(
+            "",
+            &collapsed,
+            changed.files.iter().map(|file| file.path.as_str()),
+        );
+        assert!(!Arc::ptr_eq(&first, &replaced));
+        assert!(matches!(&replaced[0], TreeRow::File { index: 0, name, .. } if name == "after.rs"));
     }
 
     #[test]
