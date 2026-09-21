@@ -19,7 +19,7 @@ impl FileIcon {
         if self == DEFAULT {
             return 0x6d8086;
         }
-        let channel = |shift| (((self.dark_color >> shift) & 0xff) * 9 + 5) / 10;
+        let channel = |shift: u32| (((self.dark_color >> shift) & 0xff) * 9 + 5) / 10;
         (channel(16) << 16) | (channel(8) << 8) | channel(0)
     }
 }
@@ -121,9 +121,15 @@ pub(crate) fn for_path(path: &Path) -> FileIcon {
         "html" | "htm" | "xml" | "xhtml" => HTML,
         "css" | "scss" | "sass" | "less" => CSS,
         "c" => C,
-        "h" => FileIcon { dark_color: 0xa074c4, ..C },
+        "h" => FileIcon {
+            dark_color: 0xa074c4,
+            ..C
+        },
         "cpp" | "cc" | "cxx" | "c++" => CPP,
-        "hpp" | "hh" | "hxx" | "h++" => FileIcon { dark_color: 0xa074c4, ..CPP },
+        "hpp" | "hh" | "hxx" | "h++" => FileIcon {
+            dark_color: 0xa074c4,
+            ..CPP
+        },
         "toml" | "ini" | "cfg" | "conf" | "config" | "properties" | "lock" => CONFIG,
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "ico" | "tif" | "tiff"
         | "avif" | "heic" => IMAGE,
@@ -143,19 +149,40 @@ mod tests {
     #[test]
     fn common_formats_have_distinct_identifiers() {
         for (name, expected) in [
-            ("main.rs", RUST), ("main.py", PYTHON), ("types.pyi", PYTHON),
-            ("index.js", JAVASCRIPT), ("index.mjs", JAVASCRIPT),
-            ("index.cjs", JAVASCRIPT), ("index.ts", TYPESCRIPT),
-            ("types.d.ts", TYPESCRIPT), ("index.mts", TYPESCRIPT),
-            ("index.cts", TYPESCRIPT), ("App.jsx", REACT), ("App.tsx", REACT),
-            ("package.json", JSON), ("settings.jsonc", JSON), ("events.jsonl", JSON),
-            ("ci.yml", YAML), ("ci.yaml", YAML), ("README.md", MARKDOWN),
-            ("notes.markdown", MARKDOWN), ("index.html", HTML), ("style.css", CSS),
-            ("main.c", C), ("main.cpp", CPP), ("settings.toml", CONFIG),
-            ("image.png", IMAGE), ("image.svg", IMAGE), ("manual.pdf", PDF),
-            ("source.tar.gz", ARCHIVE), ("source.zip", ARCHIVE),
-            ("query.sql", DATABASE), ("app.sqlite3", DATABASE),
-            ("run.sh", SHELL), ("run.ps1", SHELL), ("App.vue", VUE),
+            ("main.rs", RUST),
+            ("main.py", PYTHON),
+            ("types.pyi", PYTHON),
+            ("index.js", JAVASCRIPT),
+            ("index.mjs", JAVASCRIPT),
+            ("index.cjs", JAVASCRIPT),
+            ("index.ts", TYPESCRIPT),
+            ("types.d.ts", TYPESCRIPT),
+            ("index.mts", TYPESCRIPT),
+            ("index.cts", TYPESCRIPT),
+            ("App.jsx", REACT),
+            ("App.tsx", REACT),
+            ("package.json", JSON),
+            ("settings.jsonc", JSON),
+            ("events.jsonl", JSON),
+            ("ci.yml", YAML),
+            ("ci.yaml", YAML),
+            ("README.md", MARKDOWN),
+            ("notes.markdown", MARKDOWN),
+            ("index.html", HTML),
+            ("style.css", CSS),
+            ("main.c", C),
+            ("main.cpp", CPP),
+            ("settings.toml", CONFIG),
+            ("image.png", IMAGE),
+            ("image.svg", IMAGE),
+            ("manual.pdf", PDF),
+            ("source.tar.gz", ARCHIVE),
+            ("source.zip", ARCHIVE),
+            ("query.sql", DATABASE),
+            ("app.sqlite3", DATABASE),
+            ("run.sh", SHELL),
+            ("run.ps1", SHELL),
+            ("App.vue", VUE),
         ] {
             assert_eq!(for_path(Path::new(name)), expected, "{name}");
             assert_ne!(expected, DEFAULT, "{name}");
@@ -164,21 +191,44 @@ mod tests {
 
     #[test]
     fn matching_is_case_insensitive() {
-        for name in ["MAIN.RS", "App.TSX", "Photo.JPEG", "CONFIG.YAML", "Dockerfile", "Cargo.TOML"] {
-            assert_eq!(for_path(Path::new(name)), for_path(Path::new(&name.to_ascii_lowercase())));
+        for name in [
+            "MAIN.RS",
+            "App.TSX",
+            "Photo.JPEG",
+            "CONFIG.YAML",
+            "Dockerfile",
+            "Cargo.TOML",
+        ] {
+            assert_eq!(
+                for_path(Path::new(name)),
+                for_path(Path::new(&name.to_ascii_lowercase()))
+            );
         }
     }
 
     #[test]
     fn basenames_and_dotfiles_override_extensions() {
         for (name, expected) in [
-            ("Cargo.toml", RUST), ("Cargo.lock", RUST), ("Dockerfile", DOCKER),
-            ("Dockerfile.dev", DOCKER), ("Containerfile", DOCKER),
-            (".gitignore", GIT), (".gitattributes", GIT), (".gitmodules", GIT),
-            ("Makefile", CONFIG), (".env", CONFIG), (".env.production", CONFIG),
-            (".editorconfig", CONFIG), (".zshrc", SHELL), ("tsconfig.json", TYPESCRIPT),
+            ("Cargo.toml", RUST),
+            ("Cargo.lock", RUST),
+            ("Dockerfile", DOCKER),
+            ("Dockerfile.dev", DOCKER),
+            ("Containerfile", DOCKER),
+            (".gitignore", GIT),
+            (".gitattributes", GIT),
+            (".gitmodules", GIT),
+            ("Makefile", CONFIG),
+            (".env", CONFIG),
+            (".env.production", CONFIG),
+            (".editorconfig", CONFIG),
+            (".zshrc", SHELL),
+            ("tsconfig.json", TYPESCRIPT),
         ] {
-            assert_eq!(for_path(&Path::new("workspace").join(name)), expected, "{name}");
+            assert_eq!(
+                for_path(&Path::new("workspace").join(name)),
+                expected,
+                "{name}"
+            );
         }
     }
 
@@ -193,7 +243,15 @@ mod tests {
 
     #[test]
     fn unknown_and_extensionless_files_have_a_safe_fallback() {
-        for name in ["", "/", "LICENSE", ".unknown", "file.unknown", "notes.", "文档"] {
+        for name in [
+            "",
+            "/",
+            "LICENSE",
+            ".unknown",
+            "file.unknown",
+            "notes.",
+            "文档",
+        ] {
             assert_eq!(for_path(Path::new(name)), DEFAULT, "{name}");
         }
     }
@@ -204,7 +262,10 @@ mod tests {
         use std::ffi::OsStr;
         use std::os::unix::ffi::OsStrExt;
         assert_eq!(for_path(Path::new(OsStr::from_bytes(b"\xff.rs"))), RUST);
-        assert_eq!(for_path(Path::new(OsStr::from_bytes(b"file.\xff"))), DEFAULT);
+        assert_eq!(
+            for_path(Path::new(OsStr::from_bytes(b"file.\xff"))),
+            DEFAULT
+        );
     }
 
     #[test]
@@ -214,7 +275,9 @@ mod tests {
         assert_eq!(PYTHON.color(true), 0x498ba7);
         assert_eq!(DEFAULT.color(false), 0xd4d7d6);
         assert_eq!(DEFAULT.color(true), 0x6d8086);
-        for icon in [RUST, PYTHON, JAVASCRIPT, TYPESCRIPT, YAML, CONFIG, GIT, IMAGE, PDF, SHELL] {
+        for icon in [
+            RUST, PYTHON, JAVASCRIPT, TYPESCRIPT, YAML, CONFIG, GIT, IMAGE, PDF, SHELL,
+        ] {
             for light in [false, true] {
                 let color = icon.color(light);
                 assert!(color <= 0xffffff);
