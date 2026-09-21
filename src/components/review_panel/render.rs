@@ -44,18 +44,15 @@ impl Render for ReviewPanel {
                     .justify_center()
                     .gap(px(12.))
                     .child(icon("panel-review", t.text_tertiary.into()).size(px(64.)))
-                    .child(
-                        div()
-                            .text_size(px(16.))
-                            .text_color(t.text)
-                            .child(if self.show_initial_loading() {
-                                crate::i18n::text("正在加载更改…")
-                            } else if self.error.is_some() {
-                                crate::i18n::text("无法加载更改")
-                            } else {
-                                crate::i18n::text("尚无文件更改")
-                            }),
-                    )
+                    .child(div().text_size(px(16.)).text_color(t.text).child(
+                        if self.show_initial_loading() {
+                            crate::i18n::text("正在加载更改…")
+                        } else if self.error.is_some() {
+                            crate::i18n::text("无法加载更改")
+                        } else {
+                            crate::i18n::text("尚无文件更改")
+                        },
+                    ))
                     .child(
                         div()
                             .px(px(20.))

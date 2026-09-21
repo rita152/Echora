@@ -563,7 +563,11 @@ impl ReviewPanel {
                 if snapshot != *self.snapshot {
                     let anchor = self.scroll_anchor();
                     for file in &snapshot.files {
-                        if self.viewed.get(&file.path).is_some_and(|p| p != &file.patch) {
+                        if self
+                            .viewed
+                            .get(&file.path)
+                            .is_some_and(|p| p != &file.patch)
+                        {
                             self.viewed.remove(&file.path);
                             self.collapsed.remove(&file.path);
                         }
