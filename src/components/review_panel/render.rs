@@ -48,7 +48,7 @@ impl Render for ReviewPanel {
                         div()
                             .text_size(px(16.))
                             .text_color(t.text)
-                            .child(if self.loading {
+                            .child(if self.show_initial_loading() {
                                 crate::i18n::text("正在加载更改…")
                             } else if self.error.is_some() {
                                 crate::i18n::text("无法加载更改")
@@ -342,8 +342,8 @@ impl Render for ReviewPanel {
                 matches!(self.scope, Scope::Branch(_) | Scope::Commit(_)),
                 |d| {
                     let label = match &self.scope {
-                        Scope::Branch(base) => format!("{}  →  {base}  ⌄", self.snapshot.branch),
-                        Scope::Commit(sha) => format!("{}  ⌄", &sha[..8.min(sha.len())]),
+                        Scope::Branch(base) => format!("{}  →  {base}", self.snapshot.branch),
+                        Scope::Commit(sha) => sha[..8.min(sha.len())].to_owned(),
                         _ => String::new(),
                     };
                     d.child(
@@ -355,15 +355,14 @@ impl Render for ReviewPanel {
                             .items_center()
                             .border_b_1()
                             .border_color(t.border)
-                            .child(self.button(
+                            .child(self.dropdown_button(
                                 "review-base",
                                 label,
-                                None,
-                                Action::Menu(if matches!(self.scope, Scope::Branch(_)) {
+                                if matches!(self.scope, Scope::Branch(_)) {
                                     Menu::Branch
                                 } else {
                                     Menu::Commits
-                                }),
+                                },
                                 cx,
                             )),
                     )

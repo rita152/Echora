@@ -326,6 +326,23 @@ impl ReviewPanel {
             .when(glyph.is_none(), |b| b.child(label))
     }
 
+    pub(super) fn dropdown_button(
+        &self,
+        id: impl Into<SharedString>,
+        label: impl Into<SharedString>,
+        menu: Menu,
+        cx: &Context<Self>,
+    ) -> Stateful<Div> {
+        let t = Theme::for_mode(self.mode);
+        // Keep the chevron off the text baseline and inside the same mouse /
+        // keyboard hit target as the label, in both toolbar rows.
+        self.button(id, label, None, Action::Menu(menu), cx).child(
+            icon("chevron-down", t.text_secondary.into())
+                .size(px(12.))
+                .flex_none(),
+        )
+    }
+
     pub(super) fn menu_actions(&self, menu: &Menu) -> Vec<(String, Action)> {
         let toggle = |on: bool, yes: &str, no: &str| if on { yes.into() } else { no.into() };
         match menu {
@@ -633,14 +650,8 @@ impl ReviewPanel {
             .border_b_1()
             .border_color(t.border)
             .child(
-                self.button(
-                    "review-scope",
-                    format!("{}  ⌄", self.scope.label()),
-                    None,
-                    Action::Menu(Menu::Scope),
-                    cx,
-                )
-                .text_size(px(14.)),
+                self.dropdown_button("review-scope", self.scope.label(), Menu::Scope, cx)
+                    .text_size(px(14.)),
             )
             .child(div().flex().gap(px(4.)).text_size(px(13.)).when(
                 adds + dels > 0 && self.panel_width > 440.,
