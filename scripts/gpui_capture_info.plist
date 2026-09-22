@@ -10,8 +10,14 @@
   <string>GPUI Capture</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
+  <!-- A regular app, not an agent: Computer Use only lists apps macOS treats as
+       user-facing, and an LSUIElement bundle never appears in its inventory
+       (2026-09-22: `listApps` omitted it and `getApp` timed out, while the same
+       bundle with LSUIElement=false appeared and bound immediately). Set
+       GPUI_CAPTURE_AGENT_APP=1 when packaging to restore the agent behaviour
+       for a capture that must not show a Dock icon. -->
   <key>LSUIElement</key>
-  <true/>
+  <false/>
   <key>NSHighResolutionCapable</key>
   <true/>
 </dict>

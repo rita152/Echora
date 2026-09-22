@@ -206,6 +206,8 @@ Computer Use 先枚举应用，连接打包脚本打印的那个名字，读取�
 
 过去两个 bundle 无法区分：各工作树共用同一个名称与 `com.openai.gpui-chat-clone.capture` 标识，`open -n "target/GPUI Capture.app"` 会按 LaunchServices 解析到已注册的那一份，可能是另一个构建目录里的旧副本——它的工作树没有 `assets/`，进程照常启动、文字照常渲染，但所有 SVG 都是空白。现在打包产物的名称与标识都带本工作树 slug，资源随 bundle 一起分发，`--print-diagnostics` 会打印可执行文件、bundle 身份以及每个资源候选路径与判定，验收运行可以自证在驱动哪一个构建。需要让 bundle 从别处读取资源时，用 `GPUI_ASSETS_DIR` 硬覆盖搜索。若所有候选都不可用，应用继续运行、向 stderr 告警，并在窗口顶部显示写明已尝试路径的红色条，截图不可能再悄悄呈现无图标的界面。`scripts/launch_project_hover_instance.sh` 使用同一套打包身份，会在本工作树的悬停验收实例已在运行时拒绝重复启动，并打印二进制路径、pid 与日志。
 
+Computer Use 只能驱动 macOS 视作用户应用的 bundle，而且驱动过程不能触发隐私弹窗。`scripts/launch_verify_instance.sh` 会打包、把 bundle 复制到 `~/Applications`，再用 `launchctl submit` 加上本会话的 `PATH` 与真实 `HOME` 启动：GUI 进程因此不会打开本仓库所在外置卷上的任何文件，启动也不经过 LaunchServices，它的 `codex app-server --stdio` 子进程读到的正是 ChatGPT 应用同一份 `~/.codex` 项目、会话与登录态。把 bundle 打成 agent 应用（`GPUI_CAPTURE_AGENT_APP=1`，也是此前的默认）虽然不显示 Dock 图标，却会让 Computer Use 的应用清单看不到它；而对外置卷上的 bundle 使用 `open -n` 正是「想要访问可移除宗卷上的文件」弹窗的来源——按 tccd 日志实测，`open -n` 会弹窗，`launchctl submit` 与会话内的子进程都不会。因此采集脚本一律不使用 `open -n`。
+
 自动恢复会话截图可追加 `--resume-thread=THREAD_ID --screenshot="$PWD/artifacts/resumed-thread.png"`。ID 接受原始 UUID 或 `local:<uuid>`。可选 `--resume-scroll-from-bottom=3200` 指定距底部的滚动距离，省略则停在底部。应用等待历史、侧栏、模型目录与三个稳定绘制帧后截图退出，失败或超时返回非零状态。请选择未被其他活动写入进程占用的线程。
 
 真实实时轮次采集：启动时传入 `--capture-live-turn="$PWD/artifacts/live.png"`，再在验收实例输入提示词。完成后保存尚未重新加载历史的实时画面，以及包含线程身份、活动数据的 `.json` 侧文件，然后退出。中断、失败或超过五分钟返回失败。

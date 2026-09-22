@@ -50,16 +50,24 @@ cargo build --features screenshot $build_args
 
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 python3 - "$root/scripts/gpui_capture_info.plist" "$bundle/Contents/Info.plist" \
-  "$display" "com.openai.gpui-chat-clone.capture.$identifier_suffix" <<'PY'
+  "$display" "com.openai.gpui-chat-clone.capture.$identifier_suffix" \
+  "${GPUI_CAPTURE_AGENT_APP:-0}" <<'PY'
 import pathlib, sys
 
-source, destination, display, identifier = sys.argv[1:5]
+source, destination, display, identifier, agent = sys.argv[1:6]
 plist = pathlib.Path(source).read_text()
 plist = plist.replace(
     "<string>com.openai.gpui-chat-clone.capture</string>",
     f"<string>{identifier}</string>",
 )
 plist = plist.replace("<string>GPUI Capture</string>", f"<string>{display}</string>")
+if agent == "1":
+    # Capture-only bundles can hide from the Dock, at the cost of disappearing
+    # from Computer Use's app inventory.
+    plist = plist.replace(
+        "<key>LSUIElement</key>\n  <false/>",
+        "<key>LSUIElement</key>\n  <true/>",
+    )
 pathlib.Path(destination).write_text(plist)
 PY
 

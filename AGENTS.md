@@ -28,7 +28,8 @@ Echora 是基于 Rust 与 GPUI 的独立原生桌面 Agent 应用，GUI 完全�
 ## 界面验收
 
 - 修改渲染或交互后，先用 `scripts/package_gpui_capture.sh` 打包当前工作树的验收 bundle：它构建最新可执行文件、把 `assets/` 放进 `Contents/Resources/assets`，并让 bundle 名称与标识带上本工作树 slug。
-- 验收实例必须来自当前工作树：在仓库根目录用绝对路径启动该 bundle 内的可执行文件，不要用 `open -n "target/GPUI Capture.app"`（会按 LaunchServices 解析到其他构建目录的同名旧副本）。`--print-diagnostics` 会打印可执行文件、bundle 身份与每个资源候选的判定，启动前先核对；缺少 `assets/icons` 时应用会向 stderr 告警并在窗口顶部显示红色条，不得把这种截图当作验收结果。`scripts/launch_project_hover_instance.sh` 是带上述约束的启动示例。
+- 验收实例必须来自当前工作树：在仓库根目录用绝对路径启动该 bundle 内的可执行文件，不要用 `open -n "target/GPUI Capture.app"`（会按 LaunchServices 解析到其他构建目录的同名旧副本）。`--print-diagnostics` 会打印可执行文件、bundle 身份与每个资源候选的判定，启动前先核对；缺少 `assets/icons` 时应用会向 stderr 告警并在窗口顶部显示红色条，不得把这种截图当作验收结果。`scripts/launch_project_hover_instance.sh` 是会话内子进程的启动示例。
+- 需要 Computer Use 驱动、或实例要活过本次命令时，用 `scripts/launch_verify_instance.sh`，不要用 `open -n`：它把 bundle 复制到 `~/Applications` 并用 `launchctl submit` 以本会话的 `PATH`、真实 `HOME` 启动，因此 GUI 进程不碰外置卷、不经过 LaunchServices，也照常读到 ChatGPT 应用同一份 `~/.codex` 数据。仓库位于外置卷，`open -n` 会让应用成为自己的 TCC 责任进程并弹出「访问可移除宗卷」授权（实测 `open -n` 弹、`launchctl submit` 与子进程不弹）；bundle 打成 agent 应用（`GPUI_CAPTURE_AGENT_APP=1`）则不显示 Dock 图标，但 Computer Use 的应用清单也看不到它。
 - Computer Use 先枚举应用并连接 `GPUI Capture`，再通过可访问性树和截图定位，复现修复前行为并验证修复结果。交互问题须检查完整命中区域及相关点击、滚动、拖动、键盘、悬停或文本选择路径。
 - 前后使用相同主题、窗口尺寸、DPR、线程、内容及滚动位置；不得缩放或平移截图提高对比分数。
 - ChatGPT 参考采集使用专用调试实例及新建端口；不占用其他任务的调试端口，不操作用户正在运行的 ChatGPT 或 GPUI 实例。
