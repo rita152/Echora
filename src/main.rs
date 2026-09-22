@@ -994,6 +994,10 @@ fn main() {
         arg.strip_prefix("--project-hover-card=")
             .map(ToOwned::to_owned)
     });
+    let thread_hover_card = args.iter().find_map(|arg| {
+        arg.strip_prefix("--thread-hover-card=")
+            .map(ToOwned::to_owned)
+    });
     let project_create_open = args.iter().any(|arg| arg == "--project-create-open");
     let project_create_remote = args.iter().any(|arg| arg == "--project-create-remote");
     let activity_open = args.iter().any(|arg| arg == "--activity-open");
@@ -1285,6 +1289,9 @@ fn main() {
                         }
                         if let Some(project) = project_hover_card.clone() {
                             app.open_project_hover_card_for_capture(&project, cx);
+                        }
+                        if let Some(thread) = thread_hover_card.clone() {
+                            app.open_thread_hover_card_for_capture(&thread, cx);
                         }
                         if project_create_open {
                             app.open_project_creation(cx);

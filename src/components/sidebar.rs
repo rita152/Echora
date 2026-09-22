@@ -121,6 +121,32 @@ const PROJECT_HOVER_CARD_OFFSET_Y: f32 = 1.0;
 const PROJECT_HOVER_CARD_DELAY: Duration = Duration::from_millis(240);
 /// Grace period so a pointer crossing the 3 px gap into the card keeps it.
 const PROJECT_HOVER_CARD_CLOSE_DELAY: Duration = Duration::from_millis(60);
+/// Sidebar task hover card, measured from the live ChatGPT desktop app over CDP
+/// (`artifacts/thread-hover-20260922/reference/`). It reuses the project card's
+/// 320 px shell, 15 px radius, ring, and shadow, and prints two rows: the task
+/// title with its environment icon and compact timestamp, then the project the
+/// task is filed under.
+const THREAD_HOVER_CARD_WIDTH: f32 = 320.0;
+const THREAD_HOVER_CARD_RADIUS: f32 = 15.0;
+const THREAD_HOVER_CARD_PADDING_X: f32 = 8.0;
+const THREAD_HOVER_CARD_PADDING_Y: f32 = 6.0;
+const THREAD_HOVER_CARD_GAP: f32 = 4.0;
+const THREAD_HOVER_TITLE_ROW_HEIGHT: f32 = 21.0;
+const THREAD_HOVER_ROW_HEIGHT: f32 = 20.0;
+const THREAD_HOVER_TITLE_LINE_HEIGHT: f32 = 20.0;
+const THREAD_HOVER_TITLE_INSET: f32 = 2.0;
+const THREAD_HOVER_TITLE_PADDING_X: f32 = 6.0;
+const THREAD_HOVER_TITLE_RADIUS: f32 = 10.0;
+const THREAD_HOVER_TITLE_ICON_GAP: f32 = 4.0;
+const THREAD_HOVER_TITLE_TRAILING_GAP: f32 = 12.0;
+/// `items-baseline` puts the 12 px timestamp one pixel below the 14 px title.
+const THREAD_HOVER_DURATION_OFFSET_Y: f32 = 1.0;
+const THREAD_HOVER_ENV_ICON: f32 = 14.0;
+const THREAD_HOVER_PROJECT_ICON: f32 = 16.0;
+const THREAD_HOVER_PROJECT_GAP: f32 = 6.0;
+/// The reference opens the task card 227-229 ms after the pointer enters.
+const THREAD_HOVER_CARD_DELAY: Duration = Duration::from_millis(240);
+const THREAD_HOVER_CARD_CLOSE_DELAY: Duration = Duration::from_millis(60);
 const PROJECT_THREAD_TITLE_INSETS: f32 = 120.0;
 const RECENT_THREAD_TITLE_INSETS: f32 = 96.0;
 const THREAD_ACTION_RAIL_INSETS: f32 = 51.0;
@@ -239,6 +265,97 @@ fn project_hover_paths(project: &Project, repo: Option<&ProjectRepo>) -> Vec<(St
         paths.push((display, root.clone()));
     }
     paths
+}
+
+/// Compact "time ago" label the reference prints beside a task title, matching
+/// ChatGPT's `compactMinutesAgo`/`compactHoursAgo`/... formatter: whole minutes
+/// under an hour, whole hours under a day, then calendar days, weeks, months,
+/// and years.
+fn compact_relative_time(now_ms: i64, then_ms: i64) -> String {
+    const MINUTE_MS: i64 = 60_000;
+    let minutes = ((now_ms - then_ms) / MINUTE_MS).max(1);
+    if minutes < 60 {
+        return format!("{minutes}m");
+    }
+    let hours = minutes / 60;
+    if hours < 24 {
+        return format!("{hours}h");
+    }
+    let days = calendar_days_between(now_ms, then_ms).max(1);
+    if days < 7 {
+        return format!("{days}d");
+    }
+    if days < 30 {
+        return format!("{}w", days / 7);
+    }
+    if days < 365 {
+        return format!("{}mo", days / 30);
+    }
+    format!("{}y", days / 365)
+}
+
+/// Whole calendar days between two instants in local time, which is the day
+/// bucket the reference compares once a task is more than a day old.
+fn calendar_days_between(now_ms: i64, then_ms: i64) -> i64 {
+    use chrono::{Local, TimeZone};
+    let day = |ms: i64| {
+        Local
+            .timestamp_millis_opt(ms)
+            .single()
+            .map(|moment| moment.date_naive())
+    };
+    match (day(now_ms), day(then_ms)) {
+        (Some(now), Some(then)) => (now - then).num_days(),
+        _ => (now_ms - then_ms) / 86_400_000,
+    }
+}
+
+/// The timestamp the card prints: the reference prefers the task's recency, then
+/// its last update, then its creation. The app-server reports those in epoch
+/// seconds; the formatter works in milliseconds.
+fn thread_hover_timestamp_ms(thread: &ThreadSummary) -> i64 {
+    thread.recency_at.unwrap_or(thread.updated_at) * 1_000
+}
+
+/// The reference paints both sidebar hover cards with
+/// `bg-surface-elevated-secondary/90`, so what the user sees is that color
+/// resolved against the pane behind the card. GPUI composites a deferred
+/// overlay against the window backdrop rather than against the pane the card
+/// overhangs, so the card carries the resolved color instead of the alpha.
+fn hover_card_surface(theme: Theme) -> gpui::Rgba {
+    let over = theme.project_hover_surface;
+    let under = theme.surface;
+    let (a, rest) = (over.a, 1.0 - over.a);
+    gpui::Rgba {
+        r: over.r * a + under.r * rest,
+        g: over.g * a + under.g * rest,
+        b: over.b * a + under.b * rest,
+        a: 1.0,
+    }
+}
+
+/// The reference resolves CJK runs through CoreText's system cascade, which
+/// lands on the hidden `.PingFang UI` face and its 0.9587em ideographs; the
+/// shared theme font pins the public `PingFang SC` instead, whose full 1em
+/// advance makes every mixed Chinese/English line about 2% too wide. The card
+/// therefore names the hidden family: CoreText hands CJK on to its own cascade
+/// (the CDP font probe reports `.PingFangUIDisplaySC-Default` for the reference
+/// title), and the measured title advance drops from 245 px to the reference's
+/// 241 px.
+const HOVER_CARD_CJK_FALLBACK: &str = ".PingFang UI SC";
+
+/// Font for every run the hover cards print, so a Chinese project or task title
+/// keeps the reference's advances instead of the theme's wider public fallback.
+fn hover_card_font(weight: gpui::FontWeight) -> gpui::Font {
+    gpui::Font {
+        family: crate::theme::UI_FONT_FAMILY.into(),
+        features: Default::default(),
+        fallbacks: Some(gpui::FontFallbacks::from_fonts(vec![
+            HOVER_CARD_CJK_FALLBACK.to_owned(),
+        ])),
+        weight,
+        style: gpui::FontStyle::Normal,
+    }
 }
 
 /// The reference's inline summary row: the task count, then one entry per
@@ -471,15 +588,26 @@ pub struct SidebarView {
     /// Bounds of every rendered project row, recorded while prepainting so the
     /// hover card can anchor to the row instead of the pointer.
     project_row_bounds: Rc<RefCell<HashMap<ProjectId, Bounds<Pixels>>>>,
+    /// Bounds of every rendered task row, recorded the same way so the task
+    /// hover card anchors to its row rather than to the pointer.
+    thread_row_bounds: Rc<RefCell<HashMap<ThreadId, Bounds<Pixels>>>>,
     /// Project whose hover card is on screen, plus whether the pointer sits
     /// inside the card (the row and the card are one hover region).
     project_hover_card: Option<ProjectId>,
     project_hover_card_hovered: bool,
+    /// Task whose hover card is on screen, plus whether the pointer sits inside
+    /// the card. Only tasks that belong to a project carry one: the reference
+    /// suppresses the card for projectless tasks rather than printing a card
+    /// without its project row.
+    thread_hover_card: Option<ThreadId>,
+    thread_hover_card_hovered: bool,
     /// Repository row content, resolved once per project from local Git.
     project_repos: HashMap<ProjectId, Option<ProjectRepo>>,
     project_repos_pending: HashSet<ProjectId>,
     /// Capture request that arrived before the workspace listed its projects.
     pending_project_hover_card: Option<String>,
+    /// Capture request that arrived before the workspace listed the task.
+    pending_thread_hover_card: Option<String>,
     hovered_section_id: Option<&'static str>,
     marquee_started_at: Option<Instant>,
     marquee_animation_ends_at: Option<Instant>,
@@ -525,6 +653,10 @@ impl SidebarView {
                         this.pending_project_hover_card = None;
                         this.open_project_hover_card_for_capture(&project, cx);
                     }
+                    if let Some(thread) = this.pending_thread_hover_card.clone() {
+                        this.pending_thread_hover_card = None;
+                        this.open_thread_hover_card_for_capture(&thread, cx);
+                    }
                     cx.notify();
                 });
             }
@@ -543,11 +675,15 @@ impl SidebarView {
             hovered_thread_id: None,
             hovered_project_id: None,
             project_row_bounds: Rc::new(RefCell::new(HashMap::new())),
+            thread_row_bounds: Rc::new(RefCell::new(HashMap::new())),
             project_hover_card: None,
             project_hover_card_hovered: false,
+            thread_hover_card: None,
+            thread_hover_card_hovered: false,
             project_repos: HashMap::new(),
             project_repos_pending: HashSet::new(),
             pending_project_hover_card: None,
+            pending_thread_hover_card: None,
             hovered_section_id: None,
             marquee_started_at: None,
             marquee_animation_ends_at: None,
@@ -706,6 +842,46 @@ impl SidebarView {
         self.project_hover_card.is_some()
     }
 
+    /// Opens the task hover card without a pointer so the screenshot path can
+    /// capture the same surface a real hover produces. `thread` matches the
+    /// task title first and its stable id second.
+    pub fn open_thread_hover_card_for_capture(&mut self, thread: &str, cx: &mut Context<Self>) {
+        let thread_id = self
+            .snapshot
+            .recent_threads
+            .iter()
+            .find(|candidate| candidate.title == thread || candidate.thread_id == thread)
+            .map(|thread| thread.thread_id.clone());
+        let Some(thread_id) = thread_id else {
+            // The workspace may not have listed its tasks yet.
+            self.pending_thread_hover_card = Some(thread.to_owned());
+            return;
+        };
+        if self.project_for_thread(&thread_id).is_none() {
+            return;
+        }
+        self.thread_hover_card = Some(thread_id);
+        cx.notify();
+    }
+
+    #[cfg(test)]
+    pub fn thread_hover_card_is_open(&self) -> bool {
+        self.thread_hover_card.is_some()
+    }
+
+    /// The project a task row's card belongs to. The reference only prints a
+    /// task card when it can name the project, which is why projectless tasks
+    /// in the Recents section show no card at all.
+    fn project_for_thread(&self, thread_id: &str) -> Option<Project> {
+        let thread = self.snapshot.thread(thread_id)?;
+        let project_id = project_id_for_thread(thread, &self.snapshot.projects)?;
+        self.snapshot
+            .projects
+            .iter()
+            .find(|project| project.project_id == project_id)
+            .cloned()
+    }
+
     /// The pointer entered or left a project row. The card opens after the
     /// reference's 239 ms delay and stays open while either the row or the card
     /// itself is hovered.
@@ -722,6 +898,65 @@ impl SidebarView {
             self.schedule_project_hover_card_close(cx);
         }
         cx.notify();
+    }
+
+    /// The pointer entered or left a task row. The card follows the same open
+    /// and close schedule as the project card.
+    fn set_thread_row_hovered(
+        &mut self,
+        thread_id: ThreadId,
+        hovered: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if hovered {
+            self.schedule_thread_hover_card(thread_id, cx);
+        } else {
+            self.schedule_thread_hover_card_close(cx);
+        }
+    }
+
+    fn schedule_thread_hover_card(&mut self, thread_id: ThreadId, cx: &mut Context<Self>) {
+        if self.thread_hover_card.as_deref() == Some(thread_id.as_str())
+            || self.project_for_thread(thread_id.as_str()).is_none()
+        {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(THREAD_HOVER_CARD_DELAY)
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.hovered_thread_id.as_deref() != Some(thread_id.as_str()) {
+                    return;
+                }
+                this.thread_hover_card = Some(thread_id.clone());
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Delayed so a pointer crossing from the row into the card never closes it.
+    fn schedule_thread_hover_card_close(&mut self, cx: &mut Context<Self>) {
+        if self.thread_hover_card.is_none() {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(THREAD_HOVER_CARD_CLOSE_DELAY)
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.thread_hover_card_hovered
+                    || this.hovered_thread_id.as_deref() == this.thread_hover_card.as_deref()
+                {
+                    return;
+                }
+                if this.thread_hover_card.take().is_some() {
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
     }
 
     fn schedule_project_hover_card(&mut self, project_id: ProjectId, cx: &mut Context<Self>) {
@@ -1329,6 +1564,9 @@ impl SidebarView {
         let hover_id = thread_id.clone();
         let select_id = thread_id.clone();
         let context_id = thread_id.clone();
+        let bounds_id = thread_id.clone();
+        let card_id = thread_id.clone();
+        let row_bounds = self.thread_row_bounds.clone();
         let marquee_title = thread.title.clone();
         let spinner = icon("dictation-spinner", theme.sidebar_icon_muted.into())
             .size(px(20.0))
@@ -1406,6 +1644,20 @@ impl SidebarView {
                 )
             })
             .child(actions)
+            .child(
+                // Records the row's window bounds for the hover card, which is
+                // deferred so the sidebar's own clip never cuts it off.
+                canvas(
+                    move |bounds, _window, _cx| {
+                        row_bounds.borrow_mut().insert(bounds_id.clone(), bounds);
+                    },
+                    |_, _, _window, _cx| {},
+                )
+                .absolute()
+                .top_0()
+                .left_0()
+                .size_full(),
+            )
             .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
                 if *hovered {
                     this.hovered_thread_id = Some(hover_id.clone());
@@ -1419,6 +1671,7 @@ impl SidebarView {
                     this.hovered_thread_id = None;
                     this.stop_marquee();
                 }
+                this.set_thread_row_hovered(card_id.clone(), *hovered, cx);
                 cx.notify();
             }))
             .when(!pending && !rename_active, |row| {
@@ -1870,6 +2123,159 @@ impl SidebarView {
             .line_height(px(PROJECT_HOVER_ROW_HEIGHT))
             .text_color(theme.text)
             .child(text)
+    }
+
+    /// The sidebar task hover card. Geometry, colors, and row order come from
+    /// the live reference capture in `artifacts/thread-hover-20260922/`: the
+    /// card anchors three pixels right of the row it describes and top-aligns
+    /// one pixel below it, prints the task title with its environment icon and
+    /// compact timestamp, then the project the task is filed under.
+    fn thread_hover_card(
+        &self,
+        thread: &ThreadSummary,
+        project: &Project,
+        theme: Theme,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<Div> {
+        let thread_id = thread.thread_id.clone();
+        let card_hover_id = thread_id.clone();
+        let duration = compact_relative_time(
+            chrono::Utc::now().timestamp_millis(),
+            thread_hover_timestamp_ms(thread),
+        );
+
+        let title_row = div()
+            .w_full()
+            .min_w(px(0.0))
+            .h(px(THREAD_HOVER_TITLE_ROW_HEIGHT))
+            .flex()
+            .items_start()
+            .gap(px(THREAD_HOVER_TITLE_TRAILING_GAP))
+            .child(
+                div()
+                    .min_w(px(0.0))
+                    .flex_1()
+                    .flex()
+                    .items_start()
+                    .gap(px(THREAD_HOVER_TITLE_ICON_GAP))
+                    .child(
+                        div()
+                            .id(format!("thread-hover-title-{thread_id}"))
+                            .ml(px(-THREAD_HOVER_TITLE_INSET))
+                            .min_w(px(0.0))
+                            .px(px(THREAD_HOVER_TITLE_PADDING_X))
+                            .rounded(px(THREAD_HOVER_TITLE_RADIUS))
+                            .text_size(px(14.0))
+                            .line_height(px(THREAD_HOVER_TITLE_LINE_HEIGHT))
+                            .font(hover_card_font(gpui::FontWeight::MEDIUM))
+                            .text_color(theme.text)
+                            .line_clamp(3)
+                            .whitespace_normal()
+                            .child(thread.title.clone()),
+                    )
+                    .child(
+                        div()
+                            .flex_none()
+                            .w(px(THREAD_HOVER_ENV_ICON))
+                            .h(px(THREAD_HOVER_ROW_HEIGHT))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                icon("local", theme.text_tertiary.into())
+                                    .size(px(THREAD_HOVER_ENV_ICON)),
+                            ),
+                    ),
+            )
+            .child(
+                // `items-baseline` in the reference drops the 12 px timestamp
+                // one pixel below the 14 px title.
+                div()
+                    .flex_none()
+                    .mt(px(THREAD_HOVER_DURATION_OFFSET_Y))
+                    .h(px(THREAD_HOVER_ROW_HEIGHT))
+                    .flex()
+                    .items_center()
+                    .font(hover_card_font(crate::theme::UI_BODY_FONT_WEIGHT))
+                    .text_size(px(12.0))
+                    .line_height(px(THREAD_HOVER_ROW_HEIGHT))
+                    .text_color(theme.text_tertiary)
+                    .child(duration),
+            );
+
+        div()
+            .id(format!("thread-hover-card-{thread_id}"))
+            .w(px(THREAD_HOVER_CARD_WIDTH))
+            .px(px(THREAD_HOVER_CARD_PADDING_X))
+            .py(px(THREAD_HOVER_CARD_PADDING_Y))
+            .flex()
+            .flex_col()
+            .gap(px(THREAD_HOVER_CARD_GAP))
+            .rounded(px(THREAD_HOVER_CARD_RADIUS))
+            .bg(hover_card_surface(theme))
+            .shadow(vec![
+                gpui::BoxShadow::new(px(0.0), px(0.0), theme.border.into())
+                    .blur_radius(px(0.0))
+                    .spread_radius(px(0.5)),
+                gpui::BoxShadow::new(px(0.0), px(8.0), theme.profile_menu_shadow.into())
+                    .blur_radius(px(16.0))
+                    .spread_radius(px(-4.0)),
+            ])
+            .font_family(".SystemUIFont")
+            .text_size(px(13.0))
+            .line_height(px(18.5714))
+            .text_color(theme.text)
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                this.thread_hover_card_hovered = *hovered;
+                if !*hovered && this.hovered_thread_id.as_deref() != Some(card_hover_id.as_str()) {
+                    this.thread_hover_card = None;
+                }
+                cx.notify();
+            }))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(THREAD_HOVER_CARD_GAP))
+                    .pb(px(2.0))
+                    .child(title_row),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .min_w(px(0.0))
+                    .h(px(THREAD_HOVER_ROW_HEIGHT))
+                    .flex()
+                    .items_center()
+                    .gap(px(THREAD_HOVER_PROJECT_GAP))
+                    .child(
+                        div()
+                            .flex_none()
+                            .w(px(THREAD_HOVER_PROJECT_ICON))
+                            .h(px(THREAD_HOVER_ROW_HEIGHT))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                icon("thread-hover-project", theme.text_tertiary.into())
+                                    .size(px(THREAD_HOVER_PROJECT_ICON)),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .min_w(px(0.0))
+                            .flex_1()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_overflow(gpui::TextOverflow::Truncate("…".into()))
+                            .font(hover_card_font(crate::theme::UI_BODY_FONT_WEIGHT))
+                            .text_size(px(13.0))
+                            .line_height(px(THREAD_HOVER_ROW_HEIGHT))
+                            .text_color(theme.text)
+                            .child(project.name.clone()),
+                    ),
+            )
     }
 
     /// A read-only hover card row: icon column plus a single text line.
@@ -3240,6 +3646,30 @@ impl Render for SidebarView {
                     .child(self.project_hover_card(project, theme, cx)),
             ));
         }
+        let thread_card_anchor = self.thread_hover_card.as_deref().and_then(|thread_id| {
+            self.thread_row_bounds
+                .borrow()
+                .get(thread_id)
+                .copied()
+                .map(|bounds| (thread_id.to_owned(), bounds))
+        });
+        if let Some((thread_id, bounds)) = thread_card_anchor
+            && let Some(thread) = self.snapshot.thread(&thread_id).cloned()
+            && let Some(project) = self.project_for_thread(&thread_id)
+        {
+            // Anchored to the row, not the pointer, and deferred for the same
+            // reason as the project card: the reference tooltip overhangs the
+            // sidebar into the main pane.
+            let left = f32::from(bounds.origin.x + bounds.size.width) + PROJECT_HOVER_CARD_OFFSET_X;
+            let top = f32::from(bounds.origin.y) + PROJECT_HOVER_CARD_OFFSET_Y;
+            sidebar = sidebar.child(deferred(
+                div()
+                    .absolute()
+                    .left(px(left))
+                    .top(px(top))
+                    .child(self.thread_hover_card(&thread, &project, theme, cx)),
+            ));
+        }
         sidebar
     }
 }
@@ -3261,7 +3691,8 @@ mod tests {
     use super::{
         PROJECT_HOVER_CARD_CLOSE_DELAY, PROJECT_HOVER_CARD_DELAY, PROJECT_HOVER_HEADER_HEIGHT,
         ROW_HEIGHT, ROW_RADIUS, SIDEBAR_TITLEBAR_SAFE_TOP, SIDEBAR_WIDTH, SidebarView,
-        home_shortened_path, project_hover_paths, project_hover_summary,
+        THREAD_HOVER_CARD_CLOSE_DELAY, THREAD_HOVER_CARD_DELAY, compact_relative_time,
+        home_shortened_path, hover_card_surface, project_hover_paths, project_hover_summary,
     };
     use crate::{
         agent::{
@@ -3283,14 +3714,26 @@ mod tests {
     struct SidebarBackend {
         _events: Sender<AgentConnectionEvent>,
         event_receiver: Receiver<AgentConnectionEvent>,
+        /// When set, the fixture lists one task that belongs to no project, the
+        /// state the reference renders in the Recents section.
+        projectless: bool,
     }
 
     impl SidebarBackend {
         fn new() -> Arc<Self> {
+            Self::with_projectless(false)
+        }
+
+        fn projectless() -> Arc<Self> {
+            Self::with_projectless(true)
+        }
+
+        fn with_projectless(projectless: bool) -> Arc<Self> {
             let (events, event_receiver) = async_channel::unbounded();
             Arc::new(Self {
                 _events: events,
                 event_receiver,
+                projectless,
             })
         }
     }
@@ -3346,8 +3789,12 @@ mod tests {
                 thread_id: "thread-stable-id".to_owned(),
                 title: "Stable thread".to_owned(),
                 preview: "Stable thread".to_owned(),
-                cwd: PathBuf::from("/tmp/stable-project"),
-                project_id: Some("project-stable-id".to_owned()),
+                cwd: if self.projectless {
+                    PathBuf::from("/tmp/loose-thread")
+                } else {
+                    PathBuf::from("/tmp/stable-project")
+                },
+                project_id: (!self.projectless).then(|| "project-stable-id".to_owned()),
                 section: None,
                 created_at: 1,
                 updated_at: 2,
@@ -3648,6 +4095,180 @@ mod tests {
 
         if let Some(parent) = preferences.parent() {
             let _ = std::fs::remove_dir_all(parent);
+        }
+    }
+
+    #[test]
+    fn thread_hover_card_follows_the_row_and_only_for_project_tasks() {
+        static SERIAL: AtomicU64 = AtomicU64::new(1);
+        let preferences = std::env::temp_dir()
+            .join(format!(
+                "gpui-sidebar-thread-hover-{}-{}",
+                std::process::id(),
+                SERIAL.fetch_add(1, Ordering::Relaxed)
+            ))
+            .join("preferences.json");
+        let store =
+            WorkspaceStore::with_preferences_path(SidebarBackend::new(), preferences.clone());
+        store.refresh_all();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while store.snapshot().loading.recent {
+            assert!(Instant::now() < deadline, "sidebar fixture did not load");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let mut app = TestApp::new();
+        let mut window = app.open_window_with_options(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: point(px(0.0), px(0.0)),
+                    size: size(px(900.0), px(700.0)),
+                })),
+                ..Default::default()
+            },
+            |_, cx| SidebarView::new(ThemeMode::Dark, false, store, cx),
+        );
+        window.draw();
+
+        let row = window.read(|sidebar, _| {
+            *sidebar
+                .thread_row_bounds
+                .borrow()
+                .get("thread-stable-id")
+                .expect("the rendered task row records its bounds")
+        });
+        let row_center = point(
+            row.origin.x + row.size.width / 2.0,
+            row.origin.y + row.size.height / 2.0,
+        );
+
+        window.simulate_mouse_move(point(px(700.0), px(400.0)));
+        window.simulate_mouse_move(row_center);
+        assert!(
+            !window.read(|sidebar, _| sidebar.thread_hover_card_is_open()),
+            "the card waits for the reference's hover delay"
+        );
+
+        app.advance_clock(THREAD_HOVER_CARD_DELAY);
+        window.draw();
+        assert!(window.read(|sidebar, _| sidebar.thread_hover_card_is_open()));
+
+        // The card hangs off the row's right edge and stays open while the
+        // pointer is inside it.
+        window.simulate_mouse_move(point(
+            row.origin.x + row.size.width + px(40.0),
+            row.origin.y + px(10.0),
+        ));
+        app.advance_clock(THREAD_HOVER_CARD_CLOSE_DELAY * 2);
+        window.draw();
+        assert!(window.read(|sidebar, _| sidebar.thread_hover_card_is_open()));
+
+        window.simulate_mouse_move(point(px(700.0), px(500.0)));
+        app.advance_clock(THREAD_HOVER_CARD_CLOSE_DELAY * 2);
+        window.draw();
+        assert!(!window.read(|sidebar, _| sidebar.thread_hover_card_is_open()));
+
+        if let Some(parent) = preferences.parent() {
+            let _ = std::fs::remove_dir_all(parent);
+        }
+    }
+
+    #[test]
+    fn projectless_tasks_never_open_a_hover_card() {
+        static SERIAL: AtomicU64 = AtomicU64::new(1);
+        let preferences = std::env::temp_dir()
+            .join(format!(
+                "gpui-sidebar-projectless-{}-{}",
+                std::process::id(),
+                SERIAL.fetch_add(1, Ordering::Relaxed)
+            ))
+            .join("preferences.json");
+        let store = WorkspaceStore::with_preferences_path(
+            SidebarBackend::projectless(),
+            preferences.clone(),
+        );
+        store.refresh_all();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while store.snapshot().loading.recent {
+            assert!(Instant::now() < deadline, "sidebar fixture did not load");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let mut app = TestApp::new();
+        let mut window = app.open_window_with_options(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: point(px(0.0), px(0.0)),
+                    size: size(px(900.0), px(700.0)),
+                })),
+                ..Default::default()
+            },
+            |_, cx| SidebarView::new(ThemeMode::Dark, false, store, cx),
+        );
+        window.draw();
+        let row = window.read(|sidebar, _| {
+            *sidebar
+                .thread_row_bounds
+                .borrow()
+                .get("thread-stable-id")
+                .expect("the rendered task row records its bounds")
+        });
+        window.simulate_mouse_move(point(
+            row.origin.x + row.size.width / 2.0,
+            row.origin.y + row.size.height / 2.0,
+        ));
+        app.advance_clock(THREAD_HOVER_CARD_DELAY * 2);
+        window.draw();
+        assert!(
+            !window.read(|sidebar, _| sidebar.thread_hover_card_is_open()),
+            "the reference prints no card for a task it cannot file under a project"
+        );
+        if let Some(parent) = preferences.parent() {
+            let _ = std::fs::remove_dir_all(parent);
+        }
+    }
+
+    #[test]
+    fn compact_relative_time_matches_the_reference_buckets() {
+        use chrono::{Local, TimeZone};
+        let at = |day: u32, hour: u32, minute: u32| {
+            Local
+                .with_ymd_and_hms(2026, 9, day, hour, minute, 0)
+                .single()
+                .expect("local time")
+                .timestamp_millis()
+        };
+        let on = |year: i32, month: u32, day: u32| {
+            Local
+                .with_ymd_and_hms(year, month, day, 12, 0, 0)
+                .single()
+                .expect("local time")
+                .timestamp_millis()
+        };
+        let now = at(22, 12, 0);
+        assert_eq!(compact_relative_time(now, now), "1m");
+        assert_eq!(compact_relative_time(now, at(22, 11, 50)), "10m");
+        assert_eq!(compact_relative_time(now, at(22, 9, 30)), "2h");
+        // Whole hours win until a full day has passed, even across midnight.
+        assert_eq!(compact_relative_time(now, at(21, 23, 0)), "13h");
+        assert_eq!(compact_relative_time(now, at(21, 11, 0)), "1d");
+        assert_eq!(compact_relative_time(now, at(18, 12, 0)), "4d");
+        assert_eq!(compact_relative_time(now, at(12, 12, 0)), "1w");
+        assert_eq!(compact_relative_time(now, on(2026, 8, 13)), "1mo");
+        assert_eq!(compact_relative_time(now, on(2025, 7, 1)), "1y");
+    }
+
+    #[test]
+    fn hover_card_surface_resolves_the_reference_tint_over_the_pane() {
+        for mode in [ThemeMode::Light, ThemeMode::Dark] {
+            let theme = crate::theme::Theme::for_mode(mode);
+            let surface = hover_card_surface(theme);
+            assert_eq!(surface.a, 1.0, "the card cannot depend on its backdrop");
+            let (over, under) = (theme.project_hover_surface, theme.surface);
+            let expected = (over.r * over.a + under.r * (1.0 - over.a)) * 255.0;
+            assert!(
+                (surface.r * 255.0 - expected).abs() <= 0.5,
+                "{mode:?} card surface {:?} should composite to {expected}",
+                surface.r * 255.0
+            );
         }
     }
 }

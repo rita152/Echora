@@ -92,6 +92,7 @@ The sidebar navigation shows New conversation, Pull requests, Scheduled, and Plu
 |---|---|
 | Open a conversation | Sidebar projects, recent items, archive, or search |
 | Inspect a project | Hover a sidebar project row: the card shows the project name, task count, repository, working directories, and `Edit project` |
+| Inspect a task | Hover a sidebar task row inside a project: the card shows the task title with its environment icon and age, then the project it is filed under |
 | Search chats | Sidebar search button → the chat search dialog (`Enter` opens, `⌘1`–`⌘9` select, `Esc` closes) |
 | Toggle the terminal | Right panel → Terminal; `Ctrl+Backtick` |
 | Open files | Right panel → Files; `Cmd+P` |
@@ -232,6 +233,7 @@ Full launch options are in [src/main.rs](src/main.rs).
 | `--typography-specimen --typography-display=N` | Font samples and display selection; see `src/typography.rs`. |
 | `--pull-requests [--pull-requests-select=N \| --pull-requests-title=TEXT] [--pull-requests-tab=code\|review] [--pull-requests-list-tab=all\|reviewing\|authored] [--pull-requests-status=open\|merged\|closed\|all] [--pull-requests-search=TEXT] [--pull-requests-file-tree] [--pull-requests-scroll=px] [--pull-requests-action=...] [--pull-requests-comment-menu]` | Deterministic Pull Requests states: list, tabs, search, filters, groups, detail sections, diff, file tree, review tab, and the interaction states `scripts/capture_pull_requests_gpui.sh` uses. |
 | `--project-hover-card=NAME` | Opens the sidebar project hover card for the named project (or its stable id) without a pointer, for the static half of the hover-card captures. |
+| `--thread-hover-card=TITLE` | Opens the sidebar task hover card for the named task (or its stable id) without a pointer, for the static half of the hover-card captures. |
 | `--print-diagnostics` | Prints executable path, working directory, compiled worktree, bundle name and identifier, the resolved assets base with its origin, and every assets candidate with its verdict, then exits. Use it to prove which build a verification run drives. |
 
 `GPUI_ASSETS_DIR` points the loader at a specific assets directory and becomes the only candidate, so a wrong value fails loudly instead of silently loading assets from elsewhere. Without it the search order is: the bundle's `Contents/Resources/assets`, `assets` beside the executable, the compiled worktree, then the working directory; a candidate counts only when it contains `icons/`.
@@ -256,6 +258,7 @@ export CHATGPT_CDP_HTTP="http://127.0.0.1:${CAPTURE_CDP_PORT:?Set a dedicated de
 | Settings matrix | `./node_modules/.bin/electron scripts/verify_chatgpt_settings.cjs`; `REFRESH_SETTINGS_REFERENCES=1 scripts/capture_settings_matrix.sh`; `python3 scripts/verify_settings_matrix.py` |
 | Merged Phase 1–4 local-component gate | `python3 scripts/stage4/compare_merge_gate.py` (expects the dedicated ChatGPT/GPUI captures under `artifacts/merge-four-worktrees/`; threshold is 99% per local component) |
 | Sidebar project hover card | `CHATGPT_CDP_HTTP="$CHATGPT_CDP_HTTP" node scripts/cdp_capture_project_hover.mjs --output artifacts/project-hover/reference` captures the reference card (geometry, computed styles, icons, screenshots) after hovering the real row; `--project-hover-card=NAME --screenshot=artifacts/project-hover/gpui/light-card.png` captures the native card, and `python3 scripts/compare_project_hover.py --reference artifacts/project-hover/reference --gpui artifacts/project-hover/gpui --output artifacts/project-hover/compare` scores the two per theme. `cargo test project_hover` drives the same pointer path as a real hover (open delay, staying open over the card, closing on leave). |
+| Sidebar task hover card | `scripts/capture_thread_hover_gpui.sh both` refreshes the reference with `CHATGPT_CDP_HTTP` set, captures `--thread-hover-card=TITLE` in both themes, and scores each with `scripts/compare_thread_hover.py`, which reports `pixelConsistency`, `pixelsWithin2`, `pixelsWithin12`, and the repository's `toleranceAdjustedSimilarity` together with the card's vertical anchor delta. The card opens 240 ms after the pointer enters a project task's row, stays open over the card, and is suppressed for projectless Recents rows exactly like the reference; `cargo test thread_hover` drives that pointer path. |
 | Image generation | `python3 scripts/compare_image_generation_component.py --help`; supply measured equal-size crops and DPR. |
 | History diagnostics | `python3 scripts/audit_resume_rendering.py --help`; rollout files are for offline diagnostics only. |
 
