@@ -406,3 +406,74 @@ fn pull_request_commits_pushes_and_passes_literal_fields_to_gh() {
         resolve(&remote.0, "codex/pr-test").unwrap()
     );
 }
+
+#[test]
+fn project_repo_reads_the_origin_remote_like_the_reference_client() {
+    let r = Repo::new();
+    r.write("file", b"fixture");
+    r.commit();
+    // Without a remote the reference shows the repository folder name, and a
+    // path outside any repository shows no repository row at all.
+    let without_remote = project_repo(&r.0).unwrap();
+    assert_eq!(
+        without_remote.label,
+        r.0.file_name().unwrap().to_string_lossy(),
+        "a repository without a remote falls back to its folder name"
+    );
+    assert_eq!(
+        project_repo(&std::env::temp_dir().join("gpui-not-a-repo")),
+        None
+    );
+
+    git(
+        &r.0,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/rita152/Echora.git",
+        ],
+    )
+    .unwrap();
+    let repo = project_repo(&r.0).unwrap();
+    assert_eq!(repo.label, "rita152/Echora");
+    assert_eq!(repo.root, std::fs::canonicalize(&r.0).unwrap());
+
+    // A path inside the repository resolves to the same repository.
+    let nested = r.0.join("nested");
+    std::fs::create_dir_all(&nested).unwrap();
+    assert_eq!(project_repo(&nested).unwrap().label, "rita152/Echora");
+}
+
+#[test]
+fn origin_labels_follow_the_reference_normalization() {
+    for (remote, expected) in [
+        ("https://github.com/rita152/Echora.git", "rita152/Echora"),
+        ("git@github.com:rita152/Echora.git", "rita152/Echora"),
+        ("ssh://git@github.com/rita152/Echora.git", "rita152/Echora"),
+        (
+            "https://user:token@gitlab.com/group/sub/repo.git",
+            "sub/repo",
+        ),
+        (
+            "https://github.com/rita152/Echora.git?ref=main",
+            "rita152/Echora",
+        ),
+        ("/Users/zp/repos/Echora.git", "repos/Echora"),
+    ] {
+        assert_eq!(
+            origin_owner_repo(remote).as_deref(),
+            Some(expected),
+            "{remote}"
+        );
+    }
+    for remote in [
+        "",
+        "   ",
+        "Echora",
+        "rita152/Echora",
+        "https://github.com/only",
+    ] {
+        assert_eq!(origin_owner_repo(remote), None, "{remote}");
+    }
+}

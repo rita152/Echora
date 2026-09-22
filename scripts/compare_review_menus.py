@@ -6,7 +6,7 @@ repository state:
 
   CHATGPT_CDP_HTTP=http://127.0.0.1:9455 \
     node scripts/cdp_capture_review_menus.mjs --output=artifacts/review-menus/reference
-  'target/GPUI Capture.app/Contents/MacOS/gpui-chat-clone' --theme=dark \
+  "$(scripts/gpui_capture_binary.sh)" --theme=dark \
     --window-width=1440 --window-height=900 --review-root="$PWD" \
     --review-menu=scope --screenshot=artifacts/review-menus/gpui/scope.png
 

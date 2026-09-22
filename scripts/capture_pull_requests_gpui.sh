@@ -25,10 +25,10 @@ else
   theme_list=("$themes")
 fi
 
-app="target/GPUI Capture.app/Contents/MacOS/gpui-chat-clone"
+app="$(scripts/gpui_capture_binary.sh)"
 wait_for_no_instance() {
   for _ in $(seq 1 40); do
-    if ! pgrep -f "GPUI Capture.app/Contents/MacOS/gpui-chat-clone" >/dev/null 2>&1; then
+    if ! pgrep -f "$app" >/dev/null 2>&1; then
       return 0
     fi
     sleep 0.5

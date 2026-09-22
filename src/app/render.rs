@@ -950,6 +950,33 @@ impl Render for ChatApp {
                 )
             })
             .when_some(self.plan_export_error.clone(), |root, error| root.child(div().id("plan-export-error").role(Role::Alert).absolute().bottom(px(24.0)).right(px(24.0)).max_w(px(400.0)).p(px(12.0)).rounded(px(12.0)).bg(theme.surface).border_1().border_color(theme.border).text_color(theme.text).child(error)))
+            .when(crate::assets::status().is_missing(), |root| {
+                // A missing asset base blanks every icon without failing the
+                // render. Say so on screen: a screenshot has to show it, not
+                // only the log.
+                let status = crate::assets::status();
+                root.child(
+                    div()
+                        .id("assets-missing-banner")
+                        .role(Role::Alert)
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .right_0()
+                        .h(px(28.0))
+                        .px(px(12.0))
+                        .flex()
+                        .items_center()
+                        .bg(rgba(0xb3261eff))
+                        .text_size(px(12.0))
+                        .text_color(rgba(0xffffffff))
+                        .child(crate::i18n::format!(
+                            "assets 缺失，图标不会渲染：{detail}" =>
+                                "assets missing; icons will not render: {detail}",
+                            detail = status.tried_summary()
+                        )),
+                )
+            })
             .into_any_element()
     }
 }

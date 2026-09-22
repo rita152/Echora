@@ -118,6 +118,11 @@ pub struct Theme {
     pub chat_search_overlay: Rgba,
     pub chat_search_surface: Rgba,
     pub chat_search_border: Rgba,
+    /// Sidebar project hover card. ChatGPT paints the card with
+    /// `bg-surface-elevated-secondary/90`, its `--color-border` ring, and the
+    /// shared `shadow-xl-spread`; the card reuses `text`, `text_tertiary`,
+    /// `border`, and `sidebar_hover` for every inner element.
+    pub project_hover_surface: Rgba,
     /// The command menu keeps its own primary foreground. In dark mode it is
     /// pure white even though the surrounding native shell uses a softened
     /// #dfdfdf body foreground.
@@ -240,6 +245,8 @@ impl Theme {
                 chat_search_overlay: rgba(0x00000022),
                 chat_search_surface: rgba(0xffffffff),
                 chat_search_border: rgba(0x00000000),
+                // CDP light: --color-surface-elevated-secondary #ffffff at 90%.
+                project_hover_surface: rgba(0xffffffe6),
                 chat_search_text: rgba(0x1a1c1fff),
                 chat_search_row_hover: rgba(0x1a1c1f0e),
                 chat_search_description: rgba(0x1a1c1f7e),
@@ -331,6 +338,8 @@ impl Theme {
                 chat_search_overlay: rgba(0x00000022),
                 chat_search_surface: rgba(0x2d2d2dff),
                 chat_search_border: rgba(0xffffff15),
+                // CDP dark: --color-surface-elevated-secondary #2d2d2d at 90%.
+                project_hover_surface: rgba(0x2d2d2de6),
                 chat_search_text: rgba(0xffffffff),
                 chat_search_row_hover: rgba(0xffffff14),
                 chat_search_description: rgba(0xffffff7f),

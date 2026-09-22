@@ -39,7 +39,7 @@ As more coding agents are integrated, users should be able to keep that same wor
 
 </details>
 
-Both images are captured from the current native application using the dedicated `GPUI Capture.app` build and a deterministic example of conversation and tool activity, without running the displayed commands or sending model requests. The interface currently retains some Codex labels. These are application screenshots, not design mockups.
+Both images are captured from the current native application using the worktree's packaged capture bundle (`scripts/package_gpui_capture.sh`) and a deterministic example of conversation and tool activity, without running the displayed commands or sending model requests. The interface currently retains some Codex labels. These are application screenshots, not design mockups.
 
 ## What you can do today
 
@@ -91,6 +91,7 @@ The sidebar navigation shows New conversation, Pull requests, Scheduled, and Plu
 | Action | Entry point / shortcut |
 |---|---|
 | Open a conversation | Sidebar projects, recent items, archive, or search |
+| Inspect a project | Hover a sidebar project row: the card shows the project name, task count, repository, working directories, and `Edit project` |
 | Search chats | Sidebar search button → the chat search dialog (`Enter` opens, `⌘1`–`⌘9` select, `Esc` closes) |
 | Toggle the terminal | Right panel → Terminal; `Ctrl+Backtick` |
 | Open files | Right panel → Files; `Cmd+P` |
@@ -186,22 +187,24 @@ node scripts/verify_integration_table.mjs
 
 ### Capture the native app
 
-Follow the dedicated-instance rules in [AGENTS.md](AGENTS.md). Build the latest executable, package it with the separate capture bundle ID, and launch that instance:
+Follow the dedicated-instance rules in [AGENTS.md](AGENTS.md). Package the capture bundle with the worktree's own name and identifier:
 
 ```bash
-cargo build --features screenshot
-mkdir -p 'target/GPUI Capture.app/Contents/MacOS' artifacts
-cp scripts/gpui_capture_info.plist 'target/GPUI Capture.app/Contents/Info.plist'
-cp target/debug/gpui-chat-clone 'target/GPUI Capture.app/Contents/MacOS/gpui-chat-clone'
-codesign --force --sign - 'target/GPUI Capture.app'
+scripts/package_gpui_capture.sh
+```
 
+The script builds with `--features screenshot`, writes `target/GPUI Capture (<worktree>-<digest>).app`, copies `assets/` into `Contents/Resources/assets`, and prints the bundle path, its name, and its identifier. Launch that bundle's `Contents/MacOS/gpui-chat-clone` from the repository root with an absolute path:
+
+```bash
 GPUI_UI_PREFERENCES_PATH="$PWD/artifacts/capture-preferences.json" \
 GPUI_CAPTURE_OUTPUT="$PWD/artifacts/frame.png" \
-  'target/GPUI Capture.app/Contents/MacOS/gpui-chat-clone' \
+  'target/GPUI Capture (gpui-<digest>).app/Contents/MacOS/gpui-chat-clone' \
   --theme=light --window-width=1440 --window-height=900
 ```
 
-Enumerate apps in Computer Use, connect to **GPUI Capture**, inspect the accessibility tree and screenshot, and then navigate. Press `Cmd+Shift+F12` to save an unscaled PNG with a `.render.json` sidecar while the app keeps running. Close only the dedicated instance you started.
+Enumerate apps in Computer Use, connect to the bundle name the packaging script printed, inspect the accessibility tree and screenshot, and then navigate. Press `Cmd+Shift+F12` to save an unscaled PNG with a `.render.json` sidecar (viewport, DPR, executable, bundle identifier, and resolved assets) while the app keeps running. Close only the dedicated instance you started.
+
+Two bundles always used to be indistinguishable: every worktree published the same name and `com.openai.gpui-chat-clone.capture` identifier, so `open -n "target/GPUI Capture.app"` resolved through LaunchServices to whichever copy was registered — possibly a stale build from another directory whose worktree had no `assets/`, which started, rendered all text, and left every SVG blank. Packaging now ends the name and identifier with the worktree slug, assets travel inside the bundle, and `--print-diagnostics` prints the executable, bundle identity, and each assets candidate with its verdict, so a verification run can prove which build it drives. `GPUI_ASSETS_DIR` hard-overrides the search when a bundle has to read assets from somewhere else. When no candidate is usable the shell keeps running, prints the warning to stderr, and shows a red bar naming the paths it tried, so a screenshot can never silently show iconless chrome. `scripts/launch_project_hover_instance.sh` wraps the packaging identity, refuses to start when this worktree's hover instance already runs, and prints the binary path, pid, and log.
 
 For a real live-turn capture, launch with `--capture-live-turn="$PWD/artifacts/live.png"` and submit a prompt in the capture app. It saves the completed live view before history reload, a `.json` sidecar with thread identity, activity data, then exits. It fails on interruption, turn failure or a five-minute timeout.
 
@@ -228,6 +231,10 @@ Full launch options are in [src/main.rs](src/main.rs).
 | `--progress-ui-state=running/streaming/completed/interrupted` | Plan, search, and wait reduction; streaming emits timed updates and completion, and running can be interrupted. |
 | `--typography-specimen --typography-display=N` | Font samples and display selection; see `src/typography.rs`. |
 | `--pull-requests [--pull-requests-select=N \| --pull-requests-title=TEXT] [--pull-requests-tab=code\|review] [--pull-requests-list-tab=all\|reviewing\|authored] [--pull-requests-status=open\|merged\|closed\|all] [--pull-requests-search=TEXT] [--pull-requests-file-tree] [--pull-requests-scroll=px] [--pull-requests-action=...] [--pull-requests-comment-menu]` | Deterministic Pull Requests states: list, tabs, search, filters, groups, detail sections, diff, file tree, review tab, and the interaction states `scripts/capture_pull_requests_gpui.sh` uses. |
+| `--project-hover-card=NAME` | Opens the sidebar project hover card for the named project (or its stable id) without a pointer, for the static half of the hover-card captures. |
+| `--print-diagnostics` | Prints executable path, working directory, compiled worktree, bundle name and identifier, the resolved assets base with its origin, and every assets candidate with its verdict, then exits. Use it to prove which build a verification run drives. |
+
+`GPUI_ASSETS_DIR` points the loader at a specific assets directory and becomes the only candidate, so a wrong value fails loudly instead of silently loading assets from elsewhere. Without it the search order is: the bundle's `Contents/Resources/assets`, `assets` beside the executable, the compiled worktree, then the working directory; a candidate counts only when it contains `icons/`.
 
 `--approval-replay=/absolute/fixture.json` replays offline JSON-RPC through production parsing and response handling. The fixture contains an `events` array from `turn/started` through items and approval requests, with optional `cwd`, `userMessage`, `assistantMessage`, and `failWrites`. Responses are written to an adjacent `.responses.jsonl`; replay does not execute commands or modify approved files.
 
@@ -248,6 +255,7 @@ export CHATGPT_CDP_HTTP="http://127.0.0.1:${CAPTURE_CDP_PORT:?Set a dedicated de
 | Account menu, logout | `node scripts/cdp_capture_account.mjs --output artifacts/account-phase/chatgpt-reference --theme=light`; `scripts/capture_account_gpui.sh`; `python3 scripts/compare_account_phase.py` |
 | Settings matrix | `./node_modules/.bin/electron scripts/verify_chatgpt_settings.cjs`; `REFRESH_SETTINGS_REFERENCES=1 scripts/capture_settings_matrix.sh`; `python3 scripts/verify_settings_matrix.py` |
 | Merged Phase 1–4 local-component gate | `python3 scripts/stage4/compare_merge_gate.py` (expects the dedicated ChatGPT/GPUI captures under `artifacts/merge-four-worktrees/`; threshold is 99% per local component) |
+| Sidebar project hover card | `CHATGPT_CDP_HTTP="$CHATGPT_CDP_HTTP" node scripts/cdp_capture_project_hover.mjs --output artifacts/project-hover/reference` captures the reference card (geometry, computed styles, icons, screenshots) after hovering the real row; `--project-hover-card=NAME --screenshot=artifacts/project-hover/gpui/light-card.png` captures the native card, and `python3 scripts/compare_project_hover.py --reference artifacts/project-hover/reference --gpui artifacts/project-hover/gpui --output artifacts/project-hover/compare` scores the two per theme. `cargo test project_hover` drives the same pointer path as a real hover (open delay, staying open over the card, closing on leave). |
 | Image generation | `python3 scripts/compare_image_generation_component.py --help`; supply measured equal-size crops and DPR. |
 | History diagnostics | `python3 scripts/audit_resume_rendering.py --help`; rollout files are for offline diagnostics only. |
 
@@ -264,7 +272,7 @@ cargo test -p gpui_macos --lib --features font-kit typography_
 cargo test -p gpui_apple --lib compositing_tests
 node scripts/cdp_capture_chatgpt_typography.mjs --artifact-dir=artifacts/typography/live
 node scripts/cdp_capture_typography_specimen.mjs artifacts/typography 1
-'target/GPUI Capture.app/Contents/MacOS/gpui-chat-clone' \
+'$(scripts/gpui_capture_binary.sh)' \
   --typography-specimen --screenshot=artifacts/typography/gpui-1x.png
 python3 scripts/compare_typography.py \
   artifacts/typography/electron-1x.png artifacts/typography/gpui-1x.png \

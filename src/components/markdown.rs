@@ -2441,10 +2441,12 @@ pub fn capture_markdown(args: &[String]) -> bool {
         }
     }
     crate::typography::configure();
+    let asset_status = crate::assets::status();
+    if asset_status.is_missing() {
+        eprintln!("{}", crate::assets::missing_warning(asset_status));
+    }
     gpui_platform::application()
-        .with_assets(crate::Assets {
-            base: std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"),
-        })
+        .with_assets(crate::assets::Assets::load_from(asset_status))
         .run(move |cx: &mut App| {
             crate::typography::initialize_fonts(cx);
             let bounds = Bounds::centered(None, size(px(width), px(700.0)), cx);

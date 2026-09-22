@@ -3,8 +3,9 @@
 
 Both ends are captured at the same window size (1440x900 logical), the same
 DPR (2), the same theme, the same content, and the same scroll position. The
-reference is the ChatGPT/Codex Electron app driven over CDP; the native end is
-`GPUI Capture.app` rasterized by `render_to_image`. Neither side is rescaled or
+reference is the ChatGPT/Codex Electron app driven over CDP; the native end is this
+worktree's packaged capture bundle (`scripts/gpui_capture_binary.sh`)
+rasterized by `render_to_image`. Neither side is rescaled or
 translated.
 
 Metrics per component (all in percent, higher is closer):

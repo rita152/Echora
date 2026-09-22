@@ -205,10 +205,12 @@ pub(crate) fn capture_auto_approval(args: &[String]) -> bool {
         .map(|p| std::fs::read_to_string(p).expect("read review rationale"))
         .unwrap_or_else(|| "This action only reads public information from example.com.".into());
     crate::typography::configure();
+    let asset_status = crate::assets::status();
+    if asset_status.is_missing() {
+        eprintln!("{}", crate::assets::missing_warning(asset_status));
+    }
     gpui_platform::application()
-        .with_assets(crate::Assets {
-            base: std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"),
-        })
+        .with_assets(crate::assets::Assets::load_from(asset_status))
         .run(move |cx| {
             crate::typography::initialize_fonts(cx);
             init(cx);

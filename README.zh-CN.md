@@ -39,7 +39,7 @@
 
 </details>
 
-两张图片均由当前原生应用的专用 `GPUI Capture.app` 构建实机截取，使用固定的对话与工具活动示例，不执行图中命令，也不发送模型请求。界面目前仍保留部分 Codex 字样。图片为实际应用截图，并非设计稿。
+两张图片均由当前工作树打包的验收 bundle（`scripts/package_gpui_capture.sh`）实机截取，使用固定的对话与工具活动示例，不执行图中命令，也不发送模型请求。界面目前仍保留部分 Codex 字样。图片为实际应用截图，并非设计稿。
 
 ## 现在可以做什么
 
@@ -92,6 +92,7 @@ Cargo 包和可执行文件目前仍名为 `gpui-chat-clone`，现有构建与�
 | 操作 | 入口 / 快捷键 |
 |---|---|
 | 打开会话 | 侧栏项目、最近、归档或搜索 |
+| 查看项目信息 | 悬停侧栏项目行：卡片显示项目名、任务数、仓库、工作目录和“编辑项目” |
 | 搜索聊天 | 侧边栏搜索按钮 → 历史会话搜索弹窗（`Enter` 打开、`⌘1`–`⌘9` 选择、`Esc` 关闭） |
 | 切换终端 | 右侧面板 → 终端；`Ctrl+反引号` |
 | 打开文件 | 右侧面板 → 文件；`Cmd+P` |
@@ -185,22 +186,24 @@ node scripts/verify_integration_table.mjs
 
 ### 截取原生界面
 
-遵循 [AGENTS.md](AGENTS.md) 的专用实例约定：先构建最新可执行文件，使用独立截图 bundle ID 打包，再启动该实例。
+遵循 [AGENTS.md](AGENTS.md) 的专用实例约定：用本工作树自己的名称与标识打包验收 bundle。
 
 ```bash
-cargo build --features screenshot
-mkdir -p 'target/GPUI Capture.app/Contents/MacOS' artifacts
-cp scripts/gpui_capture_info.plist 'target/GPUI Capture.app/Contents/Info.plist'
-cp target/debug/gpui-chat-clone 'target/GPUI Capture.app/Contents/MacOS/gpui-chat-clone'
-codesign --force --sign - 'target/GPUI Capture.app'
+scripts/package_gpui_capture.sh
+```
 
+脚本以 `--features screenshot` 构建，产出 `target/GPUI Capture (<worktree>-<digest>).app`，把 `assets/` 复制进 `Contents/Resources/assets`，并打印 bundle 路径、名称与标识。随后在仓库根目录用绝对路径启动该 bundle 内的可执行文件：
+
+```bash
 GPUI_UI_PREFERENCES_PATH="$PWD/artifacts/capture-preferences.json" \
 GPUI_CAPTURE_OUTPUT="$PWD/artifacts/frame.png" \
-  'target/GPUI Capture.app/Contents/MacOS/gpui-chat-clone' \
+  'target/GPUI Capture (gpui-<digest>).app/Contents/MacOS/gpui-chat-clone' \
   --theme=light --window-width=1440 --window-height=900
 ```
 
-Computer Use 先枚举应用，连接 **GPUI Capture**，读取可访问性树和截图，再定位操作。按 `Cmd+Shift+F12` 保存未缩放 PNG 与 `.render.json`，应用继续运行。结束时只关闭本次启动的专用实例。
+Computer Use 先枚举应用，连接打包脚本打印的那个名字，读取可访问性树和截图，再定位操作。按 `Cmd+Shift+F12` 保存未缩放 PNG 与 `.render.json`（含视口、DPR、可执行文件、bundle 标识与已解析的资源目录），应用继续运行。结束时只关闭本次启动的专用实例。
+
+过去两个 bundle 无法区分：各工作树共用同一个名称与 `com.openai.gpui-chat-clone.capture` 标识，`open -n "target/GPUI Capture.app"` 会按 LaunchServices 解析到已注册的那一份，可能是另一个构建目录里的旧副本——它的工作树没有 `assets/`，进程照常启动、文字照常渲染，但所有 SVG 都是空白。现在打包产物的名称与标识都带本工作树 slug，资源随 bundle 一起分发，`--print-diagnostics` 会打印可执行文件、bundle 身份以及每个资源候选路径与判定，验收运行可以自证在驱动哪一个构建。需要让 bundle 从别处读取资源时，用 `GPUI_ASSETS_DIR` 硬覆盖搜索。若所有候选都不可用，应用继续运行、向 stderr 告警，并在窗口顶部显示写明已尝试路径的红色条，截图不可能再悄悄呈现无图标的界面。`scripts/launch_project_hover_instance.sh` 使用同一套打包身份，会在本工作树的悬停验收实例已在运行时拒绝重复启动，并打印二进制路径、pid 与日志。
 
 自动恢复会话截图可追加 `--resume-thread=THREAD_ID --screenshot="$PWD/artifacts/resumed-thread.png"`。ID 接受原始 UUID 或 `local:<uuid>`。可选 `--resume-scroll-from-bottom=3200` 指定距底部的滚动距离，省略则停在底部。应用等待历史、侧栏、模型目录与三个稳定绘制帧后截图退出，失败或超时返回非零状态。请选择未被其他活动写入进程占用的线程。
 
@@ -227,6 +230,10 @@ Computer Use 先枚举应用，连接 **GPUI Capture**，读取可访问性树�
 | `--progress-ui-state=running/streaming/completed/interrupted` | 计划、搜索与等待归约；streaming 定时产生更新和完成，running 可中断。 |
 | `--typography-specimen --typography-display=N` | 字体样本与显示器选择，见 `src/typography.rs`。 |
 | `--pull-requests [--pull-requests-select=N \| --pull-requests-title=TEXT] [--pull-requests-tab=code\|review] [--pull-requests-list-tab=all\|reviewing\|authored] [--pull-requests-status=open\|merged\|closed\|all] [--pull-requests-search=TEXT] [--pull-requests-file-tree] [--pull-requests-scroll=px] [--pull-requests-action=...] [--pull-requests-comment-menu]` | Pull Requests 页面确定性状态：列表、标签、搜索、过滤、分组、详情分节、diff、文件树、Review 标签，以及 `scripts/capture_pull_requests_gpui.sh` 使用的交互状态。 |
+| `--project-hover-card=NAME` | 不依赖指针直接打开指定项目（按名称或稳定 id）的侧栏悬停卡片，用于悬停卡片截图的静态部分。 |
+| `--print-diagnostics` | 打印可执行文件路径、工作目录、编译工作树、bundle 名称与标识、已解析的资源目录及其来源，以及每个资源候选路径与判定，随后退出。用于证明验收运行驱动的是哪一个构建。 |
+
+`GPUI_ASSETS_DIR` 直接把加载器指向某个资源目录，并成为唯一候选，因此填错会明确失败，而不会悄悄改用别处的资源。未设置时的搜索顺序为：bundle 内的 `Contents/Resources/assets`、可执行文件旁的 `assets`、编译工作树、工作目录；只有包含 `icons/` 的目录才算可用。
 
 `--approval-replay=/absolute/fixture.json` 通过生产解析与响应路径回放离线 JSON-RPC。fixture 包含从 `turn/started` 到 item 和审批请求的 `events` 数组，可选 `cwd`、`userMessage`、`assistantMessage` 与 `failWrites`。响应写入相邻 `.responses.jsonl`；回放不执行命令，也不修改被审批文件。
 
@@ -247,6 +254,7 @@ export CHATGPT_CDP_HTTP="http://127.0.0.1:${CAPTURE_CDP_PORT:?Set a dedicated de
 | 账户菜单、退出登录 | `node scripts/cdp_capture_account.mjs --output artifacts/account-phase/chatgpt-reference --theme=light`；`scripts/capture_account_gpui.sh`；`python3 scripts/compare_account_phase.py` |
 | 设置矩阵 | `./node_modules/.bin/electron scripts/verify_chatgpt_settings.cjs`；`REFRESH_SETTINGS_REFERENCES=1 scripts/capture_settings_matrix.sh`；`python3 scripts/verify_settings_matrix.py` |
 | 已合并 Phase 1–4 局部组件门禁 | `python3 scripts/stage4/compare_merge_gate.py`（需要 `artifacts/merge-four-worktrees/` 下的专用 ChatGPT/GPUI 截图；每个局部组件阈值为 99%） |
+| 侧栏项目悬停卡片 | `CHATGPT_CDP_HTTP="$CHATGPT_CDP_HTTP" node scripts/cdp_capture_project_hover.mjs --output artifacts/project-hover/reference` 悬停真实行后采集参考卡片（几何、计算样式、图标与截图）；`--project-hover-card=NAME --screenshot=artifacts/project-hover/gpui/light-card.png` 采集本机卡片；`python3 scripts/compare_project_hover.py --reference artifacts/project-hover/reference --gpui artifacts/project-hover/gpui --output artifacts/project-hover/compare` 逐主题打分。`cargo test project_hover` 走与真实悬停相同的指针路径（延迟出现、停留在卡片上保持打开、移开后关闭）。 |
 | 图像生成 | `python3 scripts/compare_image_generation_component.py --help`，传入实测等尺寸裁切范围和 DPR。 |
 | 历史诊断 | `python3 scripts/audit_resume_rendering.py --help`；rollout 仅用于离线诊断。 |
 
@@ -263,7 +271,7 @@ cargo test -p gpui_macos --lib --features font-kit typography_
 cargo test -p gpui_apple --lib compositing_tests
 node scripts/cdp_capture_chatgpt_typography.mjs --artifact-dir=artifacts/typography/live
 node scripts/cdp_capture_typography_specimen.mjs artifacts/typography 1
-'target/GPUI Capture.app/Contents/MacOS/gpui-chat-clone' \
+'$(scripts/gpui_capture_binary.sh)' \
   --typography-specimen --screenshot=artifacts/typography/gpui-1x.png
 python3 scripts/compare_typography.py \
   artifacts/typography/electron-1x.png artifacts/typography/gpui-1x.png \

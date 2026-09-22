@@ -234,6 +234,12 @@ impl ChatApp {
             sidebar.open_project_menu_for_capture(project_id, cx)
         });
     }
+    /// Opens the sidebar project hover card for the screenshot path.
+    pub fn open_project_hover_card_for_capture(&mut self, project: &str, cx: &mut Context<Self>) {
+        self.sidebar.update(cx, |sidebar, cx| {
+            sidebar.open_project_hover_card_for_capture(project, cx)
+        });
+    }
     pub fn set_activity_scroll_for_capture(&mut self, offset: f32, cx: &mut Context<Self>) {
         self.sidebar.update(cx, |sidebar, cx| {
             sidebar.set_activity_scroll_for_capture(offset, cx)

@@ -11,12 +11,12 @@ root="${0:A:h:h}"
 cd "$root"
 
 output="${1:-artifacts/account-phase/ui-validation/gpui}"
-app="target/GPUI Capture.app/Contents/MacOS/gpui-chat-clone"
+app="$(scripts/gpui_capture_binary.sh)"
 prefs="$PWD/artifacts/account-phase/ui-validation/capture-preferences.json"
 mkdir -p "$output"
 
 if [[ ! -x "$app" ]]; then
-  echo "missing $app; build it with: cargo build --features screenshot" >&2
+  echo "missing $app; run scripts/package_gpui_capture.sh first" >&2
   exit 2
 fi
 

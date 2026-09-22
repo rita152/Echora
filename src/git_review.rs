@@ -151,6 +151,94 @@ pub fn existing_pull_request(root: &Path) -> Option<String> {
     url.starts_with("https://").then_some(url)
 }
 
+/// Repository identity the sidebar project hover card shows for a project root.
+/// The reference client renders the parsed `origin` remote (`owner/repo`) and
+/// falls back to the repository folder name when the remote cannot be parsed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProjectRepo {
+    pub root: PathBuf,
+    pub label: String,
+}
+
+/// Resolves the repository that owns `root` with the local Git CLI. A path that
+/// is not inside a repository returns `None`, which is what hides the card's
+/// repository row.
+pub fn project_repo(root: &Path) -> Option<ProjectRepo> {
+    let top = git_output(root, &["rev-parse", "--show-toplevel"])?;
+    let top = PathBuf::from(top.trim());
+    let label = git_output(root, &["config", "--get", "remote.origin.url"])
+        .and_then(|url| origin_owner_repo(&url))
+        .or_else(|| {
+            top.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })?;
+    (!label.trim().is_empty()).then_some(ProjectRepo { root: top, label })
+}
+
+/// Normalizes a Git remote the way the reference client does: an scp-style
+/// `user@host:path`, any `scheme://` form, embedded credentials, query strings,
+/// and a trailing `.git` all reduce to the last two path segments.
+pub fn origin_owner_repo(url: &str) -> Option<String> {
+    let mut text = url.trim().to_owned();
+    if text.is_empty() {
+        return None;
+    }
+    let mut host = None;
+    if let Some((before_at, after_at)) = text.split_once('@')
+        && !before_at.is_empty()
+        && !before_at.contains('/')
+        && !after_at.contains("://")
+        && let Some((host_name, path)) = after_at.split_once(':')
+        && !host_name.is_empty()
+        && !path.is_empty()
+    {
+        host = Some(host_name.to_owned());
+        text = format!("{host_name}/{path}");
+    }
+    if let Some((_, rest)) = text.split_once("://") {
+        text = rest.to_owned();
+    }
+    if let Some(at) = text.find('@') {
+        text = text[at + 1..].to_owned();
+    }
+    for separator in ['?', '#'] {
+        if let Some(index) = text.find(separator) {
+            text.truncate(index);
+        }
+    }
+    if text.to_ascii_lowercase().ends_with(".git") {
+        text.truncate(text.len() - 4);
+    }
+    let mut segments = text.split('/').filter(|part| !part.is_empty());
+    if host.is_none() {
+        // A host-less remote keeps the same shape: the first segment is the
+        // host slot and never becomes the owner.
+        segments.next()?;
+    }
+    let segments = segments.collect::<Vec<_>>();
+    let repo_name = segments.last().copied()?;
+    let owner = segments
+        .get(segments.len().checked_sub(2)?)
+        .copied()
+        .unwrap_or_default();
+    (!owner.is_empty() && !repo_name.is_empty()).then(|| format!("{owner}/{repo_name}"))
+}
+
+fn git_output(root: &Path, args: &[&str]) -> Option<String> {
+    let out = process::run(
+        Command::new("git").current_dir(root).args(args),
+        None,
+        Duration::from_secs(5),
+    )
+    .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(out.stdout).ok()?;
+    let text = text.trim().to_owned();
+    (!text.is_empty()).then_some(text)
+}
+
 fn pull_request_command(root: &Path, options: &PullRequestOptions, head: &str) -> Command {
     let mut cmd = Command::new("gh");
     cmd.current_dir(root)

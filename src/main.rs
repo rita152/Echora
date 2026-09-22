@@ -1,6 +1,7 @@
 mod agent;
 mod app;
 mod apps;
+mod assets;
 mod components;
 mod configuration;
 mod conversation;
@@ -18,7 +19,7 @@ mod theme;
 mod typography;
 mod workspace;
 
-use std::{borrow::Cow, fs, path::PathBuf};
+use std::{fs, path::PathBuf};
 
 #[cfg(feature = "screenshot")]
 use std::path::Path;
@@ -32,10 +33,9 @@ const RESUMED_THREAD_STABLE_FRAMES: usize = 3;
 #[cfg(feature = "screenshot")]
 const CHAT_SEARCH_STABLE_FRAMES: usize = 4;
 
-use anyhow::Result;
 use gpui::{
-    App, AppContext, AssetSource, Bounds, SharedString, WindowAppearance,
-    WindowBackgroundAppearance, WindowBounds, WindowOptions, px, size,
+    App, AppContext, Bounds, WindowAppearance, WindowBackgroundAppearance, WindowBounds,
+    WindowOptions, px, size,
 };
 use gpui_platform::application;
 
@@ -123,10 +123,6 @@ fn configure_native_blur_sampling(window: &mut gpui::Window) {
 #[cfg(not(target_os = "macos"))]
 fn configure_native_blur_sampling(_window: &mut gpui::Window) {}
 
-struct Assets {
-    base: PathBuf,
-}
-
 #[cfg(feature = "screenshot")]
 fn save_screenshot(window: &gpui::Window, path: &str) -> anyhow::Result<()> {
     if let Some(parent) = Path::new(path).parent()
@@ -135,6 +131,22 @@ fn save_screenshot(window: &gpui::Window, path: &str) -> anyhow::Result<()> {
         fs::create_dir_all(parent)?;
     }
     window.render_to_image()?.save(path)?;
+    // Every capture describes itself: without the DPR and the resolved assets a
+    // 1x frame or an iconless build can pass as a valid comparison input.
+    let metadata = serde_json::json!({
+        "viewportWidth": f32::from(window.viewport_size().width),
+        "viewportHeight": f32::from(window.viewport_size().height),
+        "dpr": window.scale_factor(),
+        "source": "GPUI render_to_image; no resizing or alignment",
+        "executable": std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default(),
+        "bundleIdentifier": bundle_plist_value("CFBundleIdentifier").unwrap_or_default(),
+        "assetsBase": assets::status().base.clone().map(|p| p.display().to_string()).unwrap_or_default(),
+        "assetsOrigin": assets::status().origin.map(|o| o.label()).unwrap_or_default(),
+    });
+    let _ = fs::write(
+        format!("{path}.render.json"),
+        serde_json::to_vec_pretty(&metadata).unwrap(),
+    );
     Ok(())
 }
 
@@ -144,7 +156,7 @@ fn capture_frame(window: &mut gpui::Window, path: String, frames: usize) {
         if frames>1 {window.refresh();capture_frame(window,path,frames-1);} else {
             match save_screenshot(window,&path) {
                 Ok(())=>{
-                    let metadata=serde_json::json!({"viewportWidth":f32::from(window.viewport_size().width),"viewportHeight":f32::from(window.viewport_size().height),"dpr":window.scale_factor(),"source":"GPUI render_to_image; no resizing or alignment","keyContexts":format!("{:?}",window.context_stack()),"approvalActionAvailable":window.is_action_available(&components::approval::ApprovalShortcut("escape"),cx)});
+                    let metadata=serde_json::json!({"viewportWidth":f32::from(window.viewport_size().width),"viewportHeight":f32::from(window.viewport_size().height),"dpr":window.scale_factor(),"source":"GPUI render_to_image; no resizing or alignment","keyContexts":format!("{:?}",window.context_stack()),"approvalActionAvailable":window.is_action_available(&components::approval::ApprovalShortcut("escape"),cx),"executable":std::env::current_exe().map(|p|p.display().to_string()).unwrap_or_default(),"bundleIdentifier":bundle_plist_value("CFBundleIdentifier").unwrap_or_default(),"assetsBase":assets::status().base.clone().map(|p|p.display().to_string()).unwrap_or_default(),"assetsOrigin":assets::status().origin.map(|o|o.label()).unwrap_or_default()});
                     let _=std::fs::write(format!("{path}.render.json"),serde_json::to_vec_pretty(&metadata).unwrap());
                     println!("capture-frame: {path}");
                 }
@@ -716,34 +728,81 @@ fn schedule_resumed_thread_screenshot(
     });
 }
 
-impl AssetSource for Assets {
-    fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
-        fs::read(self.base.join(path))
-            .map(Cow::Owned)
-            .map(Some)
-            .map_err(Into::into)
-    }
-
-    fn list(&self, path: &str) -> Result<Vec<SharedString>> {
-        Ok(fs::read_dir(self.base.join(path))?
-            .filter_map(|entry| {
-                entry
-                    .ok()?
-                    .file_name()
-                    .into_string()
-                    .ok()
-                    .map(SharedString::from)
-            })
-            .collect())
-    }
-}
-
 fn normalize_resume_thread_id(value: &str) -> String {
     value.strip_prefix("local:").unwrap_or(value).to_owned()
 }
 
+/// Prints the facts a verification run needs to prove which build it drives:
+/// executable, bundle identity, and the assets that were resolved. Two bundles
+/// from different worktrees share a name and an identifier, so a screenshot
+/// alone cannot tell them apart.
+fn print_diagnostics() {
+    use std::fmt::Write as _;
+    let status = assets::status();
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "executable: {}",
+        std::env::current_exe()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|error| format!("unavailable: {error}"))
+    );
+    let _ = writeln!(
+        out,
+        "working directory: {}",
+        std::env::current_dir()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|error| format!("unavailable: {error}"))
+    );
+    let _ = writeln!(out, "compiled worktree: {}", env!("CARGO_MANIFEST_DIR"));
+    for key in ["CFBundleName", "CFBundleIdentifier"] {
+        match bundle_plist_value(key) {
+            Some(value) => {
+                let _ = writeln!(out, "{key}: {value}");
+            }
+            None => {
+                let _ = writeln!(out, "{key}: (not a bundle)");
+            }
+        }
+    }
+    let _ = writeln!(out, "assets base: {}", status.summary());
+    for candidate in &status.candidates {
+        let _ = writeln!(
+            out,
+            "assets candidate: {} {}",
+            if candidate.usable { "ok" } else { "--" },
+            candidate.path.display()
+        );
+    }
+    let _ = writeln!(out, "screenshot feature: {}", cfg!(feature = "screenshot"));
+    // Diagnostics are routinely piped into `head`/`grep -q`; a closed pipe must
+    // not abort the process.
+    let _ = std::io::Write::write_all(&mut std::io::stdout(), out.as_bytes());
+}
+
+/// Minimal `Info.plist` read: the capture bundle only needs two string keys,
+/// and pulling in a plist parser for them would not earn its dependency.
+fn bundle_plist_value(key: &str) -> Option<String> {
+    let plist = std::env::current_exe()
+        .ok()?
+        .parent()?
+        .join("../Info.plist");
+    let text = fs::read_to_string(plist).ok()?;
+    let after_key = text.split(&format!("<key>{key}</key>")).nth(1)?;
+    let value = after_key
+        .split("<string>")
+        .nth(1)?
+        .split("</string>")
+        .next()?;
+    Some(value.trim().to_owned())
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|arg| arg == "--print-diagnostics") {
+        print_diagnostics();
+        return;
+    }
     let language = args.iter().find_map(|arg| arg.strip_prefix("--language="));
     let language = match language {
         Some(value) => i18n::Language::from_name(value).unwrap_or_else(|| {
@@ -931,6 +990,10 @@ fn main() {
         arg.strip_prefix("--project-menu-open=")
             .map(ToOwned::to_owned)
     });
+    let project_hover_card = args.iter().find_map(|arg| {
+        arg.strip_prefix("--project-hover-card=")
+            .map(ToOwned::to_owned)
+    });
     let project_create_open = args.iter().any(|arg| arg == "--project-create-open");
     let project_create_remote = args.iter().any(|arg| arg == "--project-create-remote");
     let activity_open = args.iter().any(|arg| arg == "--activity-open");
@@ -1065,10 +1128,12 @@ fn main() {
         return;
     }
     typography::configure();
+    let asset_status = assets::status();
+    if asset_status.is_missing() {
+        eprintln!("{}", assets::missing_warning(asset_status));
+    }
     application()
-        .with_assets(Assets {
-            base: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"),
-        })
+        .with_assets(assets::Assets::load_from(asset_status))
         .run(move |cx: &mut App| {
             typography::initialize_fonts(cx);
             #[cfg(feature = "screenshot")]
@@ -1217,6 +1282,9 @@ fn main() {
                         }
                         if let Some(project_id) = project_menu_open {
                             app.open_project_menu_for_capture(project_id, cx);
+                        }
+                        if let Some(project) = project_hover_card.clone() {
+                            app.open_project_hover_card_for_capture(&project, cx);
                         }
                         if project_create_open {
                             app.open_project_creation(cx);

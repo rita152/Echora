@@ -1564,6 +1564,7 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "编写计划" => "Writing plan",
         "编码" => "Coding",
         "编辑" => "Edit",
+        "编辑项目" => "Edit project",
         "编辑 " => "edit ",
         "编辑了多个文件" => "Edited multiple files",
         "编辑了文件" => "Edited files",

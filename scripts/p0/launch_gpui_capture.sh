@@ -7,13 +7,13 @@
 set -eu
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-bundle="$root/target/GPUI Capture.app/Contents/MacOS/gpui-chat-clone"
+bundle="$("$root/scripts/gpui_capture_binary.sh")"
 log_dir="${P0_WIRE_LOG_DIR:-$root/artifacts/p0-stage/wire/gpui}"
 shim_dir="$root/artifacts/p0-stage/wire-shims/gpui"
 prefs="${GPUI_UI_PREFERENCES_PATH:-$root/artifacts/capture-preferences.json}"
 
 if [ ! -x "$bundle" ]; then
-  echo "missing $bundle; run cargo build --features screenshot and repackage first" >&2
+  echo "missing $bundle; run scripts/package_gpui_capture.sh first" >&2
   exit 2
 fi
 
@@ -29,4 +29,3 @@ env \
   "$bundle" "$@" >"$log_dir/gpui-instance.log" 2>&1 &
 
 echo "launched GPUI capture instance; logs in $log_dir"
-

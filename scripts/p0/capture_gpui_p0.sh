@@ -5,7 +5,7 @@
 set -eu
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-bundle="$root/target/GPUI Capture.app/Contents/MacOS/gpui-chat-clone"
+bundle="$("$root/scripts/gpui_capture_binary.sh")"
 out="$root/artifacts/p0-stage/actual"
 mkdir -p "$out"
 
@@ -29,4 +29,3 @@ for theme in dark light; do
   capture files-results "$theme" --chat-search-state=files-result --chat-search-query=chat_search
   capture files-none "$theme" --chat-search-state=files-none --chat-search-query=zzzz-no-such-file
 done
-

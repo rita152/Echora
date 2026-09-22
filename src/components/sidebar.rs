@@ -1,7 +1,9 @@
 use std::{
-    collections::{BTreeSet, HashSet},
+    cell::RefCell,
+    collections::{BTreeSet, HashMap, HashSet},
     path::PathBuf,
     process::Command,
+    rc::Rc,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -15,13 +17,15 @@ use gpui::{
 
 use crate::{
     agent::{
-        AgentCapability, Project, ProjectId, ThreadActivity, ThreadId, ThreadSummary, UpdateProject,
+        AgentCapability, AgentThreadActiveFlag, Project, ProjectId, ThreadActivity, ThreadId,
+        ThreadSummary, UpdateProject,
     },
     components::{
         account::AccountView,
         icons::{chevron, icon},
         prompt_input::{PromptInput, PromptSubmitted},
     },
+    git_review::ProjectRepo,
     theme::{Theme, ThemeMode},
     workspace::{WorkspaceSnapshot, WorkspaceStore, project_id_for_thread},
 };
@@ -94,6 +98,29 @@ const MAX_VISIBLE_RECENTS: usize = 10;
 const SIDEBAR_BODY_FONT_WEIGHT: gpui::FontWeight = crate::theme::UI_BODY_FONT_WEIGHT;
 const MARQUEE_HOVER_DELAY: Duration = Duration::from_millis(350);
 const MARQUEE_SPEED: f32 = 28.0;
+/// Sidebar project hover card measured from the CDP reference capture
+/// (`artifacts/project-hover-20260921/`). The card anchors to the row it
+/// describes, not to the pointer: 320 px wide, 15 px radius, 8 px padding,
+/// 6 px between sections, 4 px between rows, 24 px header, 20 px rows.
+const PROJECT_HOVER_CARD_WIDTH: f32 = 320.0;
+const PROJECT_HOVER_CARD_RADIUS: f32 = 15.0;
+const PROJECT_HOVER_CARD_PADDING: f32 = 8.0;
+const PROJECT_HOVER_CARD_GAP: f32 = 6.0;
+const PROJECT_HOVER_ROW_GAP: f32 = 4.0;
+const PROJECT_HOVER_ROW_HEIGHT: f32 = 20.0;
+const PROJECT_HOVER_HEADER_HEIGHT: f32 = 24.0;
+const PROJECT_HOVER_ICON_SLOT: f32 = 16.0;
+const PROJECT_HOVER_ICON_GAP: f32 = 6.0;
+const PROJECT_HOVER_INLINE_GAP: f32 = 8.0;
+const PROJECT_HOVER_SECTION_PADDING: f32 = 6.0;
+const PROJECT_HOVER_ROW_RADIUS: f32 = 10.0;
+const PROJECT_HOVER_TRAILING_SLOT: f32 = 20.0;
+const PROJECT_HOVER_CARD_OFFSET_X: f32 = 3.0;
+const PROJECT_HOVER_CARD_OFFSET_Y: f32 = 1.0;
+/// The reference opens the card 239 ms after the pointer enters the row.
+const PROJECT_HOVER_CARD_DELAY: Duration = Duration::from_millis(240);
+/// Grace period so a pointer crossing the 3 px gap into the card keeps it.
+const PROJECT_HOVER_CARD_CLOSE_DELAY: Duration = Duration::from_millis(60);
 const PROJECT_THREAD_TITLE_INSETS: f32 = 120.0;
 const RECENT_THREAD_TITLE_INSETS: f32 = 96.0;
 const THREAD_ACTION_RAIL_INSETS: f32 = 51.0;
@@ -176,6 +203,86 @@ fn account_menu_separator(theme: Theme) -> Div {
         .flex()
         .items_center()
         .child(div().h(px(1.0)).w_full().bg(theme.border))
+}
+
+/// The reference shortens a project path exactly once: a leading
+/// `/Users/<name>` becomes `~`, everything else stays absolute.
+fn home_shortened_path(path: &std::path::Path) -> String {
+    let text = path.to_string_lossy();
+    let mut parts = text.splitn(4, '/');
+    let (empty, users, account) = (parts.next(), parts.next(), parts.next());
+    match (empty, users, account) {
+        (Some(""), Some("Users"), Some(account)) if !account.is_empty() => match parts.next() {
+            Some(rest) if !rest.is_empty() => format!("~/{rest}"),
+            _ => "~".to_owned(),
+        },
+        _ => text.into_owned(),
+    }
+}
+
+/// Path rows the card shows for a project: each project root with the home
+/// prefix shortened, de-duplicated, and never repeating the project label or
+/// the repository row the reference already printed.
+fn project_hover_paths(project: &Project, repo: Option<&ProjectRepo>) -> Vec<(String, PathBuf)> {
+    let label = project.name.trim().to_lowercase();
+    let mut seen = HashSet::new();
+    if let Some(repo) = repo {
+        seen.insert(repo.label.trim().to_lowercase());
+    }
+    let mut paths = Vec::new();
+    for root in &project.roots {
+        let display = home_shortened_path(root);
+        let key = display.trim().to_lowercase();
+        if key.is_empty() || key == label || !seen.insert(key) {
+            continue;
+        }
+        paths.push((display, root.clone()));
+    }
+    paths
+}
+
+/// The reference's inline summary row: the task count, then one entry per
+/// attention bucket that has tasks, separated by middle dots.
+fn project_hover_summary(threads: &[&ThreadSummary]) -> String {
+    let mut parts = vec![if threads.len() == 1 {
+        crate::i18n::format!("{count} 个任务" => "{count}\u{a0}task", count = threads.len())
+    } else {
+        crate::i18n::format!("{count} 个任务" => "{count}\u{a0}tasks", count = threads.len())
+    }];
+    let waiting = threads
+        .iter()
+        .filter(|thread| thread_is_waiting(thread))
+        .count();
+    let running = threads
+        .iter()
+        .filter(|thread| thread_is_running(thread))
+        .count();
+    if waiting > 0 {
+        parts.push(crate::i18n::format!(
+            "{count} 个等待输入" => "{count}\u{a0}waiting",
+            count = waiting
+        ));
+    }
+    if running > 0 {
+        parts.push(crate::i18n::format!(
+            "{count} 个进行中" => "{count}\u{a0}active",
+            count = running
+        ));
+    }
+    parts.join(" · ")
+}
+
+fn thread_is_waiting(thread: &ThreadSummary) -> bool {
+    matches!(
+        &thread.activity,
+        ThreadActivity::Active { flags } if flags
+            .iter()
+            .any(|flag| matches!(flag, AgentThreadActiveFlag::WaitingOnApproval | AgentThreadActiveFlag::WaitingOnUserInput))
+    )
+}
+
+fn thread_is_running(thread: &ThreadSummary) -> bool {
+    matches!(&thread.activity, ThreadActivity::Active { flags } if flags.is_empty())
 }
 
 /// Account action failures stay visible on the surfaces that can retry them.
@@ -361,6 +468,18 @@ pub struct SidebarView {
     selected_thread_id: Option<ThreadId>,
     hovered_thread_id: Option<ThreadId>,
     hovered_project_id: Option<ProjectId>,
+    /// Bounds of every rendered project row, recorded while prepainting so the
+    /// hover card can anchor to the row instead of the pointer.
+    project_row_bounds: Rc<RefCell<HashMap<ProjectId, Bounds<Pixels>>>>,
+    /// Project whose hover card is on screen, plus whether the pointer sits
+    /// inside the card (the row and the card are one hover region).
+    project_hover_card: Option<ProjectId>,
+    project_hover_card_hovered: bool,
+    /// Repository row content, resolved once per project from local Git.
+    project_repos: HashMap<ProjectId, Option<ProjectRepo>>,
+    project_repos_pending: HashSet<ProjectId>,
+    /// Capture request that arrived before the workspace listed its projects.
+    pending_project_hover_card: Option<String>,
     hovered_section_id: Option<&'static str>,
     marquee_started_at: Option<Instant>,
     marquee_animation_ends_at: Option<Instant>,
@@ -402,6 +521,10 @@ impl SidebarView {
             while let Ok(snapshot) = receiver.recv().await {
                 let _ = this.update(cx, |this, cx| {
                     this.snapshot = snapshot;
+                    if let Some(project) = this.pending_project_hover_card.clone() {
+                        this.pending_project_hover_card = None;
+                        this.open_project_hover_card_for_capture(&project, cx);
+                    }
                     cx.notify();
                 });
             }
@@ -419,6 +542,12 @@ impl SidebarView {
             selected_thread_id: None,
             hovered_thread_id: None,
             hovered_project_id: None,
+            project_row_bounds: Rc::new(RefCell::new(HashMap::new())),
+            project_hover_card: None,
+            project_hover_card_hovered: false,
+            project_repos: HashMap::new(),
+            project_repos_pending: HashSet::new(),
+            pending_project_hover_card: None,
             hovered_section_id: None,
             marquee_started_at: None,
             marquee_animation_ends_at: None,
@@ -550,6 +679,122 @@ impl SidebarView {
             self.menu_origin = (172.0, 160.0);
             cx.notify();
         }
+    }
+
+    /// Opens the project hover card without a pointer so the screenshot path
+    /// can capture the same surface a real hover produces. `project` matches
+    /// the project name first and its stable id second.
+    pub fn open_project_hover_card_for_capture(&mut self, project: &str, cx: &mut Context<Self>) {
+        let project_id = self
+            .snapshot
+            .projects
+            .iter()
+            .find(|candidate| candidate.name == project || candidate.project_id == project)
+            .map(|project| project.project_id.clone());
+        let Some(project_id) = project_id else {
+            // The workspace may not have listed its projects yet.
+            self.pending_project_hover_card = Some(project.to_owned());
+            return;
+        };
+        self.project_hover_card = Some(project_id.clone());
+        self.ensure_project_repo(project_id, cx);
+        cx.notify();
+    }
+
+    #[cfg(test)]
+    pub fn project_hover_card_is_open(&self) -> bool {
+        self.project_hover_card.is_some()
+    }
+
+    /// The pointer entered or left a project row. The card opens after the
+    /// reference's 239 ms delay and stays open while either the row or the card
+    /// itself is hovered.
+    fn set_project_row_hovered(
+        &mut self,
+        project_id: ProjectId,
+        hovered: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.hovered_project_id = hovered.then(|| project_id.clone());
+        if hovered {
+            self.schedule_project_hover_card(project_id, cx);
+        } else {
+            self.schedule_project_hover_card_close(cx);
+        }
+        cx.notify();
+    }
+
+    fn schedule_project_hover_card(&mut self, project_id: ProjectId, cx: &mut Context<Self>) {
+        if self.project_hover_card.as_deref() == Some(project_id.as_str()) {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(PROJECT_HOVER_CARD_DELAY)
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.hovered_project_id.as_deref() != Some(project_id.as_str()) {
+                    return;
+                }
+                this.project_hover_card = Some(project_id.clone());
+                this.ensure_project_repo(project_id, cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Delayed so a pointer crossing from the row into the card never closes it.
+    fn schedule_project_hover_card_close(&mut self, cx: &mut Context<Self>) {
+        if self.project_hover_card.is_none() {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(PROJECT_HOVER_CARD_CLOSE_DELAY)
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.project_hover_card_hovered || this.hovered_project_id.is_some() {
+                    return;
+                }
+                if this.project_hover_card.take().is_some() {
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// The card's repository row comes from the local repository that owns the
+    /// project root, so it is resolved once per project on first hover.
+    fn ensure_project_repo(&mut self, project_id: ProjectId, cx: &mut Context<Self>) {
+        if self.project_repos.contains_key(&project_id)
+            || self.project_repos_pending.contains(&project_id)
+        {
+            return;
+        }
+        let Some(root) = self
+            .snapshot
+            .projects
+            .iter()
+            .find(|project| project.project_id == project_id)
+            .and_then(|project| project.roots.first().cloned())
+        else {
+            return;
+        };
+        self.project_repos_pending.insert(project_id.clone());
+        cx.spawn(async move |this, cx| {
+            let repo = cx
+                .background_executor()
+                .spawn(async move { crate::git_review::project_repo(&root) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.project_repos_pending.remove(&project_id);
+                this.project_repos.insert(project_id, repo);
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     /// Mirrors the visual state produced by a real sidebar thread selection
@@ -1227,8 +1472,10 @@ impl SidebarView {
         let show_all = self.show_all_projects.contains(&project_id);
         let toggle_id = project_id.clone();
         let hover_id = project_id.clone();
+        let bounds_id = project_id.clone();
         let menu_id = project_id.clone();
         let new_chat_project = project.clone();
+        let row_bounds = self.project_row_bounds.clone();
         let actions = div()
             .flex()
             .items_center()
@@ -1305,9 +1552,22 @@ impl SidebarView {
                 )
                 .child(title)
                 .child(actions)
+                .child(
+                    // Records the row's window bounds for the hover card, which
+                    // is deferred so the sidebar's own clip never cuts it off.
+                    canvas(
+                        move |bounds, _window, _cx| {
+                            row_bounds.borrow_mut().insert(bounds_id.clone(), bounds);
+                        },
+                        |_, _, _window, _cx| {},
+                    )
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full(),
+                )
                 .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                    this.hovered_project_id = hovered.then(|| hover_id.clone());
-                    cx.notify();
+                    this.set_project_row_hovered(hover_id.clone(), *hovered, cx);
                 }))
                 .when(!pending && !rename_active, |row| {
                     row.on_click(cx.listener(move |this, _, _, cx| {
@@ -1365,6 +1625,270 @@ impl SidebarView {
             }
         }
         group
+    }
+
+    /// The sidebar project hover card. Row order, geometry, and colors come
+    /// from the ChatGPT reference capture in `artifacts/project-hover-20260921/`:
+    /// the card anchors three pixels right of the row it describes and
+    /// top-aligns with it, mirroring the reference's `data-side="right"` tooltip.
+    fn project_hover_card(
+        &self,
+        project: &Project,
+        theme: Theme,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<Div> {
+        let project_id = project.project_id.clone();
+        let threads = self
+            .snapshot
+            .recent_threads
+            .iter()
+            .filter(|thread| {
+                project_id_for_thread(thread, &self.snapshot.projects).as_deref()
+                    == Some(project_id.as_str())
+            })
+            .collect::<Vec<_>>();
+        let summary = project_hover_summary(&threads);
+        let repo = self
+            .project_repos
+            .get(&project_id)
+            .and_then(|repo| repo.clone())
+            .filter(|repo| repo.label.trim().to_lowercase() != project.name.trim().to_lowercase());
+        let paths = project_hover_paths(project, repo.as_ref());
+
+        let card_hover_id = project_id.clone();
+        let rename_id = project_id.clone();
+        let rename_name = project.name.clone();
+        let edit_options_id = project_id.clone();
+        let path_group = format!("project-hover-path-{project_id}");
+
+        let header = div()
+            .h(px(PROJECT_HOVER_HEADER_HEIGHT))
+            .w_full()
+            .min_w(px(0.0))
+            .flex()
+            .items_center()
+            .gap(px(PROJECT_HOVER_ICON_GAP))
+            .child(Self::project_hover_icon("project-hover-marker", theme))
+            .child(
+                div()
+                    .min_w(px(0.0))
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .gap(px(PROJECT_HOVER_INLINE_GAP))
+                    .child(
+                        div()
+                            .id(format!("project-hover-name-{project_id}"))
+                            .min_w(px(0.0))
+                            .flex_shrink_1()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .rounded(px(PROJECT_HOVER_ROW_RADIUS))
+                            .text_size(px(14.0))
+                            .line_height(px(24.0))
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(theme.text)
+                            .cursor_pointer()
+                            .hover(move |style| style.bg(theme.sidebar_hover))
+                            .child(project.name.clone())
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.start_rename(
+                                    RenameTarget::Project(rename_id.clone()),
+                                    rename_name.clone(),
+                                    cx,
+                                );
+                            })),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        // The reference always shows the pin action here; this
+                        // build has no project pinning, so the icon stays inert.
+                        div()
+                            .flex_none()
+                            .size(px(24.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(icon("project-pin", theme.text_tertiary.into()).size(px(16.0))),
+                    ),
+            );
+
+        let mut card = div()
+            .id(format!("project-hover-card-{project_id}"))
+            .w(px(PROJECT_HOVER_CARD_WIDTH))
+            .p(px(PROJECT_HOVER_CARD_PADDING))
+            .flex()
+            .flex_col()
+            .gap(px(PROJECT_HOVER_CARD_GAP))
+            .rounded(px(PROJECT_HOVER_CARD_RADIUS))
+            .border(px(0.5))
+            .border_color(theme.border)
+            .bg(theme.project_hover_surface)
+            .shadow(vec![
+                gpui::BoxShadow::new(px(0.0), px(8.0), theme.profile_menu_shadow.into())
+                    .blur_radius(px(16.0))
+                    .spread_radius(px(-4.0)),
+            ])
+            .font_family(".SystemUIFont")
+            .text_size(px(13.0))
+            .line_height(px(PROJECT_HOVER_ROW_HEIGHT))
+            .text_color(theme.text)
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                this.project_hover_card_hovered = *hovered;
+                if !*hovered && this.hovered_project_id.as_deref() != Some(card_hover_id.as_str()) {
+                    this.project_hover_card = None;
+                }
+                cx.notify();
+            }))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(PROJECT_HOVER_ROW_GAP))
+                    .child(header)
+                    .child(Self::project_hover_row(
+                        format!("project-hover-tasks-{project_id}"),
+                        "project-hover-tasks",
+                        summary,
+                        theme,
+                    )),
+            );
+
+        if repo.is_some() || !paths.is_empty() {
+            let mut sources = div()
+                .flex()
+                .flex_col()
+                .gap(px(PROJECT_HOVER_ROW_GAP))
+                .border_t(px(1.0))
+                .border_color(theme.border)
+                .pt(px(PROJECT_HOVER_SECTION_PADDING));
+            if let Some(repo) = &repo {
+                sources = sources.child(Self::project_hover_row(
+                    format!("project-hover-repo-{project_id}"),
+                    "project-hover-repo",
+                    repo.label.clone(),
+                    theme,
+                ));
+            }
+            for (index, (display, path)) in paths.into_iter().enumerate() {
+                let reveal = path.clone();
+                sources = sources.child(
+                    div()
+                        .id(format!("project-hover-path-{project_id}-{index}"))
+                        .group(path_group.clone())
+                        .h(px(PROJECT_HOVER_ROW_HEIGHT))
+                        .w_full()
+                        .min_w(px(0.0))
+                        .rounded(px(PROJECT_HOVER_ROW_RADIUS))
+                        .flex()
+                        .items_center()
+                        .gap(px(PROJECT_HOVER_ICON_GAP))
+                        .cursor_pointer()
+                        .hover(move |style| style.bg(theme.sidebar_hover))
+                        .child(Self::project_hover_icon("project-hover-path", theme))
+                        .child(Self::project_hover_text(display, theme))
+                        .child(
+                            div()
+                                .flex_none()
+                                .size(px(PROJECT_HOVER_TRAILING_SLOT))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .opacity(0.0)
+                                .group_hover(path_group.clone(), |slot| slot.opacity(1.0))
+                                .child(
+                                    icon("project-hover-open", theme.text_tertiary.into())
+                                        .size(px(14.0)),
+                                ),
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.reveal_in_finder(reveal.clone(), cx);
+                        })),
+                );
+            }
+            card = card.child(sources);
+        }
+
+        card.child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(PROJECT_HOVER_ROW_GAP))
+                .border_t(px(1.0))
+                .border_color(theme.border)
+                .pt(px(PROJECT_HOVER_SECTION_PADDING))
+                .child(
+                    div()
+                        .id(format!("project-hover-edit-{project_id}"))
+                        .h(px(PROJECT_HOVER_ROW_HEIGHT))
+                        .w_full()
+                        .min_w(px(0.0))
+                        .rounded(px(PROJECT_HOVER_ROW_RADIUS))
+                        .flex()
+                        .items_center()
+                        .gap(px(PROJECT_HOVER_ICON_GAP))
+                        .cursor_pointer()
+                        .hover(move |style| style.bg(theme.sidebar_hover))
+                        .child(Self::project_hover_icon("project-hover-edit", theme))
+                        .child(Self::project_hover_text(
+                            crate::i18n::text("编辑项目").to_owned(),
+                            theme,
+                        ))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.project_menu_id = Some(edit_options_id.clone());
+                            this.thread_menu_id = None;
+                            this.delete_confirmation = None;
+                            this.menu_origin = (160.0, 160.0);
+                            cx.notify();
+                        })),
+                ),
+        )
+    }
+
+    fn project_hover_icon(glyph: &'static str, theme: Theme) -> Div {
+        div()
+            .w(px(PROJECT_HOVER_ICON_SLOT))
+            .h(px(PROJECT_HOVER_ROW_HEIGHT))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(icon(glyph, theme.text_tertiary.into()).size(px(PROJECT_HOVER_ICON_SLOT)))
+    }
+
+    fn project_hover_text(text: String, theme: Theme) -> Div {
+        div()
+            .min_w(px(0.0))
+            .flex_1()
+            .overflow_hidden()
+            .whitespace_nowrap()
+            .text_size(px(13.0))
+            .line_height(px(PROJECT_HOVER_ROW_HEIGHT))
+            .text_color(theme.text)
+            .child(text)
+    }
+
+    /// A read-only hover card row: icon column plus a single text line.
+    fn project_hover_row(
+        id: String,
+        glyph: &'static str,
+        text: String,
+        theme: Theme,
+    ) -> gpui::Stateful<Div> {
+        div()
+            .id(id)
+            .h(px(PROJECT_HOVER_ROW_HEIGHT))
+            .w_full()
+            .min_w(px(0.0))
+            .flex()
+            .items_center()
+            .gap(px(PROJECT_HOVER_ICON_GAP))
+            .child(Self::project_hover_icon(glyph, theme))
+            .child(Self::project_hover_text(text, theme))
     }
 
     fn pinned_section(
@@ -2689,6 +3213,33 @@ impl Render for SidebarView {
                     .child(self.account_menu(theme, cx)),
             ));
         }
+        let hover_card_anchor = self.project_hover_card.as_deref().and_then(|project_id| {
+            self.project_row_bounds
+                .borrow()
+                .get(project_id)
+                .copied()
+                .map(|bounds| (project_id.to_owned(), bounds))
+        });
+        if let Some((project_id, bounds)) = hover_card_anchor
+            && let Some(project) = self
+                .snapshot
+                .projects
+                .iter()
+                .find(|project| project.project_id == project_id)
+        {
+            // Anchored to the row, not the pointer: the deferred draw keeps the
+            // card outside the sidebar's own clip, exactly like the reference
+            // tooltip that overhangs the sidebar into the main pane.
+            let left = f32::from(bounds.origin.x + bounds.size.width) + PROJECT_HOVER_CARD_OFFSET_X;
+            let top = f32::from(bounds.origin.y) + PROJECT_HOVER_CARD_OFFSET_Y;
+            sidebar = sidebar.child(deferred(
+                div()
+                    .absolute()
+                    .left(px(left))
+                    .top(px(top))
+                    .child(self.project_hover_card(project, theme, cx)),
+            ));
+        }
         sidebar
     }
 }
@@ -2707,13 +3258,18 @@ mod tests {
     use async_channel::{Receiver, Sender};
     use gpui::{Bounds, MouseButton, TestApp, WindowBounds, WindowOptions, point, px, size};
 
-    use super::{ROW_HEIGHT, ROW_RADIUS, SIDEBAR_TITLEBAR_SAFE_TOP, SIDEBAR_WIDTH, SidebarView};
+    use super::{
+        PROJECT_HOVER_CARD_CLOSE_DELAY, PROJECT_HOVER_CARD_DELAY, PROJECT_HOVER_HEADER_HEIGHT,
+        ROW_HEIGHT, ROW_RADIUS, SIDEBAR_TITLEBAR_SAFE_TOP, SIDEBAR_WIDTH, SidebarView,
+        home_shortened_path, project_hover_paths, project_hover_summary,
+    };
     use crate::{
         agent::{
             AgentBackend, AgentCapabilities, AgentCapability, AgentConnectionEvent, AgentEvent,
             AgentModelCatalog, AgentPermissionProfile, AgentRequest, AgentRun, Page, PageRequest,
             Project, ThreadActivity, ThreadListRequest, ThreadSummary, WorkspaceResult,
         },
+        git_review::ProjectRepo,
         theme::ThemeMode,
         workspace::WorkspaceStore,
     };
@@ -2931,6 +3487,165 @@ mod tests {
         // Clicking the account row again closes the menu it opened.
         window.simulate_click(point(px(80.0), px(row_y)), MouseButton::Left);
         assert!(!window.read(|sidebar, _| sidebar.profile_menu_open));
+        if let Some(parent) = preferences.parent() {
+            let _ = std::fs::remove_dir_all(parent);
+        }
+    }
+
+    #[test]
+    fn home_shortened_paths_match_the_reference_substitution() {
+        for (path, expected) in [
+            ("/Users/zp/Desktop/GPUI", "~/Desktop/GPUI"),
+            ("/Users/zp", "~"),
+            ("/Users/zp/", "~"),
+            ("/Volumes/ExternalSSD/GPUI", "/Volumes/ExternalSSD/GPUI"),
+            ("/home/zp/project", "/home/zp/project"),
+            ("/Users", "/Users"),
+        ] {
+            assert_eq!(
+                home_shortened_path(&PathBuf::from(path)),
+                expected,
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn project_hover_paths_skip_the_label_and_repository_row() {
+        let project = Project {
+            project_id: "project-1".to_owned(),
+            name: "GPUI".to_owned(),
+            roots: vec![
+                PathBuf::from("/Users/zp/GPUI"),
+                PathBuf::from("/Users/zp/GPUI"),
+                PathBuf::from("GPUI"),
+                PathBuf::from("/Volumes/ExternalSSD/GPUI"),
+            ],
+            created_at: 0,
+            updated_at: 0,
+            recency_at: None,
+            position: 0,
+        };
+        let paths = project_hover_paths(&project, None);
+        assert_eq!(
+            paths
+                .iter()
+                .map(|(display, _)| display.as_str())
+                .collect::<Vec<_>>(),
+            vec!["~/GPUI", "/Volumes/ExternalSSD/GPUI"]
+        );
+
+        let repo = ProjectRepo {
+            root: PathBuf::from("/Users/zp/GPUI"),
+            label: "~/GPUI".to_owned(),
+        };
+        assert_eq!(project_hover_paths(&project, Some(&repo)).len(), 1);
+    }
+
+    #[test]
+    fn project_hover_summary_counts_tasks_waiting_and_running() {
+        fn thread(activity: ThreadActivity) -> ThreadSummary {
+            ThreadSummary {
+                thread_id: "thread".to_owned(),
+                title: "Thread".to_owned(),
+                preview: String::new(),
+                cwd: PathBuf::from("/tmp/stable-project"),
+                project_id: Some("project-stable-id".to_owned()),
+                section: None,
+                created_at: 0,
+                updated_at: 0,
+                recency_at: None,
+                activity,
+            }
+        }
+        let threads = [
+            thread(ThreadActivity::Idle),
+            thread(ThreadActivity::Active { flags: Vec::new() }),
+            thread(ThreadActivity::Active {
+                flags: vec![crate::agent::AgentThreadActiveFlag::WaitingOnUserInput],
+            }),
+        ];
+        let refs = threads.iter().collect::<Vec<_>>();
+        let summary = project_hover_summary(&refs);
+        assert!(summary.starts_with("3"), "{summary}");
+        assert_eq!(summary.matches(" · ").count(), 2, "{summary}");
+        assert_eq!(summary.matches("1").count(), 2, "{summary}");
+    }
+
+    #[test]
+    fn project_hover_card_follows_the_row_and_only_while_hovered() {
+        static SERIAL: AtomicU64 = AtomicU64::new(1);
+        let preferences = std::env::temp_dir()
+            .join(format!(
+                "gpui-sidebar-hover-{}-{}",
+                std::process::id(),
+                SERIAL.fetch_add(1, Ordering::Relaxed)
+            ))
+            .join("preferences.json");
+        let store =
+            WorkspaceStore::with_preferences_path(SidebarBackend::new(), preferences.clone());
+        store.refresh_all();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while store.snapshot().loading.recent {
+            assert!(Instant::now() < deadline, "sidebar fixture did not load");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let mut app = TestApp::new();
+        let mut window = app.open_window_with_options(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: point(px(0.0), px(0.0)),
+                    size: size(px(900.0), px(700.0)),
+                })),
+                ..Default::default()
+            },
+            |_, cx| SidebarView::new(ThemeMode::Dark, false, store, cx),
+        );
+        window.draw();
+
+        // The rendered project row reports where it was painted, which is also
+        // the anchor the card uses.
+        let row = window.read(|sidebar, _| {
+            *sidebar
+                .project_row_bounds
+                .borrow()
+                .get("project-stable-id")
+                .expect("the rendered row records its bounds")
+        });
+        let row_center = point(
+            row.origin.x + row.size.width / 2.0,
+            row.origin.y + row.size.height / 2.0,
+        );
+
+        window.simulate_mouse_move(point(px(700.0), px(400.0)));
+        window.simulate_mouse_move(row_center);
+        assert!(window.read(|sidebar, _| sidebar.hovered_project_id.is_some()));
+        assert!(
+            !window.read(|sidebar, _| sidebar.project_hover_card_is_open()),
+            "the card waits for the reference's hover delay"
+        );
+
+        app.advance_clock(PROJECT_HOVER_CARD_DELAY);
+        window.draw();
+        assert!(window.read(|sidebar, _| sidebar.project_hover_card_is_open()));
+
+        // The card is painted to the right of the row and stays open while the
+        // pointer is inside it.
+        window.simulate_mouse_move(point(
+            row.origin.x + row.size.width + px(40.0),
+            row.origin.y + px(PROJECT_HOVER_HEADER_HEIGHT + 12.0),
+        ));
+        assert!(!window.read(|sidebar, _| sidebar.hovered_project_id.is_some()));
+        app.advance_clock(PROJECT_HOVER_CARD_CLOSE_DELAY * 2);
+        window.draw();
+        assert!(window.read(|sidebar, _| sidebar.project_hover_card_is_open()));
+
+        // Leaving both the row and the card closes it.
+        window.simulate_mouse_move(point(px(700.0), px(500.0)));
+        app.advance_clock(PROJECT_HOVER_CARD_CLOSE_DELAY * 2);
+        window.draw();
+        assert!(!window.read(|sidebar, _| sidebar.project_hover_card_is_open()));
+
         if let Some(parent) = preferences.parent() {
             let _ = std::fs::remove_dir_all(parent);
         }

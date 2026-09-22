@@ -13,16 +13,15 @@ canonical_slugs='[
   "connections", "git-settings", "local-environments", "worktrees", "data-controls"
 ]'
 mkdir -p artifacts/settings-matrix/{reference,actual,diff}/{light,dark}
-cargo build --release --features screenshot
-
 # A minimal low-resolution app bundle makes AppKit expose a stable 1x backing
 # scale on Retina Macs. Launching the bare executable can race between a 1x and
 # 2x CAMetalLayer even though its logical window remains 1440x900.
-gpui_capture_app="target/GPUI Capture.app"
+# The packaged bundle carries this worktree's name, identifier, and assets, so
+# two worktrees can run these captures at the same time without colliding.
+GPUI_CAPTURE_PROFILE=release
+export GPUI_CAPTURE_PROFILE
+gpui_capture_app="$(scripts/gpui_capture_binary.sh --bundle)"
 gpui_capture_executable="$gpui_capture_app/Contents/MacOS/gpui-chat-clone"
-mkdir -p "$gpui_capture_app/Contents/MacOS"
-cp scripts/gpui_capture_info.plist "$gpui_capture_app/Contents/Info.plist"
-cp target/release/gpui-chat-clone "$gpui_capture_executable"
 
 png_is_1440x900() {
   local dimensions
