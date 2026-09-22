@@ -28,6 +28,10 @@
 #   GPUI_CAPTURE_SKIP_BUILD=1   use the existing package instead of rebuilding
 #   GPUI_VERIFY_BUNDLE          bundle to copy (default: this worktree's package)
 #   GPUI_VERIFY_LABEL           launchd label (default gpui-verify)
+#   GPUI_UI_PREFERENCES_PATH    forwarded to the app; give concurrent instances
+#                               of the same bundle their own file, because they
+#                               would otherwise overwrite one preferences file
+#   GPUI_ASSETS_DIR             forwarded to the app
 set -eu
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -37,7 +41,16 @@ label="${GPUI_VERIFY_LABEL:-gpui-verify}"
 
 if [ "${1:-}" = "--stop" ]; then
   launchctl remove "$label" 2>/dev/null || true
-  pkill -f "gpui-chat-clone" 2>/dev/null || true
+  # Take the app-server down with the app: `codex app-server --stdio` is
+  # spawned by the GUI process, and killing only the parent can leave the child
+  # behind. Matching by parent keeps this away from other tools' app-servers,
+  # which spell their command line differently (`--listen stdio://`).
+  for pid in $(pgrep -f "GPUI Capture|GPUI Verify" 2>/dev/null || true); do
+    for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+      kill "$child" 2>/dev/null || true
+    done
+    kill "$pid" 2>/dev/null || true
+  done
   echo "stopped $label"
   exit 0
 fi
@@ -77,10 +90,18 @@ for argument in "$@"; do
   arguments="$arguments '$argument'"
 done
 
+forwarded=""
+for name in GPUI_UI_PREFERENCES_PATH GPUI_ASSETS_DIR; do
+  value="$(eval "printf '%s' \"\${$name:-}\"")"
+  [ -n "$value" ] || continue
+  forwarded="$forwarded
+export $name='$value'"
+done
+
 # `launchctl submit` keeps the process alive after this shell exits, which
 # Computer Use needs, and it never routes the launch through LaunchServices.
 launchctl submit -l "$label" -- /bin/sh -c \
-  "export HOME='$HOME'; export PATH='$PATH'; exec '$binary'$arguments >>'$log' 2>&1"
+  "export HOME='$HOME'; export PATH='$PATH'$forwarded; exec '$binary'$arguments >>'$log' 2>&1"
 
 sleep 3
 echo "launched $label from $destination"
