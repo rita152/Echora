@@ -217,7 +217,7 @@ Computer Use 先枚举应用，连接 **GPUI Capture**，读取可访问性树�
 |---|---|
 | `--markdown-file=/absolute/path/to/sample.txt` | 独立 Markdown 窗口，无需 app-server；可搭配 `--window-width=480` 检查窄窗。 |
 | `--file-panel-root=/absolute/workspace --open-file=/absolute/file` | 真实文件编辑、保存与冲突检查；使用专用测试文件。 |
-| `--review-root=/absolute/repository --review-filter=src/example.rs` | 真实 Git 审查；截图等待 diff 就绪。 |
+| `--review-root=/absolute/repository --review-filter=src/example.rs [--review-menu=scope\|options\|branch]` | 真实 Git 审查；截图等待 diff 就绪。加上 menu 参数会打开其中一个审查弹层，便于固定状态截图。 |
 | `--settings-page=appearance` | 直接打开设置页，页面列表见 `src/settings/mod.rs`。 |
 | `--language=en\|zh-CN\|auto` | 指定本次启动的 UI 语言；截图验收时明确指定，以保证可复现。 |
 | `--chat-search-state=initial\|selected\|hover\|query\|no-match` | 以固定状态打开历史会话搜索弹窗用于截图；配合 `--chat-search-query=` 与 `--chat-search-index=`。 |
@@ -243,6 +243,7 @@ export CHATGPT_CDP_HTTP="http://127.0.0.1:${CAPTURE_CDP_PORT:?Set a dedicated de
 | 真实线程双主题 | `python3 scripts/capture_resume_reference.py --endpoint "$CHATGPT_CDP_HTTP" --manifest /path/to/manifest.json`；`python3 scripts/capture_resume_gpui.py --manifest /path/to/manifest.json --output artifacts/resume-alignment/actual` |
 | 终端 / 文件 | `node scripts/cdp_capture_terminal.mjs artifacts/terminal`；`node scripts/cdp_capture_file_panel.mjs artifacts/file-panel` |
 | 审查 / 侧边聊天 | `node scripts/cdp_capture_review.mjs artifacts/review-reference`；`node scripts/cdp_capture_side_chat.mjs artifacts/side-chat reference` |
+| 审查弹层 | `node scripts/cdp_capture_review_menus.mjs --output=artifacts/review-menus` 采集比较范围、查看选项与分支选择三个弹层，双主题并附带计算样式；`python3 scripts/compare_review_menus.py --reference DIR --gpui DIR --scale 2` 逐像素比对两侧截图，输出裁切图、差异图与报告 |
 | 账户菜单、退出登录 | `node scripts/cdp_capture_account.mjs --output artifacts/account-phase/chatgpt-reference --theme=light`；`scripts/capture_account_gpui.sh`；`python3 scripts/compare_account_phase.py` |
 | 设置矩阵 | `./node_modules/.bin/electron scripts/verify_chatgpt_settings.cjs`；`REFRESH_SETTINGS_REFERENCES=1 scripts/capture_settings_matrix.sh`；`python3 scripts/verify_settings_matrix.py` |
 | 已合并 Phase 1–4 局部组件门禁 | `python3 scripts/stage4/compare_merge_gate.py`（需要 `artifacts/merge-four-worktrees/` 下的专用 ChatGPT/GPUI 截图；每个局部组件阈值为 99%） |

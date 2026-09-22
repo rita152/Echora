@@ -1414,6 +1414,12 @@ fn main() {
                         {
                             app.capture_review_filter(query, cx);
                         }
+                        #[cfg(feature = "screenshot")]
+                        if let Some(menu) =
+                            args.iter().find_map(|a| a.strip_prefix("--review-menu="))
+                        {
+                            app.capture_review_menu(menu, cx);
+                        }
                         app
                     });
                     #[cfg(feature = "screenshot")]

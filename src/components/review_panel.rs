@@ -122,6 +122,9 @@ pub struct ReviewPanel {
     focus_input: bool,
     menu: Option<Menu>,
     menu_selected: usize,
+    /// ChatGPT paints no row until the pointer or the arrow keys pick one; this
+    /// keeps `menu_selected` (the activation target) separate from the paint.
+    menu_keyboard_selected: bool,
     filter: Entity<PromptInput>,
     jump: Entity<PromptInput>,
     branch_picker: Entity<branch_picker::BranchPicker>,
@@ -163,6 +166,9 @@ pub struct ReviewPanel {
     selecting: bool,
     gutter_drag: Option<Draft>,
     confirm: Option<Mutation>,
+    /// Capture-only: the popup to open once the first snapshot has loaded.
+    #[cfg(feature = "screenshot")]
+    capture_menu: Option<String>,
     commit_open: bool,
     commit_all: bool,
     new_branch: bool,
@@ -235,6 +241,7 @@ impl ReviewPanel {
         cx.subscribe(&jump, |s, i, _: &PromptChanged, cx| {
             s.jump_query = i.read(cx).text().into();
             s.menu_selected = 0;
+            s.menu_keyboard_selected = false;
             cx.notify();
         })
         .detach();
@@ -283,6 +290,7 @@ impl ReviewPanel {
             focus_input: false,
             menu: None,
             menu_selected: 0,
+            menu_keyboard_selected: false,
             filter,
             jump,
             branch_picker,
@@ -324,6 +332,8 @@ impl ReviewPanel {
             selecting: false,
             gutter_drag: None,
             confirm: None,
+            #[cfg(feature = "screenshot")]
+            capture_menu: None,
             commit_open: false,
             commit_all: true,
             new_branch: false,
@@ -578,6 +588,8 @@ impl ReviewPanel {
                     self.restore_scroll(anchor);
                 }
                 self.error = None;
+                #[cfg(feature = "screenshot")]
+                self.apply_capture_menu(cx);
             }
             Err(e) => {
                 self.error = Some(e);
@@ -807,6 +819,7 @@ impl ReviewPanel {
             Some(m)
         };
         self.menu_selected = 0;
+        self.menu_keyboard_selected = false;
         self.focus_pending = true;
         cx.notify();
     }
@@ -979,6 +992,56 @@ impl ReviewPanel {
             .update(cx, |input, cx| input.set_text_silently(query, cx));
         self.rebuild(cx);
     }
+    /// Opens one review popup for a deterministic capture: `scope`, `options`,
+    /// or `branch`. The branch capture also switches the comparison source so
+    /// the second header row renders, exactly as a user would.
+    #[cfg(feature = "screenshot")]
+    pub fn capture_menu(&mut self, name: &str, cx: &mut Context<Self>) {
+        self.capture_menu = Some(name.to_owned());
+        self.apply_capture_menu(cx);
+    }
+    /// Applies a pending capture popup. The branch list only exists after the
+    /// first snapshot lands, so this also runs at the end of every load.
+    #[cfg(feature = "screenshot")]
+    fn apply_capture_menu(&mut self, cx: &mut Context<Self>) {
+        let Some(name) = self.capture_menu.clone() else {
+            return;
+        };
+        let menu = match name.as_str() {
+            "scope" => Menu::Scope,
+            "options" => Menu::View,
+            "branch" => Menu::Branch,
+            _ => return,
+        };
+        if menu == Menu::Branch && self.snapshot.branches.is_empty() && self.loading {
+            // The popup would render an empty list; wait for the snapshot.
+            return;
+        }
+        self.capture_menu = None;
+        if menu == Menu::Branch {
+            let base = self
+                .snapshot
+                .upstream
+                .clone()
+                .or_else(|| self.snapshot.branches.first().cloned())
+                .unwrap_or_else(|| "main".into());
+            self.scope = Scope::Branch(base);
+        }
+        self.menu = Some(menu.clone());
+        self.menu_selected = 0;
+        self.menu_keyboard_selected = false;
+        if menu == Menu::Branch {
+            let current = match &self.scope {
+                Scope::Branch(base) => base.clone(),
+                _ => String::new(),
+            };
+            let branches = self.snapshot.branches.clone();
+            self.branch_picker.update(cx, |picker, cx| {
+                picker.prepare(&branches, &current, cx);
+            });
+        }
+        cx.notify();
+    }
     #[cfg(feature = "screenshot")]
     pub fn capture_ready(&self) -> Result<bool, String> {
         if let Some(error) = &self.error {
@@ -1082,15 +1145,19 @@ impl ReviewPanel {
             match key {
                 "home" => {
                     self.menu_selected = 0;
+                    self.menu_keyboard_selected = true;
                 }
                 "end" => {
                     self.menu_selected = count.saturating_sub(1);
+                    self.menu_keyboard_selected = true;
                 }
                 "down" => {
                     self.menu_selected = (self.menu_selected + 1) % count.max(1);
+                    self.menu_keyboard_selected = true;
                 }
                 "up" => {
                     self.menu_selected = (self.menu_selected + count.max(1) - 1) % count.max(1);
+                    self.menu_keyboard_selected = true;
                 }
                 "enter" | "space" => {
                     self.activate_menu(menu, self.menu_selected, w, cx);

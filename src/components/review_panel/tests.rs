@@ -399,3 +399,93 @@ fn failed_submission_restores_comments_without_replacing_a_new_comment_draft() {
         assert!(panel.next_comment > 2);
     });
 }
+
+/// ChatGPT's review popups, measured from the live reference build with
+/// `scripts/cdp_capture_review_menus.mjs`: a 4px inset and 20px corners around
+/// 28.5625px rows, 9px group rules, a 200px comparison menu, a 220px
+/// diff-controls menu, and a 296px branch picker.
+#[gpui::test]
+fn review_popups_match_the_captured_chatgpt_metrics(cx: &mut gpui::TestAppContext) {
+    use gpui::VisualTestContext;
+
+    fn bounds(cx: &mut gpui::TestAppContext, menu: Menu) -> (f32, f32) {
+        let handle = cx.add_window(move |_, cx| {
+            let mut panel = fixture(cx);
+            panel.mode = ThemeMode::Dark;
+            panel.snapshot = Arc::new(Snapshot {
+                branches: vec!["main".into(), "origin/main".into()],
+                upstream: Some("origin/main".into()),
+                ..(*panel.snapshot).clone()
+            });
+            if menu == Menu::Branch {
+                let picker = panel.branch_picker.clone();
+                picker.update(cx, |picker, cx| {
+                    picker.prepare(
+                        &["main".to_owned(), "origin/main".to_owned()],
+                        "origin/main",
+                        cx,
+                    );
+                });
+            }
+            panel.menu = Some(menu);
+            panel
+        });
+        let mut visual = VisualTestContext::from_window(handle.into(), cx);
+        visual.update(|window, cx| window.draw(cx).clear(cx));
+        let popup = visual
+            .debug_bounds("review-popup")
+            .expect("the review popup renders");
+        (f32::from(popup.size.width), f32::from(popup.size.height))
+    }
+
+    // Six rows, two group rules, and 4px of padding on both sides.
+    let (width, height) = bounds(cx, Menu::Scope);
+    assert_eq!(width, 200.0);
+    assert!(
+        (height - 197.375).abs() <= 1.5,
+        "scope menu height {height}"
+    );
+
+    // Nine diff-control rows, one group rule, and the same padding.
+    let (width, height) = bounds(cx, Menu::View);
+    assert_eq!(width, 220.0);
+    assert!(
+        (height - 274.125).abs() <= 1.5,
+        "options menu height {height}"
+    );
+
+    let (width, _) = bounds(cx, Menu::Branch);
+    assert_eq!(width, branch_picker::WIDTH);
+}
+
+/// The toolbar trigger, the popup rows, and Escape still form one hit path
+/// after the popup metrics moved to the captured reference values.
+#[gpui::test]
+fn comparison_popup_opens_from_the_toolbar_and_selects_with_the_keyboard(
+    cx: &mut gpui::TestAppContext,
+) {
+    use gpui::{Modifiers, VisualTestContext};
+    let mut view = None;
+    let handle = cx.add_window(|_, cx| {
+        let panel = fixture(cx);
+        view = Some(cx.entity());
+        panel
+    });
+    let view = view.unwrap();
+    let mut visual = VisualTestContext::from_window(handle.into(), cx);
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    let trigger = visual
+        .debug_bounds("review-scope")
+        .expect("the comparison trigger renders");
+    visual.simulate_click(trigger.center(), Modifiers::default());
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(visual.update(|_, cx| view.read(cx).menu.is_some()));
+
+    // Two rows down is "Unstaged"; Enter applies it and closes the popup.
+    visual.simulate_keystrokes("down down enter");
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    assert_eq!(
+        visual.update(|_, cx| view.read(cx).scope.clone()),
+        Scope::Unstaged
+    );
+}

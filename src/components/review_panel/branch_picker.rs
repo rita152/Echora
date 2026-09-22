@@ -1,7 +1,7 @@
 //! Searchable, single-line base-branch picker for the Review panel.
 //! Keep branch identities intact: ellipsis belongs to layout, never Git data.
 
-use super::controls::ReviewTooltip;
+use super::controls::{ReviewTooltip, menu_surface};
 use crate::{
     components::{
         icons::icon,
@@ -18,8 +18,22 @@ use gpui::{
 mod tests;
 
 pub(super) const WIDTH: f32 = 296.;
-const ROW_HEIGHT: f32 = 29.;
-const MAX_LIST_HEIGHT: f32 = 360.;
+/// Live ChatGPT review rows are 28.5625px: 13px text on an 18.5625px line box
+/// with 5px of vertical padding. GPUI lays that line box out at 18.75px, so the
+/// row that can be pinned exactly is 28.5px; these constants describe what GPUI
+/// draws.
+const ROW_HEIGHT: f32 = 28.5;
+/// The reference search row is one row tall; the section label is shorter
+/// because it only carries 4px of vertical padding (26.5625px in the browser).
+const SEARCH_HEIGHT: f32 = 28.5;
+const LABEL_HEIGHT: f32 = 26.5;
+const SECTION_GAP: f32 = 6.;
+/// ChatGPT pins the whole branch section to 200px and lets it scroll, so the
+/// popup keeps the same height whatever the repository holds. GPUI keeps the
+/// section label fixed instead of scrolling it away, so the list itself takes
+/// the remainder: 200px minus the label and its gap.
+const SECTION_HEIGHT: f32 = 200.;
+const LIST_HEIGHT: f32 = SECTION_HEIGHT - LABEL_HEIGHT - SECTION_GAP;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum BranchPickerEvent {
@@ -76,6 +90,10 @@ impl BranchPicker {
         if let Some(index) = self.branches.iter().position(|branch| branch == current) {
             let branch = self.branches.remove(index);
             self.branches.insert(0, branch);
+        } else if !current.is_empty() {
+            // A base such as `origin/main` is not a local branch, and the app
+            // still lists it as the first selectable entry.
+            self.branches.insert(0, current.to_owned());
         }
         self.input
             .update(cx, |input, cx| input.set_text_silently("", cx));
@@ -155,10 +173,8 @@ impl Render for BranchPicker {
             .id("review-branch-scroll")
             .w_full()
             .min_w(px(0.))
-            .h(px(
-                (self.matches.len().max(1) as f32 * ROW_HEIGHT).min(MAX_LIST_HEIGHT)
-            ))
-            .max_h(px(MAX_LIST_HEIGHT))
+            .h(px(LIST_HEIGHT))
+            .max_h(px(LIST_HEIGHT))
             .flex_none()
             .overflow_x_hidden()
             .overflow_y_scroll()
@@ -205,11 +221,11 @@ impl Render for BranchPicker {
                     .px(px(8.))
                     .flex()
                     .items_center()
-                    .gap(px(8.))
-                    .rounded(px(8.))
+                    .gap(px(6.))
+                    .rounded(px(15.))
                     .overflow_hidden()
                     .text_size(px(13.))
-                    .line_height(px(19.))
+                    .line_height(px(18.5714))
                     .text_color(t.text)
                     .cursor_pointer()
                     .when(self.keyboard_selection && self.selected == index, |row| {
@@ -237,8 +253,9 @@ impl Render for BranchPicker {
                         }
                     }))
                     .child(
-                        icon("branch", t.text_secondary.into())
-                            .size(px(14.))
+                        icon("branch", t.text.into())
+                            .size(px(16.))
+                            .opacity(0.75)
                             .flex_none(),
                     )
                     .child(
@@ -252,8 +269,9 @@ impl Render for BranchPicker {
                     )
                     .when(current, |row| {
                         row.child(
-                            icon("check", t.text_secondary.into())
-                                .size(px(14.))
+                            icon("check", t.text.into())
+                                .size(px(16.))
+                                .opacity(0.75)
                                 .flex_none(),
                         )
                     }),
@@ -261,42 +279,64 @@ impl Render for BranchPicker {
         }
         div()
             .id("review-branch-picker")
+            .debug_selector(|| "review-branch-picker".into())
             .role(Role::Menu)
             .aria_label(crate::i18n::format!("分支" => "Branches"))
             .w_full()
             .min_w(px(0.))
-            .p(px(5.))
-            .rounded(px(13.))
-            .bg(t.elevated)
-            .border_1()
+            // Same surface recipe as the review menus: 4px inset, 20px corner,
+            // half-pixel ring, and the shared 8px/16px menu shadow.
+            .p(px(4.))
+            .gap(px(SECTION_GAP))
+            .rounded(px(20.))
+            .bg(menu_surface(t))
+            .border(px(0.5))
             .border_color(t.border)
-            .shadow_lg()
+            .shadow(vec![
+                gpui::BoxShadow::new(px(0.0), px(8.0), t.profile_menu_shadow.into())
+                    .blur_radius(px(16.0))
+                    .spread_radius(px(-4.0)),
+            ])
             .flex()
             .flex_col()
             .occlude()
             .capture_key_down(cx.listener(Self::key_down))
             .child(
                 div()
-                    .h(px(33.))
+                    .h(px(SEARCH_HEIGHT))
                     .flex_none()
                     .px(px(8.))
                     .flex()
                     .items_center()
+                    .gap(px(6.))
                     .child(
-                        icon("search", t.text_tertiary.into())
-                            .size(px(14.))
-                            .flex_none(),
+                        // The reference keeps a 16px leading slot but paints the
+                        // 14px tertiary search glyph inside it.
+                        div()
+                            .w(px(16.))
+                            .h(px(16.))
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                icon("search", t.text_tertiary.into())
+                                    .size(px(14.))
+                                    .flex_none(),
+                            ),
                     )
                     .child(div().flex_1().min_w(px(0.)).child(self.input.clone())),
             )
             .child(
                 div()
-                    .h(px(32.))
+                    .h(px(LABEL_HEIGHT))
                     .flex_none()
                     .px(px(8.))
+                    .py(px(4.))
                     .flex()
                     .items_center()
                     .text_size(px(13.))
+                    .line_height(px(18.5714))
                     .text_color(t.text_tertiary)
                     .child(crate::i18n::format!("分支" => "Branches")),
             )

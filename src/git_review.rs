@@ -450,13 +450,17 @@ pub fn load_with_options(
         &root,
         &[
             "for-each-ref",
+            // The reference offers local branches most recently committed
+            // first and leaves the checked-out branch out of the list;
+            // `git for-each-ref` alone would hand back refname order.
+            "--sort=-committerdate",
             "--format=%(refname:short)",
             "refs/heads",
-            "refs/remotes",
         ],
     )?
     .lines()
     .filter(|s| !s.ends_with("/HEAD"))
+    .filter(|s| *s != branch)
     .map(String::from)
     .collect();
     let commit_range = upstream.as_ref().map(|u| format!("{u}..HEAD"));

@@ -8,6 +8,45 @@ use gpui::{
 #[cfg(test)]
 mod tests;
 
+/// One row of a review popup. ChatGPT draws a leading glyph for the diff
+/// controls, a trailing glyph for the submenu entry and the active comparison
+/// source, and a hairline rule above the first row of a group.
+#[derive(Clone)]
+pub(super) struct MenuEntry {
+    pub(super) label: String,
+    pub(super) action: Action,
+    pub(super) leading: Option<&'static str>,
+    pub(super) trailing: Option<&'static str>,
+    pub(super) separator_before: bool,
+}
+
+impl MenuEntry {
+    pub(super) fn new(label: impl Into<String>, action: Action) -> Self {
+        Self {
+            label: label.into(),
+            action,
+            leading: None,
+            trailing: None,
+            separator_before: false,
+        }
+    }
+
+    pub(super) fn leading(mut self, glyph: &'static str) -> Self {
+        self.leading = Some(glyph);
+        self
+    }
+
+    pub(super) fn trailing(mut self, glyph: &'static str) -> Self {
+        self.trailing = Some(glyph);
+        self
+    }
+
+    pub(super) fn separated(mut self) -> Self {
+        self.separator_before = true;
+        self
+    }
+}
+
 #[derive(Clone)]
 pub(super) enum Action {
     Menu(Menu),
@@ -49,6 +88,25 @@ pub(super) enum Action {
     OpenPr(String),
     Viewed(usize),
     NewBranch(bool),
+}
+
+/// ChatGPT paints these popups with `bg-surface-elevated-secondary/90` over the
+/// review pane, which composites to `surface-elevated` at 90% — the same value
+/// the theme already carries for "elevated overlay over the app shell".
+pub(super) fn menu_surface(t: Theme) -> gpui::Rgba {
+    t.control
+}
+
+/// The 1px group rule inside a review popup: a full-width hairline with 4px of
+/// vertical and 8px of horizontal breathing room, exactly like the reference's
+/// `px-row-x py-1` wrapper.
+fn menu_separator(t: Theme) -> Div {
+    div()
+        .w_full()
+        .flex_none()
+        .px(px(8.))
+        .py(px(4.))
+        .child(div().h(px(1.)).w_full().bg(t.border))
 }
 
 impl ReviewPanel {
@@ -334,110 +392,149 @@ impl ReviewPanel {
         cx: &Context<Self>,
     ) -> Stateful<Div> {
         let t = Theme::for_mode(self.mode);
+        let id = id.into();
+        let debug = id.to_string();
         // Keep the chevron off the text baseline and inside the same mouse /
         // keyboard hit target as the label, in both toolbar rows.
-        self.button(id, label, None, Action::Menu(menu), cx).child(
-            icon("chevron-down", t.text_secondary.into())
-                .size(px(12.))
-                .flex_none(),
-        )
+        self.button(id, label, None, Action::Menu(menu), cx)
+            .debug_selector(move || debug.clone())
+            .child(
+                icon("chevron-down", t.text_secondary.into())
+                    .size(px(12.))
+                    .flex_none(),
+            )
     }
 
     pub(super) fn menu_actions(&self, menu: &Menu) -> Vec<(String, Action)> {
-        let toggle = |on: bool, yes: &str, no: &str| if on { yes.into() } else { no.into() };
+        self.menu_entries(menu)
+            .into_iter()
+            .map(|entry| (entry.label, entry.action))
+            .collect()
+    }
+
+    pub(super) fn menu_entries(&self, menu: &Menu) -> Vec<MenuEntry> {
+        let toggle =
+            |on: bool, yes: &str, no: &str| -> String { if on { yes.into() } else { no.into() } };
         match menu {
-            Menu::Scope => vec![
-                (
-                    crate::i18n::text("上一轮").into(),
-                    Action::Scope(Scope::LastTurn),
-                ),
-                (
-                    crate::i18n::text("未提交").into(),
-                    Action::Scope(Scope::Uncommitted),
-                ),
-                (
-                    crate::i18n::text("未暂存").into(),
-                    Action::Scope(Scope::Unstaged),
-                ),
-                (
-                    crate::i18n::text("已暂存").into(),
-                    Action::Scope(Scope::Staged),
-                ),
-                (
-                    crate::i18n::text("已提交  ›").into(),
-                    Action::Menu(Menu::Commits),
-                ),
-                (
-                    crate::i18n::text("分支").into(),
-                    Action::Scope(Scope::Branch(
-                        self.snapshot.upstream.clone().unwrap_or_else(|| {
-                            self.snapshot
-                                .branches
-                                .iter()
-                                .find(|s| s.as_str() == "main")
-                                .cloned()
-                                .unwrap_or_else(|| "HEAD".into())
-                        }),
-                    )),
-                ),
-            ],
+            // ChatGPT divides the comparison sources into "turn" / "working
+            // tree" / "history" groups and ticks the active one.
+            Menu::Scope => {
+                let branch = self.snapshot.upstream.clone().unwrap_or_else(|| {
+                    self.snapshot
+                        .branches
+                        .iter()
+                        .find(|s| s.as_str() == "main")
+                        .cloned()
+                        .unwrap_or_else(|| "HEAD".into())
+                });
+                let mut entries = vec![
+                    MenuEntry::new(crate::i18n::text("上一轮"), Action::Scope(Scope::LastTurn)),
+                    MenuEntry::new(
+                        crate::i18n::text("未提交"),
+                        Action::Scope(Scope::Uncommitted),
+                    )
+                    .separated(),
+                    MenuEntry::new(crate::i18n::text("未暂存"), Action::Scope(Scope::Unstaged)),
+                    MenuEntry::new(crate::i18n::text("已暂存"), Action::Scope(Scope::Staged)),
+                    MenuEntry::new(crate::i18n::text("已提交"), Action::Menu(Menu::Commits))
+                        .trailing("review-chevron-right")
+                        .separated(),
+                    MenuEntry::new(
+                        crate::i18n::text("分支"),
+                        Action::Scope(Scope::Branch(branch)),
+                    ),
+                ];
+                // The active comparison source carries the reference's tick.
+                let current = match &self.scope {
+                    Scope::LastTurn => 0,
+                    Scope::Uncommitted => 1,
+                    Scope::Unstaged => 2,
+                    Scope::Staged => 3,
+                    Scope::Commit(_) => 4,
+                    Scope::Branch(_) => 5,
+                };
+                entries[current].trailing = Some("check");
+                entries
+            }
             Menu::View => vec![
-                (crate::i18n::text("刷新").into(), Action::Refresh),
-                (
+                MenuEntry::new(crate::i18n::text("刷新"), Action::Refresh)
+                    .leading("review-refresh"),
+                MenuEntry::new(
                     toggle(
                         self.wrap,
                         crate::i18n::text("禁用自动换行"),
                         crate::i18n::text("启用自动换行"),
                     ),
                     Action::Wrap,
-                ),
-                (
+                )
+                .leading("review-word-wrap"),
+                MenuEntry::new(
+                    if self.split {
+                        crate::i18n::text("切换到统一差异视图")
+                    } else {
+                        crate::i18n::text("切换到拆分差异视图")
+                    },
+                    Action::Split,
+                )
+                .leading("review-split-diff"),
+                MenuEntry::new(
+                    if self.collapsed.len() == self.snapshot.files.len()
+                        && !self.snapshot.files.is_empty()
+                    {
+                        crate::i18n::text("展开全部差异")
+                    } else {
+                        crate::i18n::text("折叠全部差异")
+                    },
+                    Action::Collapse,
+                )
+                .leading("review-collapse-all"),
+                MenuEntry::new(
                     toggle(
                         self.load_files,
                         crate::i18n::text("不加载完整文件"),
                         crate::i18n::text("加载完整文件"),
                     ),
                     Action::LoadFiles,
-                ),
-                (
+                )
+                .leading("review-load-full-files")
+                .separated(),
+                MenuEntry::new(
                     toggle(
                         self.rich,
                         crate::i18n::text("禁用富文本预览"),
                         crate::i18n::text("启用富文本预览"),
                     ),
                     Action::Rich,
-                ),
-                (
+                )
+                .leading("review-rich-preview"),
+                MenuEntry::new(
                     toggle(
                         self.words,
                         crate::i18n::text("禁用文字差异"),
                         crate::i18n::text("启用文字差异"),
                     ),
                     Action::Words,
-                ),
-                (
+                )
+                .leading("review-word-diffs"),
+                MenuEntry::new(
                     toggle(
                         self.whitespace,
                         crate::i18n::text("显示空白字符"),
                         crate::i18n::text("隐藏空白字符"),
                     ),
                     Action::Whitespace,
-                ),
-                (
-                    crate::i18n::text("复制 git apply 命令").into(),
-                    Action::CopyPatch,
-                ),
+                )
+                .leading("review-white-space"),
+                MenuEntry::new(crate::i18n::text("复制 git apply 命令"), Action::CopyPatch)
+                    .leading("review-copy-apply"),
             ],
             Menu::Git => vec![
-                (crate::i18n::text("提交或推送").into(), Action::Commit),
-                (
-                    crate::i18n::text("创建 Pull Request").into(),
-                    Action::PullRequest,
-                ),
+                MenuEntry::new(crate::i18n::text("提交或推送"), Action::Commit),
+                MenuEntry::new(crate::i18n::text("创建 Pull Request"), Action::PullRequest),
             ],
             Menu::CommitBranch => vec![
-                (self.snapshot.branch.clone(), Action::NewBranch(false)),
-                (crate::i18n::text("新分支").into(), Action::NewBranch(true)),
+                MenuEntry::new(self.snapshot.branch.clone(), Action::NewBranch(false)),
+                MenuEntry::new(crate::i18n::text("新分支"), Action::NewBranch(true)),
             ],
             Menu::PullRequestBase => {
                 let mut names = self
@@ -450,21 +547,21 @@ impl ReviewPanel {
                 names.dedup();
                 names
                     .into_iter()
-                    .map(|s| (s.clone(), Action::PrBase(s)))
+                    .map(|s| MenuEntry::new(s.clone(), Action::PrBase(s)))
                     .collect()
             }
             Menu::Branch => self
                 .snapshot
                 .branches
                 .iter()
-                .map(|s| (s.clone(), Action::Scope(Scope::Branch(s.clone()))))
+                .map(|s| MenuEntry::new(s.clone(), Action::Scope(Scope::Branch(s.clone()))))
                 .collect(),
             Menu::Commits => self
                 .snapshot
                 .commits
                 .iter()
                 .map(|(sha, title)| {
-                    (
+                    MenuEntry::new(
                         format!("{}  {title}", &sha[..7.min(sha.len())]),
                         Action::Scope(Scope::Commit(sha.clone())),
                     )
@@ -473,38 +570,37 @@ impl ReviewPanel {
             Menu::Jump => self
                 .matching_files(&self.jump_query)
                 .into_iter()
-                .map(|i| (self.snapshot.files[i].path.clone(), Action::Jump(i)))
+                .map(|i| MenuEntry::new(self.snapshot.files[i].path.clone(), Action::Jump(i)))
                 .collect(),
             Menu::File(i) => {
                 let file = &self.snapshot.files[*i];
                 let mut a = vec![
-                    (crate::i18n::text("打开文件").into(), Action::Open(*i)),
-                    (crate::i18n::text("在访达中显示").into(), Action::Reveal(*i)),
-                    (
-                        crate::i18n::text("复制路径").into(),
+                    MenuEntry::new(crate::i18n::text("打开文件"), Action::Open(*i)),
+                    MenuEntry::new(crate::i18n::text("在访达中显示"), Action::Reveal(*i)),
+                    MenuEntry::new(
+                        crate::i18n::text("复制路径"),
                         Action::Copy(file.path.clone()),
                     ),
-                    (
-                        crate::i18n::text("复制绝对路径").into(),
+                    MenuEntry::new(
+                        crate::i18n::text("复制绝对路径"),
                         Action::Copy(self.snapshot.root.join(&file.path).to_string_lossy().into()),
                     ),
                 ];
                 if self.scope.editable() {
-                    a.push((
+                    a.push(MenuEntry::new(
                         if self.scope == Scope::Staged {
                             crate::i18n::text("取消暂存")
                         } else {
                             crate::i18n::text("暂存更改")
-                        }
-                        .into(),
+                        },
                         Action::Mutation(if self.scope == Scope::Staged {
                             Mutation::Unstage(Some(file.path.clone()))
                         } else {
                             Mutation::Stage(Some(file.path.clone()))
                         }),
                     ));
-                    a.push((
-                        crate::i18n::text("撤销更改…").into(),
+                    a.push(MenuEntry::new(
+                        crate::i18n::text("撤销更改…"),
                         Action::Confirm(Mutation::Discard(file.path.clone())),
                     ));
                 }
@@ -528,6 +624,7 @@ impl ReviewPanel {
         if m == Menu::Branch {
             return div()
                 .id("review-popup")
+                .debug_selector(|| "review-popup".into())
                 .absolute()
                 .top(px(112.))
                 .left(px(8.))
@@ -540,13 +637,18 @@ impl ReviewPanel {
                 .child(self.branch_picker.clone());
         }
         let t = Theme::for_mode(self.mode);
+        // ChatGPT sizes these menus with `menuBounded` (min 200px, max 320px):
+        // the short comparison labels fit 200px, the diff controls need 220px.
         let width = if m == Menu::Jump || m == Menu::Commits {
             360.
+        } else if m == Menu::Scope {
+            200.
         } else {
-            224.
+            220.
         };
         let mut menu = div()
             .id("review-popup")
+            .debug_selector(|| "review-popup".into())
             .role(Role::Menu)
             .absolute()
             .top(px(
@@ -560,12 +662,18 @@ impl ReviewPanel {
             ))
             .w(px(width))
             .max_w_full()
-            .p(px(5.))
-            .rounded(px(13.))
-            .bg(t.elevated)
-            .border_1()
+            // ChatGPT's review menus: a 4px inset, 20px corners, a half-pixel
+            // hairline ring, and a 16px blur shadow offset 8px down.
+            .p(px(4.))
+            .rounded(px(20.))
+            .bg(menu_surface(t))
+            .border(px(0.5))
             .border_color(t.border)
-            .shadow_lg()
+            .shadow(vec![
+                gpui::BoxShadow::new(px(0.0), px(8.0), t.profile_menu_shadow.into())
+                    .blur_radius(px(16.0))
+                    .spread_radius(px(-4.0)),
+            ])
             .flex()
             .flex_col()
             .on_mouse_down_out(cx.listener(|s, _, _, cx| {
@@ -579,7 +687,7 @@ impl ReviewPanel {
         if m == Menu::Jump {
             menu = menu.child(div().h(px(34.)).px(px(8.)).child(self.jump.clone()));
         }
-        let actions = self.menu_actions(&m);
+        let actions = self.menu_entries(&m);
         let mut items = div()
             .id("review-menu-scroll")
             .max_h(px(360.))
@@ -599,23 +707,42 @@ impl ReviewPanel {
                     }),
             );
         }
-        for (i, (label, a)) in actions.into_iter().enumerate() {
+        for (i, entry) in actions.into_iter().enumerate() {
+            let MenuEntry {
+                label,
+                action: a,
+                leading,
+                trailing,
+                separator_before,
+            } = entry;
             let key_a = a.clone();
-            let selected = self.menu_selected == i;
+            let selected = self.menu_keyboard_selected && self.menu_selected == i;
+            if separator_before {
+                items = items.child(menu_separator(t));
+            }
             items = items.child(
                 div()
                     .id(("review-menu-item", i))
+                    .debug_selector(move || format!("review-menu-item-{i}"))
                     .role(Role::MenuItem)
                     .aria_label(label.clone())
                     .aria_selected(selected)
                     .focusable()
                     .tab_stop(true)
-                    .min_h(px(29.))
+                    .min_h(px(28.5625))
                     .px(px(8.))
+                    // ChatGPT's rows are 28.5625px: 13px text on an 18.5625px
+                    // line box plus 5px of padding. GPUI's text layout
+                    // quantizes that line box, so a row lands up to 0.2px
+                    // taller; the geometry test pins the totals to 1px.
                     .py(px(5.))
-                    .rounded(px(8.))
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(6.))
+                    .rounded(px(15.))
                     .text_size(px(13.))
-                    .line_height(px(19.))
+                    .line_height(px(18.5625))
                     .text_color(t.text)
                     .cursor_pointer()
                     .when(selected, |b| b.bg(t.sidebar_hover))
@@ -630,7 +757,38 @@ impl ReviewPanel {
                             s.action(key_a.clone(), w, cx);
                         }
                     }))
-                    .child(label),
+                    .when_some(leading, |row, glyph| {
+                        row.child(
+                            icon(glyph, t.text.into())
+                                .size(px(16.))
+                                .opacity(0.75)
+                                .flex_none(),
+                        )
+                    })
+                    .child(
+                        // The reference right-aligns a trailing glyph and lets
+                        // the label fill the row; without one the label keeps
+                        // its natural width.
+                        div()
+                            .when(trailing.is_some(), |d| d.flex_1().min_w(px(0.)))
+                            .truncate()
+                            .child(label),
+                    )
+                    .when_some(trailing, |row, glyph| {
+                        // The submenu chevron is tertiary; the tick that marks
+                        // the active source uses the body colour, as in the app.
+                        let color = if glyph == "review-chevron-right" {
+                            t.text_tertiary
+                        } else {
+                            t.text
+                        };
+                        row.child(
+                            icon(glyph, color.into())
+                                .size(px(16.))
+                                .opacity(0.75)
+                                .flex_none(),
+                        )
+                    }),
             );
         }
         menu.child(items)

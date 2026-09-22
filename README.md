@@ -218,7 +218,7 @@ Full launch options are in [src/main.rs](src/main.rs).
 |---|---|
 | `--markdown-file=/absolute/path/to/sample.txt` | Standalone Markdown window without app-server; combine with `--window-width=480` for narrow layouts. |
 | `--file-panel-root=/absolute/workspace --open-file=/absolute/file` | Real file editing, saving, and conflict checks; use disposable files. |
-| `--review-root=/absolute/repository --review-filter=src/example.rs` | Real Git review; screenshots wait for the diff to load. |
+| `--review-root=/absolute/repository --review-filter=src/example.rs [--review-menu=scope\|options\|branch]` | Real Git review; screenshots wait for the diff to load. The menu option opens one review popup for a deterministic capture. |
 | `--settings-page=appearance` | Open a settings page; slugs are in `src/settings/mod.rs`. |
 | `--language=en\|zh-CN\|auto` | Select the UI language for this launch. Set it explicitly for reproducible captures. |
 | `--chat-search-state=initial\|selected\|hover\|query\|no-match` | Open the chat search dialog in a fixed state for capture; combine with `--chat-search-query=` and `--chat-search-index=`. |
@@ -244,6 +244,7 @@ export CHATGPT_CDP_HTTP="http://127.0.0.1:${CAPTURE_CDP_PORT:?Set a dedicated de
 | Saved threads, both themes | `python3 scripts/capture_resume_reference.py --endpoint "$CHATGPT_CDP_HTTP" --manifest /path/to/manifest.json`; `python3 scripts/capture_resume_gpui.py --manifest /path/to/manifest.json --output artifacts/resume-alignment/actual` |
 | Terminal / files | `node scripts/cdp_capture_terminal.mjs artifacts/terminal`; `node scripts/cdp_capture_file_panel.mjs artifacts/file-panel` |
 | Review / side chat | `node scripts/cdp_capture_review.mjs artifacts/review-reference`; `node scripts/cdp_capture_side_chat.mjs artifacts/side-chat reference` |
+| Review menus | `node scripts/cdp_capture_review_menus.mjs --output=artifacts/review-menus` captures the comparison, options, and branch popups in both themes with their computed styles; `python3 scripts/compare_review_menus.py --reference DIR --gpui DIR --scale 2` scores the captures pixel by pixel and writes the crops, diffs, and report |
 | Account menu, logout | `node scripts/cdp_capture_account.mjs --output artifacts/account-phase/chatgpt-reference --theme=light`; `scripts/capture_account_gpui.sh`; `python3 scripts/compare_account_phase.py` |
 | Settings matrix | `./node_modules/.bin/electron scripts/verify_chatgpt_settings.cjs`; `REFRESH_SETTINGS_REFERENCES=1 scripts/capture_settings_matrix.sh`; `python3 scripts/verify_settings_matrix.py` |
 | Merged Phase 1–4 local-component gate | `python3 scripts/stage4/compare_merge_gate.py` (expects the dedicated ChatGPT/GPUI captures under `artifacts/merge-four-worktrees/`; threshold is 99% per local component) |

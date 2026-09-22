@@ -90,6 +90,13 @@ impl ChatApp {
             panel.update(cx, |panel, cx| panel.capture_filter(query, cx));
         }
     }
+    /// Opens one review popup (`scope`, `options`, `branch`) for capture.
+    #[cfg(feature = "screenshot")]
+    pub fn capture_review_menu(&mut self, name: &str, cx: &mut Context<Self>) {
+        if let Some(panel) = self.review_panels.get(&self.active_conversation) {
+            panel.update(cx, |panel, cx| panel.capture_menu(name, cx));
+        }
+    }
     /// Opens a persisted thread without requiring the sidebar to finish loading first.
     ///
     /// This is used by the deterministic Markdown capture path. It deliberately

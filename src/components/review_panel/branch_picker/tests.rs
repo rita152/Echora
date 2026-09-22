@@ -72,14 +72,19 @@ fn long_branch_rows_have_uniform_bounds_in_both_themes_and_widths() {
             window.read(|h, cx| {
                 let picker = h.picker.read(cx);
                 assert_eq!(picker.scroll.children_count(), 8);
-                assert_eq!(picker.scroll.bounds().size.height, px(8. * ROW_HEIGHT));
-                assert_eq!(picker.scroll.max_offset().y, px(0.));
+                assert_eq!(picker.scroll.bounds().size.height, px(LIST_HEIGHT));
+                // Eight rows overflow the reference's fixed 200px list.
+                assert_eq!(
+                    picker.scroll.max_offset().y,
+                    px(8. * ROW_HEIGHT - LIST_HEIGHT)
+                );
                 let first = picker.scroll.bounds_for_item(0).unwrap();
                 for index in 0..8 {
                     let row = picker.scroll.bounds_for_item(index).unwrap();
                     assert_eq!(row.size.height, px(ROW_HEIGHT));
                     assert_eq!(row.top() - first.top(), px(index as f32 * ROW_HEIGHT));
-                    assert!(row.size.width <= px(width - 12.));
+                    // The picker insets the list by 4px on each side.
+                    assert!(row.size.width <= px(width - 8.));
                 }
                 assert_eq!(picker.current, "origin/main");
                 assert_eq!(picker.branches[0], "origin/main");
@@ -167,10 +172,11 @@ fn keyboard_navigation_scrolls_without_changing_row_heights() {
     window.draw();
     window.read(|h, cx| {
         let picker = h.picker.read(cx);
-        assert_eq!(picker.selected, 39);
-        assert_eq!(picker.scroll.bounds().size.height, px(MAX_LIST_HEIGHT));
+        // The picker prepends the comparison base, which is not in the fixture.
+        assert_eq!(picker.selected, 40);
+        assert_eq!(picker.scroll.bounds().size.height, px(LIST_HEIGHT));
         assert!(picker.scroll.offset().y < px(0.));
-        for index in 0..40 {
+        for index in 0..41 {
             assert_eq!(
                 picker.scroll.bounds_for_item(index).unwrap().size.height,
                 px(ROW_HEIGHT)
