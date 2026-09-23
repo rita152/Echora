@@ -702,6 +702,25 @@ fn schedule_resumed_thread_screenshot(
                     }
                 }
                 let audit = app.read(cx).resumed_render_audit(&thread_id, cx);
+                // The comparison scripts refuse a capture that does not
+                // describe its own rasterization, so the resumed-thread audit
+                // carries the same metadata as every other screenshot.
+                let mut audit = audit;
+                if let serde_json::Value::Object(fields) = &mut audit {
+                    fields.insert(
+                        "viewportWidth".to_owned(),
+                        serde_json::json!(f32::from(window.viewport_size().width)),
+                    );
+                    fields.insert(
+                        "viewportHeight".to_owned(),
+                        serde_json::json!(f32::from(window.viewport_size().height)),
+                    );
+                    fields.insert("dpr".to_owned(), serde_json::json!(window.scale_factor()));
+                    fields.insert(
+                        "source".to_owned(),
+                        serde_json::json!("GPUI render_to_image; no resizing or alignment"),
+                    );
+                }
                 if let Err(error) = std::fs::write(
                     format!("{path}.render.json"),
                     serde_json::to_vec_pretty(&audit).expect("capture audit is JSON"),
@@ -998,6 +1017,9 @@ fn main() {
         arg.strip_prefix("--thread-hover-card=")
             .map(ToOwned::to_owned)
     });
+    let thread_rename = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--thread-rename=").map(ToOwned::to_owned));
     let project_create_open = args.iter().any(|arg| arg == "--project-create-open");
     let project_create_remote = args.iter().any(|arg| arg == "--project-create-remote");
     let activity_open = args.iter().any(|arg| arg == "--activity-open");
@@ -1163,6 +1185,11 @@ fn main() {
                 app::DismissPermissionUi,
                 None,
             )]);
+            cx.bind_keys([gpui::KeyBinding::new(
+                "escape",
+                app::DismissThreadRename,
+                Some("ThreadRename"),
+            )]);
             cx.bind_keys([
                 gpui::KeyBinding::new("backspace", Backspace, Some("PromptInput")),
                 gpui::KeyBinding::new("delete", Delete, Some("PromptInput")),
@@ -1292,6 +1319,9 @@ fn main() {
                         }
                         if let Some(thread) = thread_hover_card.clone() {
                             app.open_thread_hover_card_for_capture(&thread, cx);
+                        }
+                        if let Some(thread) = thread_rename.clone() {
+                            app.open_thread_rename_for_capture(&thread, cx);
                         }
                         if project_create_open {
                             app.open_project_creation(cx);

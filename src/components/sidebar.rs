@@ -9,8 +9,8 @@ use std::{
 };
 
 use gpui::{
-    Animation, AnimationExt, App, Bounds, ContentMask, Context, Div, Entity, Focusable, Hsla,
-    IntoElement, MouseButton, MouseDownEvent, Pixels, Render, ScrollHandle, ShapedLine,
+    Animation, AnimationExt, App, Bounds, ClickEvent, ContentMask, Context, Div, Entity, Focusable,
+    Hsla, IntoElement, MouseButton, MouseDownEvent, Pixels, Render, ScrollHandle, ShapedLine,
     SharedString, TextAlign, TextRun, Transformation, Window, canvas, deferred, div, point,
     prelude::*, px, radians, size,
 };
@@ -375,6 +375,20 @@ fn thread_hover_timestamp_ms(thread: &ThreadSummary) -> i64 {
     thread.recency_at.unwrap_or(thread.updated_at) * 1_000
 }
 
+/// The reference's rename field keeps at most 60 characters: the title it
+/// sends is trimmed, and anything longer becomes its first 59 characters plus
+/// an ellipsis. Measured with ASCII and CJK input, so the limit counts
+/// characters rather than bytes.
+fn rename_panel_title(title: &str) -> String {
+    let trimmed = title.trim();
+    if trimmed.chars().count() <= 60 {
+        return trimmed.to_owned();
+    }
+    let mut shortened: String = trimmed.chars().take(59).collect();
+    shortened.push('…');
+    shortened
+}
+
 /// The reference paints both sidebar hover cards with
 /// `bg-surface-elevated-secondary/90`, so what the user sees is that color
 /// resolved against the pane behind the card. GPUI composites a deferred
@@ -619,10 +633,14 @@ fn marquee_ease(progress: f32) -> f32 {
     bezier((lower + upper) * 0.5, 0.6, 1.0)
 }
 
+/// State of the modal rename panel. The reference renames a task through a
+/// centred dialog whose field opens with the whole title selected; the panel
+/// keeps the task it belongs to plus the title it started from so a Save that
+/// changes nothing stays a no-op.
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum RenameTarget {
-    Project(ProjectId),
-    Thread(ThreadId),
+pub struct ThreadRenamePanel {
+    pub thread_id: ThreadId,
+    pub title: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -672,8 +690,15 @@ pub struct SidebarView {
     marquee_animation_running: bool,
     show_all_projects: BTreeSet<ProjectId>,
     rename_input: Entity<PromptInput>,
-    rename_target: Option<RenameTarget>,
+    /// Project whose inline rename field is active; tasks use the modal panel.
+    rename_target: Option<ProjectId>,
     rename_focus_pending: bool,
+    /// Modal rename panel for a task row, plus its own field instance.
+    thread_rename: Option<ThreadRenamePanel>,
+    thread_rename_input: Entity<PromptInput>,
+    thread_rename_focus_pending: bool,
+    /// Capture request that arrived before the workspace listed the task.
+    pending_thread_rename: Option<String>,
     project_menu_id: Option<ProjectId>,
     thread_menu_id: Option<ThreadId>,
     menu_origin: (f32, f32),
@@ -702,6 +727,14 @@ impl SidebarView {
             this.commit_rename(event.0.clone(), cx);
         })
         .detach();
+        let thread_rename_input = cx.new(|cx| PromptInput::rename_chat(mode, "", cx));
+        cx.subscribe(
+            &thread_rename_input,
+            |this, _, event: &PromptSubmitted, cx| {
+                this.commit_thread_rename(event.0.clone(), cx);
+            },
+        )
+        .detach();
         let receiver = store.subscribe();
         cx.spawn(async move |this, cx| {
             while let Ok(snapshot) = receiver.recv().await {
@@ -714,6 +747,10 @@ impl SidebarView {
                     if let Some(thread) = this.pending_thread_hover_card.clone() {
                         this.pending_thread_hover_card = None;
                         this.open_thread_hover_card_for_capture(&thread, cx);
+                    }
+                    if let Some(thread) = this.pending_thread_rename.clone() {
+                        this.pending_thread_rename = None;
+                        this.open_thread_rename_for_capture(&thread, cx);
                     }
                     cx.notify();
                 });
@@ -750,6 +787,10 @@ impl SidebarView {
             rename_input,
             rename_target: None,
             rename_focus_pending: false,
+            thread_rename: None,
+            thread_rename_input,
+            thread_rename_focus_pending: false,
+            pending_thread_rename: None,
             project_menu_id: None,
             thread_menu_id: None,
             menu_origin: (0.0, 0.0),
@@ -777,6 +818,8 @@ impl SidebarView {
     pub fn set_mode(&mut self, mode: ThemeMode, cx: &mut Context<Self>) {
         self.mode = mode;
         self.rename_input
+            .update(cx, |input, cx| input.set_mode(mode, cx));
+        self.thread_rename_input
             .update(cx, |input, cx| input.set_mode(mode, cx));
         cx.notify();
     }
@@ -1147,11 +1190,12 @@ impl SidebarView {
         new_conversation_target(project)
     }
 
-    fn start_rename(&mut self, target: RenameTarget, current: String, cx: &mut Context<Self>) {
-        self.rename_target = Some(target);
+    fn start_rename(&mut self, project_id: ProjectId, current: String, cx: &mut Context<Self>) {
+        self.rename_target = Some(project_id);
         self.rename_input
             .update(cx, |input, cx| input.set_text_silently(current, cx));
         self.rename_focus_pending = true;
+        self.thread_rename = None;
         self.project_menu_id = None;
         self.thread_menu_id = None;
         self.delete_confirmation = None;
@@ -1159,21 +1203,104 @@ impl SidebarView {
     }
 
     fn commit_rename(&mut self, name: String, cx: &mut Context<Self>) {
-        let Some(target) = self.rename_target.take() else {
+        let Some(project_id) = self.rename_target.take() else {
             return;
         };
-        match target {
-            RenameTarget::Project(project_id) => self.store.update_project(
-                project_id,
-                UpdateProject {
-                    name: Some(name),
-                    roots: None,
-                },
-            ),
-            RenameTarget::Thread(thread_id) => self.store.rename_thread(thread_id, name),
-        }
+        self.store.update_project(
+            project_id,
+            UpdateProject {
+                name: Some(name),
+                roots: None,
+            },
+        );
         self.rename_input.update(cx, |input, cx| input.clear(cx));
         cx.notify();
+    }
+
+    /// Opens the modal rename panel the reference shows for a task row. The
+    /// field starts focused with the whole title selected.
+    pub fn open_thread_rename(
+        &mut self,
+        thread_id: ThreadId,
+        title: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.thread_rename = Some(ThreadRenamePanel {
+            thread_id,
+            title: title.clone(),
+        });
+        self.thread_rename_input
+            .update(cx, |input, cx| input.set_rename_text(&title, cx));
+        self.thread_rename_focus_pending = true;
+        self.project_menu_id = None;
+        self.thread_menu_id = None;
+        self.delete_confirmation = None;
+        cx.notify();
+    }
+
+    /// The panel the application shell draws over the window, if any.
+    pub fn thread_rename(&self) -> Option<ThreadRenamePanel> {
+        self.thread_rename.clone()
+    }
+
+    pub fn thread_rename_input(&self) -> Entity<PromptInput> {
+        self.thread_rename_input.clone()
+    }
+
+    /// The reference closes the panel without touching the task's name when
+    /// Cancel, the close button, Escape, or the backdrop is used.
+    pub fn dismiss_thread_rename(&mut self, cx: &mut Context<Self>) {
+        if self.thread_rename.take().is_some() {
+            self.thread_rename_input
+                .update(cx, |input, cx| input.clear(cx));
+            cx.notify();
+        }
+    }
+
+    /// Save and Enter both submit the panel's field, which reports the title
+    /// back through the same `PromptSubmitted` path.
+    pub fn submit_thread_rename(&mut self, cx: &mut Context<Self>) {
+        self.thread_rename_input
+            .update(cx, |input, cx| input.submit(cx));
+    }
+
+    /// Saves through `thread/name/set`. The reference trims the field, leaves
+    /// the task alone when the result is empty, and cuts over-long titles to
+    /// 59 characters plus an ellipsis (measured over ASCII and CJK inputs).
+    fn commit_thread_rename(&mut self, name: String, cx: &mut Context<Self>) {
+        let Some(panel) = self.thread_rename.take() else {
+            return;
+        };
+        self.thread_rename_input
+            .update(cx, |input, cx| input.clear(cx));
+        let name = rename_panel_title(&name);
+        if !name.is_empty() && name != panel.title {
+            self.store.rename_thread(panel.thread_id, name);
+        }
+        cx.notify();
+    }
+
+    /// Opens the panel without a pointer so the screenshot path captures the
+    /// same surface a real double click produces. `thread` matches the task
+    /// title first and its stable id second.
+    pub fn open_thread_rename_for_capture(&mut self, thread: &str, cx: &mut Context<Self>) {
+        let listed = self
+            .snapshot
+            .recent_threads
+            .iter()
+            .find(|candidate| candidate.title == thread || candidate.thread_id == thread)
+            .map(|thread| (thread.thread_id.clone(), thread.title.clone()));
+        let Some((thread_id, title)) = listed else {
+            // The workspace may not have listed its tasks yet.
+            self.pending_thread_rename = Some(thread.to_owned());
+            return;
+        };
+        self.open_thread_rename(thread_id, title, cx);
+    }
+
+    #[cfg(test)]
+    pub fn thread_rename_is_open(&self) -> bool {
+        self.thread_rename.is_some()
     }
 
     fn reveal_in_finder(&mut self, path: PathBuf, cx: &mut Context<Self>) {
@@ -1515,8 +1642,6 @@ impl SidebarView {
         let selected = self.selected_thread_id.as_deref() == Some(thread_id.as_str());
         let hovered = self.hovered_thread_id.as_deref() == Some(thread_id.as_str());
         let pending = self.snapshot.is_pending_thread(&thread_id);
-        let rename_active =
-            self.rename_target.as_ref() == Some(&RenameTarget::Thread(thread_id.clone()));
         let active = matches!(thread.activity, ThreadActivity::Active { .. });
         let status_error = matches!(thread.activity, ThreadActivity::SystemError);
         let can_pin = self
@@ -1603,23 +1728,23 @@ impl SidebarView {
             .when(!hovered && !active && !status_error, |rail| {
                 rail.w(px(0.0)).min_w(px(0.0))
             });
-        let title = if rename_active {
-            self.rename_input.clone().into_any_element()
-        } else {
-            div()
-                .min_w(px(0.0))
-                .flex_1()
-                .h(px(THREAD_TITLE_LINE_HEIGHT))
-                .child(thread_title_canvas(
-                    thread.title.clone().into(),
-                    theme.sidebar_text.into(),
-                    title_scroll_offset,
-                    title_width > title_viewport_width,
-                ))
-                .into_any_element()
-        };
+        // Task rows rename through the modal panel the reference shows on
+        // double click, so the row itself always draws the title canvas.
+        let title = div()
+            .min_w(px(0.0))
+            .flex_1()
+            .h(px(THREAD_TITLE_LINE_HEIGHT))
+            .child(thread_title_canvas(
+                thread.title.clone().into(),
+                theme.sidebar_text.into(),
+                title_scroll_offset,
+                title_width > title_viewport_width,
+            ))
+            .into_any_element();
         let hover_id = thread_id.clone();
         let select_id = thread_id.clone();
+        let rename_id = thread_id.clone();
+        let rename_title = thread.title.clone();
         let context_id = thread_id.clone();
         let bounds_id = thread_id.clone();
         let card_id = thread_id.clone();
@@ -1732,9 +1857,15 @@ impl SidebarView {
                 this.set_thread_row_hovered(card_id.clone(), *hovered, cx);
                 cx.notify();
             }))
-            .when(!pending && !rename_active, |row| {
-                row.on_click(cx.listener(move |this, _, _, cx| {
+            .when(!pending, |row| {
+                // The reference renames a task on double click: the first click
+                // opens that conversation, and the second one lands on a row
+                // that is already current and raises the rename panel.
+                row.on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
                     this.select_thread(select_id.clone(), cx);
+                    if event.click_count() > 1 {
+                        this.open_thread_rename(rename_id.clone(), rename_title.clone(), cx);
+                    }
                 }))
                 .on_mouse_down(
                     MouseButton::Right,
@@ -1767,8 +1898,7 @@ impl SidebarView {
             .contains(&project_id);
         let pending = self.snapshot.is_pending_project(&project_id);
         let hovered = self.hovered_project_id.as_deref() == Some(project_id.as_str());
-        let rename_active =
-            self.rename_target.as_ref() == Some(&RenameTarget::Project(project_id.clone()));
+        let rename_active = self.rename_target.as_ref() == Some(&project_id);
         let menu_open = self.project_menu_id.as_deref() == Some(project_id.as_str());
         let threads = self
             .snapshot
@@ -2020,11 +2150,7 @@ impl SidebarView {
                             .child(project.name.clone())
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 cx.stop_propagation();
-                                this.start_rename(
-                                    RenameTarget::Project(rename_id.clone()),
-                                    rename_name.clone(),
-                                    cx,
-                                );
+                                this.start_rename(rename_id.clone(), rename_name.clone(), cx);
                             })),
                     )
                     .child(div().flex_1())
@@ -2981,11 +3107,7 @@ impl SidebarView {
                 )
                 .when(can_update, |row| {
                     row.on_click(cx.listener(move |this, _, _, cx| {
-                        this.start_rename(
-                            RenameTarget::Project(rename_id.clone()),
-                            project_name.clone(),
-                            cx,
-                        );
+                        this.start_rename(rename_id.clone(), project_name.clone(), cx);
                     }))
                 }),
             );
@@ -3125,11 +3247,7 @@ impl SidebarView {
                 )
                 .when(can_rename, |row| {
                     row.on_click(cx.listener(move |this, _, _, cx| {
-                        this.start_rename(
-                            RenameTarget::Thread(rename_id.clone()),
-                            rename_title.clone(),
-                            cx,
-                        );
+                        this.open_thread_rename(rename_id.clone(), rename_title.clone(), cx);
                     }))
                 }),
             )
@@ -3666,6 +3784,9 @@ impl Render for SidebarView {
         if std::mem::take(&mut self.rename_focus_pending) {
             self.rename_input.focus_handle(cx).focus(window, cx);
         }
+        if std::mem::take(&mut self.thread_rename_focus_pending) {
+            self.thread_rename_input.focus_handle(cx).focus(window, cx);
+        }
         let theme = Theme::for_mode(self.mode);
         let mut sidebar = div()
             .id("sidebar")
@@ -3805,7 +3926,7 @@ mod tests {
     use std::{
         path::PathBuf,
         sync::{
-            Arc,
+            Arc, Mutex,
             atomic::{AtomicU64, Ordering},
         },
         time::{Duration, Instant},
@@ -3819,12 +3940,13 @@ mod tests {
         ROW_HEIGHT, ROW_RADIUS, SIDEBAR_TITLEBAR_SAFE_TOP, SIDEBAR_WIDTH, SidebarView,
         THREAD_HOVER_CARD_CLOSE_DELAY, THREAD_HOVER_CARD_DELAY, compact_relative_time,
         home_shortened_path, hover_card_surface, project_hover_paths, project_hover_summary,
+        rename_panel_title,
     };
     use crate::{
         agent::{
             AgentBackend, AgentCapabilities, AgentCapability, AgentConnectionEvent, AgentEvent,
             AgentModelCatalog, AgentPermissionProfile, AgentRequest, AgentRun, Page, PageRequest,
-            Project, ThreadActivity, ThreadListRequest, ThreadSummary, WorkspaceResult,
+            Project, ThreadActivity, ThreadId, ThreadListRequest, ThreadSummary, WorkspaceResult,
         },
         git_review::ProjectRepo,
         theme::ThemeMode,
@@ -3843,6 +3965,10 @@ mod tests {
         /// When set, the fixture lists one task that belongs to no project, the
         /// state the reference renders in the Recents section.
         projectless: bool,
+        /// When set, the fixture advertises `thread/name/set` and records every
+        /// rename it is asked to perform.
+        thread_rename: bool,
+        renames: Mutex<Vec<String>>,
     }
 
     impl SidebarBackend {
@@ -3860,17 +3986,50 @@ mod tests {
                 _events: events,
                 event_receiver,
                 projectless,
+                thread_rename: false,
+                renames: Mutex::new(Vec::new()),
             })
+        }
+
+        fn with_thread_rename() -> Arc<Self> {
+            let (events, event_receiver) = async_channel::unbounded();
+            Arc::new(Self {
+                _events: events,
+                event_receiver,
+                projectless: false,
+                thread_rename: true,
+                renames: Mutex::new(Vec::new()),
+            })
+        }
+
+        fn renames(&self) -> Vec<String> {
+            self.renames.lock().expect("rename log").clone()
         }
     }
 
     impl AgentBackend for SidebarBackend {
         fn capabilities(&self) -> AgentCapabilities {
-            AgentCapabilities::new([
+            let mut capabilities = vec![
                 AgentCapability::ProjectList,
                 AgentCapability::ThreadList,
                 AgentCapability::ThreadSectionList,
-            ])
+            ];
+            if self.thread_rename {
+                capabilities.push(AgentCapability::ThreadRename);
+            }
+            AgentCapabilities::new(capabilities)
+        }
+
+        fn set_thread_name(
+            &self,
+            thread_id: ThreadId,
+            name: String,
+        ) -> Receiver<WorkspaceResult<()>> {
+            self.renames
+                .lock()
+                .expect("rename log")
+                .push(format!("{thread_id}:{name}"));
+            response(Ok(()))
         }
 
         fn subscribe_connection_events(&self) -> Receiver<AgentConnectionEvent> {
@@ -4395,6 +4554,180 @@ mod tests {
                 "{mode:?} card surface {:?} should composite to {expected}",
                 surface.r * 255.0
             );
+        }
+    }
+
+    #[test]
+    fn rename_panel_title_matches_the_reference_trim_and_length() {
+        assert_eq!(rename_panel_title("  spaced  "), "spaced");
+        assert_eq!(rename_panel_title("   "), "");
+        assert_eq!(rename_panel_title(&"a".repeat(60)), "a".repeat(60));
+        let long = rename_panel_title(&"x".repeat(200));
+        assert_eq!(long.chars().count(), 60);
+        assert!(long.ends_with('…'));
+        // The reference counts characters, not bytes: 100 CJK characters
+        // become 59 characters plus the ellipsis.
+        let cjk = rename_panel_title(&"汉".repeat(100));
+        assert_eq!(cjk.chars().count(), 60);
+        assert_eq!(
+            cjk.chars().filter(|character| *character == '汉').count(),
+            59
+        );
+    }
+
+    #[test]
+    fn double_clicking_a_task_row_opens_the_rename_panel() {
+        use gpui::{Modifiers, MouseDownEvent, MouseUpEvent};
+
+        static SERIAL: AtomicU64 = AtomicU64::new(1);
+        let preferences = std::env::temp_dir()
+            .join(format!(
+                "gpui-sidebar-rename-{}-{}",
+                std::process::id(),
+                SERIAL.fetch_add(1, Ordering::Relaxed)
+            ))
+            .join("preferences.json");
+        let backend = SidebarBackend::with_thread_rename();
+        let store = WorkspaceStore::with_preferences_path(backend.clone(), preferences.clone());
+        store.refresh_all();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while store.snapshot().loading.recent {
+            assert!(Instant::now() < deadline, "sidebar fixture did not load");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let mut app = TestApp::new();
+        let mut window = app.open_window_with_options(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: point(px(0.0), px(0.0)),
+                    size: size(px(900.0), px(700.0)),
+                })),
+                ..Default::default()
+            },
+            |_, cx| SidebarView::new(ThemeMode::Dark, false, store.clone(), cx),
+        );
+        window.draw();
+        let row = window.read(|sidebar, _| {
+            *sidebar
+                .thread_row_bounds
+                .borrow()
+                .get("thread-stable-id")
+                .expect("the rendered task row records its bounds")
+        });
+        let point_on_row = point(
+            row.origin.x + row.size.width / 2.0,
+            row.origin.y + row.size.height / 2.0,
+        );
+
+        // A single click opens the conversation and must not raise the panel,
+        // which is what the reference does before the second click lands.
+        window.simulate_click(point_on_row, MouseButton::Left);
+        window.draw();
+        assert!(!window.read(|sidebar, _| sidebar.thread_rename_is_open()));
+
+        // The second click of the double click carries click_count 2.
+        window.simulate_event(MouseDownEvent {
+            position: point_on_row,
+            modifiers: Modifiers::none(),
+            button: MouseButton::Left,
+            click_count: 2,
+            first_mouse: false,
+        });
+        window.simulate_event(MouseUpEvent {
+            position: point_on_row,
+            modifiers: Modifiers::none(),
+            button: MouseButton::Left,
+            click_count: 2,
+        });
+        window.draw();
+
+        let panel = window.read(|sidebar, cx| {
+            assert!(sidebar.thread_rename_is_open(), "the panel should be open");
+            let input = sidebar.thread_rename_input();
+            input.read(cx).text().to_owned()
+        });
+        assert_eq!(panel, "Stable thread");
+
+        if let Some(parent) = preferences.parent() {
+            let _ = std::fs::remove_dir_all(parent);
+        }
+    }
+
+    #[test]
+    fn rename_panel_saves_trimmed_titles_and_dismissal_keeps_the_name() {
+        static SERIAL: AtomicU64 = AtomicU64::new(1);
+        let preferences = std::env::temp_dir()
+            .join(format!(
+                "gpui-sidebar-rename-save-{}-{}",
+                std::process::id(),
+                SERIAL.fetch_add(1, Ordering::Relaxed)
+            ))
+            .join("preferences.json");
+        let backend = SidebarBackend::with_thread_rename();
+        let store = WorkspaceStore::with_preferences_path(backend.clone(), preferences.clone());
+        store.refresh_all();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while store.snapshot().loading.recent {
+            assert!(Instant::now() < deadline, "sidebar fixture did not load");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let mut app = TestApp::new();
+        let mut window = app.open_window_with_options(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: point(px(0.0), px(0.0)),
+                    size: size(px(900.0), px(700.0)),
+                })),
+                ..Default::default()
+            },
+            |_, cx| SidebarView::new(ThemeMode::Dark, false, store.clone(), cx),
+        );
+        window.draw();
+
+        // Cancel, the close button, Escape, and the scrim all run this path and
+        // must leave the task's name alone.
+        window.update(|sidebar, _, cx| {
+            sidebar.open_thread_rename(
+                "thread-stable-id".to_owned(),
+                "Stable thread".to_owned(),
+                cx,
+            );
+            sidebar.dismiss_thread_rename(cx);
+        });
+        assert!(backend.renames().is_empty(), "dismissal must not rename");
+        assert!(!window.read(|sidebar, _| sidebar.thread_rename_is_open()));
+
+        // Save trims the field; whitespace only and an unchanged title are
+        // no-ops, exactly like the reference form.
+        window.update(|sidebar, _, cx| {
+            sidebar.open_thread_rename(
+                "thread-stable-id".to_owned(),
+                "Stable thread".to_owned(),
+                cx,
+            );
+            let input = sidebar.thread_rename_input();
+            input.update(cx, |input, cx| input.set_rename_text("   ", cx));
+            sidebar.submit_thread_rename(cx);
+        });
+        assert!(backend.renames().is_empty(), "blank titles are ignored");
+
+        window.update(|sidebar, _, cx| {
+            sidebar.open_thread_rename(
+                "thread-stable-id".to_owned(),
+                "Stable thread".to_owned(),
+                cx,
+            );
+            let input = sidebar.thread_rename_input();
+            input.update(cx, |input, cx| {
+                input.set_rename_text("  Renamed task  ", cx)
+            });
+            sidebar.submit_thread_rename(cx);
+        });
+        assert_eq!(backend.renames(), vec!["thread-stable-id:Renamed task"]);
+        assert!(!window.read(|sidebar, _| sidebar.thread_rename_is_open()));
+
+        if let Some(parent) = preferences.parent() {
+            let _ = std::fs::remove_dir_all(parent);
         }
     }
 }

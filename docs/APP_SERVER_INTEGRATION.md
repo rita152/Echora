@@ -310,7 +310,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/loaded/list` | 默认 | 未接入 | — | — |
 | `thread/memoryMode/set` | 实验 | 未接入 | — | — |
 | `thread/metadata/update` | 默认 | 已接入 | projectId 省略表示不变，空字符串表示移出项目，非空 id 表示分配；读取 result.thread。 | `manager/workspace` |
-| `thread/name/set` | 默认 | 已接入 | threadId、name；重命名会话。 | `manager/workspace` |
+| `thread/name/set` | 默认 | 已接入 | threadId、name；重命名会话。侧栏双击任务行弹出与参考一致的居中面板：输入框默认全选，取消／关闭／Esc／蒙层不发送请求，保存与 Enter 复用同一提交路径，空或纯空白不发送，超过 60 个字符的名称与参考一致截为前 59 个字符加省略号。 | `manager/workspace`、`components/sidebar` |
 | `thread/queue/add` | 实验 | 未接入 | — | — |
 | `thread/queue/delete` | 实验 | 未接入 | — | — |
 | `thread/queue/list` | 实验 | 未接入 | — | — |

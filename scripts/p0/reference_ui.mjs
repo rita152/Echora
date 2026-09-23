@@ -15,7 +15,12 @@ export function option(name, fallback = null) {
 }
 
 export function referencePid() {
-  const pids = execFileSync('pgrep', ['-f', 'MacOS/ChatGPT --user-data-dir=']).toString().trim().split('\n').filter(Boolean);
+  // Several worktrees keep their own dedicated instance alive at the same
+  // time; CHATGPT_REFERENCE_USER_DATA narrows this to the one this run owns
+  // instead of failing (or steering) because a sibling task is also running.
+  const owned = process.env.CHATGPT_REFERENCE_USER_DATA;
+  const pattern = owned ? 'MacOS/ChatGPT --user-data-dir=' + owned : 'MacOS/ChatGPT --user-data-dir=';
+  const pids = execFileSync('pgrep', ['-f', pattern]).toString().trim().split('\n').filter(Boolean);
   if (pids.length !== 1) throw new Error('expected exactly one dedicated reference instance, found ' + pids.length);
   return pids[0];
 }
