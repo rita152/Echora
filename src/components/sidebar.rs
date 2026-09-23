@@ -418,7 +418,7 @@ const HOVER_CARD_CJK_FALLBACK: &str = ".PingFang UI SC";
 
 /// Font for every run the hover cards print, so a Chinese project or task title
 /// keeps the reference's advances instead of the theme's wider public fallback.
-fn hover_card_font(weight: gpui::FontWeight) -> gpui::Font {
+pub(crate) fn hover_card_font(weight: gpui::FontWeight) -> gpui::Font {
     gpui::Font {
         family: crate::theme::UI_FONT_FAMILY.into(),
         features: Default::default(),

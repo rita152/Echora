@@ -600,6 +600,96 @@ pub(super) fn strip_terminal_line_ending(output: &str) -> &str {
         .unwrap_or(output)
 }
 
+/// The rail lists one item per user message, in transcript order. Every
+/// historical row carries its transcript turn, so the item can repeat the
+/// prompt and the response of the very same turn; the newest row takes the
+/// assistant text that follows it in the list.
+pub(super) fn user_message_navigation_items(
+    rows: &[ConversationListRow],
+    transcript: &[ConversationTranscriptTurn],
+) -> Vec<super::navigation::UserMessageNavigationItem> {
+    use super::navigation::UserMessageNavigationItem;
+
+    let mut items: Vec<UserMessageNavigationItem> = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        let (label, preview, bookmark_id) = match row {
+            ConversationListRow::HistoricalUser {
+                turn_index,
+                message,
+                ..
+            } => {
+                let turn = transcript.get(*turn_index);
+                (
+                    message.trim().to_owned(),
+                    turn.map(|turn| turn.assistant_message.clone())
+                        .unwrap_or_default(),
+                    turn.and_then(|turn| turn.turn_id.clone())
+                        .unwrap_or_else(|| format!("turn-{turn_index}")),
+                )
+            }
+            ConversationListRow::CurrentUser { message, .. }
+            | ConversationListRow::MessageEdit { text: message } => (
+                message.trim().to_owned(),
+                assistant_text_after(rows, index),
+                "current-turn".to_owned(),
+            ),
+            // A resumed turn prints its steering messages from the activity
+            // stream instead of a transcript row, and the reference counts
+            // each of them as a rail item too.
+            ConversationListRow::Activity {
+                unit: ActivityStreamUnit::Standalone(ConversationActivity::UserMessage { text, .. }),
+                ..
+            } => (
+                text.trim().to_owned(),
+                assistant_text_after(rows, index),
+                format!("activity-{index}"),
+            ),
+            _ => continue,
+        };
+        if label.is_empty() {
+            continue;
+        }
+        items.push(UserMessageNavigationItem {
+            row_index: index,
+            turn_end_row: index,
+            bookmark_id,
+            label,
+            preview,
+        });
+    }
+    for position in 0..items.len() {
+        let start = items[position].row_index;
+        let end = items
+            .get(position + 1)
+            .map(|next| next.row_index - 1)
+            .unwrap_or_else(|| rows.len().saturating_sub(1));
+        if let Some(item) = items.get_mut(position) {
+            item.turn_end_row = end.max(start);
+        }
+    }
+    items
+}
+
+/// The response printed under the newest user message: the turn's assistant
+/// markdown, or the resume footer that stands in for it.
+fn assistant_text_after(rows: &[ConversationListRow], index: usize) -> String {
+    for row in rows.iter().skip(index + 1) {
+        match row {
+            ConversationListRow::AssistantMarkdown { text, .. } => return text.clone(),
+            ConversationListRow::CurrentResponseFooter { message, .. } => return message.clone(),
+            ConversationListRow::HistoricalUser { .. }
+            | ConversationListRow::CurrentUser { .. }
+            | ConversationListRow::MessageEdit { .. } => break,
+            ConversationListRow::Activity {
+                unit: ActivityStreamUnit::Standalone(ConversationActivity::UserMessage { .. }),
+                ..
+            } => break,
+            _ => {}
+        }
+    }
+    String::new()
+}
+
 pub(super) fn conversation_list_rows(
     transcript: Vec<ConversationTranscriptTurn>,
     current: CurrentTurnRows<'_>,

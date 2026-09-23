@@ -132,6 +132,11 @@ pub struct Theme {
     pub chat_search_hint_surface: Rgba,
     /// Surface of the inline message editor secondary button (dark: white 3%, light: white 96%).
     pub edit_button_surface: Rgba,
+    /// Conversation user-message navigation rail. The markers print ChatGPT's
+    /// `--color-codex-description`; the hover card reuses the elevated
+    /// secondary surface at 95% and the shared `shadow-xl-spread`.
+    pub navigation_rail_marker: Rgba,
+    pub navigation_rail_surface: Rgba,
     pub settings_search: Rgba,
     pub settings_accent: Rgba,
     pub settings_description: Rgba,
@@ -252,6 +257,10 @@ impl Theme {
                 chat_search_description: rgba(0x1a1c1f7e),
                 chat_search_hint_surface: rgba(0x1a1c1f1a),
                 edit_button_surface: rgba(0xfffffff5),
+                // CDP light: `--color-codex-description` rgba(26, 28, 31, .494).
+                navigation_rail_marker: rgba(0x1a1c1f7e),
+                // `bg-surface-elevated-secondary/95` over the #ffffff pane.
+                navigation_rail_surface: rgba(0xffffffff),
                 // ChatGPT settings search surface at the reference capture
                 // resolves to #f2f2f2 on the light shell.
                 settings_search: rgba(0xf2f2f2ff),
@@ -345,6 +354,12 @@ impl Theme {
                 chat_search_description: rgba(0xffffff7f),
                 chat_search_hint_surface: rgba(0xffffff1a),
                 edit_button_surface: rgba(0xffffff08),
+                // CDP dark: `--color-codex-description` rgba(255, 255, 255, .498).
+                navigation_rail_marker: rgba(0xffffff7f),
+                // `bg-surface-elevated-secondary/95` (#2d2d2d) over the
+                // #181818 pane, resolved so the card never depends on a
+                // backdrop GPUI cannot sample.
+                navigation_rail_surface: rgba(0x2c2c2cff),
                 // The sidebar search is a little brighter than the page;
                 // the management search has its own #2d2d2d fill.
                 settings_search: rgba(0x2e2e2eff),
