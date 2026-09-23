@@ -94,6 +94,7 @@ Cargo 包和可执行文件目前仍名为 `gpui-chat-clone`，现有构建与�
 | 打开会话 | 侧栏项目、最近、归档或搜索 |
 | 查看项目信息 | 悬停侧栏项目行：卡片显示项目名、任务数、仓库、工作目录和“编辑项目” |
 | 查看任务信息 | 悬停项目下的侧栏任务行：卡片显示任务标题、环境图标与距今时间，以及任务所属项目 |
+| 重命名任务 | 双击侧栏任务行：第一次点击进入对应会话，第二次弹出与 ChatGPT 一致的居中重命名面板（标题输入框默认全选，可用 `取消`、`保存`、`Esc`、关闭按钮或蒙层退出） |
 | 搜索聊天 | 侧边栏搜索按钮 → 历史会话搜索弹窗（`Enter` 打开、`⌘1`–`⌘9` 选择、`Esc` 关闭） |
 | 切换终端 | 右侧面板 → 终端；`Ctrl+反引号` |
 | 打开文件 | 右侧面板 → 文件；`Cmd+P` |
@@ -235,6 +236,7 @@ Computer Use 只能驱动 macOS 视作用户应用的 bundle，而且驱动过�
 | `--pull-requests [--pull-requests-select=N \| --pull-requests-title=TEXT] [--pull-requests-tab=code\|review] [--pull-requests-list-tab=all\|reviewing\|authored] [--pull-requests-status=open\|merged\|closed\|all] [--pull-requests-search=TEXT] [--pull-requests-file-tree] [--pull-requests-scroll=px] [--pull-requests-action=...] [--pull-requests-comment-menu]` | Pull Requests 页面确定性状态：列表、标签、搜索、过滤、分组、详情分节、diff、文件树、Review 标签，以及 `scripts/capture_pull_requests_gpui.sh` 使用的交互状态。 |
 | `--project-hover-card=NAME` | 不依赖指针直接打开指定项目（按名称或稳定 id）的侧栏悬停卡片，用于悬停卡片截图的静态部分。 |
 | `--thread-hover-card=TITLE` | 不依赖指针直接打开指定任务（按标题或稳定 id）的侧栏悬停卡片，用于悬停卡片截图的静态部分。 |
+| `--thread-rename=TITLE` | 不依赖指针直接打开指定任务（按标题或稳定 id）的重命名面板，用于重命名面板截图的静态部分。 |
 | `--print-diagnostics` | 打印可执行文件路径、工作目录、编译工作树、bundle 名称与标识、已解析的资源目录及其来源，以及每个资源候选路径与判定，随后退出。用于证明验收运行驱动的是哪一个构建。 |
 
 `GPUI_ASSETS_DIR` 直接把加载器指向某个资源目录，并成为唯一候选，因此填错会明确失败，而不会悄悄改用别处的资源。未设置时的搜索顺序为：bundle 内的 `Contents/Resources/assets`、可执行文件旁的 `assets`、编译工作树、工作目录；只有包含 `icons/` 的目录才算可用。
@@ -260,6 +262,8 @@ export CHATGPT_CDP_HTTP="http://127.0.0.1:${CAPTURE_CDP_PORT:?Set a dedicated de
 | 已合并 Phase 1–4 局部组件门禁 | `python3 scripts/stage4/compare_merge_gate.py`（需要 `artifacts/merge-four-worktrees/` 下的专用 ChatGPT/GPUI 截图；每个局部组件阈值为 99%） |
 | 侧栏项目悬停卡片 | `CHATGPT_CDP_HTTP="$CHATGPT_CDP_HTTP" node scripts/cdp_capture_project_hover.mjs --output artifacts/project-hover/reference` 悬停真实行后采集参考卡片（几何、计算样式、图标与截图）；`--project-hover-card=NAME --screenshot=artifacts/project-hover/gpui/light-card.png` 采集本机卡片；`python3 scripts/compare_project_hover.py --reference artifacts/project-hover/reference --gpui artifacts/project-hover/gpui --output artifacts/project-hover/compare` 逐主题打分。`cargo test project_hover` 走与真实悬停相同的指针路径（延迟出现、停留在卡片上保持打开、移开后关闭）。 |
 | 侧栏任务悬停卡片 | `scripts/capture_thread_hover_gpui.sh both` 在设置了 `CHATGPT_CDP_HTTP` 时刷新参考采集，用 `--thread-hover-card=TITLE` 采集两个主题，再由 `scripts/compare_thread_hover.py` 逐主题打分：报告 `pixelConsistency`、`pixelsWithin2`、`pixelsWithin12`、仓库统一的 `toleranceAdjustedSimilarity` 以及卡片的纵向锚点偏差。卡片在指针进入项目任务的行动 240 ms 后出现，指针停留在卡片上时保持打开，与参考一致地对不属于任何项目的"最近"行不显示卡片；`cargo test thread_hover` 走同一指针路径。 |
+| 侧栏布局 | `scripts/launch_chatgpt_reference.sh` 启动专用参考实例（独立端口与 profile 克隆，并清掉克隆里指向用户窗口的 `Singleton*` 链接，避免应用把新实例转发进用户自己的窗口）；随后 `CHATGPT_CDP_HTTP="$CHATGPT_CDP_HTTP" node scripts/cdp_capture_sidebar_layout.mjs --output artifacts/sidebar-layout/reference` 通过应用自身的 Appearance 控件切换主题，记录侧栏每个 landmark 的几何、计算样式（两个主题）以及整窗与侧栏截图；`--theme=dark --window-width=1440 --window-height=900 --screenshot=artifacts/sidebar-layout/gpui/dark.png` 以同一视口采集本机侧栏，`python3 scripts/compare_sidebar_layout.py --reference …/dark-window.png --gpui …/dark.png --spec …/dark-spec.json --scale 2` 逐个 landmark 与参考对齐并给出逐行偏移。`scripts/cdp_sidebar_row_tree.mjs` 打印参考端某一行元素的盒子树。 |
+| 任务重命名面板 | `scripts/capture_thread_rename_gpui.sh both` 先采集原生侧（参考实例会给打开过的任务留下写者），再按相同设备像素比通过 CDP 重采参考，最后由 `scripts/compare_thread_rename.py` 逐主题打分。脚本按参考期望发出两次点击，记录面板几何、计算样式、真实 DOM 与截图，并用真实任务驱动取消、关闭按钮、蒙层、Esc、Enter 与保存（含 59 字符加省略号的截断）；`cargo test rename_panel` 覆盖同一契约。 |
 | 图像生成 | `python3 scripts/compare_image_generation_component.py --help`，传入实测等尺寸裁切范围和 DPR。 |
 | 历史诊断 | `python3 scripts/audit_resume_rendering.py --help`；rollout 仅用于离线诊断。 |
 

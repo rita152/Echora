@@ -306,11 +306,11 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/increment_elicitation` | 实验 | 未接入 | — | — |
 | `thread/inject_items` | 默认 | 已接入 | 向新侧边线程注入 user message，标记父历史仅供参考；不开始 turn。失败时释放临时 fork，不交付可发送的线程。 | `manager/side_conversation` |
 | `thread/items/list` | 默认 | 已接入 | 按 threadId、nullable turnId 升序分页；补全非 full 的历史轮次。 | `manager/workspace` |
-| `thread/list` | 默认 | 已接入 | 分页读取最近、归档、项目与分区列表；保留前后游标及 projectId/sectionId 的省略、null、值三态。 | `manager/workspace` |
+| `thread/list` | 默认 | 已接入 | 分页读取最近、归档、项目与分区列表；保留前后游标及 projectId/sectionId 的省略、null、值三态。与参考端一致发送 `useStateDbOnly=true`、空 `modelProviders`／`sourceKinds` 与 null `parentThreadId`：缺省时服务端改走 rollout 扫描，只返回最近 10 个且不带游标，侧栏项目与最近聊天会缺行。 | `manager/workspace` |
 | `thread/loaded/list` | 默认 | 未接入 | — | — |
 | `thread/memoryMode/set` | 实验 | 未接入 | — | — |
 | `thread/metadata/update` | 默认 | 已接入 | projectId 省略表示不变，空字符串表示移出项目，非空 id 表示分配；读取 result.thread。 | `manager/workspace` |
-| `thread/name/set` | 默认 | 已接入 | threadId、name；重命名会话。 | `manager/workspace` |
+| `thread/name/set` | 默认 | 已接入 | threadId、name；重命名会话。侧栏双击任务行弹出与参考一致的居中面板：输入框默认全选，取消／关闭／Esc／蒙层不发送请求，保存与 Enter 复用同一提交路径，空或纯空白不发送，超过 60 个字符的名称与参考一致截为前 59 个字符加省略号。 | `manager/workspace`、`components/sidebar` |
 | `thread/queue/add` | 实验 | 未接入 | — | — |
 | `thread/queue/delete` | 实验 | 未接入 | — | — |
 | `thread/queue/list` | 实验 | 未接入 | — | — |

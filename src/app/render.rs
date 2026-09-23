@@ -3,10 +3,11 @@
 use std::path::PathBuf;
 
 use gpui::{
-    Animation, AnimationExt, BoxShadow, Context, Div, IntoElement, KeyDownEvent, MouseButton,
-    ObjectFit, Render, Role, StyleRefinement, Transformation, Window, div, hsla, linear_color_stop,
-    linear_gradient, prelude::*, px, radians, rgba,
+    Animation, AnimationExt, BoxShadow, Context, Div, Focusable, IntoElement, KeyDownEvent,
+    MouseButton, ObjectFit, Render, Role, StyleRefinement, Transformation, Window, canvas, div,
+    hsla, linear_color_stop, linear_gradient, point, prelude::*, px, radians, rgba,
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 use super::{right_panel::clamp_right_panel_width, state::RightPanelMode};
 #[cfg(not(test))]
@@ -14,7 +15,7 @@ use crate::workspace::WorkspaceSnapshot;
 use crate::{
     agent::{AgentAccountLoginPhase, AgentLoginChallenge},
     components::{account::AccountDialog, file_panel::OpenWorkspaceFile, icons::icon},
-    theme::{CHAT_CONTENT_HORIZONTAL_GUTTER, Theme, ui_font},
+    theme::{CHAT_CONTENT_HORIZONTAL_GUTTER, Theme, ThemeMode, ui_font},
 };
 
 use super::{
@@ -254,6 +255,14 @@ impl Render for ChatApp {
             self.right_panel.focus_pending = false;
         }
         let sidebar_width = self.sidebar.read(cx).width();
+        // The rename panel is a window-level dialog: the sidebar owns the task
+        // it belongs to, the shell paints the scrim and the card.
+        let thread_rename_panel = self.sidebar.read(cx).thread_rename();
+        let thread_rename_input = self.sidebar.read(cx).thread_rename_input();
+        let rename_field_focused = thread_rename_input
+            .read(cx)
+            .focus_handle(cx)
+            .is_focused(window);
         let sidebar_reveal = self.sidebar_layout.reveal.clamp(0.0, 1.0);
         let revealed_sidebar_width = sidebar_width * sidebar_reveal;
         let resumed_title = match &self.active_conversation {
@@ -364,6 +373,15 @@ impl Render for ChatApp {
                 if let Ok(path) = std::env::var("GPUI_CAPTURE_OUTPUT") { crate::capture_frame(_window,path,3); }
             }))
             .on_action(cx.listener(|this, _: &DismissPermissionUi, window, cx| {
+                // The rename dialog is modal and owns Escape while it is up:
+                // the global binding is what actually receives the key, so the
+                // dialog is dismissed here rather than through its own
+                // `ThreadRename` context.
+                if this.sidebar.read(cx).thread_rename().is_some() {
+                    this.dismiss_thread_rename(cx);
+                    cx.stop_propagation();
+                    return;
+                }
                 if this.showing_pull_requests {
                     let fullscreen = this.pull_requests.read(cx).is_fullscreen();
                     if fullscreen {
@@ -636,6 +654,15 @@ impl Render for ChatApp {
             .when(self.account.dialog == Some(AccountDialog::Login), |shell| {
                 shell.child(account_dialog_overlay(
                     self.account_login_overlay(theme, cx),
+                ))
+            })
+            .when_some(thread_rename_panel, |shell, _panel| {
+                shell.child(thread_rename_overlay(
+                    thread_rename_input,
+                    self.mode,
+                    rename_field_focused,
+                    theme,
+                    cx,
                 ))
             })
             .when_some(resumed_title.filter(|_| !review_fullscreen), |shell, (title, in_project)| {
@@ -996,6 +1023,275 @@ fn account_dialog_overlay(dialog: impl IntoElement) -> impl IntoElement {
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
     overlay = overlay.child(dialog);
     overlay
+}
+
+/// The reference's `border-primary-outline` ring on the title field, and the
+/// `border-ring` it switches to while the field has focus (CDP, both themes).
+fn rename_field_border(mode: ThemeMode, focused: bool) -> gpui::Rgba {
+    match (mode, focused) {
+        (ThemeMode::Light, true) => rgba(0x339cffff),
+        (ThemeMode::Light, false) => rgba(0x1a1c1f1e),
+        (ThemeMode::Dark, true) => rgba(0x83c3ffc2),
+        (ThemeMode::Dark, false) => rgba(0xffffff28),
+    }
+}
+
+/// `ring-border` on the reference dialog card: rgba(255,255,255,0.082) in
+/// dark and rgba(26,28,31,0.078) in light.
+fn rename_dialog_ring(mode: ThemeMode) -> gpui::Rgba {
+    match mode {
+        ThemeMode::Light => rgba(0x1a1c1f14),
+        ThemeMode::Dark => rgba(0xffffff15),
+    }
+}
+
+/// The dialog's `bg-surface-elevated-secondary/90`. The reference blurs what
+/// is behind it, so the card shows the backdrop's *local average*; GPUI has no
+/// backdrop filter, and painting 90% alpha over the live transcript would show
+/// sharp text the reference never draws. The card therefore carries the
+/// resolved colour, the same way the sidebar hover cards do.
+fn rename_card_surface(theme: Theme) -> gpui::Rgba {
+    let over = theme.project_hover_surface;
+    // The card sits on top of the scrim, not on the bare pane: the backdrop it
+    // would sample is the pane already dimmed by `chat_search_overlay`.
+    let scrim = theme.chat_search_overlay;
+    let under = gpui::Rgba {
+        r: theme.surface.r * (1.0 - scrim.a) + scrim.r * scrim.a,
+        g: theme.surface.g * (1.0 - scrim.a) + scrim.g * scrim.a,
+        b: theme.surface.b * (1.0 - scrim.a) + scrim.b * scrim.a,
+        a: 1.0,
+    };
+    let (alpha, rest) = (over.a, 1.0 - over.a);
+    gpui::Rgba {
+        r: over.r * alpha + under.r * rest,
+        g: over.g * alpha + under.g * rest,
+        b: over.b * alpha + under.b * rest,
+        a: 1.0,
+    }
+}
+
+/// The reference's dialog title carries `letter-spacing: -0.36px`
+/// (measured at 20px: `-0.018em`). GPUI's text system has no letter spacing,
+/// so the title is shaped once and painted one grapheme at a time, each shifted
+/// by the tracking the reference applies before it.
+fn tracked_title(
+    text: &'static str,
+    size: f32,
+    line_height: f32,
+    color: gpui::Hsla,
+) -> impl IntoElement {
+    let text: gpui::SharedString = crate::i18n::text(text).to_owned().into();
+    let tracking = -0.018 * size;
+    canvas(
+        move |_, window, _| {
+            let mut font = window.text_style().font();
+            font.weight = gpui::FontWeight::SEMIBOLD;
+            // One shaped line per grapheme: the reference places every glyph at
+            // its own advance minus the tracking, which a single shaped run
+            // cannot express.
+            text.as_ref()
+                .graphemes(true)
+                .map(|grapheme| {
+                    let grapheme = gpui::SharedString::from(grapheme.to_owned());
+                    window.text_system().shape_line(
+                        grapheme.clone(),
+                        px(size),
+                        &[gpui::TextRun {
+                            len: grapheme.len(),
+                            font: font.clone(),
+                            color,
+                            background_color: None,
+                            underline: None,
+                            strikethrough: None,
+                        }],
+                        None,
+                    )
+                })
+                .collect::<Vec<_>>()
+        },
+        move |bounds, lines, window, cx| {
+            let mut x = f32::from(bounds.origin.x);
+            for (index, line) in lines.iter().enumerate() {
+                let left = if index == 0 {
+                    x
+                } else {
+                    x + tracking * index as f32
+                };
+                line.paint(
+                    point(px(left), bounds.origin.y),
+                    px(line_height),
+                    gpui::TextAlign::Left,
+                    None,
+                    window,
+                    cx,
+                )
+                .expect("rename title glyphs should paint");
+                x += f32::from(line.width());
+            }
+        },
+    )
+    .w_full()
+    .h_full()
+}
+
+/// The task rename dialog measured from the live ChatGPT desktop app: a scrim
+/// over the whole window and a centred 420x185 card that wears
+/// `bg-surface-elevated-secondary/90`, the 0.5px `ring-border`, and
+/// `shadow-lg`. Every control inside it is a real commit or a real dismissal.
+fn thread_rename_overlay(
+    input: gpui::Entity<crate::components::prompt_input::PromptInput>,
+    mode: ThemeMode,
+    focused: bool,
+    theme: Theme,
+    cx: &mut Context<ChatApp>,
+) -> impl IntoElement {
+    div()
+        .id("thread-rename-overlay")
+        .absolute()
+        .inset_0()
+        .bg(theme.chat_search_overlay)
+        .flex()
+        .items_center()
+        .justify_center()
+        .on_click(cx.listener(|this, _, _, cx| this.dismiss_thread_rename(cx)))
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .child(
+            div()
+                .id("thread-rename-dialog")
+                .role(Role::Dialog)
+                .aria_label(crate::i18n::text("重命名聊天"))
+                .w(px(420.0))
+                .h(px(185.0))
+                .rounded(px(25.0))
+                .bg(rename_card_surface(theme))
+                .shadow(vec![
+                    // The reference draws its ring outside the 420px box.
+                    BoxShadow::new(px(0.0), px(0.0), rename_dialog_ring(mode).into())
+                        .blur_radius(px(0.0))
+                        .spread_radius(px(0.5)),
+                    BoxShadow::new(px(0.0), px(4.0), rgba(0x0000001a).into())
+                        .blur_radius(px(8.0))
+                        .spread_radius(px(-2.0)),
+                ])
+                .on_click(|_, _, cx| cx.stop_propagation())
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .key_context("ThreadRename")
+                .on_action(cx.listener(|this, _: &super::DismissThreadRename, _, cx| {
+                    this.dismiss_thread_rename(cx);
+                    cx.stop_propagation();
+                }))
+                .p(px(20.0))
+                .flex()
+                .flex_col()
+                .text_color(theme.text)
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(4.0))
+                        .child(div().h(px(28.0)).w_full().child(tracked_title(
+                            "重命名聊天",
+                            20.0,
+                            28.0,
+                            theme.text.into(),
+                        )))
+                        .child(
+                            div()
+                                .h(px(21.0))
+                                .text_size(px(14.0))
+                                .line_height(px(21.0))
+                                .text_color(theme.chat_search_description)
+                                .child(crate::i18n::text("保持简短且易于识别")),
+                        ),
+                )
+                .child(
+                    div().pt(px(12.0)).child(
+                        div()
+                            .id("thread-rename-input")
+                            .h(px(36.0))
+                            .w_full()
+                            .rounded(px(10.0))
+                            .border(px(1.0))
+                            .border_color(rename_field_border(mode, focused))
+                            .bg(theme.control)
+                            .flex()
+                            .items_center()
+                            .child(input),
+                    ),
+                )
+                .child(
+                    div()
+                        .pt(px(12.0))
+                        .flex()
+                        .justify_end()
+                        .gap(px(12.0))
+                        .child(
+                            div()
+                                .id("thread-rename-cancel")
+                                .role(Role::Button)
+                                .aria_label(crate::i18n::text("取消"))
+                                .h(px(32.0))
+                                .px(px(16.0))
+                                .py(px(6.0))
+                                .rounded(px(12.5))
+                                .border(px(1.0))
+                                .border_color(theme.chat_search_border)
+                                .bg(theme.edit_button_surface)
+                                .flex()
+                                .items_center()
+                                .text_size(px(14.0))
+                                .line_height(px(18.0))
+                                .cursor_pointer()
+                                .hover(move |style| style.bg(theme.sidebar_hover))
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| this.dismiss_thread_rename(cx)),
+                                )
+                                .child(crate::i18n::text("取消")),
+                        )
+                        .child(
+                            div()
+                                .id("thread-rename-save")
+                                .role(Role::Button)
+                                .aria_label(crate::i18n::text("保存"))
+                                .h(px(32.0))
+                                .px(px(16.0))
+                                .py(px(6.0))
+                                .rounded(px(12.5))
+                                .border(px(1.0))
+                                .border_color(theme.chat_search_border)
+                                .bg(theme.button)
+                                .flex()
+                                .items_center()
+                                .text_size(px(14.0))
+                                .line_height(px(18.0))
+                                .text_color(theme.button_text)
+                                .cursor_pointer()
+                                .hover(move |style| style.bg(theme.button.alpha(0.8)))
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| this.submit_thread_rename(cx)),
+                                )
+                                .child(crate::i18n::text("保存")),
+                        ),
+                )
+                .child(
+                    div()
+                        .id("thread-rename-close")
+                        .role(Role::Button)
+                        .aria_label(crate::i18n::text("关闭对话框"))
+                        .absolute()
+                        .top(px(16.0))
+                        .right(px(16.0))
+                        .size(px(24.0))
+                        .rounded(px(4.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .cursor_pointer()
+                        .hover(move |style| style.bg(theme.sidebar_hover))
+                        .on_click(cx.listener(|this, _, _, cx| this.dismiss_thread_rename(cx)))
+                        .child(icon("close-dialog", theme.text.alpha(0.8).into()).size(px(16.0))),
+                ),
+        )
 }
 
 impl ChatApp {

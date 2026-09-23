@@ -259,6 +259,7 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         }
         "侧边聊天输入框" => "Side chat input",
         "保存" => "Save",
+        "保持简短且易于识别" => "Keep it short and recognizable",
         "保存中…" => "Saving…",
         "保存后会回读有效配置。配置默认值与当前线程权限分别管理；线程权限变更用于后续轮次。" => {
             "Effective configuration is read back after saving. Defaults and current thread permissions are managed separately; thread permission changes apply to subsequent turns."
@@ -1107,7 +1108,7 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
             "File exceeds 2 MB. Open it in an external editor."
         }
         "新分支" => "New branch",
-        "新对话" => "New conversation",
+        "新对话" => "New chat",
         "新建临时聊天" => "New temporary chat",
         "新建独立聊天" => "New standalone chat",
         "新建终端" => "New terminal",
@@ -1211,7 +1212,7 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "最小" => "Minimal",
         "最常用的推理强度" => "Most used reasoning effort",
         "最常用的插件" => "Most used plugins",
-        "最近" => "Recent",
+        "最近" => "Recents",
         "最近录音" => "Recent recordings",
         "最长聊天时长" => "Longest chat",
         "最长连续天数" => "Longest streak",
@@ -1410,6 +1411,7 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "深色 背景颜色" => "Dark background color",
         "深色主题" => "Dark theme",
         "添加" => "Add",
+        "添加标题…" => "Add a title…",
         "添加、删除和编辑已保存的地址、电话号码和电子邮箱地址" => {
             "Add, delete, and edit saved addresses, phone numbers, and email addresses"
         }
@@ -1594,6 +1596,7 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "置顶或取消置顶当前聊天" => "Pin or unpin the current chat",
         "聊天" => "Chats",
         "聊天总数" => "Total chats",
+        "聊天标题" => "Chat title",
         "聊天正在启动，请在就绪后更改权限；更改不会影响当前轮次" => {
             "Chat is starting. Change permissions once it is ready; changes do not affect the current turn."
         }

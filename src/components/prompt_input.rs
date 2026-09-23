@@ -15,6 +15,10 @@ const PROMPT_FONT_SIZE: f32 = 14.0;
 const PROMPT_LINE_HEIGHT: f32 = 20.0;
 /// `[cmdk-input]` computed line-height in the reference command menu.
 const CHAT_SEARCH_LINE_HEIGHT: f32 = 21.0;
+/// The rename dialog's input: 13px type on the reference's `leading-normal`,
+/// which resolves to 13 × 1.428… = 18.5714px.
+const RENAME_CHAT_FONT_SIZE: f32 = 13.0;
+const RENAME_CHAT_LINE_HEIGHT: f32 = 18.571_4;
 const PLACEHOLDER_OPACITY: f32 = 0.5;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -29,6 +33,9 @@ pub enum PromptInputKind {
     /// because the surrounding form supplies the 12px inset measured from the
     /// reference editor.
     MessageEdit,
+    /// The rename dialog's field: a 36px box with a 1px outline and 10px
+    /// horizontal padding around 13px type.
+    RenameChat,
 }
 
 gpui::actions!(
@@ -134,6 +141,39 @@ impl PromptInput {
         input.accessible_name = Some("编辑消息".into());
         input.set_text_silently(text, cx);
         input
+    }
+
+    /// The rename dialog's title field. The reference opens it with the whole
+    /// title selected, so typing replaces the old name outright.
+    pub fn rename_chat(mode: ThemeMode, title: &str, cx: &mut Context<Self>) -> Self {
+        let mut input = Self::new(mode, cx);
+        input.kind = PromptInputKind::RenameChat;
+        input.placeholder = "添加标题…".into();
+        input.accessible_name = Some("聊天标题".into());
+        // The reference's form submits on Enter even with an empty field, and
+        // the dialog then closes without renaming anything.
+        input.submit_empty = true;
+        input.set_text_silently(title, cx);
+        input.select_all_text(cx);
+        input
+    }
+
+    /// Places the caret after the whole field, which is the state the rename
+    /// dialog opens in.
+    pub fn select_all_text(&mut self, cx: &mut Context<Self>) {
+        let end = self.content.len();
+        self.selected_range = 0..end;
+        self.selection_reversed = false;
+        self.marked_range = None;
+        self.horizontal_scroll = 0.0;
+        cx.notify();
+    }
+
+    /// Loads a title into the rename field and selects it, so the next
+    /// keystroke replaces the old name.
+    pub fn set_rename_text(&mut self, title: &str, cx: &mut Context<Self>) {
+        self.set_text_silently(title, cx);
+        self.select_all_text(cx);
     }
 
     pub fn set_mode(&mut self, mode: ThemeMode, cx: &mut Context<Self>) {
@@ -642,6 +682,7 @@ struct PromptTextElement {
     input: Entity<PromptInput>,
     text_color: gpui::Hsla,
     placeholder_color: gpui::Hsla,
+    selection_color: gpui::Hsla,
     caret_visible: bool,
     font_size: f32,
     font_weight: FontWeight,
@@ -787,7 +828,7 @@ impl Element for PromptTextElement {
                         bounds.bottom(),
                     ),
                 ),
-                rgba(0x539af84d),
+                self.selection_color,
             )
         });
         let cursor = (input.selected_range.is_empty() && self.caret_visible).then(|| {
@@ -874,24 +915,58 @@ impl PromptInput {
             PromptInputKind::ChatSearch => "chat-search-input",
             PromptInputKind::MessageEdit => "message-edit-input",
             PromptInputKind::Composer => "prompt-input",
+            PromptInputKind::RenameChat => "rename-chat-input",
         };
         let height = match self.kind {
             PromptInputKind::InlineOther => 28.0,
             PromptInputKind::ChatSearch => 33.0,
             PromptInputKind::MessageEdit => 40.0,
             PromptInputKind::Composer => 44.0,
+            // The dialog's 36px box already carries its own 1px outline; the
+            // text is centred in the remaining 34px.
+            PromptInputKind::RenameChat => 36.0,
         };
         let horizontal_padding = match self.kind {
             PromptInputKind::InlineOther => 0.0,
             PromptInputKind::ChatSearch => 10.0,
             PromptInputKind::MessageEdit => 0.0,
             PromptInputKind::Composer => 4.0,
+            PromptInputKind::RenameChat => 10.0,
         };
         let top_padding = match self.kind {
             PromptInputKind::InlineOther => 4.0,
             PromptInputKind::ChatSearch => 6.0,
             PromptInputKind::MessageEdit => 0.0,
             PromptInputKind::Composer => 1.0,
+            // (34 - 18.5714) / 2 measured from the reference's content box.
+            PromptInputKind::RenameChat => (34.0 - RENAME_CHAT_LINE_HEIGHT) / 2.0,
+        };
+        let selection_color = match self.kind {
+            // `::selection` on the reference dialog: the theme's accent at 30%.
+            PromptInputKind::RenameChat => match self.mode {
+                ThemeMode::Light => rgba(0x339cff4d),
+                ThemeMode::Dark => rgba(0x83c3ff4d),
+            },
+            _ => rgba(0x539af84d),
+        };
+        let font_size = if inline {
+            13.0
+        } else if self.kind == PromptInputKind::RenameChat {
+            RENAME_CHAT_FONT_SIZE
+        } else {
+            PROMPT_FONT_SIZE
+        };
+        let font_weight = if inline {
+            FontWeight::NORMAL
+        } else {
+            crate::theme::UI_BODY_FONT_WEIGHT
+        };
+        let line_height = if chat_search {
+            CHAT_SEARCH_LINE_HEIGHT
+        } else if self.kind == PromptInputKind::RenameChat {
+            RENAME_CHAT_LINE_HEIGHT
+        } else {
+            PROMPT_LINE_HEIGHT
         };
         div()
             .id(element_id)
@@ -939,18 +1014,11 @@ impl PromptInput {
                             input: input.clone(),
                             text_color,
                             placeholder_color,
+                            selection_color: selection_color.into(),
                             caret_visible: progress < 0.55,
-                            font_size: if inline { 13.0 } else { PROMPT_FONT_SIZE },
-                            font_weight: if inline {
-                                FontWeight::NORMAL
-                            } else {
-                                crate::theme::UI_BODY_FONT_WEIGHT
-                            },
-                            line_height: if chat_search {
-                                CHAT_SEARCH_LINE_HEIGHT
-                            } else {
-                                PROMPT_LINE_HEIGHT
-                            },
+                            font_size,
+                            font_weight,
+                            line_height,
                         })
                     }
                 },
@@ -964,6 +1032,9 @@ impl Render for PromptInput {
         let placeholder = if self.kind == PromptInputKind::ChatSearch {
             // CDP: ::placeholder resolves to the input colour at 50% alpha.
             theme.chat_search_text.alpha(0.5)
+        } else if self.kind == PromptInputKind::RenameChat {
+            // CDP: the dialog's field uses `placeholder:text-tertiary`.
+            theme.text_tertiary
         } else if self.kind == PromptInputKind::InlineOther {
             // The request-user-input control uses the card's captured
             // `text-secondary` token directly. The main Composer placeholder

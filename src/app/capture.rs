@@ -246,6 +246,23 @@ impl ChatApp {
             sidebar.open_thread_hover_card_for_capture(thread, cx)
         });
     }
+    /// Opens the task rename panel for the screenshot path.
+    pub fn open_thread_rename_for_capture(&mut self, thread: &str, cx: &mut Context<Self>) {
+        self.sidebar.update(cx, |sidebar, cx| {
+            sidebar.open_thread_rename_for_capture(thread, cx)
+        });
+    }
+    /// Cancel, the close button, Escape, and the scrim all leave the task's
+    /// name untouched, exactly like the reference dialog.
+    pub fn dismiss_thread_rename(&mut self, cx: &mut Context<Self>) {
+        self.sidebar
+            .update(cx, |sidebar, cx| sidebar.dismiss_thread_rename(cx));
+    }
+    /// The panel's Save button submits the same field the Enter key does.
+    pub fn submit_thread_rename(&mut self, cx: &mut Context<Self>) {
+        self.sidebar
+            .update(cx, |sidebar, cx| sidebar.submit_thread_rename(cx));
+    }
     pub fn set_activity_scroll_for_capture(&mut self, offset: f32, cx: &mut Context<Self>) {
         self.sidebar.update(cx, |sidebar, cx| {
             sidebar.set_activity_scroll_for_capture(offset, cx)

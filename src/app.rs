@@ -24,6 +24,10 @@ gpui::actions!(
     permission_ui,
     [
         DismissPermissionUi,
+        /// Escape inside the task rename dialog. The dialog is modal, so the
+        /// key needs its own context: the global `escape` binding belongs to
+        /// permission prompts and would otherwise swallow it.
+        DismissThreadRename,
         CaptureFrame,
         ToggleTerminal,
         ToggleReview,

@@ -508,6 +508,38 @@ fn cwd_fallback_uses_normalized_deepest_component_root_and_never_overrides_proje
 }
 
 #[test]
+fn a_git_worktree_thread_belongs_to_the_project_that_owns_the_repository() {
+    let root = std::env::temp_dir().join(format!("gpui-sidebar-worktree-{}", std::process::id()));
+    let repository = root.join("repository");
+    let worktree = root.join("worktrees/7746/project");
+    let git_dir = repository.join(".git/worktrees/project");
+    std::fs::create_dir_all(&git_dir).expect("worktree layout");
+    std::fs::create_dir_all(&worktree).expect("worktree directory");
+    std::fs::write(
+        worktree.join(".git"),
+        format!("gitdir: {}\n", git_dir.display()),
+    )
+    .expect("worktree marker");
+
+    let mut owner = project("repository", 0);
+    owner.roots = vec![repository.clone()];
+    let projects = vec![owner];
+
+    let mut worktree_thread = thread("worktree", None);
+    worktree_thread.cwd = worktree.join("crates/app");
+    assert_eq!(
+        project_id_for_thread(&worktree_thread, &projects).as_deref(),
+        Some("repository")
+    );
+
+    let mut unrelated = thread("unrelated", None);
+    unrelated.cwd = root.join("elsewhere");
+    assert_eq!(project_id_for_thread(&unrelated, &projects), None);
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn fake_backend_refresh_accumulates_pages_and_uses_server_ids() {
     let backend = FakeWorkspaceBackend::new();
     let path = test_preferences_path("pagination");

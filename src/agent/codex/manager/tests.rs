@@ -892,6 +892,13 @@ fn workspace_rpc_surface_matches_the_01521_experimental_schema() {
     assert!(request["params"]["sectionId"].is_null());
     assert_eq!(request["params"]["sortKey"], "created_at");
     assert_eq!(request["params"]["sortDirection"], "asc");
+    // The reference lists threads from the state database; without this the
+    // server answers from the rollout scan and truncates the sidebar to the
+    // ten most recent rollouts with no cursor to continue from.
+    assert_eq!(request["params"]["useStateDbOnly"], true);
+    assert_eq!(request["params"]["modelProviders"], json!([]));
+    assert_eq!(request["params"]["sourceKinds"], json!([]));
+    assert!(request["params"]["parentThreadId"].is_null());
     endpoint.respond(
         &request,
         json!({
