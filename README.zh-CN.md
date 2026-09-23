@@ -46,6 +46,7 @@
 | 工作流 | 当前能力 |
 |---|---|
 | **开始对话** | 空白会话显示项目标题和输入框，不显示占位建议。 |
+| **按 prompt 导航** | 通过会话左侧的提示轨在用户 prompt 之间跳转：标记会高亮当前屏幕内的轮次，悬停时向两侧递减，并弹出预览，上方是 prompt、下方是回复开头。收藏某个轮次后会保存本次运行的标记；Codex app-server 没有收藏方法，这些键由 Echora 自己维护。 |
 | **项目与会话** | 创建、恢复、搜索、重命名、归档、删除、移动和置顶会话；切换会话时保留后台轮次。 |
 | **边运行边沟通** | 流式显示回复，向当前活动轮次追加输入；在时间线中查看计划、搜索、等待、工具活动与文件改动。 |
 | **审批操作** | 通过原生卡片检查命令、文件和附加权限请求，查看自动复核结果，选择服务端支持的权限配置。 |
@@ -264,6 +265,7 @@ export CHATGPT_CDP_HTTP="http://127.0.0.1:${CAPTURE_CDP_PORT:?Set a dedicated de
 | 侧栏任务悬停卡片 | `scripts/capture_thread_hover_gpui.sh both` 在设置了 `CHATGPT_CDP_HTTP` 时刷新参考采集，用 `--thread-hover-card=TITLE` 采集两个主题，再由 `scripts/compare_thread_hover.py` 逐主题打分：报告 `pixelConsistency`、`pixelsWithin2`、`pixelsWithin12`、仓库统一的 `toleranceAdjustedSimilarity` 以及卡片的纵向锚点偏差。卡片在指针进入项目任务的行动 240 ms 后出现，指针停留在卡片上时保持打开，与参考一致地对不属于任何项目的"最近"行不显示卡片；`cargo test thread_hover` 走同一指针路径。 |
 | 侧栏布局 | `scripts/launch_chatgpt_reference.sh` 启动专用参考实例（独立端口与 profile 克隆，并清掉克隆里指向用户窗口的 `Singleton*` 链接，避免应用把新实例转发进用户自己的窗口）；随后 `CHATGPT_CDP_HTTP="$CHATGPT_CDP_HTTP" node scripts/cdp_capture_sidebar_layout.mjs --output artifacts/sidebar-layout/reference` 通过应用自身的 Appearance 控件切换主题，记录侧栏每个 landmark 的几何、计算样式（两个主题）以及整窗与侧栏截图；`--theme=dark --window-width=1440 --window-height=900 --screenshot=artifacts/sidebar-layout/gpui/dark.png` 以同一视口采集本机侧栏，`python3 scripts/compare_sidebar_layout.py --reference …/dark-window.png --gpui …/dark.png --spec …/dark-spec.json --scale 2` 逐个 landmark 与参考对齐并给出逐行偏移。`scripts/cdp_sidebar_row_tree.mjs` 打印参考端某一行元素的盒子树。 |
 | 任务重命名面板 | `scripts/capture_thread_rename_gpui.sh both` 先采集原生侧（参考实例会给打开过的任务留下写者），再按相同设备像素比通过 CDP 重采参考，最后由 `scripts/compare_thread_rename.py` 逐主题打分。脚本按参考期望发出两次点击，记录面板几何、计算样式、真实 DOM 与截图，并用真实任务驱动取消、关闭按钮、蒙层、Esc、Enter 与保存（含 59 字符加省略号的截断）；`cargo test rename_panel` 覆盖同一契约。 |
+| 会话用户消息导航轨 | `scripts/capture_user_message_rail_gpui.sh both` 先采集原生侧的静止态与单条悬停态，再以同一视口通过 CDP 重采参考，最后用 `scripts/compare_user_message_rail.py` 逐主题打分。参考侧脚本（`scripts/cdp_capture_user_message_rail.mjs`）通过应用自身的 Appearance 控件切换主题，并用真实指针悬停与点击记录轨道几何、计算样式、各标记宽度、提示卡延迟、预览 DOM 与截图；对比报告给出轨道的 `pixelsWithin2`、悬停态的 `toleranceAdjustedSimilarity`、卡片表面相似度以及两个锚点偏差。`cargo test navigation` 固定标记递减宽度、当前标记规则与预览卡截断点。 |
 | 图像生成 | `python3 scripts/compare_image_generation_component.py --help`，传入实测等尺寸裁切范围和 DPR。 |
 | 历史诊断 | `python3 scripts/audit_resume_rendering.py --help`；rollout 仅用于离线诊断。 |
 

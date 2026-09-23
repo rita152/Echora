@@ -153,7 +153,9 @@ impl ChatApp {
             serde_json::json!({"id":composer.resumed_turn().map(|r|r.id), "user_message":user,
             "units":crate::components::home::resumed_activity_audit(&activities)}),
         );
-        serde_json::json!({"thread_id":thread_id,"turns":turns})
+        let (pane_left, pane_top) = self.home.read(cx).conversation_pane_origin();
+        serde_json::json!({"thread_id":thread_id,"turns":turns,
+            "conversationPaneOrigin":[pane_left,pane_top]})
     }
     #[cfg(feature = "screenshot")]
     pub fn set_conversation_scroll_from_bottom_for_capture(
@@ -163,6 +165,24 @@ impl ChatApp {
     ) {
         self.home.update(cx, |home, cx| {
             home.set_conversation_scroll_from_bottom_for_capture(distance, cx)
+        });
+    }
+    /// Capture-only rail state: the marker the pointer would rest on.
+    #[cfg(feature = "screenshot")]
+    pub fn set_user_message_navigation_hover_for_capture(
+        &mut self,
+        index: Option<usize>,
+        cx: &mut Context<Self>,
+    ) {
+        self.home.update(cx, |home, cx| {
+            home.set_user_message_navigation_hover_for_capture(index, cx)
+        });
+    }
+    /// Capture-only rail jump, so both builds record the same transcript.
+    #[cfg(feature = "screenshot")]
+    pub fn reveal_user_message_for_capture(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.home.update(cx, |home, cx| {
+            home.reveal_user_message_for_capture(index, cx)
         });
     }
     pub fn complete_startup_for_capture(&mut self, cx: &mut Context<Self>) {

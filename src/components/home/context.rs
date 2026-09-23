@@ -80,6 +80,22 @@ pub(super) struct MainConversationSnapshot {
     pub(super) phase: ConversationPhase,
     pub(super) activities: Rc<Vec<ConversationActivity>>,
     pub(super) list: ListState,
+    /// User messages shown by the floating navigation rail, the marker the
+    /// pointer sits on, and which of those turns the user bookmarked.
+    pub(super) navigation: Rc<Vec<super::navigation::UserMessageNavigationItem>>,
+    /// `aria-current` markers of the current viewport.
+    pub(super) navigation_current: Rc<Vec<bool>>,
+    pub(super) navigation_hover: Option<usize>,
+    pub(super) navigation_bookmarks: Rc<Vec<bool>>,
+    /// The hovered message's response, already clamped to the card's lines.
+    pub(super) navigation_preview: Rc<Vec<(String, usize)>>,
+    /// Width of the transcript pane the rail is positioned in.
+    pub(super) navigation_pane_width: f32,
+    /// Height of the window the rail centres in, and the window-space top of
+    /// the conversation view, which is what turns that centre into a local
+    /// offset.
+    pub(super) navigation_window_height: f32,
+    pub(super) navigation_view_top: f32,
 }
 
 pub(super) struct CurrentTurnRows<'a> {

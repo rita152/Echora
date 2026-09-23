@@ -6,6 +6,7 @@ use super::{
     COMPOSER_BOTTOM_INSET, CONVERSATION_BOTTOM_INSET,
     context::{ConversationRenderContext, MainConversationSnapshot},
     conversation::conversation,
+    navigation::{self, user_message_navigation_overlay},
     requests::{
         command_approval_card, file_approval_card, mcp_elicitation_card, permissions_approval_card,
         user_input_request_card,
@@ -35,6 +36,14 @@ pub(super) fn home(
         phase,
         activities: conversation_activity,
         list: conversation_list,
+        navigation,
+        navigation_current,
+        navigation_hover,
+        navigation_bookmarks,
+        navigation_preview,
+        navigation_pane_width,
+        navigation_window_height,
+        navigation_view_top,
     } = snapshot;
     let visible_request = conversation_activity
         .iter()
@@ -158,13 +167,30 @@ pub(super) fn home(
             root.child(conversation(
                 render.clone(),
                 conversation_rows,
-                conversation_list,
+                conversation_list.clone(),
                 if side_chat {
                     composer_height + 55.0
                 } else {
                     CONVERSATION_BOTTOM_INSET + (composer_height - 98.0).max(0.0)
                 },
             ))
+            // The rail floats over the transcript, in the pane's left gutter.
+            .when(
+                !side_chat && navigation::rail_visible(navigation.len(), navigation_pane_width),
+                |root| {
+                    root.child(user_message_navigation_overlay(
+                        &navigation,
+                        &navigation_current,
+                        navigation_hover,
+                        &navigation_bookmarks,
+                        &navigation_preview,
+                        navigation_view_top,
+                        navigation_window_height,
+                        theme,
+                        home_entity.clone(),
+                    ))
+                },
+            )
         })
         .when(phase != ConversationPhase::Empty, |root| {
             root.child(

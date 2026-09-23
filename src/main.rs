@@ -647,13 +647,32 @@ fn schedule_chat_search_screenshot(
 }
 
 #[cfg(feature = "screenshot")]
+/// Everything a resumed-thread capture wants applied once the task is loaded,
+/// in the order the reference applies it.
+#[derive(Clone, Copy, Default)]
+struct ResumedCaptureOptions {
+    scroll_from_bottom: Option<f32>,
+    navigation_hover: Option<usize>,
+    navigation_jump: Option<usize>,
+}
+
+#[cfg(feature = "screenshot")]
+impl ResumedCaptureOptions {
+    fn is_settled(&self) -> bool {
+        self.scroll_from_bottom.is_none()
+            && self.navigation_hover.is_none()
+            && self.navigation_jump.is_none()
+    }
+}
+
+#[cfg(feature = "screenshot")]
 fn schedule_resumed_thread_screenshot(
     window: &mut gpui::Window,
     app: gpui::Entity<ChatApp>,
     path: String,
     thread_id: String,
     deadline: Instant,
-    scroll_from_bottom: Option<f32>,
+    options: ResumedCaptureOptions,
     stable_frames_remaining: usize,
 ) {
     window.on_next_frame(move |window, cx| {
@@ -663,11 +682,21 @@ fn schedule_resumed_thread_screenshot(
                 eprintln!("failed to load resumed thread {thread_id}: {error}");
                 std::process::exit(1);
             }
-            Ok(true) if scroll_from_bottom.is_some() => {
-                let distance = scroll_from_bottom.expect("guarded capture scroll distance");
-                app.update(cx, |app, cx| {
-                    app.set_conversation_scroll_from_bottom_for_capture(distance, cx)
-                });
+            Ok(true) if !options.is_settled() => {
+                let mut remaining = options;
+                if let Some(distance) = remaining.scroll_from_bottom.take() {
+                    app.update(cx, |app, cx| {
+                        app.set_conversation_scroll_from_bottom_for_capture(distance, cx)
+                    });
+                }
+                if let Some(index) = remaining.navigation_jump.take() {
+                    app.update(cx, |app, cx| app.reveal_user_message_for_capture(index, cx));
+                }
+                if let Some(index) = remaining.navigation_hover.take() {
+                    app.update(cx, |app, cx| {
+                        app.set_user_message_navigation_hover_for_capture(Some(index), cx)
+                    });
+                }
                 window.refresh();
                 schedule_resumed_thread_screenshot(
                     window,
@@ -675,7 +704,7 @@ fn schedule_resumed_thread_screenshot(
                     path,
                     thread_id,
                     deadline,
-                    None,
+                    remaining,
                     RESUMED_THREAD_STABLE_FRAMES,
                 );
             }
@@ -689,7 +718,7 @@ fn schedule_resumed_thread_screenshot(
                     path,
                     thread_id,
                     deadline,
-                    scroll_from_bottom,
+                    options,
                     stable_frames_remaining - 1,
                 );
             }
@@ -736,7 +765,7 @@ fn schedule_resumed_thread_screenshot(
                 path,
                 thread_id,
                 deadline,
-                scroll_from_bottom,
+                options,
                 RESUMED_THREAD_STABLE_FRAMES,
             ),
             Ok(false) => {
@@ -855,6 +884,20 @@ fn main() {
             .parse::<f32>()
             .ok()
     });
+    // The rail's capture hooks are 1-based positions of a user message, in the
+    // same order the marker's `aria-label` counts them.
+    let navigation_hover = args.iter().find_map(|arg| {
+        arg.strip_prefix("--user-message-navigation-hover=")?
+            .parse::<usize>()
+            .ok()
+            .and_then(|position| position.checked_sub(1))
+    });
+    let navigation_jump = args.iter().find_map(|arg| {
+        arg.strip_prefix("--user-message-navigation-jump=")?
+            .parse::<usize>()
+            .ok()
+            .and_then(|position| position.checked_sub(1))
+    });
     let chat_search_state = args.iter().find_map(|arg| {
         arg.strip_prefix("--chat-search-state=")
             .map(ToOwned::to_owned)
@@ -870,7 +913,12 @@ fn main() {
     #[cfg(not(feature = "screenshot"))]
     let _ = (chat_search_state, chat_search_query, chat_search_index);
     #[cfg(not(feature = "screenshot"))]
-    let _ = (screenshot_frames, resume_scroll_from_bottom);
+    let _ = (
+        screenshot_frames,
+        resume_scroll_from_bottom,
+        navigation_hover,
+        navigation_jump,
+    );
     let submit_prompt = args
         .iter()
         .find_map(|arg| arg.strip_prefix("--submit-prompt=").map(ToOwned::to_owned));
@@ -1605,7 +1653,11 @@ fn main() {
                                 path,
                                 thread_id,
                                 Instant::now() + Duration::from_secs(60),
-                                resume_scroll_from_bottom,
+                                ResumedCaptureOptions {
+                                    scroll_from_bottom: resume_scroll_from_bottom,
+                                    navigation_hover,
+                                    navigation_jump,
+                                },
                                 RESUMED_THREAD_STABLE_FRAMES,
                             );
                         } else {
