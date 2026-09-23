@@ -505,6 +505,15 @@ pub(super) fn thread_list_params(request: &ThreadListRequest) -> Value {
         "sortDirection".into(),
         Value::String(sort_direction(request.sort_direction).to_owned()),
     );
+    // The reference client reads the state database instead of walking
+    // rollouts. Without `useStateDbOnly` the server answers from the session
+    // scan, which only knows the ten most recent rollouts and returns no
+    // cursor, so the sidebar loses every older project task. The empty
+    // provider/source filters are what the reference sends with it.
+    params.insert("useStateDbOnly".into(), json!(true));
+    params.insert("modelProviders".into(), json!([]));
+    params.insert("sourceKinds".into(), json!([]));
+    params.insert("parentThreadId".into(), Value::Null);
     if let Some(search_term) = request
         .search_term
         .as_deref()

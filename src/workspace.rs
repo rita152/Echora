@@ -1257,26 +1257,64 @@ fn normalize_workspace_path(path: &Path) -> PathBuf {
 /// Resolve the project used by the sidebar without mutating app-server owned
 /// metadata. An explicit project assignment always wins. Legacy/unassigned
 /// threads fall back to the deepest component-aware project root containing
-/// their normalized cwd.
+/// their normalized cwd, or containing the repository a git worktree of that
+/// cwd belongs to.
 pub fn project_id_for_thread(thread: &ThreadSummary, projects: &[Project]) -> Option<ProjectId> {
     if let Some(project_id) = &thread.project_id {
         return Some(project_id.clone());
     }
 
-    let cwd = normalize_workspace_path(&thread.cwd);
+    let mut candidates = vec![normalize_workspace_path(&thread.cwd)];
+    if let Some(repository) = git_worktree_repository(&thread.cwd) {
+        candidates.push(normalize_workspace_path(&repository));
+    }
     let mut best: Option<(usize, &Project)> = None;
     for project in projects {
         for root in &project.roots {
             let root = normalize_workspace_path(root);
-            if cwd.starts_with(&root) {
-                let depth = root.components().count();
-                if best.is_none_or(|(best_depth, _)| depth > best_depth) {
-                    best = Some((depth, project));
+            for candidate in &candidates {
+                if candidate.starts_with(&root) {
+                    let depth = root.components().count();
+                    if best.is_none_or(|(best_depth, _)| depth > best_depth) {
+                        best = Some((depth, project));
+                    }
                 }
             }
         }
     }
     best.map(|(_, project)| project.project_id.clone())
+}
+
+/// Repository a git worktree belongs to. A linked worktree carries a `.git`
+/// file that points at `<repository>/.git/worktrees/<name>`; the reference
+/// sidebar files tasks started in such a worktree under the project that owns
+/// the repository, so a thread's cwd has to be resolved the same way.
+fn git_worktree_repository(cwd: &std::path::Path) -> Option<PathBuf> {
+    let mut current = Some(cwd);
+    while let Some(directory) = current {
+        let marker = directory.join(".git");
+        if marker.is_file() {
+            let contents = std::fs::read_to_string(&marker).ok()?;
+            let git_dir = contents.trim().strip_prefix("gitdir:")?.trim();
+            let git_dir = directory.join(git_dir);
+            let git_dir = normalize_workspace_path(&git_dir);
+            let worktrees = git_dir.parent()?;
+            if worktrees.file_name()? != "worktrees" {
+                return None;
+            }
+            let dot_git = worktrees.parent()?;
+            if dot_git.file_name()? != ".git" {
+                return None;
+            }
+            return dot_git.parent().map(PathBuf::from);
+        }
+        if marker.is_dir() {
+            // A normal checkout is already covered by the cwd prefix match.
+            return None;
+        }
+        current = directory.parent();
+    }
+    None
 }
 
 fn activity_from_connection_status(status: &AgentThreadStatusState) -> ThreadActivity {

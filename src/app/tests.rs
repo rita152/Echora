@@ -1165,11 +1165,11 @@ fn project_creation_trigger_opens_and_the_same_screen_position_closes_on_the_ove
     );
 
     window.draw();
-    // CDP-derived layout: 46 px titlebar safe area, 38 px brand header,
-    // 31 px new-chat row, the three-row navigation block, and the
-    // reference sidebar width (275 px), so the trigger sits inside the
-    // `Projects` section header.
-    let trigger = point(px(250.0), px(251.5));
+    // CDP-derived layout: 46 px titlebar safe area, a 32 px brand row, the
+    // 30 px new-chat row, the three-row navigation block, and the reference
+    // sidebar width (275 px). The section heading row is 25 px tall and ends
+    // in the 24 px "Add new project" button, whose centre is the trigger.
+    let trigger = point(px(253.0), px(238.0));
     window.simulate_mouse_move(trigger);
     window.draw();
     window.simulate_click(trigger, MouseButton::Left);

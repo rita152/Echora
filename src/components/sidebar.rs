@@ -85,6 +85,24 @@ fn new_conversation_target(project: Option<&Project>) -> (Option<ProjectId>, Pat
     (project_id, cwd)
 }
 
+/// Label inside a sidebar row. The row box itself keeps the reference's 13 px
+/// font, because that is what its trailing icon rail is measured against, while
+/// the label renders the body font at 14 px/430 with the reference's own line
+/// height. Both values come from the CDP capture in
+/// `artifacts/sidebar-layout-20260922/reference/`.
+fn sidebar_row_label(text: impl Into<SharedString>, line_height: f32) -> Div {
+    div()
+        .min_w(px(0.0))
+        .flex_1()
+        .overflow_hidden()
+        .whitespace_nowrap()
+        .text_overflow(gpui::TextOverflow::Truncate("…".into()))
+        .font(crate::theme::ui_font())
+        .text_size(px(ROW_LABEL_FONT_SIZE))
+        .line_height(px(line_height))
+        .child(text.into())
+}
+
 // These values come from the live ChatGPT desktop app at 127.0.0.1:9222.
 /// Matches the reference shell's `--codex-sidebar-preferred-width` (275px).
 pub(crate) const SIDEBAR_WIDTH: f32 = 275.0;
@@ -93,6 +111,41 @@ const ROW_HEIGHT: f32 = 30.0;
 const ROW_RADIUS: f32 = 12.5;
 const ROW_HORIZONTAL_PADDING: f32 = 8.0;
 const SECTION_HEADER_HEIGHT: f32 = 25.0;
+/// Brand row above the first navigation entry. CDP: 16 px inset, 32 px tall,
+/// with the 24 px search/activity buttons inset another 4 px from the right.
+const BRAND_ROW_HEIGHT: f32 = 32.0;
+/// Gap between the rows of one list (navigation block, project tasks, recents).
+const ROW_GAP: f32 = 1.0;
+/// Gap between the sidebar's scroll children: the navigation block, the
+/// projects section and the recents section.
+const SECTION_GAP: f32 = 16.0;
+/// Space between a section heading and its first row.
+const SECTION_LIST_PADDING_TOP: f32 = 4.0;
+/// A project's task list is padded 1 px above and 8 px below its rows.
+const THREAD_LIST_PADDING_TOP: f32 = 1.0;
+const THREAD_LIST_PADDING_BOTTOM: f32 = 8.0;
+const SHOW_MORE_HEIGHT: f32 = 25.0;
+const SHOW_MORE_INDENT: f32 = 24.0;
+const SHOW_MORE_MARGIN_BOTTOM: f32 = 4.0;
+/// Leading icon column of a project row, and the indent a task row reserves
+/// before its title so both titles start on the same 40 px grid line.
+const PROJECT_ICON_SLOT: f32 = 32.0;
+const THREAD_ICON_SLOT: f32 = 16.0;
+/// The row box measures 30 px tall with a 13 px font, while every label inside
+/// it renders the body font at 14 px — the reference splits the two, and the
+/// 13 px box is what the trailing icon rail is measured against.
+const NAV_ROW_FONT_SIZE: f32 = 13.0;
+const ROW_LABEL_FONT_SIZE: f32 = 14.0;
+/// The reference declares 21 px for these labels, but its label boxes start on
+/// a half pixel (a 21 px line in a 30 px row), and Chromium rounds that line's
+/// origin up. GPUI keeps the line box on whole pixels, so the same 21 px line
+/// renders one pixel higher than the reference; a 20 px line box puts the
+/// glyphs exactly on the reference's rows.
+const ROW_LABEL_LINE_HEIGHT: f32 = 20.0;
+const THREAD_TITLE_LINE_HEIGHT: f32 = 20.0;
+/// Trailing 32 px help button in the footer; the account row keeps the rest.
+const FOOTER_HELP_BUTTON: f32 = 32.0;
+const FOOTER_HEIGHT: f32 = 46.0;
 const MAX_VISIBLE_PROJECT_THREADS: usize = 5;
 const MAX_VISIBLE_RECENTS: usize = 10;
 const SIDEBAR_BODY_FONT_WEIGHT: gpui::FontWeight = crate::theme::UI_BODY_FONT_WEIGHT;
@@ -163,16 +216,21 @@ const ACCOUNT_MENU_BOTTOM: f32 = 44.625;
 const TITLE_FADE_IN: f32 = 8.0;
 const TITLE_FADE_OUT: f32 = 16.0;
 
-fn account_avatar(initials: Option<&str>, theme: Theme) -> Div {
+/// Account glyph in the sidebar footer. The reference renders a 16 px glyph
+/// there (the account menu's header uses 18 px), which is also what puts the
+/// account label on the same 40 px grid line as every other row label.
+const FOOTER_ACCOUNT_ICON: f32 = 16.0;
+
+fn account_avatar(initials: Option<&str>, size: f32, theme: Theme) -> Div {
     div()
-        .size(px(ACCOUNT_AVATAR_SIZE))
+        .size(px(size))
         .flex_none()
         .rounded_full()
         .bg(theme.control)
         .flex()
         .items_center()
         .justify_center()
-        .text_size(px(8.0))
+        .text_size(px(size / 2.25))
         .text_color(theme.sidebar_text)
         .child(initials.unwrap_or("").to_owned())
 }
@@ -1195,21 +1253,18 @@ impl SidebarView {
         div()
             .id(id)
             .flex_none()
-            .relative()
-            .top(px(1.0))
-            .h(px(30.0))
+            .h(px(ROW_HEIGHT))
             .w_full()
-            .px(px(8.0))
+            .px(px(ROW_HORIZONTAL_PADDING))
             .flex()
             .items_center()
             .gap(px(8.0))
-            .rounded(px(10.0))
-            .text_size(px(14.0))
+            .rounded(px(ROW_RADIUS))
+            .text_size(px(NAV_ROW_FONT_SIZE))
             .text_color(theme.sidebar_text)
             .hover(move |style| style.bg(theme.sidebar_hover))
-            .child(icon(glyph, theme.sidebar_text.into()))
-            .child(div().relative().left(px(0.25)).child(label))
-            .child(div().flex_1())
+            .child(icon(glyph, theme.sidebar_text.into()).size(px(16.0)))
+            .child(sidebar_row_label(label, ROW_LABEL_LINE_HEIGHT))
     }
 
     /// Sidebar entry that switches the main content area to the Pull Requests
@@ -1224,16 +1279,14 @@ impl SidebarView {
         div()
             .id("sidebar-pull-requests")
             .flex_none()
-            .relative()
-            .top(px(1.0))
-            .h(px(30.0))
+            .h(px(ROW_HEIGHT))
             .w_full()
-            .px(px(8.0))
+            .px(px(ROW_HORIZONTAL_PADDING))
             .flex()
             .items_center()
             .gap(px(8.0))
-            .rounded(px(10.0))
-            .text_size(px(14.0))
+            .rounded(px(ROW_RADIUS))
+            .text_size(px(NAV_ROW_FONT_SIZE))
             .text_color(theme.sidebar_text)
             .cursor_pointer()
             .role(gpui::Role::Button)
@@ -1243,14 +1296,11 @@ impl SidebarView {
             .on_click(move |_, _, cx| {
                 view.update(cx, |_, cx| cx.emit(OpenPullRequests));
             })
-            .child(icon("pull-request", theme.sidebar_text.into()))
-            .child(
-                div()
-                    .relative()
-                    .left(px(0.25))
-                    .child(crate::i18n::text("拉取请求")),
-            )
-            .child(div().flex_1())
+            .child(icon("pull-request", theme.sidebar_text.into()).size(px(16.0)))
+            .child(sidebar_row_label(
+                crate::i18n::text("拉取请求"),
+                ROW_LABEL_LINE_HEIGHT,
+            ))
     }
 
     fn section_header(
@@ -1265,23 +1315,28 @@ impl SidebarView {
         div()
             .id(id)
             .h(px(SECTION_HEADER_HEIGHT))
-            .px(px(8.0))
+            .pl(px(8.0))
+            .pr(px(2.0))
             .flex()
             .items_center()
-            .gap(px(4.0))
-            .rounded(px(10.0))
-            .cursor_pointer()
-            .text_size(px(14.0))
+            .gap(px(8.0))
+            .text_size(px(ROW_LABEL_FONT_SIZE))
+            .line_height(px(ROW_LABEL_LINE_HEIGHT))
             .font_weight(gpui::FontWeight::MEDIUM)
             .text_color(theme.sidebar_text_muted)
             .child(
                 div()
+                    .id(format!("{id}-toggle"))
                     .min_w(px(0.0))
                     .flex_1()
-                    .h_full()
+                    .h(px(SECTION_HEADER_HEIGHT))
+                    .py(px(2.0))
+                    .pr(px(4.0))
                     .flex()
                     .items_center()
                     .gap(px(4.0))
+                    .rounded(px(10.0))
+                    .cursor_pointer()
                     .child(label)
                     .child(
                         icon("section-chevron", theme.sidebar_icon_muted.into())
@@ -1292,7 +1347,15 @@ impl SidebarView {
                             } else {
                                 0.0
                             }))),
-                    ),
+                    )
+                    .on_click(cx.listener(move |this, _, _, _| match id {
+                        "pinned-heading" => this.store.set_section_collapsed("pinned", !collapsed),
+                        "projects-heading" => {
+                            this.store.set_section_collapsed("projects", !collapsed)
+                        }
+                        "recent-heading" => this.store.set_section_collapsed("recent", !collapsed),
+                        _ => {}
+                    })),
             )
             .on_hover(cx.listener(move |this, is_hovered: &bool, _, cx| {
                 if *is_hovered {
@@ -1301,12 +1364,6 @@ impl SidebarView {
                     this.hovered_section_id = None;
                 }
                 cx.notify();
-            }))
-            .on_click(cx.listener(move |this, _, _, _| match id {
-                "pinned-heading" => this.store.set_section_collapsed("pinned", !collapsed),
-                "projects-heading" => this.store.set_section_collapsed("projects", !collapsed),
-                "recent-heading" => this.store.set_section_collapsed("recent", !collapsed),
-                _ => {}
             }))
     }
 
@@ -1552,7 +1609,7 @@ impl SidebarView {
             div()
                 .min_w(px(0.0))
                 .flex_1()
-                .h(px(20.0))
+                .h(px(THREAD_TITLE_LINE_HEIGHT))
                 .child(thread_title_canvas(
                     thread.title.clone().into(),
                     theme.sidebar_text.into(),
@@ -1583,13 +1640,12 @@ impl SidebarView {
             .id(format!("thread-row-{thread_id}"))
             .h(px(ROW_HEIGHT))
             .relative()
-            .top(px(1.0))
-            .pl(px(8.0))
+            .pl(px(ROW_HORIZONTAL_PADDING))
             .pr(px(5.0))
             .flex()
             .items_center()
-            .rounded(px(8.0))
-            .text_size(px(14.0))
+            .rounded(px(ROW_RADIUS))
+            .text_size(px(NAV_ROW_FONT_SIZE))
             .font_weight(gpui::FontWeight::NORMAL)
             .text_color(theme.sidebar_text)
             .overflow_hidden()
@@ -1614,7 +1670,9 @@ impl SidebarView {
                             .flex()
                             .items_center()
                             .when(indented, |title_row| {
-                                title_row.gap(px(8.0)).child(div().w(px(16.0)).flex_none())
+                                title_row
+                                    .gap(px(8.0))
+                                    .child(div().w(px(THREAD_ICON_SLOT)).flex_none())
                             })
                             .child(title),
                     )
@@ -1763,31 +1821,22 @@ impl SidebarView {
         let title = if rename_active {
             self.rename_input.clone().into_any_element()
         } else {
-            div()
-                .min_w(px(0.0))
-                .flex_1()
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .child(project.name.clone())
-                .into_any_element()
+            sidebar_row_label(project.name.clone(), ROW_LABEL_LINE_HEIGHT).into_any_element()
         };
         let mut group = div()
             .id(format!("project-group-{project_id}"))
             .flex()
-            .flex_col()
-            .gap(px(1.0));
+            .flex_col();
         group = group.child(
             div()
                 .id(format!("project-row-{project_id}"))
                 .h(px(ROW_HEIGHT))
                 .w_full()
                 .relative()
-                .pl(px(1.0))
-                .pr(px(6.0))
                 .flex()
                 .items_center()
                 .rounded(px(ROW_RADIUS))
-                .text_size(px(14.0))
+                .text_size(px(NAV_ROW_FONT_SIZE))
                 .text_color(theme.sidebar_text)
                 .when(pending, |row| row.opacity(0.4).cursor_default())
                 .when(!pending, |row| {
@@ -1796,14 +1845,25 @@ impl SidebarView {
                 })
                 .child(
                     div()
-                        .size(px(30.0))
+                        .w(px(PROJECT_ICON_SLOT))
+                        .h(px(ROW_HEIGHT))
                         .flex_none()
                         .flex()
                         .items_center()
                         .justify_center()
-                        .child(icon("folder", theme.sidebar_text.into())),
+                        .child(icon("folder", theme.sidebar_text.into()).size(px(16.0))),
                 )
-                .child(title)
+                .child(
+                    div()
+                        .min_w(px(0.0))
+                        .flex_1()
+                        .h(px(29.0))
+                        .py(px(4.0))
+                        .flex()
+                        .items_center()
+                        .gap(px(8.0))
+                        .child(title),
+                )
                 .child(actions)
                 .child(
                     // Records the row's window bounds for the hover card, which
@@ -1831,6 +1891,12 @@ impl SidebarView {
                     }))
                 }),
         );
+        let mut thread_list = div()
+            .pt(px(THREAD_LIST_PADDING_TOP))
+            .pb(px(THREAD_LIST_PADDING_BOTTOM))
+            .flex()
+            .flex_col()
+            .gap(px(ROW_GAP));
         if !collapsed {
             let visible = if show_all {
                 threads.len()
@@ -1838,7 +1904,7 @@ impl SidebarView {
                 threads.len().min(MAX_VISIBLE_PROJECT_THREADS)
             };
             for thread in threads.iter().take(visible) {
-                group = group.child(self.thread_row(
+                thread_list = thread_list.child(self.thread_row(
                     thread,
                     ThreadRowPlacement {
                         indented: true,
@@ -1852,15 +1918,23 @@ impl SidebarView {
             }
             if threads.len() > MAX_VISIBLE_PROJECT_THREADS {
                 let show_id = project_id.clone();
-                group = group.child(
+                thread_list = thread_list.child(
                     div()
                         .id(format!("project-show-all-{project_id}"))
-                        .h(px(ROW_HEIGHT))
-                        .pl(px(32.0))
+                        .h(px(SHOW_MORE_HEIGHT))
+                        .ml(px(SHOW_MORE_INDENT))
+                        .mt(px(3.0))
+                        .mb(px(SHOW_MORE_MARGIN_BOTTOM))
+                        .px(px(8.0))
+                        .py(px(2.0))
+                        .rounded(px(ROW_RADIUS))
                         .flex()
                         .items_center()
-                        .text_size(px(14.0))
+                        .font(crate::theme::ui_font())
+                        .text_size(px(ROW_LABEL_FONT_SIZE))
+                        .line_height(px(ROW_LABEL_LINE_HEIGHT))
                         .text_color(theme.sidebar_text_muted)
+                        .opacity(0.75)
                         .cursor_pointer()
                         .hover(move |style| style.text_color(theme.sidebar_text))
                         .child(if show_all {
@@ -1877,7 +1951,7 @@ impl SidebarView {
                 );
             }
         }
-        group
+        group.child(thread_list)
     }
 
     /// The sidebar project hover card. Row order, geometry, and colors come
@@ -2304,9 +2378,9 @@ impl SidebarView {
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
         let collapsed = self.snapshot.preferences.pinned_collapsed;
-        let mut section = div()
+        let section = div()
             .id("pinned-section")
-            .pt(px(10.0))
+            .px(px(ROW_HORIZONTAL_PADDING))
             .flex()
             .flex_col()
             .child(self.section_header(
@@ -2326,8 +2400,13 @@ impl SidebarView {
                 theme,
             ));
         }
+        let mut list = div()
+            .pt(px(SECTION_LIST_PADDING_TOP))
+            .flex()
+            .flex_col()
+            .gap(px(ROW_GAP));
         for thread in &self.snapshot.pinned_threads {
-            section = section.child(self.thread_row(
+            list = list.child(self.thread_row(
                 thread,
                 ThreadRowPlacement {
                     indented: false,
@@ -2339,7 +2418,7 @@ impl SidebarView {
                 cx,
             ));
         }
-        section
+        section.child(list)
     }
 
     fn projects_section(
@@ -2376,15 +2455,22 @@ impl SidebarView {
                     cx.emit(OpenProjectCreation);
                 }))
             });
-        let mut section = div().id("projects-section").pt(px(10.0)).flex().flex_col();
+        let mut section = div()
+            .id("projects-section")
+            .px(px(ROW_HORIZONTAL_PADDING))
+            .flex()
+            .flex_col();
         section = section.child(
             div()
                 .id("projects-section-heading-row")
                 .h(px(SECTION_HEADER_HEIGHT))
-                .px(px(8.0))
+                .pl(px(8.0))
+                .pr(px(2.0))
                 .flex()
                 .items_center()
-                .text_size(px(14.0))
+                .gap(px(8.0))
+                .text_size(px(ROW_LABEL_FONT_SIZE))
+                .line_height(px(ROW_LABEL_LINE_HEIGHT))
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .text_color(theme.sidebar_text_muted)
                 .child(
@@ -2392,9 +2478,13 @@ impl SidebarView {
                         .id("projects-heading")
                         .min_w(px(0.0))
                         .flex_1()
+                        .h(px(SECTION_HEADER_HEIGHT))
+                        .py(px(2.0))
+                        .pr(px(4.0))
                         .flex()
                         .items_center()
                         .gap(px(4.0))
+                        .rounded(px(10.0))
                         .cursor_pointer()
                         .child(crate::i18n::text("项目"))
                         .child(
@@ -2458,7 +2548,11 @@ impl SidebarView {
                 theme,
             ));
         }
-        let mut projects = div().flex().flex_col().gap(px(10.0));
+        let mut projects = div()
+            .pt(px(SECTION_LIST_PADDING_TOP))
+            .flex()
+            .flex_col()
+            .gap(px(ROW_GAP));
         for project in &self.snapshot.projects {
             projects = projects.child(self.project_group(project, &pinned_ids, theme, window, cx));
         }
@@ -2496,10 +2590,9 @@ impl SidebarView {
             })
             .take(MAX_VISIBLE_RECENTS)
             .collect::<Vec<_>>();
-        let mut section = div()
+        let section = div()
             .id("recent-section")
-            .pt(px(10.0))
-            .pb(px(12.0))
+            .px(px(ROW_HORIZONTAL_PADDING))
             .flex()
             .flex_col()
             .child(self.section_header(
@@ -2526,8 +2619,13 @@ impl SidebarView {
                 theme,
             ));
         }
+        let mut list = div()
+            .pt(px(SECTION_LIST_PADDING_TOP))
+            .flex()
+            .flex_col()
+            .gap(px(ROW_GAP));
         for thread in threads {
-            section = section.child(self.thread_row(
+            list = list.child(self.thread_row(
                 thread,
                 ThreadRowPlacement {
                     indented: false,
@@ -2539,7 +2637,7 @@ impl SidebarView {
                 cx,
             ));
         }
-        section
+        section.child(list)
     }
 
     fn activity_content(
@@ -2694,7 +2792,11 @@ impl SidebarView {
             .min_h(px(0.0))
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
-            .px(px(8.0));
+            .pt(px(1.0))
+            .pb(px(8.0))
+            .flex()
+            .flex_col()
+            .gap(px(SECTION_GAP));
         if let Some(error) = self
             .local_error
             .as_ref()
@@ -2732,10 +2834,10 @@ impl SidebarView {
         content
             .child(
                 div()
-                    .pb(px(21.0))
+                    .px(px(ROW_HORIZONTAL_PADDING))
                     .flex()
                     .flex_col()
-                    .gap(px(1.0))
+                    .gap(px(ROW_GAP))
                     .child(self.pull_requests_nav_row(theme, self.pull_requests_open, cx))
                     .child(Self::static_nav_row(
                         "sidebar-scheduled",
@@ -3192,18 +3294,20 @@ impl SidebarView {
             .id("sidebar-new-conversation")
             .h(px(ROW_HEIGHT))
             .w_full()
-            .px(px(8.0))
-            .rounded(px(10.0))
+            .px(px(ROW_HORIZONTAL_PADDING))
+            .rounded(px(ROW_RADIUS))
             .flex()
             .items_center()
             .gap(px(8.0))
             .cursor_pointer()
-            .text_size(px(14.0))
+            .text_size(px(NAV_ROW_FONT_SIZE))
             .text_color(theme.sidebar_text)
             .hover(move |style| style.bg(theme.sidebar_hover))
-            .child(icon("new-chat", theme.sidebar_text.into()))
-            .child(div().flex_1().child(crate::i18n::text("新对话")))
-            .child(icon("quick-chat", theme.sidebar_text_muted.into()))
+            .child(icon("new-chat", theme.sidebar_text.into()).size(px(16.0)))
+            .child(sidebar_row_label(
+                crate::i18n::text("新对话"),
+                ROW_LABEL_LINE_HEIGHT,
+            ))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.new_conversation(new_project.as_ref(), cx);
             }));
@@ -3229,19 +3333,25 @@ impl SidebarView {
             });
         div()
             .flex_none()
+            .px(px(ROW_HORIZONTAL_PADDING))
+            .flex()
+            .flex_col()
+            .gap(px(8.0))
             .child(
                 div()
-                    .h(px(38.0))
-                    .px(px(16.0))
+                    .h(px(BRAND_ROW_HEIGHT))
+                    .pl(px(8.0))
+                    .pr(px(4.0))
                     .flex()
                     .items_center()
                     .child(
                         div()
-                            .relative()
-                            .top(px(-2.0))
+                            .ml(px(-8.0))
+                            .h(px(BRAND_ROW_HEIGHT))
+                            .px(px(8.0))
                             .flex()
                             .items_center()
-                            .gap(px(6.0))
+                            .gap(px(4.0))
                             .text_size(px(17.0))
                             .font(crate::typography::brand_font(cx))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
@@ -3259,16 +3369,9 @@ impl SidebarView {
                             .child(activity),
                     ),
             )
-            // 保留修改前已由 CDP 校准的标题栏与新对话入口；未接入的入口
-            // 只保留既有视觉，不制造对应业务数据或协议行为。
-            .child(
-                div()
-                    .relative()
-                    .top(px(1.0))
-                    .px(px(8.0))
-                    .h(px(31.0))
-                    .child(new_conversation),
-            )
+            // 新对话入口固定在滚动区之上，与参考实现一致；未接入的入口只保留
+            // 既有视觉，不制造对应业务数据或协议行为。
+            .child(new_conversation)
     }
 
     fn subpage_header(&self, title: &'static str, theme: Theme, cx: &mut Context<Self>) -> Div {
@@ -3315,10 +3418,9 @@ impl SidebarView {
         let initials = self.account.account_initials();
         div()
             .id("sidebar-profile")
-            .w(px((self.width - 56.0).max(96.0)))
+            .flex_1()
+            .min_w(px(96.0))
             .h(px(ACCOUNT_ROW_HEIGHT))
-            .mx(px(8.0))
-            .mb(px(8.0))
             .px(px(8.0))
             .rounded(px(ROW_RADIUS))
             .flex()
@@ -3329,15 +3431,12 @@ impl SidebarView {
             .line_height(px(21.0))
             .text_color(theme.sidebar_text)
             .hover(move |style| style.bg(theme.sidebar_hover))
-            .child(account_avatar(initials.as_deref(), theme))
-            .child(
-                div()
-                    .min_w(px(0.0))
-                    .flex_1()
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .child(title),
-            )
+            .child(account_avatar(
+                initials.as_deref(),
+                FOOTER_ACCOUNT_ICON,
+                theme,
+            ))
+            .child(sidebar_row_label(title, ROW_LABEL_LINE_HEIGHT))
             .on_click(cx.listener(|this, _, _, cx| {
                 cx.stop_propagation();
                 this.profile_menu_open = !this.profile_menu_open;
@@ -3347,6 +3446,32 @@ impl SidebarView {
                 }
                 cx.notify();
             }))
+    }
+
+    /// Footer row: the account entry plus the reference's trailing help button.
+    /// The help surface is not part of the app-server contract yet, so the
+    /// button keeps the reference geometry without inventing a destination.
+    fn footer(&self, theme: Theme, cx: &mut Context<Self>) -> Div {
+        div()
+            .flex_none()
+            .h(px(FOOTER_HEIGHT))
+            .px(px(ROW_HORIZONTAL_PADDING))
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .child(self.profile_button(theme, cx))
+            .child(
+                div()
+                    .flex_none()
+                    .size(px(FOOTER_HELP_BUTTON))
+                    .rounded(px(10.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_color(theme.sidebar_icon_muted)
+                    .hover(move |style| style.bg(theme.sidebar_hover))
+                    .child(icon("help", theme.sidebar_icon_muted.into()).size(px(18.0))),
+            )
     }
 
     fn account_menu_header(&self, theme: Theme) -> Div {
@@ -3364,6 +3489,7 @@ impl SidebarView {
             .gap(px(6.0))
             .child(account_avatar(
                 self.account.account_initials().as_deref(),
+                ACCOUNT_AVATAR_SIZE,
                 theme,
             ))
             .child(
@@ -3568,7 +3694,7 @@ impl Render for SidebarView {
             sidebar = sidebar
                 .child(self.header(theme, cx))
                 .child(self.workspace_content(theme, window, cx))
-                .child(self.profile_button(theme, cx));
+                .child(self.footer(theme, cx));
         }
 
         if let Some(project_id) = self.project_menu_id.as_deref()

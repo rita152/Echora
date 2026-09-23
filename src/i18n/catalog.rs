@@ -1107,7 +1107,7 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
             "File exceeds 2 MB. Open it in an external editor."
         }
         "新分支" => "New branch",
-        "新对话" => "New conversation",
+        "新对话" => "New chat",
         "新建临时聊天" => "New temporary chat",
         "新建独立聊天" => "New standalone chat",
         "新建终端" => "New terminal",
@@ -1211,7 +1211,7 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "最小" => "Minimal",
         "最常用的推理强度" => "Most used reasoning effort",
         "最常用的插件" => "Most used plugins",
-        "最近" => "Recent",
+        "最近" => "Recents",
         "最近录音" => "Recent recordings",
         "最长聊天时长" => "Longest chat",
         "最长连续天数" => "Longest streak",
