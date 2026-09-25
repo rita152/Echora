@@ -273,6 +273,8 @@ impl Render for ChatApp {
             .is_focused(window);
         let sidebar_reveal = self.sidebar_layout.reveal.clamp(0.0, 1.0);
         let revealed_sidebar_width = sidebar_width * sidebar_reveal;
+        let hairline = 1.0 / window.scale_factor();
+        let main_left_border = !self.showing_settings && sidebar_reveal > 0.0;
         let resumed_title = match &self.active_conversation {
             ConversationKey::Thread(id) if !self.showing_settings => {
                 self.workspace_store.snapshot().thread(id).map(|thread| {
@@ -490,6 +492,9 @@ impl Render for ChatApp {
                             .flex_1()
                             .min_w(px(0.0))
                             .h_full()
+                            // `_MainContentLeftBorder`: the main surface keeps its
+                            // background inside a one-device-pixel left border.
+                            .when(main_left_border, |main| main.pl(px(hairline)))
                             .flex()
                             .flex_col()
                             .child(
@@ -727,6 +732,21 @@ impl Render for ChatApp {
                         .text_color(theme.text)
                     .when(in_project, |header| header.child(icon("folder", theme.text.into()).size(px(16.0)).flex_none()))
                     .child(div().min_w(px(0.0)).truncate().child(title)))
+            })
+            .when(main_left_border, |shell| {
+                // The border is painted over the sidebar material, not over the
+                // opaque main surface, and above the transparent thread header
+                // and its top fade, exactly like the reference's border box.
+                shell.child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .bottom_0()
+                        .left(px(revealed_sidebar_width))
+                        .w(px(hairline))
+                        .bg(theme.sidebar_surface)
+                        .child(div().size_full().bg(theme.sidebar_hairline)),
+                )
             })
             .when(!self.showing_settings && sidebar_reveal == 1.0, |shell| {
                 shell.child(self.sidebar_resize_handle(theme, revealed_sidebar_width, cx))

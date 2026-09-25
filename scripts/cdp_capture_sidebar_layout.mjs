@@ -31,15 +31,22 @@ const STYLE_PROBES = [
   'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'marginTop', 'marginRight',
   'marginBottom', 'marginLeft', 'rowGap', 'columnGap', 'fontFamily', 'fontSize', 'fontWeight',
   'lineHeight', 'letterSpacing', 'color', 'backgroundColor', 'borderRadius', 'borderWidth',
-  'borderColor', 'boxShadow', 'opacity', 'overflowY', 'flexDirection', 'alignItems',
-  'justifyContent', 'whiteSpace', 'textOverflow',
+  'borderColor', 'borderTopWidth', 'borderTopColor', 'borderLeftWidth', 'borderLeftColor',
+  'boxShadow', 'opacity', 'overflowY', 'flexDirection', 'alignItems', 'justifyContent',
+  'whiteSpace', 'textOverflow', 'scrollbarWidth', 'scrollbarColor', 'maskImage',
 ];
 
 // Every landmark is addressed exactly like the renderer does it: by the
 // application's own test hooks where they exist, by role and text otherwise.
 const LANDMARKS = {
-  sidebar: `[...document.querySelectorAll('div, nav')].find((e) => { const r = e.getBoundingClientRect(); return Math.round(r.x) === 0 && Math.round(r.width) === 275 && Math.round(r.height) > 400; })`,
+  // The column's width is the user's persisted `sidebar-width` (275 by
+  // default, 240 at the minimum), so it is found by class, not by size.
+  sidebar: `document.querySelector('aside.app-shell-left-panel')`,
+  sidebarNav: `document.querySelector('aside.app-shell-left-panel nav')`,
   sidebarScroll: `document.querySelector('[data-app-action-sidebar-scroll]')`,
+  footer: `[...document.querySelectorAll('button')].find((b) => (b.getAttribute('aria-label') || '') === 'Open profile menu').closest('.h-toolbar')`,
+  footerHairline: `[...document.querySelectorAll('div')].find((e) => e.className === 'pointer-events-none absolute inset-x-0 top-0 z-10 border-t-hairline border-default')`,
+  mainSurface: `document.querySelector('main[data-app-shell-main-surface]')`,
   brandButton: `[...document.querySelectorAll('button')].find((b) => (b.getAttribute('aria-label') || '').startsWith('Switch mode'))`,
   searchButton: `[...document.querySelectorAll('button')].find((b) => (b.getAttribute('aria-label') || '') === 'Search')`,
   activityButton: `[...document.querySelectorAll('button')].find((b) => (b.getAttribute('aria-label') || '') === 'View activity')`,
@@ -151,7 +158,7 @@ async function capture(theme) {
   await cdp.screenshot(path.join(output, `${theme}-window.png`));
   // The material spans the whole column, including the titlebar strip the
   // app reserves above `nav`; crop that, not the nav element.
-  const sidebar = [0, 0, landmarks.sidebar?.rect[2] ?? 275, windowHeight];
+  const sidebar = [0, 0, (landmarks.sidebar?.rect[2] ?? 275) + 1, windowHeight];
   await cdp.screenshot(path.join(output, `${theme}-sidebar.png`), {
     clip: { x: sidebar[0], y: sidebar[1], width: sidebar[2], height: sidebar[3], scale },
   });

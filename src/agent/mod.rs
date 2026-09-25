@@ -71,7 +71,7 @@ pub use codex::{CodexAppServerBackend, CodexAppServerManager};
 pub use config::{
     AgentConfigChoiceSet, AgentConfigEdit, AgentConfigError, AgentConfigErrorKind,
     AgentConfigLayer, AgentConfigReceipt, AgentConfigRequirements, AgentConfigSaveResult,
-    AgentConfigSnapshot, AgentConfigSource, AgentConfigWrite, config_value,
+    AgentConfigSnapshot, AgentConfigSource, AgentConfigWrite, config_value, model_provider_name,
 };
 pub use events::{AgentConnectionEvent, AgentEvent};
 pub(crate) use file_search::AgentFileSearchSessionControl;
