@@ -5,15 +5,46 @@
 //! button per user message in a column 16 px from the transcript pane's left
 //! edge, a 30 x 2 track whose 26 x 2 line is scaled by the hovered distance,
 //! and a 320 px hover card that repeats the prompt above the response preview.
+//! How the rail moves and answers the pointer lives in `interaction` and
+//! `motion`.
+
+mod interaction;
+mod motion;
+mod preview;
+
+use std::{cell::RefCell, rc::Rc};
 
 use gpui::{
-    AnyElement, BoxShadow, Entity, FontWeight, IntoElement, ListState, Pixels, Rgba, Role, TextRun,
-    Window, div, prelude::*, px, rgba,
+    AnyElement, BoxShadow, ClickEvent, DispatchPhase, Entity, FontWeight, HitboxBehavior,
+    IntoElement, KeyDownEvent, ListState, MouseButton, MouseExitEvent, MouseMoveEvent,
+    MouseUpEvent, Pixels, Point, Rgba, Role, ScrollHandle, ScrollWheelEvent, Window, canvas, div,
+    prelude::*, px, rgba,
 };
 
-use super::HomeView;
+pub(super) use interaction::{MessageStep, RailFrame, UserMessageRail};
+
+gpui::actions!(
+    user_message_navigation,
+    [
+        /// Alt+↑: scroll to the previous user prompt.
+        PreviousUserMessage,
+        /// Alt+↓: scroll to the next user prompt.
+        NextUserMessage
+    ]
+);
+
+/// The reference listens for Alt+↑/↓ on the whole document while a thread is
+/// open, so the keys work from the composer as well.
+pub(crate) fn init_keyboard(cx: &mut gpui::App) {
+    cx.bind_keys([
+        gpui::KeyBinding::new("alt-up", PreviousUserMessage, Some("ChatApp")),
+        gpui::KeyBinding::new("alt-down", NextUserMessage, Some("ChatApp")),
+    ]);
+}
+
+use super::{CONVERSATION_TOP_INSET, HomeView};
 use crate::{
-    components::{icons::icon, markdown::plain_text_blocks},
+    components::icons::icon,
     theme::{CHAT_CONTENT_HORIZONTAL_GUTTER, Theme},
 };
 
@@ -42,7 +73,7 @@ const RAIL_LEFT_IN_VIEW: f32 = RAIL_LEFT - CHAT_CONTENT_HORIZONTAL_GUTTER;
 /// `w-9`.
 pub(super) const RAIL_WIDTH: f32 = 36.0;
 /// `h-2.5`.
-const RAIL_ITEM_HEIGHT: f32 = 10.0;
+pub(super) const RAIL_ITEM_HEIGHT: f32 = 10.0;
 /// `max-h-[min(70vh,40rem)]`.
 const RAIL_MAX_HEIGHT_RATIO: f32 = 0.7;
 const RAIL_MAX_HEIGHT: f32 = 640.0;
@@ -87,15 +118,13 @@ const CARD_PREVIEW_LINE_HEIGHT: f32 = 21.0;
 const CARD_PREVIEW_LINES: usize = 3;
 /// `mt-1`.
 const CARD_PREVIEW_GAP: f32 = 4.0;
-/// Markdown block gap inside the card's small preview.
-const CARD_PARAGRAPH_GAP: f32 = 13.0;
+/// Room for an outside list marker and the space that ends it.
+const LIST_MARKER_BOX: f32 = 21.0;
+const LIST_MARKER_GAP: f32 = 4.0;
 const CARD_BOOKMARK_SIZE: f32 = 16.0;
 /// `[&>svg]:icon-2xs` leaves the 18 px glyph overflowing the 16 px button.
 const CARD_BOOKMARK_GLYPH: f32 = 18.0;
 const CARD_BOOKMARK_RADIUS: f32 = 10.0;
-/// The card is centred on its marker; the band is the vertical slack GPUI
-/// needs to centre content whose height it cannot measure up front.
-pub(super) const CARD_BAND_HALF_HEIGHT: f32 = 160.0;
 /// Radix clamps the floating card to `calc(100vh - 16px)`.
 pub(super) const CARD_VIEWPORT_MARGIN: f32 = 16.0;
 
@@ -104,9 +133,11 @@ pub(super) const CARD_VIEWPORT_MARGIN: f32 = 16.0;
 pub(super) struct UserMessageNavigationItem {
     /// Row of the message in the conversation list, used to jump to it.
     pub(super) row_index: usize,
-    /// Last row of the turn that starts with this message, so the rail can tell
-    /// whether the turn is on screen.
+    /// Last row this message is observed through: the whole turn for its
+    /// first prompt, the prompt's own row for a later one in the same turn.
     pub(super) turn_end_row: usize,
+    /// Ordinal of the transcript turn the message belongs to.
+    pub(super) turn: usize,
     /// Stable identity of the turn inside the task, used for bookmarks.
     pub(super) bookmark_id: String,
     /// The prompt, trimmed exactly like the reference's `getLabel()`.
@@ -134,37 +165,47 @@ pub(super) fn marker_dash_width(progress: f32) -> f32 {
     MARKER_WIDTH * (MARKER_REST_SCALE + MARKER_HOVER_SCALE * progress)
 }
 
-/// Marker colour and opacity for one rail row. The hovered marker prints the
-/// theme's foreground at full strength; a bookmark lifts its resting opacity
-/// to one, and while the pointer sits on the rail the current markers fall
-/// back to the resting colour.
+/// Marker colour and opacity for one rail row. The hovered or scrubbed
+/// marker prints the theme's foreground at full strength; the current
+/// markers print it at 0.6 until the pointer rests on the rail or a scrub
+/// runs, and a bookmark lifts either resting opacity to one. Colour and
+/// opacity switch without a transition, as in the reference.
 pub(super) fn marker_paint(
     theme: Theme,
     current: bool,
-    progress: f32,
-    rail_hovered: bool,
+    focused: bool,
+    muted: bool,
     bookmarked: bool,
 ) -> (Rgba, f32) {
-    let hovered = progress >= 1.0;
-    let current = (current && !rail_hovered) || hovered;
-    let colour = if current {
-        theme.text
-    } else {
-        theme.navigation_rail_marker
-    };
-    let opacity = if bookmarked || hovered {
-        1.0
-    } else if current {
-        MARKER_CURRENT_OPACITY
-    } else {
-        MARKER_REST_OPACITY
-    };
-    (colour, opacity)
+    if focused {
+        return (theme.text, 1.0);
+    }
+    if current && !muted {
+        let opacity = if bookmarked {
+            1.0
+        } else {
+            MARKER_CURRENT_OPACITY
+        };
+        return (theme.text, opacity);
+    }
+    let opacity = if bookmarked { 1.0 } else { MARKER_REST_OPACITY };
+    (theme.navigation_rail_marker, opacity)
+}
+
+/// Window-space top and bottom of a measured transcript row. The list prints
+/// content offset `o` at its top inset, so rows above its scroll anchor still
+/// have a place: the browser paints them in that inset, and the reference's
+/// observers see them there.
+pub(super) fn row_span(list: &ListState, row: usize) -> Option<(Pixels, Pixels)> {
+    let top = list.item_offset(row)?;
+    let bottom = list.item_offset(row + 1)?;
+    let origin = list.viewport_bounds().top() + px(CONVERSATION_TOP_INSET) - list.scroll_offset();
+    Some((origin + top, origin + bottom))
 }
 
 /// Whether the turn spanning `first..=last` overlaps the viewport between
-/// `top` and `bottom`. Rows the list has already scrolled past have no bounds;
-/// the turn is still on screen as long as its last row is inside the crop.
+/// `top` and `bottom`. Rows the list has not measured fall back to what the
+/// list knows about their side of the viewport.
 fn turn_intersects(
     list: &ListState,
     first: usize,
@@ -172,6 +213,11 @@ fn turn_intersects(
     top: Pixels,
     bottom: Pixels,
 ) -> bool {
+    if let (Some((first_top, _)), Some((_, last_bottom))) =
+        (row_span(list, first), row_span(list, last))
+    {
+        return last_bottom > top && first_top < bottom;
+    }
     let last_above = match list.bounds_for_item(last) {
         Some(bounds) => bounds.bottom() <= top,
         None => list.item_is_above_viewport(last).unwrap_or(false),
@@ -183,39 +229,30 @@ fn turn_intersects(
     !last_above && !first_below
 }
 
-/// `aria-current` set: the contiguous run of turns that intersect the viewport,
-/// with the reference's 16 px top crop. Rows the list has not measured count as
-/// off screen, which is what the reference's intersection observer reports too.
-pub(super) fn current_items(list: &ListState, items: &[UserMessageNavigationItem]) -> Vec<bool> {
-    let viewport = list.viewport_bounds();
-    let top = viewport.top() + px(16.0);
-    let bottom = viewport.bottom();
-    let flags = items
+/// Which turns intersect the transcript between `top` and `bottom`.
+pub(super) fn turns_in_view(
+    list: &ListState,
+    items: &[UserMessageNavigationItem],
+    top: Pixels,
+    bottom: Pixels,
+) -> Vec<bool> {
+    items
         .iter()
         .map(|item| turn_intersects(list, item.row_index, item.turn_end_row, top, bottom))
-        .collect::<Vec<_>>();
-    contiguous_run(&flags)
+        .collect()
 }
 
-/// The reference keeps only the run of visible turns that starts at the first
-/// one, so a message far below the viewport never lights up its marker.
-fn contiguous_run(flags: &[bool]) -> Vec<bool> {
-    let Some(first) = flags.iter().position(|visible| *visible) else {
-        return flags.to_vec();
-    };
-    let mut end = first;
-    for (index, visible) in flags.iter().enumerate().skip(first) {
-        if *visible {
-            end = index;
-        } else {
-            break;
-        }
-    }
-    flags
-        .iter()
-        .enumerate()
-        .map(|(index, _)| index >= first && index <= end)
-        .collect()
+/// `aria-current`: every turn from the first to the last one that intersects
+/// the viewport (the reference's `findIndex` .. `findLastIndex`), or `None`
+/// when nothing does, in which case the reference keeps its previous set.
+pub(super) fn current_span(flags: &[bool]) -> Option<Vec<bool>> {
+    let first = flags.iter().position(|visible| *visible)?;
+    let last = flags.iter().rposition(|visible| *visible)?;
+    Some(
+        (0..flags.len())
+            .map(|index| index >= first && index <= last)
+            .collect(),
+    )
 }
 
 pub(super) fn rail_visible(items: usize, pane_width: f32) -> bool {
@@ -226,11 +263,25 @@ pub(super) fn rail_max_height(pane_height: f32) -> f32 {
     (pane_height * RAIL_MAX_HEIGHT_RATIO).min(RAIL_MAX_HEIGHT)
 }
 
-/// The response preview as the card prints it: at most three wrapped lines,
-/// carrying the markdown paragraphs they were cut from.
+/// The rail list's height: every marker until `max-h-[min(70vh,40rem)]`.
+pub(super) fn rail_height(items: usize, pane_height: f32) -> f32 {
+    (items as f32 * RAIL_ITEM_HEIGHT).min(rail_max_height(pane_height))
+}
+
+/// The card's height as `user_message_card` lays it out, so it can be placed
+/// before it is painted.
+pub(super) fn card_height(preview: &preview::Preview) -> f32 {
+    let preview_height = if preview.is_empty() {
+        0.0
+    } else {
+        CARD_PREVIEW_GAP + preview.height
+    };
+    CARD_PADDING * 2.0 + CARD_HEADER_HEIGHT + preview_height
+}
+
 /// Byte index where the trailing ASCII word run starts, so a clamped line never
 /// ends in the middle of a Latin word.
-fn ascii_run_start(text: &str) -> usize {
+pub(super) fn ascii_run_start(text: &str) -> usize {
     for (index, character) in text.char_indices().rev() {
         let in_word =
             character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-' | '+');
@@ -241,272 +292,305 @@ fn ascii_run_start(text: &str) -> usize {
     0
 }
 
-pub(super) fn preview_paragraphs(
-    source: &str,
-    width: f32,
-    window: &Window,
-) -> Vec<(String, usize)> {
-    let font = hover_card_font(crate::theme::UI_BODY_FONT_WEIGHT);
-    let run = |text: &str| TextRun {
-        len: text.len(),
-        font: font.clone(),
-        color: gpui::black(),
-        background_color: None,
-        underline: None,
-        strikethrough: None,
-    };
-    let line_count = |text: &str| -> usize {
-        window
-            .text_system()
-            .shape_text(
-                text.to_owned().into(),
-                px(CARD_PREVIEW_SIZE),
-                &[run(text)],
-                Some(px(width)),
-                None,
-            )
-            // `shape_text` reports one entry per source line; the wrapped lines
-            // inside it are the boundaries the renderer will actually break at.
-            .map(|lines| {
-                lines
-                    .iter()
-                    .map(|line| line.wrap_boundaries.len() + 1)
-                    .sum()
-            })
-            .unwrap_or(1)
-            .max(1)
-    };
-    let mut remaining = CARD_PREVIEW_LINES;
-    let mut out = Vec::new();
-    for text in plain_text_blocks(source) {
-        if remaining == 0 {
-            break;
-        }
-        let lines = line_count(&text);
-        if lines <= remaining {
-            remaining -= lines;
-            out.push((text, lines));
-            continue;
-        }
-        // The reference clamps the block with `-webkit-line-clamp`, which fills
-        // the last visible line and marks the cut with an ellipsis. The clamp
-        // is applied to the whole block, so the paragraph that overflows is cut
-        // inside the last line the card prints.
-        let shown = remaining;
-        let mut low = 0;
-        let mut high = text.chars().count();
-        while low < high {
-            let middle = (low + high).div_ceil(2);
-            let candidate = text.chars().take(middle).collect::<String>() + "…";
-            if line_count(&candidate) <= shown {
-                low = middle;
-            } else {
-                high = middle - 1;
-            }
-        }
-        let mut truncated = text.chars().take(low).collect::<String>();
-        // Chrome truncates the clamped line at the last break opportunity that
-        // fits, so a limit that landed inside a Latin run backs up to the run's
-        // start instead of printing half a word.
-        let cut = ascii_run_start(&truncated);
-        truncated.truncate(cut);
-        truncated.push('…');
-        remaining = 0;
-        out.push((truncated, shown));
-    }
-    out
+/// One frame of the rail, resolved by `HomeView::user_message_rail_render`.
+pub(super) struct RailRender {
+    pub(super) items: Rc<Vec<UserMessageNavigationItem>>,
+    pub(super) current: Rc<Vec<bool>>,
+    /// Each marker's animated `--marker-progress`.
+    pub(super) progress: Rc<Vec<f32>>,
+    /// The hovered or scrubbed marker.
+    pub(super) focus: Option<usize>,
+    /// The pointer is on the rail or scrubbing.
+    pub(super) muted: bool,
+    pub(super) bookmarks: Rc<Vec<bool>>,
+    pub(super) card: Option<RailCard>,
+    /// The mount fade-in.
+    pub(super) opacity: f32,
+    pub(super) scroll: ScrollHandle,
+    pub(super) frame: Rc<RefCell<RailFrame>>,
+    /// Top of the rail list, relative to the conversation view.
+    pub(super) top: f32,
+    pub(super) height: f32,
+    pub(super) scroll_top: f32,
+    /// `--top-fade` and `--bottom-fade` of the list's edge mask.
+    pub(super) fades: (f32, f32),
 }
 
-/// The floating rail: one button per user message, centred in the pane.
-pub(super) fn user_message_rail(
-    items: &[UserMessageNavigationItem],
-    current: &[bool],
-    hovered: Option<usize>,
-    bookmarked: &dyn Fn(usize) -> bool,
-    pane_height: f32,
+pub(super) struct RailCard {
+    pub(super) index: usize,
+    /// Top of the card, relative to the conversation view.
+    pub(super) top: f32,
+    /// `max-height: calc(100vh - 16px)`.
+    pub(super) max_height: f32,
+    pub(super) bookmarked: bool,
+    pub(super) preview: Rc<preview::Preview>,
+}
+
+fn marker_button(
+    index: usize,
+    render: &RailRender,
     theme: Theme,
     home: Entity<HomeView>,
-) -> AnyElement {
-    let mut column = div().flex().flex_col();
-    for (index, _item) in items.iter().enumerate() {
-        let progress = marker_progress(index, hovered);
-        let is_current = current.get(index).copied().unwrap_or(false);
-        let is_bookmarked = bookmarked(index);
-        let (colour, opacity) = marker_paint(
-            theme,
-            is_current,
-            progress,
-            hovered.is_some(),
-            is_bookmarked,
-        );
-        let dash_width = marker_dash_width(progress);
-        let hover_home = home.clone();
-        let click_home = home.clone();
-        let label = if is_bookmarked {
-            crate::i18n::format!(
-                "跳转到第 {position} 条用户消息，已收藏" => "Jump to user message {position}, bookmarked turn",
-                position = index + 1
-            )
-        } else {
-            crate::i18n::format!(
-                "跳转到第 {position} 条用户消息" => "Jump to user message {position}",
-                position = index + 1
-            )
-        };
-        column = column.child(
+) -> impl IntoElement {
+    let progress = render.progress.get(index).copied().unwrap_or(0.0);
+    let is_bookmarked = render.bookmarks.get(index).copied().unwrap_or(false);
+    let (colour, opacity) = marker_paint(
+        theme,
+        render.current.get(index).copied().unwrap_or(false),
+        render.focus == Some(index),
+        render.muted,
+        is_bookmarked,
+    );
+    // The list's `vertical-scroll-fade-mask`, sampled on the marker's line.
+    let line_centre = index as f32 * RAIL_ITEM_HEIGHT + RAIL_ITEM_HEIGHT * 0.5 - render.scroll_top;
+    let opacity = opacity * motion::rail_mask_alpha(line_centre, render.height, render.fades);
+    let dash_width = marker_dash_width(progress);
+    let label = if is_bookmarked {
+        crate::i18n::format!(
+            "跳转到第 {position} 条用户消息，已收藏" => "Jump to user message {position}, bookmarked turn",
+            position = index + 1
+        )
+    } else {
+        crate::i18n::format!(
+            "跳转到第 {position} 条用户消息" => "Jump to user message {position}",
+            position = index + 1
+        )
+    };
+    div()
+        .id(("user-message-navigation-item", index))
+        .w(px(RAIL_WIDTH))
+        .h(px(RAIL_ITEM_HEIGHT))
+        .flex_none()
+        .flex()
+        .items_center()
+        .role(Role::Button)
+        .aria_label(label)
+        .cursor_pointer()
+        // Pointer presses, including the ones accessibility clicks synthesize,
+        // go through the rail's press/scrub handling; only a keyboard click
+        // arrives here.
+        .on_click(move |event, window, cx| {
+            if matches!(event, ClickEvent::Keyboard(_)) {
+                home.update(cx, |home, cx| {
+                    home.activate_user_message_marker(index, window, cx)
+                });
+            }
+        })
+        .child(
             div()
-                .id(("user-message-navigation-item", index))
-                .w(px(RAIL_WIDTH))
-                .h(px(RAIL_ITEM_HEIGHT))
-                .flex_none()
+                .w(px(MARKER_TRACK_WIDTH))
+                .h(px(MARKER_TRACK_HEIGHT))
                 .flex()
                 .items_center()
-                .role(Role::Button)
-                .aria_label(label)
-                .cursor_pointer()
-                .on_hover(move |hovered: &bool, _window, cx| {
-                    let hovered = *hovered;
-                    hover_home.update(cx, |home, cx| {
-                        home.set_user_message_navigation_hover(index, hovered, cx);
-                    });
-                })
-                .on_click(move |_event, _window, cx| {
-                    click_home.update(cx, |home, cx| home.reveal_user_message(index, cx));
-                })
                 .child(
                     div()
-                        .w(px(MARKER_TRACK_WIDTH))
+                        .relative()
+                        .w(px(MARKER_WIDTH))
                         .h(px(MARKER_TRACK_HEIGHT))
-                        .flex()
-                        .items_center()
                         .child(
                             div()
-                                .relative()
-                                .w(px(MARKER_WIDTH))
+                                .absolute()
+                                .left(px(0.0))
+                                .top(px(0.0))
+                                .w(px(dash_width))
                                 .h(px(MARKER_TRACK_HEIGHT))
-                                .child(
-                                    div()
-                                        .absolute()
-                                        .left(px(0.0))
-                                        .top(px(0.0))
-                                        .w(px(dash_width))
-                                        .h(px(MARKER_TRACK_HEIGHT))
-                                        .bg(colour)
-                                        .opacity(opacity),
-                                )
-                                .when(is_bookmarked, |marker| {
-                                    marker.child(
-                                        div()
-                                            .absolute()
-                                            .left(px(
-                                                BOOKMARK_DOT_LEFT + marker_dash_width(progress)
-                                            ))
-                                            .top(px(0.0))
-                                            .size(px(BOOKMARK_DOT_SIZE))
-                                            .rounded(px(BOOKMARK_DOT_SIZE / 2.0))
-                                            .bg(colour)
-                                            .opacity(opacity),
-                                    )
-                                }),
-                        ),
+                                .bg(colour)
+                                .opacity(opacity),
+                        )
+                        .when(is_bookmarked, |marker| {
+                            marker.child(
+                                div()
+                                    .absolute()
+                                    .left(px(BOOKMARK_DOT_LEFT + dash_width))
+                                    .top(px(0.0))
+                                    .size(px(BOOKMARK_DOT_SIZE))
+                                    .rounded(px(BOOKMARK_DOT_SIZE / 2.0))
+                                    .bg(colour)
+                                    .opacity(opacity),
+                            )
+                        }),
                 ),
-        );
-    }
-    div()
-        .id("user-message-navigation-rail")
-        .w(px(RAIL_WIDTH))
-        .max_h(px(rail_max_height(pane_height)))
-        .flex()
-        .flex_col()
-        .overflow_y_scroll()
-        .scrollbar_width(px(0.0))
-        .child(column)
-        .into_any_element()
+        )
 }
 
-/// The rail plus its hover card, positioned relative to the transcript pane.
-/// The pane is the containing block, so the rail sits 16 px from its left edge
-/// and stays centred no matter where the transcript has scrolled to.
+/// Registers the window-level pointer and key listeners that drive the rail:
+/// the reference tracks `:hover`, pointer capture while scrubbing, and the
+/// safe triangle from document-level events, so these see every event.
+fn register_rail_listeners(
+    frame: Rc<RefCell<RailFrame>>,
+    home: Entity<HomeView>,
+    window: &mut Window,
+) {
+    fn pointer(
+        frame: &RefCell<RailFrame>,
+        home: &Entity<HomeView>,
+        position: Point<Pixels>,
+        pressed: bool,
+        inside_window: bool,
+        window: &mut Window,
+        cx: &mut gpui::App,
+    ) {
+        let (over_rail, over_card) = {
+            let frame = frame.borrow();
+            let hovered = |hitbox: &Option<gpui::Hitbox>| {
+                inside_window
+                    && hitbox
+                        .as_ref()
+                        .is_some_and(|hitbox| hitbox.is_hovered(window))
+            };
+            (hovered(&frame.rail), hovered(&frame.card))
+        };
+        home.update(cx, |home, cx| {
+            home.rail_pointer_moved(position, pressed, over_rail, over_card, window, cx)
+        });
+    }
+
+    window.on_mouse_event({
+        let (frame, home) = (frame.clone(), home.clone());
+        move |event: &MouseMoveEvent, phase, window, cx| {
+            if phase == DispatchPhase::Capture {
+                let pressed = event.pressed_button == Some(MouseButton::Left);
+                pointer(&frame, &home, event.position, pressed, true, window, cx);
+            }
+        }
+    });
+    window.on_mouse_event({
+        let (frame, home) = (frame.clone(), home.clone());
+        move |event: &MouseExitEvent, phase, window, cx| {
+            if phase == DispatchPhase::Capture {
+                let pressed = event.pressed_button == Some(MouseButton::Left);
+                pointer(&frame, &home, event.position, pressed, false, window, cx);
+            }
+        }
+    });
+    window.on_mouse_event({
+        let (frame, home) = (frame.clone(), home.clone());
+        move |event: &MouseUpEvent, phase, window, cx| {
+            if phase != DispatchPhase::Capture || event.button != MouseButton::Left {
+                return;
+            }
+            let over_rail = frame
+                .borrow()
+                .rail
+                .as_ref()
+                .is_some_and(|hitbox| hitbox.is_hovered(window));
+            home.update(cx, |home, cx| {
+                home.rail_pointer_released(event.position, over_rail, window, cx)
+            });
+        }
+    });
+    window.on_mouse_event({
+        let (frame, home) = (frame.clone(), home.clone());
+        move |_: &ScrollWheelEvent, phase, window, _cx| {
+            if phase != DispatchPhase::Capture {
+                return;
+            }
+            // Scrolling the rail moves other markers under a still pointer;
+            // re-read hover once the new offset is painted.
+            let (frame, home) = (frame.clone(), home.clone());
+            window.on_next_frame(move |window, cx| {
+                let position = window.mouse_position();
+                pointer(&frame, &home, position, false, true, window, cx);
+            });
+        }
+    });
+    window.on_key_event(move |event: &KeyDownEvent, phase, _window, cx| {
+        if phase == DispatchPhase::Capture && event.keystroke.key == "escape" {
+            home.update(cx, |home, cx| home.dismiss_user_message_card(cx));
+        }
+    });
+}
+
+/// The rail plus its hover card, positioned in the conversation view. The
+/// rail sits 16 px from the transcript pane's left edge, centred in the
+/// window, and floats above the transcript: it takes the pointer and the
+/// wheel from whatever it covers, as the reference's portalled rail does.
 pub(super) fn user_message_navigation_overlay(
-    items: &[UserMessageNavigationItem],
-    current: &[bool],
-    hovered: Option<usize>,
-    bookmarked: &[bool],
-    preview: &[(String, usize)],
-    view_top: f32,
-    window_height: f32,
+    render: RailRender,
     theme: Theme,
     home: Entity<HomeView>,
 ) -> AnyElement {
-    let is_bookmarked = |index: usize| bookmarked.get(index).copied().unwrap_or(false);
-    let rail_height = (items.len() as f32 * RAIL_ITEM_HEIGHT).min(rail_max_height(window_height));
-    // The reference centres the rail in the window, not in the scrolled pane.
-    let rail_top_window = (window_height - rail_height) * 0.5;
-    let rail_top = rail_top_window - view_top;
-    let mut overlay = div()
+    let mut markers = div().flex().flex_col();
+    for index in 0..render.items.len() {
+        markers = markers.child(marker_button(index, &render, theme, home.clone()));
+    }
+    let press_home = home.clone();
+    let rail_frame = render.frame.clone();
+    let listener_frame = render.frame.clone();
+    let listener_home = home.clone();
+    let rail = div()
         .absolute()
         .left(px(RAIL_LEFT_IN_VIEW))
-        .top(px(rail_top))
+        .top(px(render.top))
         .w(px(RAIL_WIDTH))
-        .h(px(rail_height))
-        .flex()
-        .flex_col()
-        .child(user_message_rail(
-            items,
-            current,
-            hovered,
-            &is_bookmarked,
-            window_height,
-            theme,
-            home.clone(),
-        ));
+        .h(px(render.height))
+        .opacity(render.opacity)
+        .child(
+            div()
+                .id("user-message-navigation-rail")
+                .size_full()
+                .occlude()
+                .overflow_y_scroll()
+                .scrollbar_width(px(0.0))
+                .track_scroll(&render.scroll)
+                .on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                    cx.stop_propagation();
+                    press_home.update(cx, |home, cx| {
+                        home.rail_pointer_pressed(event.position, window, cx)
+                    });
+                })
+                .child(markers),
+        )
+        .child(
+            canvas(
+                move |bounds, window, _| {
+                    let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
+                    let mut frame = rail_frame.borrow_mut();
+                    frame.rail = Some(hitbox);
+                    // The card, if any, is laid out after the rail.
+                    frame.card = None;
+                },
+                move |_, _, window, _| {
+                    register_rail_listeners(listener_frame, listener_home, window)
+                },
+            )
+            .absolute()
+            .inset_0(),
+        );
 
-    if let Some(index) = hovered
-        && let Some(item) = items.get(index)
-        && !preview.is_empty()
+    let mut overlay = div().absolute().top_0().left_0().child(rail);
+    if let Some(card) = render.card
+        && let Some(item) = render.items.get(card.index)
     {
-        let item_centre =
-            rail_top_window + index as f32 * RAIL_ITEM_HEIGHT + RAIL_ITEM_HEIGHT * 0.5;
-        let band_height = CARD_BAND_HALF_HEIGHT * 2.0;
-        let band_top = (item_centre - CARD_BAND_HALF_HEIGHT).clamp(
-            CARD_VIEWPORT_MARGIN,
-            (window_height - CARD_VIEWPORT_MARGIN - band_height).max(CARD_VIEWPORT_MARGIN),
-        ) - rail_top_window;
         overlay = overlay.child(
             div()
                 .absolute()
-                .left(px(CARD_LEFT - RAIL_LEFT))
-                .top(px(band_top))
+                .left(px(CARD_LEFT - CHAT_CONTENT_HORIZONTAL_GUTTER))
+                .top(px(card.top))
                 .w(px(CARD_WIDTH))
-                .h(px(band_height))
-                .flex()
-                .flex_col()
-                .items_start()
-                .justify_center()
                 .child(user_message_card(
                     item,
-                    index,
-                    is_bookmarked(index),
-                    preview,
+                    &card,
                     theme,
+                    render.frame.clone(),
                     home,
                 )),
         );
     }
-
     overlay.into_any_element()
 }
 
 /// The hover card: prompt row, bookmark control, then the response preview.
 pub(super) fn user_message_card(
     item: &UserMessageNavigationItem,
-    index: usize,
-    bookmarked: bool,
-    preview: &[(String, usize)],
+    card: &RailCard,
     theme: Theme,
+    frame: Rc<RefCell<RailFrame>>,
     home: Entity<HomeView>,
 ) -> AnyElement {
-    let card_hover_home = home.clone();
+    let index = card.index;
+    let bookmarked = card.bookmarked;
+    let preview = card.preview.as_ref();
     let bookmark_home = home.clone();
     let header = div()
         .w_full()
@@ -566,31 +650,58 @@ pub(super) fn user_message_card(
                 ),
         );
 
-    let preview_column = preview.iter().enumerate().fold(
-        div().w_full().flex().flex_col(),
-        |column, (position, (text, lines))| {
+    let text_color: gpui::Hsla = theme.navigation_rail_marker.into();
+    let preview_column = preview.rows.iter().fold(
+        div()
+            .w_full()
+            .h(px(preview.height))
+            .overflow_hidden()
+            .flex()
+            .flex_col(),
+        |column, row| {
             column.child(
                 div()
+                    .relative()
                     .w_full()
-                    .when(position > 0, |paragraph| {
-                        paragraph.mt(px(CARD_PARAGRAPH_GAP))
+                    .flex_none()
+                    .mt(px(row.margin_top))
+                    .pl(px(row.indent))
+                    .text_size(px(row.font_size))
+                    .line_height(px(row.line_height))
+                    .font(hover_card_font(row.weight))
+                    .text_color(text_color)
+                    .line_clamp(row.lines)
+                    .when_some(row.marker.clone(), |line, marker| {
+                        // `list-style-position: outside`: the marker ends one
+                        // space before the item's text.
+                        line.child(
+                            div()
+                                .absolute()
+                                .top_0()
+                                .left(px(row.indent - LIST_MARKER_BOX))
+                                .w(px(LIST_MARKER_BOX - LIST_MARKER_GAP))
+                                .flex()
+                                .justify_end()
+                                .child(marker),
+                        )
                     })
-                    .text_size(px(CARD_PREVIEW_SIZE))
-                    .line_height(px(CARD_PREVIEW_LINE_HEIGHT))
-                    .font(hover_card_font(crate::theme::UI_BODY_FONT_WEIGHT))
-                    .text_color(theme.navigation_rail_marker)
-                    .line_clamp(*lines)
-                    .child(text.clone()),
+                    .child(
+                        gpui::StyledText::new(row.text.clone())
+                            .with_runs(preview::row_text_runs(row, text_color)),
+                    ),
             )
         },
     );
 
     div()
         .id(("user-message-navigation-card", index))
+        .relative()
         .w(px(CARD_WIDTH))
+        .max_h(px(card.max_height))
         .p(px(CARD_PADDING))
         .flex()
         .flex_col()
+        .occlude()
         .rounded(px(CARD_RADIUS))
         .bg(theme.navigation_rail_surface)
         .shadow(vec![
@@ -600,14 +711,21 @@ pub(super) fn user_message_card(
                 .spread_radius(px(-4.0)),
         ])
         .overflow_hidden()
-        .on_hover(move |hovered: &bool, _window, cx| {
-            let hovered = *hovered;
-            card_hover_home.update(cx, |home, cx| {
-                home.set_user_message_card_hovered(index, hovered, cx);
-            });
-        })
         .child(header)
-        .child(div().mt(px(CARD_PREVIEW_GAP)).child(preview_column))
+        .when(!preview.is_empty(), |card| {
+            card.child(div().mt(px(CARD_PREVIEW_GAP)).child(preview_column))
+        })
+        .child(
+            canvas(
+                move |bounds, window, _| {
+                    let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
+                    frame.borrow_mut().card = Some(hitbox);
+                },
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .inset_0(),
+        )
         .into_any_element()
 }
 #[cfg(test)]
@@ -639,27 +757,29 @@ mod tests {
             crate::theme::ThemeMode::Dark,
         ] {
             let theme = Theme::for_mode(mode);
-            let resting = marker_paint(theme, false, 0.0, false, false);
+            // (current, focused, muted, bookmarked)
+            let resting = marker_paint(theme, false, false, false, false);
             assert_eq!(resting.0, theme.navigation_rail_marker);
             assert_eq!(resting.1, 0.4);
 
-            let current = marker_paint(theme, true, 0.0, false, false);
+            let current = marker_paint(theme, true, false, false, false);
             assert_eq!(current.0, theme.text);
             assert_eq!(current.1, 0.6);
 
-            let hovered = marker_paint(theme, false, 1.0, true, false);
+            let hovered = marker_paint(theme, false, true, true, false);
             assert_eq!(hovered.0, theme.text);
             assert_eq!(hovered.1, 1.0);
 
-            // While the pointer rests on the rail, a current marker that is not
-            // the hovered one falls back to the resting colour.
-            let muted = marker_paint(theme, true, 0.0, true, false);
+            // While the pointer rests on the rail or a scrub runs, a current
+            // marker that is not the focused one falls back to the resting
+            // colour.
+            let muted = marker_paint(theme, true, false, true, false);
             assert_eq!(muted.0, theme.navigation_rail_marker);
             assert_eq!(muted.1, 0.4);
 
-            // A bookmark lifts the resting marker to full opacity.
-            let bookmarked = marker_paint(theme, false, 0.0, false, true);
-            assert_eq!(bookmarked.1, 1.0);
+            // A bookmark lifts either resting opacity to one.
+            assert_eq!(marker_paint(theme, false, false, false, true).1, 1.0);
+            assert_eq!(marker_paint(theme, true, false, false, true).1, 1.0);
         }
     }
 
@@ -672,19 +792,138 @@ mod tests {
         // `max-h-[min(70vh,40rem)]`.
         assert_eq!(rail_max_height(1000.0), 640.0);
         assert_eq!(rail_max_height(800.0), 560.0);
+        assert_eq!(rail_height(14, 1000.0), 140.0);
+        assert_eq!(rail_height(80, 1000.0), 640.0);
+    }
+
+    /// The reference marks every turn from the first to the last one that
+    /// intersects the viewport, and keeps its set while none does.
+    #[test]
+    fn current_markers_span_the_first_to_the_last_visible_turn() {
+        assert_eq!(current_span(&[false, false]), None);
+        assert_eq!(
+            current_span(&[true, true, false, true]),
+            Some(vec![true, true, true, true])
+        );
+        assert_eq!(
+            current_span(&[false, true, true, false]),
+            Some(vec![false, true, true, false])
+        );
+    }
+
+    /// A steering message shares its turn: the turn's first prompt is observed
+    /// through the whole turn, the steering prompt through its own row.
+    #[test]
+    fn steering_prompts_share_the_turn_they_steered() {
+        use super::super::timeline::{
+            ActivityStreamUnit, ConversationListRow, user_message_navigation_items,
+        };
+        use crate::conversation::ConversationActivity;
+        let user = |turn_index: usize| ConversationListRow::HistoricalUser {
+            turn_index,
+            message: format!("prompt {turn_index}"),
+            images: Vec::new(),
+            time: None,
+        };
+        let answer = |id: &str| ConversationListRow::AssistantMarkdown {
+            id: id.to_owned(),
+            text: id.to_owned(),
+        };
+        let steering = ConversationListRow::Activity {
+            unit: ActivityStreamUnit::Standalone(ConversationActivity::UserMessage {
+                item_id: "steer".to_owned(),
+                text: "steer".to_owned(),
+                images: Vec::new(),
+            }),
+            show_thinking_tail: false,
+        };
+        let rows = vec![
+            user(0),
+            answer("a"),
+            steering,
+            answer("b"),
+            user(1),
+            answer("c"),
+        ];
+        let assistant = |id: &str| ConversationActivity::AssistantMessage {
+            item_id: id.to_owned(),
+            text: id.to_owned(),
+        };
+        let turn = |activities: Vec<ConversationActivity>| {
+            crate::conversation::ConversationTranscriptTurn {
+                turn_id: None,
+                phase: crate::conversation::ConversationPhase::Complete,
+                user_message: String::new(),
+                user_images: Vec::new(),
+                user_message_time: None,
+                assistant_message: "final answer".to_owned(),
+                assistant_message_time: None,
+                activities,
+                resumed: None,
+            }
+        };
+        let transcript = vec![
+            turn(vec![
+                assistant("commentary before the steer"),
+                ConversationActivity::UserMessage {
+                    item_id: "steer".to_owned(),
+                    text: "steer".to_owned(),
+                    images: Vec::new(),
+                },
+                assistant("progress"),
+                assistant("answer after the steer"),
+            ]),
+            turn(Vec::new()),
+        ];
+        let items = user_message_navigation_items(&rows, &transcript, (&[], ""));
+        let spans = items
+            .iter()
+            .map(|item| (item.row_index, item.turn_end_row, item.turn))
+            .collect::<Vec<_>>();
+        assert_eq!(spans, vec![(0, 3, 0), (2, 2, 0), (4, 5, 1)]);
+        // Each prompt previews the last assistant message it received before
+        // the next prompt; a turn without assistant activity falls back to
+        // its answer.
+        let previews = items
+            .iter()
+            .map(|item| item.preview.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            previews,
+            vec![
+                "commentary before the steer",
+                "answer after the steer",
+                "final answer"
+            ]
+        );
     }
 
     #[test]
-    fn current_markers_keep_only_the_first_visible_run() {
-        assert_eq!(contiguous_run(&[false, false]), vec![false, false]);
-        assert_eq!(
-            contiguous_run(&[true, true, false, true]),
-            vec![true, true, false, false]
-        );
-        assert_eq!(
-            contiguous_run(&[false, true, true, false]),
-            vec![false, true, true, false]
-        );
+    fn card_height_matches_the_card_layout() {
+        assert_eq!(card_height(&preview::Preview::default()), 36.0);
+        // A 76 px preview (one line, a 13 px gap, two lines): the recorded
+        // 116 px card.
+        let preview = preview::Preview {
+            rows: Vec::new(),
+            height: 76.0,
+        };
+        assert_eq!(card_height(&preview), 36.0);
+        let row = preview::PreviewRow {
+            text: "a".into(),
+            runs: Vec::new(),
+            lines: 1,
+            margin_top: 0.0,
+            font_size: CARD_PREVIEW_SIZE,
+            line_height: CARD_PREVIEW_LINE_HEIGHT,
+            weight: crate::theme::UI_BODY_FONT_WEIGHT,
+            indent: 0.0,
+            marker: None,
+        };
+        let preview = preview::Preview {
+            rows: vec![row],
+            height: 76.0,
+        };
+        assert_eq!(card_height(&preview), 116.0);
     }
 
     /// The clamp backs up over a Latin run so the last line never prints half a

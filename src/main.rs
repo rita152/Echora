@@ -654,6 +654,9 @@ struct ResumedCaptureOptions {
     scroll_from_bottom: Option<f32>,
     navigation_hover: Option<usize>,
     navigation_jump: Option<usize>,
+    /// After the screenshot, replay the rail's pointer scenarios and save the
+    /// per-frame recording next to it.
+    navigation_motion: bool,
 }
 
 #[cfg(feature = "screenshot")]
@@ -756,6 +759,17 @@ fn schedule_resumed_thread_screenshot(
                 ) {
                     eprintln!("failed to save resumed render audit: {error}");
                     std::process::exit(1);
+                }
+                if options.navigation_motion {
+                    // The replay quits the app once it has saved its recording.
+                    app.update(cx, |app, cx| {
+                        app.record_user_message_rail_motion(
+                            format!("{path}.motion.json").into(),
+                            window,
+                            cx,
+                        )
+                    });
+                    return;
                 }
                 cx.quit();
             }
@@ -898,6 +912,7 @@ fn main() {
             .ok()
             .and_then(|position| position.checked_sub(1))
     });
+    let navigation_motion = args.iter().any(|arg| arg == "--user-message-rail-motion");
     let chat_search_state = args.iter().find_map(|arg| {
         arg.strip_prefix("--chat-search-state=")
             .map(ToOwned::to_owned)
@@ -918,6 +933,7 @@ fn main() {
         resume_scroll_from_bottom,
         navigation_hover,
         navigation_jump,
+        navigation_motion,
     );
     let submit_prompt = args
         .iter()
@@ -1261,6 +1277,7 @@ fn main() {
             // GPUI resolves equal keystrokes in reverse registration order.
             components::approval::init(cx);
             components::home::init_runtime_keyboard(cx);
+            components::home::init_navigation_keyboard(cx);
             cx.bind_keys([gpui::KeyBinding::new("cmd-p", app::OpenFiles, None)]);
             let bounds = Bounds::centered(None, size(px(window_width), px(window_height)), cx);
             let initial_bounds = if start_maximized {
@@ -1657,6 +1674,7 @@ fn main() {
                                     scroll_from_bottom: resume_scroll_from_bottom,
                                     navigation_hover,
                                     navigation_jump,
+                                    navigation_motion,
                                 },
                                 RESUMED_THREAD_STABLE_FRAMES,
                             );

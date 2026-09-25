@@ -600,18 +600,61 @@ pub(super) fn strip_terminal_line_ending(output: &str) -> &str {
         .unwrap_or(output)
 }
 
+/// The reference previews a prompt with the last assistant message that
+/// follows it before the next prompt of the same turn. `steer` names the
+/// steering prompt to start after; `None` starts at the turn's first prompt.
+/// A turn without assistant activity falls back to its answer text.
+fn turn_response(activities: &[ConversationActivity], steer: Option<&str>, answer: &str) -> String {
+    if !activities
+        .iter()
+        .any(|activity| matches!(activity, ConversationActivity::AssistantMessage { .. }))
+    {
+        return answer.to_owned();
+    }
+    let mut started = steer.is_none();
+    let mut response = String::new();
+    for activity in activities {
+        match activity {
+            ConversationActivity::UserMessage { item_id, .. } => {
+                if started {
+                    break;
+                }
+                started = steer == Some(item_id.as_str());
+            }
+            ConversationActivity::AssistantMessage { text, .. } if started => {
+                response.clone_from(text);
+            }
+            _ => {}
+        }
+    }
+    response
+}
+
 /// The rail lists one item per user message, in transcript order. Every
-/// historical row carries its transcript turn, so the item can repeat the
-/// prompt and the response of the very same turn; the newest row takes the
-/// assistant text that follows it in the list.
+/// historical row carries its transcript turn, and the newest rows belong to
+/// the live turn in `current` (its activity and answer), so each item can
+/// repeat the prompt and the response it received within its own turn.
 pub(super) fn user_message_navigation_items(
     rows: &[ConversationListRow],
     transcript: &[ConversationTranscriptTurn],
+    current: (&[ConversationActivity], &str),
 ) -> Vec<super::navigation::UserMessageNavigationItem> {
     use super::navigation::UserMessageNavigationItem;
 
     let mut items: Vec<UserMessageNavigationItem> = Vec::new();
+    // The activity and answer of the turn the latest prompt row opened.
+    let mut turn_source: Option<(&[ConversationActivity], &str)> = None;
+    // Steering messages print inside the turn they steered, after its first
+    // prompt; they share that turn.
+    let mut turn = None::<usize>;
     for (index, row) in rows.iter().enumerate() {
+        let starts_turn = !matches!(
+            row,
+            ConversationListRow::Activity {
+                unit: ActivityStreamUnit::Standalone(ConversationActivity::UserMessage { .. }),
+                ..
+            }
+        );
         let (label, preview, bookmark_id) = match row {
             ConversationListRow::HistoricalUser {
                 turn_index,
@@ -619,29 +662,49 @@ pub(super) fn user_message_navigation_items(
                 ..
             } => {
                 let turn = transcript.get(*turn_index);
+                turn_source =
+                    turn.map(|turn| (turn.activities.as_slice(), turn.assistant_message.as_str()));
                 (
                     message.trim().to_owned(),
-                    turn.map(|turn| turn.assistant_message.clone())
+                    turn_source
+                        .map(|(activities, answer)| turn_response(activities, None, answer))
                         .unwrap_or_default(),
                     turn.and_then(|turn| turn.turn_id.clone())
                         .unwrap_or_else(|| format!("turn-{turn_index}")),
                 )
             }
             ConversationListRow::CurrentUser { message, .. }
-            | ConversationListRow::MessageEdit { text: message } => (
-                message.trim().to_owned(),
-                assistant_text_after(rows, index),
-                "current-turn".to_owned(),
-            ),
+            | ConversationListRow::MessageEdit { text: message } => {
+                turn_source = Some(current);
+                let (activities, answer) = current;
+                let response = turn_response(activities, None, answer);
+                (
+                    message.trim().to_owned(),
+                    if response.is_empty() {
+                        assistant_text_after(rows, index)
+                    } else {
+                        response
+                    },
+                    "current-turn".to_owned(),
+                )
+            }
             // A resumed turn prints its steering messages from the activity
             // stream instead of a transcript row, and the reference counts
             // each of them as a rail item too.
             ConversationListRow::Activity {
-                unit: ActivityStreamUnit::Standalone(ConversationActivity::UserMessage { text, .. }),
+                unit:
+                    ActivityStreamUnit::Standalone(ConversationActivity::UserMessage {
+                        item_id,
+                        text,
+                        ..
+                    }),
                 ..
             } => (
                 text.trim().to_owned(),
-                assistant_text_after(rows, index),
+                match turn_source {
+                    Some((activities, answer)) => turn_response(activities, Some(item_id), answer),
+                    None => assistant_text_after(rows, index),
+                },
                 format!("activity-{index}"),
             ),
             _ => continue,
@@ -649,23 +712,36 @@ pub(super) fn user_message_navigation_items(
         if label.is_empty() {
             continue;
         }
+        let item_turn = match turn {
+            Some(previous) if !starts_turn => previous,
+            Some(previous) => previous + 1,
+            None => 0,
+        };
+        turn = Some(item_turn);
         items.push(UserMessageNavigationItem {
             row_index: index,
             turn_end_row: index,
+            turn: item_turn,
             bookmark_id,
             label,
             preview,
         });
     }
+    // The reference observes a turn through its first prompt and every later
+    // prompt of the same turn through that prompt alone.
     for position in 0..items.len() {
         let start = items[position].row_index;
-        let end = items
-            .get(position + 1)
-            .map(|next| next.row_index - 1)
-            .unwrap_or_else(|| rows.len().saturating_sub(1));
-        if let Some(item) = items.get_mut(position) {
-            item.turn_end_row = end.max(start);
-        }
+        let first_of_turn = position == 0 || items[position - 1].turn != items[position].turn;
+        let end = if first_of_turn {
+            items[position + 1..]
+                .iter()
+                .find(|next| next.turn != items[position].turn)
+                .map(|next| next.row_index - 1)
+                .unwrap_or_else(|| rows.len().saturating_sub(1))
+        } else {
+            start
+        };
+        items[position].turn_end_row = end.max(start);
     }
     items
 }

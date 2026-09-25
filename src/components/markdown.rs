@@ -664,65 +664,6 @@ enum SequenceContext {
 /// card prints. The card repeats at most three lines of the response, so the
 /// preview carries the text of each block in order; block-level decoration
 /// (list markers, tables, code gutters) stays out of it.
-pub(crate) fn plain_text_blocks(source: &str) -> Vec<String> {
-    fn walk(blocks: Vec<MarkdownBlock>, out: &mut Vec<String>) {
-        for block in blocks {
-            match block {
-                MarkdownBlock::Paragraph(inlines)
-                | MarkdownBlock::Heading {
-                    content: inlines, ..
-                } => {
-                    let text = inline_plain_text(&inlines);
-                    if !text.trim().is_empty() {
-                        out.push(text);
-                    }
-                }
-                MarkdownBlock::BlockQuote(blocks) => walk(blocks, out),
-                MarkdownBlock::List { items, .. } => {
-                    for item in items {
-                        walk(item.blocks, out);
-                    }
-                }
-                MarkdownBlock::CodeBlock { code, .. } => {
-                    if !code.trim().is_empty() {
-                        out.push(code);
-                    }
-                }
-                MarkdownBlock::Table { header, rows, .. } => {
-                    let mut line = header
-                        .iter()
-                        .map(|cell| inline_plain_text(&cell.content))
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    if !line.trim().is_empty() {
-                        out.push(line);
-                    }
-                    for row in rows {
-                        line = row
-                            .iter()
-                            .map(|cell| inline_plain_text(&cell.content))
-                            .collect::<Vec<_>>()
-                            .join(" ");
-                        if !line.trim().is_empty() {
-                            out.push(line);
-                        }
-                    }
-                }
-                MarkdownBlock::Image { alt, .. } => {
-                    if !alt.trim().is_empty() {
-                        out.push(alt);
-                    }
-                }
-                MarkdownBlock::HorizontalRule => {}
-            }
-        }
-    }
-
-    let mut out = Vec::new();
-    walk(parse_markdown(source).blocks, &mut out);
-    out
-}
-
 pub fn render_assistant_markdown(source: &str, theme: Theme, message_scope: &str) -> Div {
     let document = parse_markdown(source);
     render_markdown_document(&document, theme, markdown_hash(message_scope))

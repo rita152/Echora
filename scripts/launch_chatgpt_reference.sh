@@ -29,6 +29,10 @@
 #   CHATGPT_REFERENCE_SOURCE_DATA profile to clone from
 #   CHATGPT_REFERENCE_LABEL       launchd label (default chatgpt-reference)
 #   CHATGPT_REFERENCE_LOG_DIR     where the instance log is written
+#   CHATGPT_REFERENCE_EXTRA_ARGS  extra Chromium switches; the default keeps a
+#                                 covered window rendering, because Chromium
+#                                 stops delivering input and frames to an
+#                                 occluded (`visibilityState: hidden`) page
 set -eu
 
 port="${CHATGPT_REFERENCE_PORT:-9335}"
@@ -37,6 +41,7 @@ user_data="${CHATGPT_REFERENCE_USER_DATA:-$HOME/Library/Application Support/gpui
 source_data="${CHATGPT_REFERENCE_SOURCE_DATA:-$HOME/Library/Application Support/Codex}"
 log_dir="${CHATGPT_REFERENCE_LOG_DIR:-$HOME/Library/Logs/gpui-capture}"
 binary="/Applications/ChatGPT.app/Contents/MacOS/ChatGPT"
+extra_args="${CHATGPT_REFERENCE_EXTRA_ARGS:---disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling}"
 
 if [ "${1:-}" = "--stop" ]; then
   launchctl remove "$label" 2>/dev/null || true
@@ -74,7 +79,7 @@ mkdir -p "$log_dir"
 log="$log_dir/reference-instance-$port.log"
 
 launchctl submit -l "$label" -- /bin/sh -c \
-  "export HOME='$HOME'; export CODEX_ELECTRON_USER_DATA_PATH='$user_data'; exec '$binary' --user-data-dir='$user_data' --remote-debugging-port=$port >>'$log' 2>&1"
+  "export HOME='$HOME'; export CODEX_ELECTRON_USER_DATA_PATH='$user_data'; exec '$binary' --user-data-dir='$user_data' --remote-debugging-port=$port $extra_args >>'$log' 2>&1"
 
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
   sleep 1

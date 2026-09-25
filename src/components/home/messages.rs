@@ -152,10 +152,13 @@ pub(super) fn user_message_text_width(message: &str, window: &mut Window) -> f32
         .fold(0.0_f32, f32::max)
 }
 
+/// `highlight` is the opacity of the text-coloured layer a rail jump flashes
+/// over the bubble.
 pub(super) fn user_message_bubble(
     message: String,
     theme: Theme,
     width: f32,
+    highlight: Option<f32>,
     window: &mut Window,
 ) -> Div {
     let text_width = user_message_text_width(&message, window);
@@ -175,9 +178,23 @@ pub(super) fn user_message_bubble(
         .text_color(theme.user_message_text)
         .child(
             canvas(
-                |bounds, _, _| user_message_bubble_path(bounds),
-                move |_, path, window, _| {
+                move |bounds, _, _| {
+                    (
+                        user_message_bubble_path(bounds),
+                        highlight.map(|_| user_message_bubble_path(bounds)),
+                    )
+                },
+                move |_, (path, highlight_path), window, _| {
                     window.paint_path(path, theme.user_message_surface);
+                    if let (Some(path), Some(alpha)) = (highlight_path, highlight) {
+                        window.paint_path(
+                            path,
+                            gpui::Rgba {
+                                a: alpha,
+                                ..theme.text
+                            },
+                        );
+                    }
                 },
             )
             .absolute()
@@ -316,6 +333,8 @@ pub(super) struct UserMessageContent {
     pub(super) text: String,
     pub(super) images: Vec<crate::agent::UserMessageAttachment>,
     pub(super) time: String,
+    /// The rail's jump highlight over the bubble, while it plays.
+    pub(super) highlight: Option<f32>,
 }
 
 pub(super) fn current_user_message(
@@ -332,6 +351,7 @@ pub(super) fn current_user_message(
         text: user_message,
         images: user_images,
         time: user_message_time,
+        highlight,
     } = message;
     let reserve_footer = !continuation || actions_visible_for_capture;
     let hover_group: SharedString = "user-message-hover".into();
@@ -370,6 +390,7 @@ pub(super) fn current_user_message(
                         theme,
                         content_width.min(CONVERSATION_CONTENT_MAX_WIDTH)
                             * USER_MESSAGE_MAX_WIDTH_RATIO,
+                        highlight,
                         window,
                     ))
                 })

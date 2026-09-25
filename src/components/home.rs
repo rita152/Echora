@@ -20,6 +20,9 @@ mod progress;
 mod reasoning;
 mod requests;
 mod runtime;
+pub(crate) use navigation::{
+    NextUserMessage, PreviousUserMessage, init_keyboard as init_navigation_keyboard,
+};
 pub(crate) use runtime::init_keyboard as init_runtime_keyboard;
 mod timeline;
 mod tools;
@@ -33,8 +36,8 @@ use std::{
 };
 
 use gpui::{
-    Context, Entity, FocusHandle, Focusable, KeyDownEvent, ListOffset, ListState, Render,
-    ScrollHandle, Window, point, prelude::*, px,
+    Context, Entity, FocusHandle, Focusable, KeyDownEvent, ListState, Render, ScrollHandle, Window,
+    point, prelude::*, px,
 };
 
 pub struct OpenHookSettings;
@@ -98,10 +101,8 @@ pub struct HomeView {
     /// Real prompts of the loaded task, in transcript order, for the floating
     /// user-message navigation rail.
     user_message_navigation: Rc<Vec<navigation::UserMessageNavigationItem>>,
-    /// Marker the pointer sits on, which is what widens the rail's dashes.
-    navigation_hover: Option<usize>,
-    navigation_card_hovered: bool,
-    navigation_hover_token: u64,
+    /// Hover, card, scrub, and jump state of the rail.
+    navigation_rail: navigation::UserMessageRail,
     /// Bookmarks the user set from the rail's hover card. Keyed by task and
     /// turn, because the Codex app-server has no bookmark method of its own.
     navigation_bookmarks: HashSet<String>,
@@ -182,10 +183,6 @@ const CONVERSATION_BOTTOM_INSET: f32 = 153.0;
 const CONVERSATION_BOTTOM_EPSILON: f32 = 0.5;
 const CONVERSATION_LIST_OVERDRAW: f32 = 256.0;
 const CONVERSATION_CONTENT_MAX_WIDTH: f32 = 736.0;
-/// The reference's rail tooltip waits for the pointer to settle before it
-/// opens, and keeps a close delay so the pointer can reach the card.
-const NAVIGATION_CARD_OPEN_DELAY: Duration = Duration::from_millis(300);
-const NAVIGATION_CARD_CLOSE_DELAY: Duration = Duration::from_millis(120);
 const USER_MESSAGE_MAX_WIDTH_RATIO: f32 = 0.7;
 const USER_MESSAGE_TEXT_LAYOUT_EPSILON: f32 = 1.0;
 const USER_MESSAGE_HORIZONTAL_PADDING: f32 = 16.0;
@@ -395,9 +392,7 @@ impl HomeView {
             message_edit_focus_pending: false,
             conversation_rows: Rc::new(Vec::new()),
             user_message_navigation: Rc::new(Vec::new()),
-            navigation_hover: None,
-            navigation_card_hovered: false,
-            navigation_hover_token: 0,
+            navigation_rail: navigation::UserMessageRail::default(),
             navigation_bookmarks: HashSet::new(),
             navigation_thread_key: String::new(),
             pending_navigation_hover: None,
@@ -445,6 +440,7 @@ impl HomeView {
             assistant_message_time,
             conversation_activity,
         ) = self.composer.read(cx).conversation_render_snapshot();
+        let current_answer = assistant_message.clone();
         let rows = conversation_list_rows(
             transcript.clone(),
             CurrentTurnRows {
@@ -460,7 +456,11 @@ impl HomeView {
             },
             &self.expanded_resumed_turns,
         );
-        let items = user_message_navigation_items(&rows, &transcript);
+        let items = user_message_navigation_items(
+            &rows,
+            &transcript,
+            (&conversation_activity, &current_answer),
+        );
         self.conversation_rows = Rc::new(rows);
         let navigation_thread = self
             .composer
@@ -469,12 +469,12 @@ impl HomeView {
             .map(ToOwned::to_owned)
             .unwrap_or_else(|| "conversation".to_owned());
 
-        if navigation_thread != self.navigation_thread_key {
-            self.navigation_thread_key = navigation_thread;
-            self.navigation_hover = None;
-            self.navigation_card_hovered = false;
-        }
+        let thread_changed = navigation_thread != self.navigation_thread_key;
         self.user_message_navigation = Rc::new(items);
+        if thread_changed {
+            self.navigation_thread_key = navigation_thread;
+            self.reset_user_message_rail();
+        }
         self.conversation_phase = phase;
         for row in self.conversation_rows.iter() {
             if let ConversationListRow::ResumedWork { id, .. } = row {
@@ -805,91 +805,14 @@ impl HomeView {
             .is_some_and(|key| self.navigation_bookmarks.contains(&key))
     }
 
-    /// The pointer entered or left a rail marker. The card opens after the
-    /// reference's tooltip delay and keeps its own close delay so the pointer
-    /// can travel from the marker onto the card.
-    pub(super) fn set_user_message_navigation_hover(
-        &mut self,
-        index: usize,
-        hovered: bool,
-        cx: &mut Context<Self>,
-    ) {
-        self.navigation_hover_token = self.navigation_hover_token.wrapping_add(1);
-        let token = self.navigation_hover_token;
-        let card_open = self.navigation_hover.is_some();
-        if hovered {
-            if card_open {
-                self.navigation_hover = Some(index);
-                cx.notify();
-                return;
-            }
-            cx.spawn(async move |this, cx| {
-                cx.background_executor()
-                    .timer(NAVIGATION_CARD_OPEN_DELAY)
-                    .await;
-                let _ = this.update(cx, |home, cx| {
-                    if home.navigation_hover_token == token && home.navigation_hover.is_none() {
-                        home.navigation_hover = Some(index);
-                        cx.notify();
-                    }
-                });
-            })
-            .detach();
-            return;
-        }
-        cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(NAVIGATION_CARD_CLOSE_DELAY)
-                .await;
-            let _ = this.update(cx, |home, cx| {
-                if home.navigation_hover_token != token || home.navigation_card_hovered {
-                    return;
-                }
-                if home.navigation_hover.take().is_some() {
-                    cx.notify();
-                }
-            });
-        })
-        .detach();
-    }
-
     /// Window-space origin of the transcript pane, which is what the captured
     /// rail's position is scored against.
+    #[cfg(feature = "screenshot")]
     pub(crate) fn conversation_pane_origin(&self) -> (f32, f32) {
         (
             (self.content_left - crate::theme::CHAT_CONTENT_HORIZONTAL_GUTTER).max(0.0),
             self.content_top,
         )
-    }
-
-    pub(super) fn set_user_message_card_hovered(
-        &mut self,
-        index: usize,
-        hovered: bool,
-        cx: &mut Context<Self>,
-    ) {
-        self.navigation_card_hovered = hovered;
-        if hovered {
-            self.navigation_hover_token = self.navigation_hover_token.wrapping_add(1);
-            self.navigation_hover = Some(index);
-            cx.notify();
-        } else {
-            let token = self.navigation_hover_token;
-            cx.spawn(async move |this, cx| {
-                cx.background_executor()
-                    .timer(NAVIGATION_CARD_CLOSE_DELAY)
-                    .await;
-                let _ = this.update(cx, |home, cx| {
-                    if home.navigation_hover_token != token || home.navigation_card_hovered {
-                        return;
-                    }
-                    if home.navigation_hover.take().is_some() {
-                        cx.notify();
-                    }
-                });
-            })
-            .detach();
-        }
     }
 
     pub(super) fn toggle_user_message_bookmark(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -902,28 +825,20 @@ impl HomeView {
         cx.notify();
     }
 
-    /// Jumps the transcript so the message sits at the top of the viewport,
-    /// which is what the reference's marker click does.
-    pub(super) fn reveal_user_message(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.scroll_to_user_message(index, cx);
-        // The reference opens the marker's preview as part of the same click.
-        self.navigation_hover = Some(index);
-        cx.notify();
-    }
-
-    fn scroll_to_user_message(&mut self, index: usize, cx: &mut Context<Self>) {
-        let Some(row) = self
-            .user_message_navigation
-            .get(index)
-            .map(|item| item.row_index)
-        else {
-            return;
+    /// Alt+↑/↓. Returns whether the transcript had a prompt to move to.
+    pub(crate) fn step_user_message_from_keyboard(
+        &mut self,
+        next: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let step = if next {
+            navigation::MessageStep::Next
+        } else {
+            navigation::MessageStep::Previous
         };
-        self.conversation_list.scroll_to(ListOffset {
-            item_ix: row,
-            offset_in_item: px(0.0),
-        });
-        cx.notify();
+        self.presentation == HomePresentation::Conversation
+            && self.step_user_message(step, window, cx)
     }
 
     /// Capture hook: render one rail marker as hovered without a pointer.
@@ -932,22 +847,17 @@ impl HomeView {
         index: Option<usize>,
         cx: &mut Context<Self>,
     ) {
-        match index {
-            Some(index) => {
-                if self.user_message_navigation.is_empty() {
-                    self.pending_navigation_hover = Some(index);
-                } else {
-                    self.navigation_hover_token = self.navigation_hover_token.wrapping_add(1);
-                    self.navigation_hover = Some(index);
-                }
-            }
-            None => self.navigation_hover = None,
+        if index.is_some() && self.user_message_navigation.is_empty() {
+            self.pending_navigation_hover = index;
+        } else {
+            self.pin_user_message_rail_for_capture(index);
         }
         cx.notify();
     }
 
     /// Capture hook: jump the transcript to one user message the way clicking
     /// its marker does, so both builds record the same state.
+    #[cfg(feature = "screenshot")]
     pub(crate) fn reveal_user_message_for_capture(&mut self, index: usize, cx: &mut Context<Self>) {
         if self.user_message_navigation.is_empty() {
             self.pending_navigation_jump = Some(index);
@@ -955,7 +865,7 @@ impl HomeView {
         }
         // Capture-only: the recording drives the hover separately, so the jump
         // must not leave a preview open behind it.
-        self.scroll_to_user_message(index, cx);
+        self.jump_to_user_message_for_capture(index, cx);
     }
 
     /// Applies capture hooks once the resumed task's rail exists.
@@ -964,7 +874,7 @@ impl HomeView {
             return;
         }
         if let Some(index) = self.pending_navigation_jump.take() {
-            self.reveal_user_message(index, cx);
+            self.jump_to_user_message_for_capture(index, cx);
         }
         if let Some(index) = self.pending_navigation_hover.take() {
             self.set_user_message_navigation_hover_for_capture(Some(index), cx);
@@ -1817,6 +1727,13 @@ impl Render for HomeView {
                 self.conversation_scroll.scroll_to_bottom();
             }
         }
+        let navigation_rail = self.user_message_rail_render(
+            self.presentation == HomePresentation::Conversation
+                && phase != ConversationPhase::Empty
+                && navigation::rail_visible(self.user_message_navigation.len(), self.content_width),
+            window,
+            cx,
+        );
         let content = match self.presentation {
             HomePresentation::Conversation | HomePresentation::SideChat => home(
                 ConversationRenderContext {
@@ -1853,32 +1770,7 @@ impl Render for HomeView {
                     phase,
                     activities: conversation_activity,
                     list: self.conversation_list.clone(),
-                    navigation: self.user_message_navigation.clone(),
-                    navigation_current: Rc::new(navigation::current_items(
-                        &self.conversation_list,
-                        &self.user_message_navigation,
-                    )),
-                    navigation_hover: self.navigation_hover,
-                    navigation_bookmarks: Rc::new(
-                        (0..self.user_message_navigation.len())
-                            .map(|index| self.user_message_navigation_bookmarked(index))
-                            .collect(),
-                    ),
-                    navigation_preview: Rc::new(
-                        self.navigation_hover
-                            .and_then(|index| self.user_message_navigation.get(index))
-                            .map(|item| {
-                                navigation::preview_paragraphs(
-                                    &item.preview,
-                                    navigation::CARD_WIDTH - navigation::CARD_PADDING * 2.0,
-                                    window,
-                                )
-                            })
-                            .unwrap_or_default(),
-                    ),
-                    navigation_pane_width: self.content_width,
-                    navigation_window_height: f32::from(window.viewport_size().height),
-                    navigation_view_top: self.content_top,
+                    navigation: navigation_rail,
                 },
             ),
             HomePresentation::Subagent => subagent_conversation(

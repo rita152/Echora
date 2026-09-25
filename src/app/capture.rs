@@ -131,7 +131,10 @@ impl ChatApp {
         }
         Ok(!composer.history_loading()
             && composer.thread_id() == Some(thread_id)
-            && composer.model_catalog_ready_for_capture()?)
+            && composer.model_catalog_ready_for_capture()?
+            // The rail fades in and its markers ease; a still frame waits for
+            // them, as the reference capture waits for its rail to settle.
+            && !self.home.read(cx).user_message_rail_animating_for_capture(cx))
     }
     #[cfg(feature = "screenshot")]
     pub fn resumed_render_audit(&self, thread_id: &str, cx: &gpui::App) -> serde_json::Value {
@@ -176,6 +179,18 @@ impl ChatApp {
     ) {
         self.home.update(cx, |home, cx| {
             home.set_user_message_navigation_hover_for_capture(index, cx)
+        });
+    }
+    /// Capture-only replay of the rail's pointer scenarios.
+    #[cfg(feature = "screenshot")]
+    pub fn record_user_message_rail_motion(
+        &mut self,
+        output: std::path::PathBuf,
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.home.update(cx, |home, cx| {
+            home.record_user_message_rail_motion(output, window, cx)
         });
     }
     /// Capture-only rail jump, so both builds record the same transcript.

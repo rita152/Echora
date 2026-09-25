@@ -226,6 +226,9 @@ pub enum ListHorizontalSizingBehavior {
 struct LayoutItemsResponse {
     max_item_width: Pixels,
     scroll_top: ListOffset,
+    /// Items above the scroll top that still show inside the top padding,
+    /// top to bottom.
+    leading_layouts: VecDeque<ItemLayout>,
     item_layouts: VecDeque<ItemLayout>,
 }
 
@@ -671,6 +674,29 @@ impl ListState {
 
         state.rebase_pending_scroll(scroll_top);
         state.logical_scroll_top = Some(scroll_top);
+    }
+
+    /// The offset the list is displayed at: the logical scroll top clamped to
+    /// the scrollable range, which is also where a list following its tail
+    /// sits.
+    pub fn scroll_offset(&self) -> Pixels {
+        let state = self.0.borrow();
+        let top = state.scroll_top(&state.logical_scroll_top());
+        let height = state
+            .last_layout_bounds
+            .map_or(px(0.), |bounds| bounds.size.height);
+        let padding = state.last_padding.unwrap_or_default();
+        let max = (state.items.summary().height + padding.top + padding.bottom - height).max(px(0.));
+        top.min(max)
+    }
+
+    /// Distance from the top of the list's content to the top of the item at
+    /// `ix`, or `None` while an item before it has not been measured yet.
+    pub fn item_offset(&self, ix: usize) -> Option<Pixels> {
+        let state = self.0.borrow();
+        let mut cursor = state.items.cursor::<ListItemSummary>(());
+        let summary: ListItemSummary = cursor.summary(&Count(ix), Bias::Right);
+        (summary.unrendered_count == 0).then_some(summary.height)
     }
 
     /// Scroll the list to the given item, such that the item is fully visible.
@@ -1175,18 +1201,33 @@ impl StateInner {
             };
         }
 
-        // Measure items in the leading overdraw
+        // Measure items in the leading overdraw. Content scrolls through the
+        // top padding like it does through a scroll container's padding, so
+        // the items that still show there are rendered as well.
         let mut leading_overdraw = scroll_top.offset_in_item;
-        while leading_overdraw < self.overdraw {
+        let mut visible_above = padding.top - scroll_top.offset_in_item;
+        let mut leading_layouts = VecDeque::new();
+        while leading_overdraw < self.overdraw || visible_above > px(0.) {
             cursor.prev();
             if let Some(item) = cursor.item() {
-                let size = if let ListItem::Measured { size, .. } = item {
+                let item_index = cursor.start().0;
+                let size = if visible_above > px(0.) {
+                    let mut element = render_item(item_index, window, cx);
+                    let size = element.layout_as_root(available_item_space, window, cx);
+                    leading_layouts.push_front(ItemLayout {
+                        index: item_index,
+                        element,
+                        size,
+                    });
+                    size
+                } else if let ListItem::Measured { size, .. } = item {
                     *size
                 } else {
-                    let mut element = render_item(cursor.start().0, window, cx);
+                    let mut element = render_item(item_index, window, cx);
                     element.layout_as_root(available_item_space, window, cx)
                 };
 
+                visible_above -= size.height;
                 leading_overdraw += size.height;
                 measured_items.push_front(ListItem::Measured {
                     size,
@@ -1244,6 +1285,7 @@ impl StateInner {
         LayoutItemsResponse {
             max_item_width,
             scroll_top,
+            leading_layouts,
             item_layouts,
         }
     }
@@ -1281,6 +1323,17 @@ impl StateInner {
             if bounds.size.height > padding.top + padding.bottom {
                 let mut item_origin = bounds.origin + Point::new(px(0.), padding.top);
                 item_origin.y -= layout_response.scroll_top.offset_in_item;
+                // Items in the top padding sit directly above the scroll top.
+                // They are only shown, so their autoscroll requests are not
+                // honored.
+                let mut leading_origin = item_origin;
+                for item in layout_response.leading_layouts.iter_mut().rev() {
+                    leading_origin.y -= item.size.height;
+                    window.with_content_mask(Some(ContentMask { bounds }), |window| {
+                        item.element.prepaint_at(leading_origin, window, cx);
+                    });
+                    window.take_autoscroll();
+                }
                 for item in &mut layout_response.item_layouts {
                     window.with_content_mask(Some(ContentMask { bounds }), |window| {
                         item.element.prepaint_at(item_origin, window, cx);
@@ -1359,6 +1412,7 @@ impl StateInner {
                     item_origin.y += item.size.height;
                 }
             } else {
+                layout_response.leading_layouts.clear();
                 layout_response.item_layouts.clear();
             }
 
@@ -1618,6 +1672,9 @@ impl Element for List {
         });
 
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
+            for item in &mut prepaint.layout.leading_layouts {
+                item.element.paint(window, cx);
+            }
             for item in &mut prepaint.layout.item_layouts {
                 item.element.paint(window, cx);
             }

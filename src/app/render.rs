@@ -14,7 +14,12 @@ use super::{right_panel::clamp_right_panel_width, state::RightPanelMode};
 use crate::workspace::WorkspaceSnapshot;
 use crate::{
     agent::{AgentAccountLoginPhase, AgentLoginChallenge},
-    components::{account::AccountDialog, file_panel::OpenWorkspaceFile, icons::icon},
+    components::{
+        account::AccountDialog,
+        file_panel::OpenWorkspaceFile,
+        home::{NextUserMessage, PreviousUserMessage},
+        icons::icon,
+    },
     theme::{CHAT_CONTENT_HORIZONTAL_GUTTER, Theme, ThemeMode, ui_font},
 };
 
@@ -23,6 +28,9 @@ use super::{
     OpenSideChat, RIGHT_PANEL_MIN_WIDTH, STARTUP_LOADING_BLINK_DURATION, STARTUP_LOADING_LOGO_SIZE,
     ToggleReview, ToggleTerminal,
 };
+
+/// `_MainContentTopFade`: `h-4`, from `--color-surface` to transparent.
+const MAIN_CONTENT_TOP_FADE: f32 = 16.0;
 
 pub(super) fn panel_resize_handle(
     id: &'static str,
@@ -352,6 +360,24 @@ impl Render for ChatApp {
                 else { this.open_review(cx); }
                 cx.stop_propagation();
             }))
+            .on_action(cx.listener(|this, _: &PreviousUserMessage, window, cx| {
+                let stepped = !this.showing_pull_requests
+                    && this.home.update(cx, |home, cx| {
+                        home.step_user_message_from_keyboard(false, window, cx)
+                    });
+                if !stepped {
+                    cx.propagate();
+                }
+            }))
+            .on_action(cx.listener(|this, _: &NextUserMessage, window, cx| {
+                let stepped = !this.showing_pull_requests
+                    && this.home.update(cx, |home, cx| {
+                        home.step_user_message_from_keyboard(true, window, cx)
+                    });
+                if !stepped {
+                    cx.propagate();
+                }
+            }))
             .on_action(cx.listener(|this, _: &OpenSideChat, _, cx| {
                 this.right_panel.open = true;
                 this.select_right_panel_item(0, cx);
@@ -666,14 +692,35 @@ impl Render for ChatApp {
                 ))
             })
             .when_some(resumed_title.filter(|_| !review_fullscreen), |shell, (title, in_project)| {
-                // The resumed thread has its own opaque sticky header. Paint
-                // it over the virtual list's overdraw band, just as Electron
-                // masks scrolling Markdown beneath its 46px titlebar.
-                shell.child(div()
+                // The reference's thread header is transparent: the transcript
+                // scrolls on under the title, and only a 16px fade from the
+                // surface colour (`_MainContentTopFade`) softens its top edge.
+                // With the side panel open the reference hides that fade and
+                // lays the pane out below its toolbar, so the header stays
+                // opaque there.
+                let transparent = !self.right_panel.open;
+                shell
+                    .when(transparent, |shell| {
+                        shell.child(
+                            div()
+                                .absolute()
+                                .top_0()
+                                .left(px(revealed_sidebar_width))
+                                .right_0()
+                                .h(px(MAIN_CONTENT_TOP_FADE))
+                                .bg(linear_gradient(
+                                    0.0,
+                                    linear_color_stop(theme.surface.alpha(0.0), 0.0),
+                                    linear_color_stop(theme.surface, 1.0),
+                                )),
+                        )
+                    })
+                    .child(div()
                     .id("resumed-thread-header")
                     .absolute().top_0().left(px(revealed_sidebar_width))
                     .right(if self.right_panel.open { right_panel_width } else { px(0.0) })
-                    .h(px(46.0)).bg(theme.surface).border_b_1().border_color(theme.border)
+                    .h(px(46.0))
+                    .when(!transparent, |header| header.bg(theme.surface).border_b_1().border_color(theme.border))
                     .pl(px(if sidebar_reveal < 0.5 { 184.0 } else { 14.0 })).pr(px(100.0))
                     .flex().items_center().gap(px(12.0))
                         .text_size(px(14.0)).line_height(px(20.0)).font_weight(gpui::FontWeight::MEDIUM)
