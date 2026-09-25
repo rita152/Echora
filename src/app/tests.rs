@@ -688,6 +688,33 @@ fn clicking_settings_in_profile_menu_opens_settings_surface() {
 }
 
 #[test]
+fn escape_closes_the_profile_menu() {
+    let mut app = TestApp::new();
+    app.update(|cx| {
+        cx.bind_keys([gpui::KeyBinding::new(
+            "escape",
+            super::DismissPermissionUi,
+            None,
+        )]);
+    });
+    let mut window = app.open_window_with_options(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: point(px(0.0), px(0.0)),
+                size: size(px(900.0), px(700.0)),
+            })),
+            ..Default::default()
+        },
+        |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
+    );
+    window.draw();
+    window.simulate_click(point(px(80.0), px(677.0)), MouseButton::Left);
+    assert!(window.read(|app, cx| app.sidebar.read(cx).profile_menu_is_open()));
+    window.simulate_keystrokes("escape");
+    assert!(!window.read(|app, cx| app.sidebar.read(cx).profile_menu_is_open()));
+}
+
+#[test]
 fn projects_menu_closes_when_the_main_surface_is_clicked() {
     let mut app = TestApp::new();
     let mut window = app.open_window_with_options(

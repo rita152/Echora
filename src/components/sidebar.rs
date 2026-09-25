@@ -21,7 +21,7 @@ use crate::{
         ThreadSummary, UpdateProject,
     },
     components::{
-        account::AccountView,
+        account::{AccountMenuEntry, AccountView},
         icons::icon,
         prompt_input::{PromptInput, PromptSubmitted},
     },
@@ -244,18 +244,46 @@ const RECENT_THREAD_TITLE_INSETS: f32 = 96.0;
 const THREAD_ACTION_RAIL_INSETS: f32 = 51.0;
 /// Account surfaces measured from the live ChatGPT desktop app: the footer
 /// entry is an `lg` secondary button (32 px tall, 12 px inline padding, 6 px
-/// gap, 14/14 px text at weight 400), the menu is 224 wide with 4px padding, a
-/// 42.5625px account header, and 28.5625px rows.
+/// gap, 14/14 px text at weight 400), a 42.5625px account header.
 const ACCOUNT_ROW_HEIGHT: f32 = 32.0;
 const ACCOUNT_ROW_PADDING_X: f32 = 12.0;
 const ACCOUNT_ROW_GAP: f32 = 6.0;
 const ACCOUNT_ROW_LINE_HEIGHT: f32 = 14.0;
-const ACCOUNT_MENU_WIDTH: f32 = 224.0;
-const ACCOUNT_MENU_ITEM_HEIGHT: f32 = 28.5625;
 const ACCOUNT_HEADER_HEIGHT: f32 = 42.5625;
 const ACCOUNT_HEADER_LINE: f32 = 18.5714;
 const ACCOUNT_AVATAR_SIZE: f32 = 18.0;
-const ACCOUNT_MENU_BOTTOM: f32 = 44.625;
+/// Account menu, measured from ChatGPT 26.917 over CDP
+/// (`artifacts/account-menu-26917/`). Radix opens it on the top side with a
+/// 6 px `sideOffset`, aligned to the footer's start, and the content keeps its
+/// own 1 px margin: the menu sits 9 px from the sidebar edge and 7 px above the
+/// 32 px footer button, which is centered in the 46 px footer. Its width is the
+/// sidebar width less `--padding-row-x` on both sides.
+const ACCOUNT_MENU_LEFT: f32 = 9.0;
+const ACCOUNT_MENU_INSET_X: f32 = 8.0;
+const ACCOUNT_MENU_BOTTOM: f32 = FOOTER_HEIGHT - (FOOTER_HEIGHT - ACCOUNT_ROW_HEIGHT) / 2.0 + 7.0;
+const ACCOUNT_MENU_PADDING: f32 = 4.0;
+const ACCOUNT_MENU_RADIUS: f32 = 20.0;
+/// `--app-menu-item-*`: 5/8 px padding around an 18.5625 px line (13 px text),
+/// a 15 px radius, and 6 px between the 16 px icon, label, and shortcut.
+const ACCOUNT_MENU_ITEM_HEIGHT: f32 = 28.5625;
+const ACCOUNT_MENU_ITEM_PADDING_X: f32 = 8.0;
+const ACCOUNT_MENU_ITEM_PADDING_Y: f32 = 5.0;
+const ACCOUNT_MENU_ITEM_RADIUS: f32 = 15.0;
+const ACCOUNT_MENU_ITEM_GAP: f32 = 6.0;
+const ACCOUNT_MENU_ITEM_LINE: f32 = 18.5714;
+const ACCOUNT_MENU_ICON: f32 = 16.0;
+/// Leading icons rest at `opacity-75` and reach full opacity on hover.
+const ACCOUNT_MENU_ICON_REST_OPACITY: f32 = 0.75;
+/// Keyboard hint: `ms-2 text-xs` in `text-codex-description`, so 8 px on top
+/// of the row gap.
+const ACCOUNT_MENU_SHORTCUT_GAP: f32 = 8.0;
+const ACCOUNT_MENU_SHORTCUT_SIZE: f32 = 12.0;
+const ACCOUNT_MENU_SHORTCUT_LINE: f32 = 16.0;
+/// Separator: a 1 px `bg-border` line inset by `--padding-row-x`, 4 px above
+/// and below.
+const ACCOUNT_MENU_SEPARATOR_HEIGHT: f32 = 9.0;
+const ACCOUNT_MENU_SEPARATOR_INSET_X: f32 = 8.0;
+const ACCOUNT_MENU_ROW_GROUP: &str = "account-menu-row";
 const TITLE_FADE_IN: f32 = 8.0;
 const TITLE_FADE_OUT: f32 = 16.0;
 
@@ -280,58 +308,114 @@ fn account_avatar(initials: Option<&str>, size: f32, theme: Theme) -> Div {
         .child(initials.unwrap_or("").to_owned())
 }
 
+/// Chromium keeps the account menu's 28.5625 px rows fractional and snaps each
+/// painted edge (row fill, text baseline, icon) to the device grid. This GPUI
+/// rounds every authored length before layout instead, so 29 px rows would
+/// drift below the reference's rows and print every other label a pixel off.
+/// Each entry therefore takes the device-pixel span its fractional position
+/// snaps to, measured from the menu's top edge, which the reference's popper
+/// also lands on a device pixel.
+struct AccountMenuRhythm {
+    scale_factor: f32,
+    offset: f32,
+}
+
+impl AccountMenuRhythm {
+    fn new(scale_factor: f32) -> Self {
+        Self {
+            scale_factor: scale_factor.max(1.0),
+            offset: ACCOUNT_MENU_PADDING,
+        }
+    }
+
+    fn span(&mut self, height: f32) -> f32 {
+        let snap = |value: f32| (value * self.scale_factor).round() / self.scale_factor;
+        let start = snap(self.offset);
+        self.offset += height;
+        snap(self.offset) - start
+    }
+}
+
 /// One account menu row. Actions live on the caller so a row without a
-/// supported backend action stays inert instead of faking success.
+/// supported backend action stays inert instead of faking success: only an
+/// enabled row highlights and brightens its icon under the pointer, and like
+/// the reference's Radix items it keeps the default cursor. As in the
+/// reference, the row pads a single content line whose icon, label, and
+/// shortcut are centered on it.
 fn account_menu_row(
     id: &'static str,
-    label: &'static str,
-    glyph: &'static str,
-    trailing: Option<String>,
+    label: SharedString,
+    glyph: Option<&'static str>,
+    trailing: Option<&'static str>,
+    height: f32,
     theme: Theme,
     enabled: bool,
 ) -> gpui::Stateful<Div> {
-    div()
-        .id(id)
-        .h(px(ACCOUNT_MENU_ITEM_HEIGHT))
-        .px(px(8.0))
-        .rounded(px(12.0))
+    let icon_color: Hsla = theme.text.into();
+    let line = div()
+        .h(px(ACCOUNT_MENU_ITEM_LINE))
+        .w_full()
+        .min_w(px(0.0))
         .flex()
         .items_center()
-        .gap(px(6.0))
-        .text_size(px(13.0))
-        .line_height(px(18.5714))
-        .text_color(theme.sidebar_text)
-        .when(enabled, |row| {
-            row.cursor_pointer()
-                .hover(move |style| style.bg(theme.sidebar_hover))
+        .gap(px(ACCOUNT_MENU_ITEM_GAP))
+        .when_some(glyph, |line, glyph| {
+            line.child(
+                icon(glyph, icon_color.opacity(ACCOUNT_MENU_ICON_REST_OPACITY))
+                    .size(px(ACCOUNT_MENU_ICON))
+                    .flex_none()
+                    .when(enabled, |icon| {
+                        icon.group_hover(ACCOUNT_MENU_ROW_GROUP, move |style| {
+                            style.text_color(icon_color)
+                        })
+                    }),
+            )
         })
-        .child(icon(glyph, theme.sidebar_text.into()).size(px(16.0)))
         .child(
             div()
                 .min_w(px(0.0))
                 .flex_1()
                 .overflow_hidden()
                 .whitespace_nowrap()
+                .text_overflow(gpui::TextOverflow::Truncate("…".into()))
                 .child(label),
         )
-        .when_some(trailing, |row, trailing| {
-            row.child(
+        .when_some(trailing, |line, trailing| {
+            line.child(
                 div()
                     .flex_none()
-                    .text_size(px(13.0))
-                    .text_color(theme.sidebar_text_muted)
+                    .ml(px(ACCOUNT_MENU_SHORTCUT_GAP))
+                    .text_size(px(ACCOUNT_MENU_SHORTCUT_SIZE))
+                    .line_height(px(ACCOUNT_MENU_SHORTCUT_LINE))
+                    .text_color(theme.account_menu_shortcut)
                     .child(trailing),
             )
+        });
+    div()
+        .id(id)
+        .flex_none()
+        .h(px(height))
+        .px(px(ACCOUNT_MENU_ITEM_PADDING_X))
+        .pt(px(ACCOUNT_MENU_ITEM_PADDING_Y))
+        .rounded(px(ACCOUNT_MENU_ITEM_RADIUS))
+        .text_size(px(13.0))
+        .line_height(px(ACCOUNT_MENU_ITEM_LINE))
+        .text_color(theme.text)
+        .group(ACCOUNT_MENU_ROW_GROUP)
+        .when(enabled, |row| {
+            row.hover(move |style| style.bg(theme.sidebar_hover))
         })
+        .child(line)
 }
 
-fn account_menu_separator(theme: Theme) -> Div {
+fn account_menu_separator(height: f32, theme: Theme) -> Div {
     div()
-        .h(px(9.0))
-        .px(px(4.0))
+        .flex_none()
+        .h(px(height))
+        .px(px(ACCOUNT_MENU_SEPARATOR_INSET_X))
         .flex()
         .items_center()
-        .child(div().h(px(1.0)).w_full().bg(theme.border))
+        .child(div().h(px(1.0)).w_full().bg(theme.sidebar_hairline))
 }
 
 /// The reference shortens a project path exactly once: a leading
@@ -440,8 +524,21 @@ fn rename_panel_title(title: &str) -> String {
 /// overlay against the window backdrop rather than against the pane the card
 /// overhangs, so the card carries the resolved color instead of the alpha.
 fn hover_card_surface(theme: Theme) -> gpui::Rgba {
-    let over = theme.project_hover_surface;
-    let under = theme.surface;
+    composite_over(theme.project_hover_surface, theme.surface)
+}
+
+/// The account menu uses the same `bg-surface-elevated-secondary/90`, but it
+/// opens over the sidebar rather than the main pane, and it blurs what lies
+/// under it (`backdrop-blur-sm`). An opaque color resolved against the sidebar
+/// material keeps the rows beneath from showing through unblurred, and it
+/// reproduces the reference's pixels in both themes (dark #2c2c2c, light
+/// #ffffff).
+fn account_menu_surface(theme: Theme) -> gpui::Rgba {
+    let sidebar = composite_over(theme.sidebar_surface, theme.surface_under);
+    composite_over(theme.project_hover_surface, sidebar)
+}
+
+fn composite_over(over: gpui::Rgba, under: gpui::Rgba) -> gpui::Rgba {
     let (a, rest) = (over.a, 1.0 - over.a);
     gpui::Rgba {
         r: over.r * a + under.r * rest,
@@ -449,6 +546,21 @@ fn hover_card_surface(theme: Theme) -> gpui::Rgba {
         b: over.b * a + under.b * rest,
         a: 1.0,
     }
+}
+
+/// `ring-border ring-[0.5px]` resolves to two 0.5 px rings of the hairline
+/// color just outside the menu. GPUI grows a shadow to whole device pixels,
+/// so at DPR 1 each ring would cover the full pixel Chromium only half covers;
+/// the ring alpha carries that coverage instead.
+fn account_menu_ring(theme: Theme, scale_factor: f32) -> [gpui::BoxShadow; 2] {
+    let coverage = (0.5 * scale_factor).min(1.0);
+    let hairline = theme.sidebar_hairline;
+    let color = gpui::Rgba {
+        a: hairline.a * coverage,
+        ..hairline
+    };
+    let ring = gpui::BoxShadow::new(px(0.0), px(0.0), color.into()).spread_radius(px(0.5));
+    [ring.clone(), ring]
 }
 
 /// The reference resolves CJK runs through CoreText's system cascade, which
@@ -898,6 +1010,17 @@ impl SidebarView {
         cx.notify();
     }
 
+    /// Escape closes the account menu, as the reference's Radix menu does.
+    /// Returns whether a menu was open, so the key is consumed only then.
+    pub fn dismiss_profile_menu(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.profile_menu_open {
+            return false;
+        }
+        self.profile_menu_open = false;
+        cx.notify();
+        true
+    }
+
     pub fn set_activity_open(&mut self, open: bool, cx: &mut Context<Self>) {
         self.close_transient_menus(cx);
         self.activity_open = open;
@@ -942,6 +1065,11 @@ impl SidebarView {
     #[cfg(test)]
     pub fn projects_section_menu_is_open(&self) -> bool {
         self.projects_section_menu_open
+    }
+
+    #[cfg(test)]
+    pub fn profile_menu_is_open(&self) -> bool {
+        self.profile_menu_open
     }
 
     #[cfg(test)]
@@ -3691,6 +3819,15 @@ impl SidebarView {
             })
             .unwrap_or_else(|| crate::i18n::text("账户").to_owned());
         let initials = self.account.account_initials();
+        // While its menu is open the trigger keeps the hover treatment: the
+        // reference's `data-state=open` button paints the same ghost fill and
+        // full foreground.
+        let open = self.profile_menu_open;
+        let foreground = if open {
+            theme.text
+        } else {
+            theme.sidebar_text_muted
+        };
         div()
             .id("sidebar-profile")
             .flex_1()
@@ -3705,10 +3842,11 @@ impl SidebarView {
             .group(FOOTER_BUTTON_GROUP)
             .text_size(px(14.0))
             .line_height(px(ACCOUNT_ROW_LINE_HEIGHT))
-            .text_color(theme.sidebar_text_muted)
+            .text_color(foreground)
+            .when(open, |button| button.bg(theme.sidebar_hover))
             .hover(move |style| style.bg(theme.sidebar_hover).text_color(theme.text))
             .child(if provider.is_some() {
-                icon("settings-mcp", theme.sidebar_text_muted.into())
+                icon("settings-mcp", foreground.into())
                     .size(px(FOOTER_ACCOUNT_ICON))
                     .flex_none()
                     .ml(px(FOOTER_ACCOUNT_ICON_INSET))
@@ -3780,14 +3918,15 @@ impl SidebarView {
             )
     }
 
-    fn account_menu_header(&self, theme: Theme) -> Div {
+    fn account_menu_header(&self, height: f32, theme: Theme) -> Div {
         let title = self
             .account
             .account_label()
             .unwrap_or_else(|| crate::i18n::text("已登录").to_owned());
         let plan = self.account.plan_label().unwrap_or("").to_owned();
         div()
-            .h(px(ACCOUNT_HEADER_HEIGHT))
+            .flex_none()
+            .h(px(height))
             .px(px(8.0))
             .rounded(px(ROW_RADIUS))
             .flex()
@@ -3824,49 +3963,73 @@ impl SidebarView {
             )
     }
 
-    fn account_menu(&self, theme: Theme, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
+    /// The sidebar account menu, entry for entry as the reference's profile
+    /// dropdown builds it (see [`AccountView::menu_entries`]).
+    fn account_menu(
+        &self,
+        theme: Theme,
+        scale_factor: f32,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<Div> {
+        let mut shadows = account_menu_ring(theme, scale_factor).to_vec();
+        shadows.push(
+            gpui::BoxShadow::new(px(0.0), px(8.0), theme.profile_menu_shadow.into())
+                .blur_radius(px(16.0))
+                .spread_radius(px(-4.0)),
+        );
+        let mut rhythm = AccountMenuRhythm::new(scale_factor);
         let mut menu = div()
             .id("account-menu")
-            .w(px(ACCOUNT_MENU_WIDTH))
-            .p(px(4.0))
-            .rounded(px(20.0))
-            .border(px(0.5))
-            .border_color(theme.border)
-            .bg(theme.model_picker_surface)
-            .shadow(vec![
-                gpui::BoxShadow::new(px(0.0), px(8.0), theme.profile_menu_shadow.into())
-                    .blur_radius(px(16.0))
-                    .spread_radius(px(-4.0)),
-            ])
-            .font_family(".SystemUIFont")
+            .w(px((self.width - 2.0 * ACCOUNT_MENU_INSET_X).max(0.0)))
+            .p(px(ACCOUNT_MENU_PADDING))
+            .flex()
+            .flex_col()
+            .rounded(px(ACCOUNT_MENU_RADIUS))
+            .bg(account_menu_surface(theme))
+            .shadow(shadows)
+            .font(hover_card_font(crate::theme::UI_BODY_FONT_WEIGHT))
             .text_size(px(13.0))
-            .text_color(theme.sidebar_text)
+            .text_color(theme.text)
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
-        if self.account.is_signed_in() {
-            menu = menu
-                .child(self.account_menu_header(theme))
-                .child(account_menu_separator(theme));
-        }
-        if let Some(error) = self.account.action_error.clone() {
-            menu = menu.child(account_menu_notice(error, theme));
-        }
-        if self.account.login_pending() {
-            menu = menu.child(account_menu_row(
-                "account-login-pending",
-                crate::i18n::text("登录中…"),
-                "profile-lock",
-                None,
-                theme,
-                false,
-            ));
-            if let Some(login_id) = self.account.login_id().map(str::to_owned) {
-                menu = menu.child(
-                    account_menu_row(
+        for entry in self.account.menu_entries() {
+            let mut row = |id, label, glyph, trailing, enabled| {
+                account_menu_row(
+                    id,
+                    label,
+                    glyph,
+                    trailing,
+                    rhythm.span(ACCOUNT_MENU_ITEM_HEIGHT),
+                    theme,
+                    enabled,
+                )
+            };
+            menu = match entry {
+                AccountMenuEntry::Account => {
+                    menu.child(self.account_menu_header(rhythm.span(ACCOUNT_HEADER_HEIGHT), theme))
+                }
+                // The reference's identity item without an avatar: inert, yet
+                // at full opacity.
+                AccountMenuEntry::Provider(provider) => {
+                    menu.child(row("account-provider", provider.into(), None, None, false))
+                }
+                AccountMenuEntry::Separator => menu.child(account_menu_separator(
+                    rhythm.span(ACCOUNT_MENU_SEPARATOR_HEIGHT),
+                    theme,
+                )),
+                AccountMenuEntry::Notice(error) => menu.child(account_menu_notice(error, theme)),
+                AccountMenuEntry::LoginPending => menu.child(row(
+                    "account-login-pending",
+                    crate::i18n::text("登录中…").into(),
+                    Some("profile-lock"),
+                    None,
+                    false,
+                )),
+                AccountMenuEntry::CancelLogin(login_id) => menu.child(
+                    row(
                         "account-login-cancel",
-                        crate::i18n::text("取消登录"),
-                        "close-dialog",
+                        crate::i18n::text("取消登录").into(),
+                        Some("close-dialog"),
                         None,
-                        theme,
                         true,
                     )
                     .on_click(cx.listener(move |this, _, _, cx| {
@@ -3874,91 +4037,78 @@ impl SidebarView {
                         cx.emit(AccountAction(AccountIntent::CancelLogin(login_id.clone())));
                         cx.notify();
                     })),
-                );
-            }
-        } else if self.account.needs_login() {
-            menu = menu.child(
-                account_menu_row(
-                    "account-sign-in",
-                    crate::i18n::text("使用 ChatGPT 登录"),
-                    "profile-lock",
+                ),
+                AccountMenuEntry::SignIn => menu.child(
+                    row(
+                        "account-sign-in",
+                        crate::i18n::text("使用 ChatGPT 登录").into(),
+                        Some("profile-lock"),
+                        None,
+                        true,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.profile_menu_open = false;
+                        cx.emit(AccountAction(AccountIntent::StartLogin));
+                        cx.notify();
+                    })),
+                ),
+                AccountMenuEntry::Unknown => menu.child(row(
+                    "account-unknown",
+                    crate::i18n::text("账户状态未知").into(),
+                    Some("profile-lock"),
                     None,
-                    theme,
-                    true,
-                )
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.profile_menu_open = false;
-                    cx.emit(AccountAction(AccountIntent::StartLogin));
-                    cx.notify();
-                })),
-            );
-        } else if self.account.account_unknown() {
-            // No answer yet: say so and offer a real read instead of showing a
-            // guessed account or a fabricated quota.
-            menu = menu.child(account_menu_row(
-                "account-unknown",
-                crate::i18n::text("账户状态未知"),
-                "profile-lock",
-                None,
-                theme,
-                false,
-            ));
-            menu = menu.child(
-                account_menu_row(
-                    "account-retry",
-                    crate::i18n::text("读取账户状态"),
-                    "settings-refresh",
+                    false,
+                )),
+                AccountMenuEntry::Refresh => menu.child(
+                    row(
+                        "account-retry",
+                        crate::i18n::text("读取账户状态").into(),
+                        Some("settings-refresh"),
+                        None,
+                        true,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.profile_menu_open = false;
+                        cx.emit(AccountAction(AccountIntent::Refresh));
+                        cx.notify();
+                    })),
+                ),
+                AccountMenuEntry::Invite => menu.child(row(
+                    "profile-invite",
+                    crate::i18n::text("邀请好友").into(),
+                    Some("profile-invite"),
                     None,
-                    theme,
-                    true,
-                )
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.profile_menu_open = false;
-                    cx.emit(AccountAction(AccountIntent::Refresh));
-                    cx.notify();
-                })),
-            );
-        } else {
-            menu = menu.child(account_menu_row(
-                "profile-invite",
-                crate::i18n::text("邀请好友"),
-                "profile-invite",
-                None,
-                theme,
-                false,
-            ));
-        }
-        menu = menu.child(
-            account_menu_row(
-                "profile-settings",
-                crate::i18n::text("设置"),
-                "profile-settings",
-                Some("⌘,".to_owned()),
-                theme,
-                true,
-            )
-            .on_click(cx.listener(|this, _, _, cx| {
-                this.profile_menu_open = false;
-                cx.emit(OpenSettings);
-                cx.notify();
-            })),
-        );
-        if self.account.is_signed_in() {
-            menu = menu.child(
-                account_menu_row(
-                    "profile-logout",
-                    crate::i18n::text("退出登录"),
-                    "profile-logout",
-                    None,
-                    theme,
-                    true,
-                )
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.profile_menu_open = false;
-                    cx.emit(AccountAction(AccountIntent::RequestLogout));
-                    cx.notify();
-                })),
-            );
+                    false,
+                )),
+                AccountMenuEntry::Settings => menu.child(
+                    row(
+                        "profile-settings",
+                        crate::i18n::text("设置").into(),
+                        Some("profile-settings"),
+                        Some("⌘,"),
+                        true,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.profile_menu_open = false;
+                        cx.emit(OpenSettings);
+                        cx.notify();
+                    })),
+                ),
+                AccountMenuEntry::Logout => menu.child(
+                    row(
+                        "profile-logout",
+                        crate::i18n::text("退出登录").into(),
+                        Some("profile-logout"),
+                        None,
+                        true,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.profile_menu_open = false;
+                        cx.emit(AccountAction(AccountIntent::RequestLogout));
+                        cx.notify();
+                    })),
+                ),
+            };
         }
         menu
     }
@@ -4049,9 +4199,9 @@ impl Render for SidebarView {
             sidebar = sidebar.child(deferred(
                 div()
                     .absolute()
-                    .left(px(9.0))
+                    .left(px(ACCOUNT_MENU_LEFT))
                     .bottom(px(ACCOUNT_MENU_BOTTOM))
-                    .child(self.account_menu(theme, cx)),
+                    .child(self.account_menu(theme, window.scale_factor(), cx)),
             ));
         }
         let hover_card_anchor = self.project_hover_card.as_deref().and_then(|project_id| {
@@ -4124,6 +4274,7 @@ mod tests {
     use gpui::{Bounds, MouseButton, TestApp, WindowBounds, WindowOptions, point, px, size};
 
     use super::{
+        ACCOUNT_MENU_ITEM_HEIGHT, ACCOUNT_MENU_SEPARATOR_HEIGHT, AccountMenuRhythm,
         PROJECT_HOVER_CARD_CLOSE_DELAY, PROJECT_HOVER_CARD_DELAY, PROJECT_HOVER_HEADER_HEIGHT,
         ROW_HEIGHT, ROW_RADIUS, SIDEBAR_TITLEBAR_SAFE_TOP, SIDEBAR_WIDTH, SidebarView,
         THREAD_HOVER_CARD_CLOSE_DELAY, THREAD_HOVER_CARD_DELAY, compact_relative_time,
@@ -4411,6 +4562,97 @@ mod tests {
         if let Some(parent) = preferences.parent() {
             let _ = std::fs::remove_dir_all(parent);
         }
+    }
+
+    #[test]
+    fn provider_account_menu_rows_answer_where_the_reference_paints_them() {
+        use crate::agent::{AgentAccountPresence, AgentAccountSnapshot};
+        use crate::components::account::{AccountLoadStatus, AccountView};
+
+        static SERIAL: AtomicU64 = AtomicU64::new(1);
+        let preferences = std::env::temp_dir()
+            .join(format!(
+                "gpui-sidebar-provider-menu-{}-{}",
+                std::process::id(),
+                SERIAL.fetch_add(1, Ordering::Relaxed)
+            ))
+            .join("preferences.json");
+        let store =
+            WorkspaceStore::with_preferences_path(SidebarBackend::new(), preferences.clone());
+        let mut app = TestApp::new();
+        let mut window = app.open_window_with_options(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: point(px(0.0), px(0.0)),
+                    size: size(px(900.0), px(700.0)),
+                })),
+                ..Default::default()
+            },
+            |_, cx| SidebarView::new(ThemeMode::Dark, false, store, cx),
+        );
+        window.update(|sidebar, _, cx| {
+            sidebar.set_width(240.0, cx);
+            sidebar.set_account_view(
+                AccountView {
+                    state: crate::agent::AgentAccountState {
+                        generation: 1,
+                        account: AgentAccountSnapshot {
+                            requires_openai_auth: false,
+                            account: AgentAccountPresence::Null,
+                            auth_mode: None,
+                            plan_type: None,
+                        },
+                        login: Default::default(),
+                        rate_limits: Default::default(),
+                    },
+                    status: AccountLoadStatus::Loaded,
+                    dialog: None,
+                    action_error: None,
+                    model_provider_name: Some("deepseek".into()),
+                },
+                cx,
+            );
+        });
+        window.draw();
+        window.simulate_click(point(px(80.0), px(700.0 - 23.0)), MouseButton::Left);
+        assert!(window.read(|sidebar, _| sidebar.profile_menu_open));
+
+        // The test window renders at DPR 2: the menu ends 46 px above the
+        // window edge, 74 px tall, so its rows are the provider name
+        // [584, 612.5], the separator, and "Settings" [621.5, 650].
+        window.simulate_click(point(px(120.0), px(611.5)), MouseButton::Left);
+        assert!(
+            window.read(|sidebar, _| sidebar.profile_menu_open),
+            "the provider identity is inert"
+        );
+        window.simulate_click(point(px(120.0), px(617.0)), MouseButton::Left);
+        assert!(
+            window.read(|sidebar, _| sidebar.profile_menu_open),
+            "the separator is not a row"
+        );
+        window.simulate_click(point(px(120.0), px(622.5)), MouseButton::Left);
+        assert!(!window.read(|sidebar, _| sidebar.profile_menu_open));
+        if let Some(parent) = preferences.parent() {
+            let _ = std::fs::remove_dir_all(parent);
+        }
+    }
+
+    #[test]
+    fn account_menu_rows_snap_where_chromium_paints_their_fractional_edges() {
+        let spans = |scale_factor: f32| {
+            let mut rhythm = AccountMenuRhythm::new(scale_factor);
+            [
+                ACCOUNT_MENU_ITEM_HEIGHT,
+                ACCOUNT_MENU_SEPARATOR_HEIGHT,
+                ACCOUNT_MENU_ITEM_HEIGHT,
+                ACCOUNT_MENU_ITEM_HEIGHT,
+            ]
+            .map(|height| rhythm.span(height))
+        };
+        // 4 + 28.5625 + 9 + 28.5625 = 70.125 snaps to 70 at DPR 1, so the
+        // third row is one pixel shorter than the first.
+        assert_eq!(spans(1.0), [29.0, 9.0, 28.0, 29.0]);
+        assert_eq!(spans(2.0), [28.5, 9.0, 28.5, 28.5]);
     }
 
     #[test]

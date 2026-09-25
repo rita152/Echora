@@ -410,6 +410,10 @@ impl Render for ChatApp {
                     cx.stop_propagation();
                     return;
                 }
+                if this.sidebar.update(cx, |sidebar, cx| sidebar.dismiss_profile_menu(cx)) {
+                    cx.stop_propagation();
+                    return;
+                }
                 if this.showing_pull_requests {
                     let fullscreen = this.pull_requests.read(cx).is_fullscreen();
                     if fullscreen {

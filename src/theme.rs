@@ -141,6 +141,9 @@ pub struct Theme {
     /// secondary surface at 95% and the shared `shadow-xl-spread`.
     pub navigation_rail_marker: Rgba,
     pub navigation_rail_surface: Rgba,
+    /// Keyboard hints in the sidebar account menu print ChatGPT's
+    /// `--color-codex-description`.
+    pub account_menu_shortcut: Rgba,
     pub settings_search: Rgba,
     pub settings_accent: Rgba,
     pub settings_description: Rgba,
@@ -267,6 +270,8 @@ impl Theme {
                 navigation_rail_marker: rgba(0x1a1c1f7e),
                 // `bg-surface-elevated-secondary/95` over the #ffffff pane.
                 navigation_rail_surface: rgba(0xffffffff),
+                // CDP: rgba(26, 28, 31, 0.494).
+                account_menu_shortcut: rgba(0x1a1c1f7e),
                 // ChatGPT settings search surface at the reference capture
                 // resolves to #f2f2f2 on the light shell.
                 settings_search: rgba(0xf2f2f2ff),
@@ -368,6 +373,8 @@ impl Theme {
                 // #181818 pane, resolved so the card never depends on a
                 // backdrop GPUI cannot sample.
                 navigation_rail_surface: rgba(0x2c2c2cff),
+                // CDP: rgba(255, 255, 255, 0.498).
+                account_menu_shortcut: rgba(0xffffff7f),
                 // The sidebar search is a little brighter than the page;
                 // the management search has its own #2d2d2d fill.
                 settings_search: rgba(0x2e2e2eff),

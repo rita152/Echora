@@ -18,6 +18,29 @@ pub enum AccountDialog {
     Login,
 }
 
+/// One entry of the sidebar account menu, in the order the reference's profile
+/// dropdown renders them. The reference's desktop-pet toggle is left out: there
+/// is no pet here.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AccountMenuEntry {
+    /// ChatGPT account header: avatar, account label, and plan.
+    Account,
+    /// Configured model provider named in place of an account when the
+    /// connection is not a ChatGPT sign-in; inert, like the reference's.
+    Provider(String),
+    Separator,
+    /// Failure of the last explicit account action.
+    Notice(String),
+    LoginPending,
+    CancelLogin(String),
+    SignIn,
+    Unknown,
+    Refresh,
+    Invite,
+    Settings,
+    Logout,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum AccountLoadStatus {
     #[default]
@@ -60,6 +83,14 @@ impl AccountView {
 
     pub fn needs_login(&self) -> bool {
         self.signed_out()
+    }
+
+    /// The reference offers "Sign in with ChatGPT" only when there is no
+    /// account and the backend reports that OpenAI auth is required. A
+    /// provider that needs no OpenAI sign-in (DeepSeek with an API key) never
+    /// gets the row, even though it has no account either.
+    pub fn offers_sign_in(&self) -> bool {
+        self.needs_login() && self.state.account.requires_openai_auth
     }
 
     /// True until an account answer has been received on this connection. The
@@ -132,6 +163,43 @@ impl AccountView {
     pub fn login_error(&self) -> Option<&str> {
         self.state.login.error.as_deref()
     }
+
+    /// Account menu entries for this snapshot: the identity (the ChatGPT
+    /// account, or the provider's name), whichever sign-in or account actions
+    /// the connection allows, then Settings and Log out.
+    pub fn menu_entries(&self) -> Vec<AccountMenuEntry> {
+        let mut entries = Vec::new();
+        if self.is_signed_in() {
+            entries.push(AccountMenuEntry::Account);
+            entries.push(AccountMenuEntry::Separator);
+        } else if let Some(provider) = self.footer_provider_label() {
+            entries.push(AccountMenuEntry::Provider(provider.to_owned()));
+            entries.push(AccountMenuEntry::Separator);
+        }
+        if let Some(error) = &self.action_error {
+            entries.push(AccountMenuEntry::Notice(error.clone()));
+        }
+        if self.login_pending() {
+            entries.push(AccountMenuEntry::LoginPending);
+            if let Some(login_id) = self.login_id() {
+                entries.push(AccountMenuEntry::CancelLogin(login_id.to_owned()));
+            }
+        } else if self.offers_sign_in() {
+            entries.push(AccountMenuEntry::SignIn);
+        } else if self.account_unknown() {
+            // No answer yet: say so and offer a real read instead of showing
+            // a guessed account or a fabricated quota.
+            entries.push(AccountMenuEntry::Unknown);
+            entries.push(AccountMenuEntry::Refresh);
+        } else if self.is_signed_in() {
+            entries.push(AccountMenuEntry::Invite);
+        }
+        entries.push(AccountMenuEntry::Settings);
+        if self.is_signed_in() {
+            entries.push(AccountMenuEntry::Logout);
+        }
+        entries
+    }
 }
 
 #[cfg(test)]
@@ -172,5 +240,71 @@ mod tests {
             ..view(AgentAccountPresence::Null)
         };
         assert_eq!(unconfigured.footer_provider_label(), None);
+    }
+
+    #[test]
+    fn sign_in_is_offered_only_when_openai_auth_is_required() {
+        let mut provider = view(AgentAccountPresence::Null);
+        assert!(provider.needs_login());
+        assert!(!provider.offers_sign_in());
+        provider.state.account.requires_openai_auth = true;
+        assert!(provider.offers_sign_in());
+
+        let mut api_key = view(AgentAccountPresence::Account(AgentAccount::ApiKey));
+        api_key.state.account.requires_openai_auth = true;
+        assert!(!api_key.offers_sign_in());
+
+        let unanswered = AccountView {
+            status: AccountLoadStatus::Loading,
+            ..view(AgentAccountPresence::Missing)
+        };
+        assert!(!unanswered.offers_sign_in());
+    }
+
+    #[test]
+    fn menu_entries_follow_the_reference_profile_dropdown() {
+        use AccountMenuEntry::*;
+
+        // ChatGPT 26.917 with `model_provider = "deepseek"` and no OpenAI auth.
+        assert_eq!(
+            view(AgentAccountPresence::Null).menu_entries(),
+            vec![Provider("deepseek".into()), Separator, Settings]
+        );
+
+        let mut openai = view(AgentAccountPresence::Null);
+        openai.model_provider_name = Some("openai".into());
+        openai.state.account.requires_openai_auth = true;
+        assert_eq!(
+            openai.menu_entries(),
+            vec![Provider("openai".into()), Separator, SignIn, Settings]
+        );
+
+        let chatgpt = view(AgentAccountPresence::Account(AgentAccount::Chatgpt {
+            email: Some("rita@example.com".into()),
+            plan_type: AgentAccountPlanType::Pro,
+        }));
+        assert_eq!(
+            chatgpt.menu_entries(),
+            vec![Account, Separator, Invite, Settings, Logout]
+        );
+
+        let unanswered = AccountView {
+            status: AccountLoadStatus::Loading,
+            model_provider_name: None,
+            ..view(AgentAccountPresence::Missing)
+        };
+        assert_eq!(unanswered.menu_entries(), vec![Unknown, Refresh, Settings]);
+
+        let mut failed = view(AgentAccountPresence::Null);
+        failed.action_error = Some("login failed".into());
+        assert_eq!(
+            failed.menu_entries(),
+            vec![
+                Provider("deepseek".into()),
+                Separator,
+                Notice("login failed".into()),
+                Settings
+            ]
+        );
     }
 }

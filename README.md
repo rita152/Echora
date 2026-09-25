@@ -58,7 +58,7 @@ Both images are captured from the current native application using the worktree'
 | **Explore in side chats** | Fork temporary conversations from the main thread, with their own input, model, permissions, and stop controls. |
 | **Configure Codex** | Read effective configuration and its sources, inspect managed restrictions, edit supported user settings, and verify saves against the backend. |
 | **Choose a language** | Switch between English, Simplified Chinese, and automatic detection in Settings → General → Language. Changes apply immediately and are saved locally. |
-| **Manage the account** | See the connected ChatGPT account and plan in the account menu; sign in through Codex-managed ChatGPT auth, cancel a pending login, and sign out behind a confirmation. |
+| **Manage the account** | See the connected ChatGPT account and plan in the account menu, or the configured model provider's name when the connection is not a ChatGPT sign-in; sign in through Codex-managed ChatGPT auth when the backend requires OpenAI auth, cancel a pending login, and sign out behind a confirmation. |
 | **Manage skills & MCP** | Read the skills inventory with per-skill enable/disable receipts, list MCP servers with status, auth, tools and server extensions, reload servers, and complete OAuth logins with explicit waiting, success, failure, cancellation and disconnect states. |
 | **Manage plugins & apps** | Read the plugin catalog and the installed subset from the backend, search marketplaces, open a plugin's own detail (description, skills, MCP servers), install and uninstall behind a confirmation, manage marketplaces (add, update, remove), read shared plugins, and read a plugin skill's contents. Directory rows, badges and counts are always the served values; a plugin the server ships without artwork or description renders that way instead of a placeholder row. |
 
@@ -101,7 +101,7 @@ The sidebar navigation shows New conversation, Pull requests, Scheduled, and Plu
 | Open Git review | Right panel → Review; `Ctrl+Shift+G` |
 | Open a side chat | Right panel menu; `Option+Cmd+S` |
 | Open settings | Account menu → Settings; `Cmd+,` |
-| Sign in / sign out | Account menu → the sign-in row, or `Log out` with the in-app confirmation |
+| Sign in / sign out | Account menu → the sign-in row (shown when the backend requires OpenAI auth), or `Log out` with the in-app confirmation; `Esc` closes the menu |
 | Send / add input to an active turn | `Enter`; `Shift+Enter` inserts a newline |
 | Save a file immediately | `Cmd+S` |
 | Clear the terminal | `Cmd+K` |
