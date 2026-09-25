@@ -55,6 +55,10 @@ pub struct Theme {
     pub control: Rgba,
     pub control_soft: Rgba,
     pub sidebar_hover: Rgba,
+    /// `--color-border` / `border-default` hairlines around the sidebar: the
+    /// footer's top rule, the main surface's left edge and the thin scrollbar
+    /// thumb all share it.
+    pub sidebar_hairline: Rgba,
     pub sidebar_icon_muted: Rgba,
     /// Product-title foreground for the locally loaded OpenAI Sans face.
     pub sidebar_title_text: Rgba,
@@ -189,6 +193,8 @@ impl Theme {
                 // chat-reference: --color-background-primary-ghost-hover
                 // rgba(26, 28, 31, 0.053), quantized to an 8-bit alpha.
                 sidebar_hover: rgba(0x1a1c1f0e),
+                // chat-reference: rgba(26, 28, 31, 0.08).
+                sidebar_hairline: rgba(0x1a1c1f14),
                 sidebar_icon_muted: rgba(0x1a1c1f7f),
                 sidebar_title_text: rgba(0x1a1c1fd9),
                 sidebar_text_muted: rgba(0x1a1c1f7f),
@@ -290,6 +296,8 @@ impl Theme {
                 // chat-reference: --color-background-primary-ghost-hover
                 // rgba(255, 255, 255, 0.078), quantized to an 8-bit alpha.
                 sidebar_hover: rgba(0xffffff14),
+                // chat-reference: rgba(255, 255, 255, 0.082).
+                sidebar_hairline: rgba(0xffffff15),
                 sidebar_icon_muted: rgba(0xffffff7f),
                 sidebar_title_text: rgba(0xdfdfdfd9),
                 sidebar_text_muted: rgba(0xffffff7f),

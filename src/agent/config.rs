@@ -81,6 +81,24 @@ pub fn config_value<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
         .try_fold(value, |value, part| value.get(part))
 }
 
+/// Display name of the configured `model_provider`: its
+/// `model_providers.<id>.name` when that is a non-empty string, otherwise the
+/// id itself. `None` when no provider is configured, as the desktop app's
+/// sidebar footer derives it.
+pub fn model_provider_name(effective: &Value) -> Option<String> {
+    let id = effective.get("model_provider")?.as_str()?;
+    if id.is_empty() {
+        return None;
+    }
+    let name = effective
+        .get("model_providers")
+        .and_then(|providers| providers.get(id))
+        .and_then(|provider| provider.get("name"))
+        .and_then(Value::as_str)
+        .filter(|name| !name.is_empty());
+    Some(name.unwrap_or(id).to_owned())
+}
+
 impl AgentConfigSnapshot {
     pub fn origin(&self, key: &str) -> Option<&AgentConfigSource> {
         let mut path = key;
@@ -256,4 +274,35 @@ pub struct AgentConfigChoiceSet {
     pub values: Vec<Value>,
     pub allows_custom_string: bool,
     pub session_static: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::model_provider_name;
+    use serde_json::json;
+
+    #[test]
+    fn model_provider_name_prefers_the_provider_display_name() {
+        let effective = json!({
+            "model_provider": "deepseek",
+            "model_providers": {"deepseek": {"name": "DeepSeek", "base_url": "https://x"}},
+        });
+        assert_eq!(model_provider_name(&effective).as_deref(), Some("DeepSeek"));
+    }
+
+    #[test]
+    fn model_provider_name_falls_back_to_the_provider_id() {
+        let unnamed =
+            json!({"model_provider": "ollama", "model_providers": {"ollama": {"name": ""}}});
+        assert_eq!(model_provider_name(&unnamed).as_deref(), Some("ollama"));
+        let undeclared = json!({"model_provider": "openai"});
+        assert_eq!(model_provider_name(&undeclared).as_deref(), Some("openai"));
+    }
+
+    #[test]
+    fn model_provider_name_is_absent_without_a_provider() {
+        assert_eq!(model_provider_name(&json!({})), None);
+        assert_eq!(model_provider_name(&json!({"model_provider": ""})), None);
+        assert_eq!(model_provider_name(&json!({"model_provider": 3})), None);
+    }
 }

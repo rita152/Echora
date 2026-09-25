@@ -153,9 +153,11 @@ const RIGHT_PANEL_MIN_WIDTH: f32 = 320.0;
 const RIGHT_PANEL_MAIN_MIN_WIDTH: f32 = 384.0;
 const SUBAGENT_PANEL_DEFAULT_WIDTH: f32 = 603.0;
 const SUBAGENT_PANEL_HEADER_HEIGHT: f32 = 48.0;
-// The native 14px traffic lights start at y=18px, so their center is y=25px.
-// Center the 28px leading titlebar controls on that same horizontal axis.
-const LEADING_TITLEBAR_CONTROLS_TOP: f32 = 11.0;
+// The reference places its traffic lights at `trafficLightPosition` =
+// {x: 16, y: round((46 - 14) / 2)} = {16, 16}, so the native 14px buttons are
+// centered on y=23px. The 28px leading titlebar controls share that axis.
+pub(crate) const TRAFFIC_LIGHT_INSET: f32 = 16.0;
+const LEADING_TITLEBAR_CONTROLS_TOP: f32 = 9.0;
 const STARTUP_LOADING_LOGO_SIZE: f32 = 48.0;
 const STARTUP_LOADING_BLINK_DURATION: Duration = Duration::from_millis(1_200);
 const STARTUP_LOADING_MINIMUM_DURATION: Duration = Duration::from_secs(1);
@@ -549,10 +551,31 @@ impl ChatApp {
 
     /// account/read followed by account/rateLimits/read. Both answers are also
     /// reduced into the connection snapshot other views observe.
+    /// Reads the effective configuration for the footer's provider label. A
+    /// backend without `config/read` simply leaves the label unset.
+    fn refresh_model_provider(&mut self, cx: &mut Context<Self>) {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let config = self.agent_backend.read_config(cwd);
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(config)) = config.recv().await else {
+                return;
+            };
+            let name = crate::agent::model_provider_name(&config.effective);
+            let _ = this.update(cx, |this, cx| {
+                if this.account.model_provider_name != name {
+                    this.account.model_provider_name = name;
+                    this.sync_account_view(cx);
+                }
+            });
+        })
+        .detach();
+    }
+
     pub fn refresh_account(&mut self, cx: &mut Context<Self>) {
         if self.account.is_loading() {
             return;
         }
+        self.refresh_model_provider(cx);
         self.account.status = AccountLoadStatus::Loading;
         self.sync_account_view(cx);
         let backend = self.agent_backend.clone();

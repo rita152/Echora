@@ -213,7 +213,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `command/exec/write` | 默认 | 未接入 | — | — |
 | `config/batchWrite` | 默认 | 已接入 | 单项／多项统一 edits+replace，用户层 filePath、expectedVersion、适用的 reloadUserConfig；消费完整回执并回读，冲突或失败保留草稿。 | `manager/config`、`config` |
 | `config/mcpServer/reload` | 默认 | 已接入 | 无 params；绑定当前 cwd 与 generation，区分成功、失败、超时与结果未知；成功后再读 `mcpServerStatus/list`。 | `manager/mcp`、`mcp` |
-| `config/read` | 默认 | 已接入 | 当前 cwd、includeLayers=true；有效配置、origins、layers、版本与覆盖关系驱动设置及新线程默认值。 | `manager/config`、`config` |
+| `config/read` | 默认 | 已接入 | 当前 cwd、includeLayers=true；有效配置、origins、layers、版本与覆盖关系驱动设置及新线程默认值；未以 ChatGPT 登录时，`model_provider` 及其 `model_providers.<id>.name` 作为侧栏底部账户入口的名称。 | `manager/config`、`config` |
 | `config/value/write` | 默认 | 未接入 | — | — |
 | `configRequirements/read` | 默认 | 已接入 | 同 generation 读取 nullable requirements，约束对应选项和强制值；其余要求在来源详情保留展示。 | `manager/config`、`config` |
 | `environment/add` | 实验 | 未接入 | — | — |

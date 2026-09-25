@@ -22,7 +22,7 @@ use crate::{
     },
     components::{
         account::AccountView,
-        icons::{chevron, icon},
+        icons::icon,
         prompt_input::{PromptInput, PromptSubmitted},
     },
     git_review::ProjectRepo,
@@ -85,12 +85,8 @@ fn new_conversation_target(project: Option<&Project>) -> (Option<ProjectId>, Pat
     (project_id, cwd)
 }
 
-/// Label inside a sidebar row. The row box itself keeps the reference's 13 px
-/// font, because that is what its trailing icon rail is measured against, while
-/// the label renders the body font at 14 px/430 with the reference's own line
-/// height. Both values come from the CDP capture in
-/// `artifacts/sidebar-layout-20260922/reference/`.
-fn sidebar_row_label(text: impl Into<SharedString>, line_height: f32) -> Div {
+/// Single-line sidebar label in the body font at 14 px.
+fn sidebar_label(text: impl Into<SharedString>, line_height: f32) -> Div {
     div()
         .min_w(px(0.0))
         .flex_1()
@@ -101,6 +97,21 @@ fn sidebar_row_label(text: impl Into<SharedString>, line_height: f32) -> Div {
         .text_size(px(ROW_LABEL_FONT_SIZE))
         .line_height(px(line_height))
         .child(text.into())
+}
+
+/// Label inside a 30 px sidebar row (navigation, project). The row box keeps
+/// the reference's 13 px font, because that is what its trailing icon rail is
+/// measured against, while the label renders the body font at 14/21 px.
+///
+/// The reference centers that 21 px line in the row's 20 px content box, so
+/// the line box starts on a half pixel, and Chromium draws its glyphs one CSS
+/// pixel below where GPUI puts the same centered line — at DPR 1 and DPR 2
+/// alike (`artifacts/sidebar-layout-20260925/`). Integer-aligned lines (task
+/// titles, section titles) need no correction.
+fn sidebar_row_label(text: impl Into<SharedString>) -> Div {
+    sidebar_label(text, ROW_LABEL_LINE_HEIGHT)
+        .relative()
+        .top(px(HALF_PIXEL_LINE_BASELINE_SHIFT))
 }
 
 // These values come from the live ChatGPT desktop app at 127.0.0.1:9222.
@@ -114,6 +125,24 @@ const SECTION_HEADER_HEIGHT: f32 = 25.0;
 /// Brand row above the first navigation entry. CDP: 16 px inset, 32 px tall,
 /// with the 24 px search/activity buttons inset another 4 px from the right.
 const BRAND_ROW_HEIGHT: f32 = 32.0;
+/// `Codex` wordmark: OpenAI Sans 17/24 px, 6 px before its 14 px chevron.
+const BRAND_LINE_HEIGHT: f32 = 24.0;
+const BRAND_CHEVRON_GAP: f32 = 6.0;
+const ACTIVITY_BUTTON_OFFSET_Y: f32 = 1.0;
+/// The reference's `xs` squircle icon buttons (search, activity, section and
+/// project actions) round their 24 px hover plate at 9.375 px.
+const ICON_BUTTON_RADIUS: f32 = 9.375;
+const ICON_BUTTON_GROUP: &str = "sidebar-icon-button";
+const FOOTER_BUTTON_GROUP: &str = "sidebar-footer-button";
+/// Thin classic scrollbar of the workspace list, measured at DPR 1 and 2: an
+/// 11 px gutter holding a 6 px, fully rounded thumb 2 px from the edge, whose
+/// track starts 3 px below the list top and ends 6 px above its bottom.
+const SCROLLBAR_GUTTER: f32 = 11.0;
+const SCROLLBAR_THUMB_WIDTH: f32 = 6.0;
+const SCROLLBAR_THUMB_INSET_RIGHT: f32 = 2.0;
+const SCROLLBAR_TRACK_INSET_TOP: f32 = 3.0;
+const SCROLLBAR_TRACK_INSET_BOTTOM: f32 = 6.0;
+const SCROLLBAR_THUMB_MIN_LENGTH: f32 = 18.0;
 /// Gap between the rows of one list (navigation block, project tasks, recents).
 const ROW_GAP: f32 = 1.0;
 /// Gap between the sidebar's scroll children: the navigation block, the
@@ -124,9 +153,21 @@ const SECTION_LIST_PADDING_TOP: f32 = 4.0;
 /// A project's task list is padded 1 px above and 8 px below its rows.
 const THREAD_LIST_PADDING_TOP: f32 = 1.0;
 const THREAD_LIST_PADDING_BOTTOM: f32 = 8.0;
-const SHOW_MORE_HEIGHT: f32 = 25.0;
+/// `Show more` is an `xs` secondary button: 24 px tall inside the list item's
+/// 4 px vertical padding, 14 px/400 text in the tertiary color at full opacity.
+const SHOW_MORE_HEIGHT: f32 = 24.0;
 const SHOW_MORE_INDENT: f32 = 24.0;
 const SHOW_MORE_MARGIN_BOTTOM: f32 = 4.0;
+/// A 21 px line centered in the 24 px button starts on a half pixel, so it
+/// takes the same baseline shift as `sidebar_row_label`.
+const SHOW_MORE_LINE_HEIGHT: f32 = 21.0;
+/// Section titles (`Projects`, `Recents`) sit in an `opacity-75` wrapper.
+const SECTION_TITLE_OPACITY: f32 = 0.75;
+const SECTION_HEADER_LINE_HEIGHT: f32 = 21.0;
+/// The Recents title row also holds a tooltip-wrapped `New chat` button whose
+/// 16/24 px inline wrapper measures 25.78125 px, so the rows below it start
+/// 0.78125 px lower than under the Projects title.
+const RECENTS_HEADER_HEIGHT: f32 = 25.781_25;
 /// Leading icon column of a project row, and the indent a task row reserves
 /// before its title so both titles start on the same 40 px grid line.
 const PROJECT_ICON_SLOT: f32 = 32.0;
@@ -136,12 +177,10 @@ const THREAD_ICON_SLOT: f32 = 16.0;
 /// 13 px box is what the trailing icon rail is measured against.
 const NAV_ROW_FONT_SIZE: f32 = 13.0;
 const ROW_LABEL_FONT_SIZE: f32 = 14.0;
-/// The reference declares 21 px for these labels, but its label boxes start on
-/// a half pixel (a 21 px line in a 30 px row), and Chromium rounds that line's
-/// origin up. GPUI keeps the line box on whole pixels, so the same 21 px line
-/// renders one pixel higher than the reference; a 20 px line box puts the
-/// glyphs exactly on the reference's rows.
-const ROW_LABEL_LINE_HEIGHT: f32 = 20.0;
+/// Row labels declare the reference's own 14/21 px line; see
+/// `sidebar_row_label` for the half-pixel baseline shift that goes with it.
+const ROW_LABEL_LINE_HEIGHT: f32 = 21.0;
+const HALF_PIXEL_LINE_BASELINE_SHIFT: f32 = 1.0;
 const THREAD_TITLE_LINE_HEIGHT: f32 = 20.0;
 /// Trailing 32 px help button in the footer; the account row keeps the rest.
 const FOOTER_HELP_BUTTON: f32 = 32.0;
@@ -203,10 +242,14 @@ const THREAD_HOVER_CARD_CLOSE_DELAY: Duration = Duration::from_millis(60);
 const PROJECT_THREAD_TITLE_INSETS: f32 = 120.0;
 const RECENT_THREAD_TITLE_INSETS: f32 = 96.0;
 const THREAD_ACTION_RAIL_INSETS: f32 = 51.0;
-/// Account surfaces measured from the live ChatGPT desktop app at 1440x900:
-/// the sidebar row is 184x30 with an 18px avatar, the menu is 224 wide with 4px
-/// padding, a 42.5625px account header, and 28.5625px rows.
-const ACCOUNT_ROW_HEIGHT: f32 = 30.0;
+/// Account surfaces measured from the live ChatGPT desktop app: the footer
+/// entry is an `lg` secondary button (32 px tall, 12 px inline padding, 6 px
+/// gap, 14/14 px text at weight 400), the menu is 224 wide with 4px padding, a
+/// 42.5625px account header, and 28.5625px rows.
+const ACCOUNT_ROW_HEIGHT: f32 = 32.0;
+const ACCOUNT_ROW_PADDING_X: f32 = 12.0;
+const ACCOUNT_ROW_GAP: f32 = 6.0;
+const ACCOUNT_ROW_LINE_HEIGHT: f32 = 14.0;
 const ACCOUNT_MENU_WIDTH: f32 = 224.0;
 const ACCOUNT_MENU_ITEM_HEIGHT: f32 = 28.5625;
 const ACCOUNT_HEADER_HEIGHT: f32 = 42.5625;
@@ -216,10 +259,12 @@ const ACCOUNT_MENU_BOTTOM: f32 = 44.625;
 const TITLE_FADE_IN: f32 = 8.0;
 const TITLE_FADE_OUT: f32 = 16.0;
 
-/// Account glyph in the sidebar footer. The reference renders a 16 px glyph
-/// there (the account menu's header uses 18 px), which is also what puts the
-/// account label on the same 40 px grid line as every other row label.
-const FOOTER_ACCOUNT_ICON: f32 = 16.0;
+/// Leading glyph of the footer account button: an `icon-sm` (18 px) avatar or
+/// settings gear that the button optically pulls 1 px toward its edge, so the
+/// label starts at 43 px.
+const FOOTER_ACCOUNT_ICON: f32 = 18.0;
+const FOOTER_ACCOUNT_ICON_INSET: f32 = -1.0;
+const FOOTER_HELP_RADIUS: f32 = 12.5;
 
 fn account_avatar(initials: Option<&str>, size: f32, theme: Theme) -> Div {
     div()
@@ -655,6 +700,9 @@ pub struct SidebarView {
     store: Arc<WorkspaceStore>,
     snapshot: WorkspaceSnapshot,
     scroll: ScrollHandle,
+    /// Whether the last render reserved the classic-scrollbar gutter, so the
+    /// frame that first discovers (or loses) overflow can re-render once.
+    scrollbar_gutter: Rc<std::cell::Cell<bool>>,
     activity_scroll: ScrollHandle,
     scroll_to_bottom: bool,
     selected_project_id: Option<ProjectId>,
@@ -763,6 +811,7 @@ impl SidebarView {
             store,
             snapshot,
             scroll: ScrollHandle::new(),
+            scrollbar_gutter: Rc::new(std::cell::Cell::new(false)),
             activity_scroll: ScrollHandle::new(),
             scroll_to_bottom,
             selected_project_id: None,
@@ -1338,14 +1387,22 @@ impl SidebarView {
         div()
             .id(id)
             .size(px(24.0))
-            .rounded(px(ROW_RADIUS))
+            .rounded(px(ICON_BUTTON_RADIUS))
             .flex()
             .items_center()
             .justify_center()
             .cursor_pointer()
+            .group(ICON_BUTTON_GROUP)
             .text_color(theme.sidebar_icon_muted)
             .hover(move |style| style.bg(theme.sidebar_hover).text_color(theme.sidebar_text))
-            .child(icon(glyph, theme.sidebar_icon_muted.into()).size(px(16.0)))
+            // Secondary buttons brighten their glyph with the hover plate.
+            .child(
+                icon(glyph, theme.sidebar_icon_muted.into())
+                    .size(px(16.0))
+                    .group_hover(ICON_BUTTON_GROUP, move |style| {
+                        style.text_color(theme.sidebar_text)
+                    }),
+            )
     }
 
     fn action_icon_button(
@@ -1391,7 +1448,7 @@ impl SidebarView {
             .text_color(theme.sidebar_text)
             .hover(move |style| style.bg(theme.sidebar_hover))
             .child(icon(glyph, theme.sidebar_text.into()).size(px(16.0)))
-            .child(sidebar_row_label(label, ROW_LABEL_LINE_HEIGHT))
+            .child(sidebar_row_label(label))
     }
 
     /// Sidebar entry that switches the main content area to the Pull Requests
@@ -1424,10 +1481,7 @@ impl SidebarView {
                 view.update(cx, |_, cx| cx.emit(OpenPullRequests));
             })
             .child(icon("pull-request", theme.sidebar_text.into()).size(px(16.0)))
-            .child(sidebar_row_label(
-                crate::i18n::text("拉取请求"),
-                ROW_LABEL_LINE_HEIGHT,
-            ))
+            .child(sidebar_row_label(crate::i18n::text("拉取请求")))
     }
 
     fn section_header(
@@ -1435,34 +1489,40 @@ impl SidebarView {
         id: &'static str,
         label: &'static str,
         collapsed: bool,
+        height: f32,
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
         let hovered = self.hovered_section_id == Some(id);
         div()
             .id(id)
-            .h(px(SECTION_HEADER_HEIGHT))
+            .h(px(height))
             .pl(px(8.0))
             .pr(px(2.0))
             .flex()
             .items_center()
             .gap(px(8.0))
             .text_size(px(ROW_LABEL_FONT_SIZE))
-            .line_height(px(ROW_LABEL_LINE_HEIGHT))
+            .line_height(px(SECTION_HEADER_LINE_HEIGHT))
             .font_weight(gpui::FontWeight::MEDIUM)
             .text_color(theme.sidebar_text_muted)
             .child(
+                // `-ms-1 ps-1 pe-1 py-0.5` toggle inside an `opacity-75`
+                // title: the label keeps the 16 px text inset while the
+                // tertiary label and its chevron render at three quarters.
                 div()
                     .id(format!("{id}-toggle"))
                     .min_w(px(0.0))
                     .flex_1()
                     .h(px(SECTION_HEADER_HEIGHT))
+                    .ml(px(-4.0))
                     .py(px(2.0))
-                    .pr(px(4.0))
+                    .px(px(4.0))
                     .flex()
                     .items_center()
                     .gap(px(4.0))
                     .rounded(px(10.0))
+                    .opacity(SECTION_TITLE_OPACITY)
                     .cursor_pointer()
                     .child(label)
                     .child(
@@ -1898,6 +1958,11 @@ impl SidebarView {
             .contains(&project_id);
         let pending = self.snapshot.is_pending_project(&project_id);
         let hovered = self.hovered_project_id.as_deref() == Some(project_id.as_str());
+        // The reference's `activeProjectId`: on the home page the project the
+        // next conversation targets keeps the row's ghost-hover plate.
+        let active = self.selected_thread_id.is_none()
+            && !self.pull_requests_open
+            && self.selected_project_id.as_deref() == Some(project_id.as_str());
         let rename_active = self.rename_target.as_ref() == Some(&project_id);
         let menu_open = self.project_menu_id.as_deref() == Some(project_id.as_str());
         let threads = self
@@ -1951,7 +2016,7 @@ impl SidebarView {
         let title = if rename_active {
             self.rename_input.clone().into_any_element()
         } else {
-            sidebar_row_label(project.name.clone(), ROW_LABEL_LINE_HEIGHT).into_any_element()
+            sidebar_row_label(project.name.clone()).into_any_element()
         };
         let mut group = div()
             .id(format!("project-group-{project_id}"))
@@ -1968,6 +2033,7 @@ impl SidebarView {
                 .rounded(px(ROW_RADIUS))
                 .text_size(px(NAV_ROW_FONT_SIZE))
                 .text_color(theme.sidebar_text)
+                .when(active, |row| row.bg(theme.sidebar_hover))
                 .when(pending, |row| row.opacity(0.4).cursor_default())
                 .when(!pending, |row| {
                     row.cursor_pointer()
@@ -1981,14 +2047,15 @@ impl SidebarView {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .child(icon("folder", theme.sidebar_text.into()).size(px(16.0))),
+                        .child(
+                            icon("command-open-folder", theme.sidebar_text.into()).size(px(16.0)),
+                        ),
                 )
                 .child(
                     div()
                         .min_w(px(0.0))
                         .flex_1()
-                        .h(px(29.0))
-                        .py(px(4.0))
+                        .h_full()
                         .flex()
                         .items_center()
                         .gap(px(8.0))
@@ -2056,22 +2123,26 @@ impl SidebarView {
                         .mt(px(3.0))
                         .mb(px(SHOW_MORE_MARGIN_BOTTOM))
                         .px(px(8.0))
-                        .py(px(2.0))
-                        .rounded(px(ROW_RADIUS))
+                        .rounded(px(ICON_BUTTON_RADIUS))
                         .flex()
                         .items_center()
                         .font(crate::theme::ui_font())
+                        .font_weight(gpui::FontWeight::NORMAL)
                         .text_size(px(ROW_LABEL_FONT_SIZE))
-                        .line_height(px(ROW_LABEL_LINE_HEIGHT))
+                        .line_height(px(SHOW_MORE_LINE_HEIGHT))
                         .text_color(theme.sidebar_text_muted)
-                        .opacity(0.75)
                         .cursor_pointer()
                         .hover(move |style| style.text_color(theme.sidebar_text))
-                        .child(if show_all {
-                            crate::i18n::text("收起")
-                        } else {
-                            crate::i18n::text("展开显示")
-                        })
+                        .child(
+                            div()
+                                .relative()
+                                .top(px(HALF_PIXEL_LINE_BASELINE_SHIFT))
+                                .child(if show_all {
+                                    crate::i18n::text("收起")
+                                } else {
+                                    crate::i18n::text("展开显示")
+                                }),
+                        )
                         .on_click(cx.listener(move |this, _, _, cx| {
                             if !this.show_all_projects.insert(show_id.clone()) {
                                 this.show_all_projects.remove(&show_id);
@@ -2513,6 +2584,7 @@ impl SidebarView {
                 "pinned-heading",
                 crate::i18n::text("置顶"),
                 collapsed,
+                SECTION_HEADER_HEIGHT,
                 theme,
                 cx,
             ));
@@ -2596,7 +2668,7 @@ impl SidebarView {
                 .items_center()
                 .gap(px(8.0))
                 .text_size(px(ROW_LABEL_FONT_SIZE))
-                .line_height(px(ROW_LABEL_LINE_HEIGHT))
+                .line_height(px(SECTION_HEADER_LINE_HEIGHT))
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .text_color(theme.sidebar_text_muted)
                 .child(
@@ -2605,12 +2677,14 @@ impl SidebarView {
                         .min_w(px(0.0))
                         .flex_1()
                         .h(px(SECTION_HEADER_HEIGHT))
+                        .ml(px(-4.0))
                         .py(px(2.0))
-                        .pr(px(4.0))
+                        .px(px(4.0))
                         .flex()
                         .items_center()
                         .gap(px(4.0))
                         .rounded(px(10.0))
+                        .opacity(SECTION_TITLE_OPACITY)
                         .cursor_pointer()
                         .child(crate::i18n::text("项目"))
                         .child(
@@ -2725,6 +2799,7 @@ impl SidebarView {
                 "recent-heading",
                 crate::i18n::text("最近"),
                 collapsed,
+                RECENTS_HEADER_HEIGHT,
                 theme,
                 cx,
             ));
@@ -2904,6 +2979,81 @@ impl SidebarView {
             ));
         }
         content
+    }
+
+    /// True when the workspace list is taller than its viewport. Read from the
+    /// scroll handle, so it describes the previous layout.
+    fn workspace_overflows(&self) -> bool {
+        f32::from(self.scroll.max_offset().y) > 0.5
+    }
+
+    /// The scrolling workspace list plus the reference's thin scrollbar.
+    ///
+    /// With classic (always-visible) macOS scrollers the reference's
+    /// `scrollbar-width: thin` list reserves an 11 px gutter once it overflows,
+    /// narrowing every row, and draws a 6 px `--color-border` thumb 2 px from
+    /// the edge. Overlay scrollers reserve nothing and only appear while
+    /// scrolling, which GPUI leaves to the platform-free default of no rail.
+    fn workspace_scroll_area(
+        &self,
+        theme: Theme,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let gutter = !cx.should_auto_hide_scrollbars() && self.workspace_overflows();
+        self.scrollbar_gutter.set(gutter);
+        let rendered_gutter = self.scrollbar_gutter.clone();
+        let scroll = self.scroll.clone();
+        let classic_scrollers = !cx.should_auto_hide_scrollbars();
+        div()
+            .relative()
+            .flex_1()
+            .min_h(px(0.0))
+            .flex()
+            .flex_col()
+            .child(
+                self.workspace_content(theme, window, cx)
+                    .when(gutter, |content| content.pr(px(SCROLLBAR_GUTTER))),
+            )
+            .when(gutter, |area| area.child(self.scrollbar_thumb(theme)))
+            .child(
+                // Overflow is only known after layout. When this frame's
+                // layout disagrees with the gutter it was rendered with, draw
+                // once more instead of leaving rows under the thumb.
+                canvas(
+                    move |_, window, _| {
+                        let overflows = f32::from(scroll.max_offset().y) > 0.5;
+                        if (classic_scrollers && overflows) != rendered_gutter.get() {
+                            window.refresh();
+                        }
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            )
+    }
+
+    fn scrollbar_thumb(&self, theme: Theme) -> Div {
+        let viewport = f32::from(self.scroll.bounds().size.height);
+        let max_offset = f32::from(self.scroll.max_offset().y).max(0.0);
+        let track = (viewport - SCROLLBAR_TRACK_INSET_TOP - SCROLLBAR_TRACK_INSET_BOTTOM).max(0.0);
+        let thumb = (track * viewport / (viewport + max_offset).max(1.0))
+            .max(SCROLLBAR_THUMB_MIN_LENGTH)
+            .min(track);
+        let progress = if max_offset > 0.0 {
+            (-f32::from(self.scroll.offset().y) / max_offset).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        div()
+            .absolute()
+            .top(px(SCROLLBAR_TRACK_INSET_TOP + (track - thumb) * progress))
+            .right(px(SCROLLBAR_THUMB_INSET_RIGHT))
+            .w(px(SCROLLBAR_THUMB_WIDTH))
+            .h(px(thumb))
+            .rounded_full()
+            .bg(theme.sidebar_hairline)
     }
 
     fn workspace_content(
@@ -3421,11 +3571,8 @@ impl SidebarView {
             .text_size(px(NAV_ROW_FONT_SIZE))
             .text_color(theme.sidebar_text)
             .hover(move |style| style.bg(theme.sidebar_hover))
-            .child(icon("new-chat", theme.sidebar_text.into()).size(px(16.0)))
-            .child(sidebar_row_label(
-                crate::i18n::text("新对话"),
-                ROW_LABEL_LINE_HEIGHT,
-            ))
+            .child(icon("sidebar-new-chat", theme.sidebar_text.into()).size(px(16.0)))
+            .child(sidebar_row_label(crate::i18n::text("新对话")))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.new_conversation(new_project.as_ref(), cx);
             }));
@@ -3469,13 +3616,18 @@ impl SidebarView {
                             .px(px(8.0))
                             .flex()
                             .items_center()
-                            .gap(px(4.0))
+                            .gap(px(BRAND_CHEVRON_GAP))
                             .text_size(px(17.0))
+                            .line_height(px(BRAND_LINE_HEIGHT))
                             .font(crate::typography::brand_font(cx))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(theme.sidebar_title_text)
                             .child("Codex")
-                            .child(chevron(theme.sidebar_icon_muted.into()).size(px(14.0))),
+                            .child(
+                                icon("sidebar-brand-chevron", theme.sidebar_icon_muted.into())
+                                    .size(px(14.0))
+                                    .mr(px(-1.0)),
+                            ),
                     )
                     .child(div().flex_1())
                     .child(
@@ -3484,7 +3636,10 @@ impl SidebarView {
                             .items_center()
                             .gap(px(4.0))
                             .child(search)
-                            .child(activity),
+                            // The reference wraps this button in a 25.78 px
+                            // tooltip span that bottom-aligns it 0.89 px below
+                            // the search button; Chromium snaps the bell there.
+                            .child(activity.relative().top(px(ACTIVITY_BUTTON_OFFSET_Y))),
                     ),
             )
             // 新对话入口固定在滚动区之上，与参考实现一致；未接入的入口只保留
@@ -3518,11 +3673,13 @@ impl SidebarView {
     }
 
     /// Account row at the bottom of the sidebar. The label, avatar initials and
-    /// sign-in state all come from the connection snapshot.
+    /// sign-in state all come from the connection snapshot; without a ChatGPT
+    /// sign-in the configured model provider names the entry instead.
     fn profile_button(&self, theme: Theme, cx: &mut Context<Self>) -> gpui::Stateful<Div> {
-        let title = self
-            .account
-            .account_label()
+        let provider = self.account.footer_provider_label().map(ToOwned::to_owned);
+        let title = provider
+            .clone()
+            .or_else(|| self.account.account_label())
             .or_else(|| {
                 if self.account.is_signed_in() {
                     Some(crate::i18n::text("已登录").to_owned())
@@ -3539,22 +3696,34 @@ impl SidebarView {
             .flex_1()
             .min_w(px(96.0))
             .h(px(ACCOUNT_ROW_HEIGHT))
-            .px(px(8.0))
+            .px(px(ACCOUNT_ROW_PADDING_X))
             .rounded(px(ROW_RADIUS))
             .flex()
             .items_center()
-            .gap(px(8.0))
+            .gap(px(ACCOUNT_ROW_GAP))
             .cursor_pointer()
+            .group(FOOTER_BUTTON_GROUP)
             .text_size(px(14.0))
-            .line_height(px(21.0))
-            .text_color(theme.sidebar_text)
-            .hover(move |style| style.bg(theme.sidebar_hover))
-            .child(account_avatar(
-                initials.as_deref(),
-                FOOTER_ACCOUNT_ICON,
-                theme,
-            ))
-            .child(sidebar_row_label(title, ROW_LABEL_LINE_HEIGHT))
+            .line_height(px(ACCOUNT_ROW_LINE_HEIGHT))
+            .text_color(theme.sidebar_text_muted)
+            .hover(move |style| style.bg(theme.sidebar_hover).text_color(theme.text))
+            .child(if provider.is_some() {
+                icon("settings-mcp", theme.sidebar_text_muted.into())
+                    .size(px(FOOTER_ACCOUNT_ICON))
+                    .flex_none()
+                    .ml(px(FOOTER_ACCOUNT_ICON_INSET))
+                    .group_hover(FOOTER_BUTTON_GROUP, move |style| {
+                        style.text_color(theme.text)
+                    })
+                    .into_any_element()
+            } else {
+                account_avatar(initials.as_deref(), FOOTER_ACCOUNT_ICON, theme)
+                    .ml(px(FOOTER_ACCOUNT_ICON_INSET))
+                    .into_any_element()
+            })
+            .child(
+                sidebar_label(title, ACCOUNT_ROW_LINE_HEIGHT).font_weight(gpui::FontWeight::NORMAL),
+            )
             .on_click(cx.listener(|this, _, _, cx| {
                 cx.stop_propagation();
                 this.profile_menu_open = !this.profile_menu_open;
@@ -3569,26 +3738,45 @@ impl SidebarView {
     /// Footer row: the account entry plus the reference's trailing help button.
     /// The help surface is not part of the app-server contract yet, so the
     /// button keeps the reference geometry without inventing a destination.
-    fn footer(&self, theme: Theme, cx: &mut Context<Self>) -> Div {
+    fn footer(&self, theme: Theme, hairline: f32, cx: &mut Context<Self>) -> Div {
         div()
             .flex_none()
+            .relative()
             .h(px(FOOTER_HEIGHT))
             .px(px(ROW_HORIZONTAL_PADDING))
             .flex()
             .items_center()
             .gap(px(8.0))
+            // `border-t-hairline border-default`: one device pixel across the
+            // full sidebar width, drawn above the scroll area's faded end.
+            .child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .right_0()
+                    .h(px(hairline))
+                    .bg(theme.sidebar_hairline),
+            )
             .child(self.profile_button(theme, cx))
             .child(
                 div()
                     .flex_none()
                     .size(px(FOOTER_HELP_BUTTON))
-                    .rounded(px(10.0))
+                    .rounded(px(FOOTER_HELP_RADIUS))
                     .flex()
                     .items_center()
                     .justify_center()
+                    .group(FOOTER_BUTTON_GROUP)
                     .text_color(theme.sidebar_icon_muted)
                     .hover(move |style| style.bg(theme.sidebar_hover))
-                    .child(icon("help", theme.sidebar_icon_muted.into()).size(px(18.0))),
+                    .child(
+                        icon("help", theme.sidebar_icon_muted.into())
+                            .size(px(18.0))
+                            .group_hover(FOOTER_BUTTON_GROUP, move |style| {
+                                style.text_color(theme.text)
+                            }),
+                    ),
             )
     }
 
@@ -3814,8 +4002,8 @@ impl Render for SidebarView {
         } else {
             sidebar = sidebar
                 .child(self.header(theme, cx))
-                .child(self.workspace_content(theme, window, cx))
-                .child(self.footer(theme, cx));
+                .child(self.workspace_scroll_area(theme, window, cx))
+                .child(self.footer(theme, 1.0 / window.scale_factor(), cx));
         }
 
         if let Some(project_id) = self.project_menu_id.as_deref()
@@ -4201,6 +4389,7 @@ mod tests {
                     status: AccountLoadStatus::Loaded,
                     dialog: None,
                     action_error: None,
+                    model_provider_name: Some("deepseek".into()),
                 },
                 cx,
             );

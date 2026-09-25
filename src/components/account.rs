@@ -35,6 +35,8 @@ pub struct AccountView {
     pub dialog: Option<AccountDialog>,
     /// Failure of the last explicit account action (login, cancel, logout).
     pub action_error: Option<String>,
+    /// Display name of the effective `model_provider` from `config/read`.
+    pub model_provider_name: Option<String>,
 }
 
 impl AccountView {
@@ -72,6 +74,16 @@ impl AccountView {
             self.state.account.account,
             AgentAccountPresence::Account(AgentAccount::Chatgpt { .. })
         )
+    }
+
+    /// Footer identity when the connection is not a ChatGPT sign-in: the
+    /// desktop app then labels the entry with the configured provider's name
+    /// and a settings glyph instead of an avatar.
+    pub fn footer_provider_label(&self) -> Option<&str> {
+        if self.is_signed_in() {
+            return None;
+        }
+        self.model_provider_name.as_deref()
     }
 
     /// Account label for the menu header: the local part of the reported email.
@@ -119,5 +131,46 @@ impl AccountView {
 
     pub fn login_error(&self) -> Option<&str> {
         self.state.login.error.as_deref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::{AgentAccountPlanType, AgentAccountSnapshot};
+
+    fn view(account: AgentAccountPresence) -> AccountView {
+        let mut view = AccountView {
+            model_provider_name: Some("deepseek".into()),
+            status: AccountLoadStatus::Loaded,
+            ..AccountView::default()
+        };
+        view.state.account = AgentAccountSnapshot {
+            account,
+            ..AgentAccountSnapshot::default()
+        };
+        view
+    }
+
+    #[test]
+    fn footer_names_the_configured_provider_unless_signed_in_with_chatgpt() {
+        assert_eq!(
+            view(AgentAccountPresence::Null).footer_provider_label(),
+            Some("deepseek")
+        );
+        assert_eq!(
+            view(AgentAccountPresence::Account(AgentAccount::ApiKey)).footer_provider_label(),
+            Some("deepseek")
+        );
+        let chatgpt = view(AgentAccountPresence::Account(AgentAccount::Chatgpt {
+            email: Some("rita@example.com".into()),
+            plan_type: AgentAccountPlanType::Pro,
+        }));
+        assert_eq!(chatgpt.footer_provider_label(), None);
+        let unconfigured = AccountView {
+            model_provider_name: None,
+            ..view(AgentAccountPresence::Null)
+        };
+        assert_eq!(unconfigured.footer_provider_label(), None);
     }
 }

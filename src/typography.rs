@@ -57,10 +57,17 @@ fn read_brand_font_from_asar(path: &std::path::Path) -> anyhow::Result<Vec<u8>> 
         .pointer("/files/webview/files/assets/files")
         .and_then(serde_json::Value::as_object)
         .ok_or_else(|| anyhow::anyhow!("ASAR assets missing"))?;
-    let entry = assets
-        .iter()
-        .find(|(name, _)| name.starts_with("OpenAISans-Medium-") && name.ends_with(".woff2"))
-        .map(|(_, entry)| entry)
+    // The sidebar wordmark renders at weight 600, which the reference serves
+    // from the Semibold face. Older builds only shipped Medium; synthesizing
+    // 600 from it draws visibly heavier strokes, so it is only the fallback.
+    let face = |prefix: &str| {
+        assets
+            .iter()
+            .find(|(name, _)| name.starts_with(prefix) && name.ends_with(".woff2"))
+            .map(|(_, entry)| entry)
+    };
+    let entry = face("OpenAISans-Semibold-")
+        .or_else(|| face("OpenAISans-Medium-"))
         .ok_or_else(|| anyhow::anyhow!("brand font missing"))?;
     let offset = entry["offset"]
         .as_str()

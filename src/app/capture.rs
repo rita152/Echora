@@ -269,6 +269,13 @@ impl ChatApp {
             sidebar.open_project_menu_for_capture(project_id, cx)
         });
     }
+    /// Renders the sidebar at a persisted width, as the reference app does
+    /// when the user has dragged it away from the default.
+    pub fn set_sidebar_width_for_capture(&mut self, width: f32, cx: &mut Context<Self>) {
+        let width = width.clamp(super::SIDEBAR_MIN_WIDTH, super::SIDEBAR_MAX_WIDTH);
+        self.sidebar
+            .update(cx, |sidebar, cx| sidebar.set_width(width, cx));
+    }
     /// Opens the sidebar project hover card for the screenshot path.
     pub fn open_project_hover_card_for_capture(&mut self, project: &str, cx: &mut Context<Self>) {
         self.sidebar.update(cx, |sidebar, cx| {

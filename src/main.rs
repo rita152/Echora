@@ -1062,6 +1062,14 @@ fn main() {
         .find_map(|arg| arg.strip_prefix("--window-height=")?.parse::<f32>().ok())
         .unwrap_or(900.0);
     let sidebar_bottom = args.iter().any(|arg| arg == "--sidebar-bottom");
+    let sidebar_width = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--sidebar-width=")?.parse::<f32>().ok());
+    // Index into the platform display list, so a capture can pick the Retina
+    // panel (DPR 2) or an external 1x monitor instead of the primary display.
+    let display_index = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--display=")?.parse::<usize>().ok());
     let profile_menu_open = args.iter().any(|arg| arg == "--profile-menu-open");
     let account_dialog = args.iter().find_map(|arg| {
         arg.strip_prefix("--account-dialog=")
@@ -1279,7 +1287,10 @@ fn main() {
             components::home::init_runtime_keyboard(cx);
             components::home::init_navigation_keyboard(cx);
             cx.bind_keys([gpui::KeyBinding::new("cmd-p", app::OpenFiles, None)]);
-            let bounds = Bounds::centered(None, size(px(window_width), px(window_height)), cx);
+            let display_id = display_index
+                .and_then(|index| cx.displays().get(index).map(|display| display.id()));
+            let bounds =
+                Bounds::centered(display_id, size(px(window_width), px(window_height)), cx);
             let initial_bounds = if start_maximized {
                 WindowBounds::Maximized(bounds)
             } else {
@@ -1288,10 +1299,14 @@ fn main() {
             cx.open_window(
                 WindowOptions {
                     window_bounds: Some(initial_bounds),
+                    display_id,
                     titlebar: Some(gpui::TitlebarOptions {
                         title: Some("Codex".into()),
                         appears_transparent: true,
-                        traffic_light_position: Some(gpui::point(px(18.0), px(18.0))),
+                        traffic_light_position: Some(gpui::point(
+                            px(app::TRAFFIC_LIGHT_INSET),
+                            px(app::TRAFFIC_LIGHT_INSET),
+                        )),
                     }),
                     // Let the native macOS visual-effect layer participate in
                     // the translucent sidebar composition. Opaque main-pane
@@ -1372,6 +1387,9 @@ fn main() {
                         }
                         if right_panel_open {
                             app.open_right_panel(cx);
+                        }
+                        if let Some(width) = sidebar_width {
+                            app.set_sidebar_width_for_capture(width, cx);
                         }
                         if projects_menu_open {
                             app.open_projects_section_menu(cx);

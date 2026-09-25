@@ -6,10 +6,3 @@ pub fn icon(name: &'static str, color: Hsla) -> Svg {
         .size(px(16.0))
         .text_color(color)
 }
-
-pub fn chevron(color: Hsla) -> Svg {
-    svg()
-        .path("icons/chevron-down.svg")
-        .size(px(12.0))
-        .text_color(color)
-}
