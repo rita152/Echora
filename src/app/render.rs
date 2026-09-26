@@ -262,10 +262,12 @@ impl Render for ChatApp {
             self.right_panel.focus.focus(window, cx);
             self.right_panel.focus_pending = false;
         }
+        self.sync_viewed_thread(cx);
         let sidebar_width = self.sidebar.read(cx).width();
         // The rename panel is a window-level dialog: the sidebar owns the task
         // it belongs to, the shell paints the scrim and the card.
         let thread_rename_panel = self.sidebar.read(cx).thread_rename();
+        let activity_archive = self.sidebar.read(cx).activity_archive_confirmation();
         let thread_rename_input = self.sidebar.read(cx).thread_rename_input();
         let rename_field_focused = thread_rename_input
             .read(cx)
@@ -396,6 +398,10 @@ impl Render for ChatApp {
             }))
             .on_key_down(cx.listener(Self::handle_project_creation_key))
             .on_action(cx.listener(|this,_:&super::OpenSettingsPage,_,cx|{this.open_settings(cx);cx.stop_propagation();}))
+            .on_action(cx.listener(|this, _: &super::ToggleActivityView, _, cx| {
+                this.sidebar.update(cx, |sidebar, cx| sidebar.toggle_activity(cx));
+                cx.stop_propagation();
+            }))
             .on_action(cx.listener(|_,_:&super::CaptureFrame,_window,_cx| {
                 #[cfg(feature = "screenshot")]
                 if let Ok(path) = std::env::var("GPUI_CAPTURE_OUTPUT") { crate::capture_frame(_window,path,3); }
@@ -407,6 +413,12 @@ impl Render for ChatApp {
                 // `ThreadRename` context.
                 if this.sidebar.read(cx).thread_rename().is_some() {
                     this.dismiss_thread_rename(cx);
+                    cx.stop_propagation();
+                    return;
+                }
+                if this.sidebar.read(cx).activity_archive_confirmation().is_some() {
+                    this.sidebar
+                        .update(cx, |sidebar, cx| sidebar.dismiss_activity_archive(cx));
                     cx.stop_propagation();
                     return;
                 }
@@ -690,6 +702,9 @@ impl Render for ChatApp {
                 shell.child(account_dialog_overlay(
                     self.account_login_overlay(theme, cx),
                 ))
+            })
+            .when_some(activity_archive, |shell, confirmation| {
+                shell.child(self.activity_archive_overlay(confirmation, theme, cx))
             })
             .when_some(thread_rename_panel, |shell, _panel| {
                 shell.child(thread_rename_overlay(
@@ -1366,6 +1381,179 @@ fn thread_rename_overlay(
 }
 
 impl ChatApp {
+    /// The main area shows a chat only on the home page. The sidebar keeps the
+    /// activity view's Priority in step with it and the store reads it.
+    fn sync_viewed_thread(&mut self, cx: &mut Context<Self>) {
+        let viewed = match &self.active_conversation {
+            ConversationKey::Thread(thread_id)
+                if !self.showing_settings && !self.showing_pull_requests =>
+            {
+                Some(thread_id.clone())
+            }
+            _ => None,
+        };
+        if self.sidebar.read(cx).viewed_thread() != viewed.as_ref() {
+            self.sidebar
+                .update(cx, |sidebar, cx| sidebar.set_viewed_thread(viewed, cx));
+        }
+    }
+
+    /// The activity view's `Archive chats` confirmation: the reference's
+    /// compact (420 px) dialog with its title and subtitle over a Cancel and a
+    /// destructive Archive button, the same card family as the rename dialog.
+    fn activity_archive_overlay(
+        &self,
+        confirmation: crate::components::sidebar::ActivityArchiveConfirmation,
+        theme: Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let archiving = confirmation.archiving;
+        div()
+            .id("activity-archive-overlay")
+            .absolute()
+            .inset_0()
+            .bg(theme.chat_search_overlay)
+            .flex()
+            .items_center()
+            .justify_center()
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.sidebar
+                    .update(cx, |sidebar, cx| sidebar.dismiss_activity_archive(cx))
+            }))
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .child(
+                div()
+                    .id("activity-archive-dialog")
+                    .role(Role::AlertDialog)
+                    .aria_label(confirmation.title())
+                    .relative()
+                    .w(px(420.0))
+                    .rounded(px(25.0))
+                    .bg(rename_card_surface(theme))
+                    .shadow(vec![
+                        BoxShadow::new(px(0.0), px(0.0), rename_dialog_ring(self.mode).into())
+                            .blur_radius(px(0.0))
+                            .spread_radius(px(0.5)),
+                        BoxShadow::new(px(0.0), px(4.0), rgba(0x0000001a).into())
+                            .blur_radius(px(8.0))
+                            .spread_radius(px(-2.0)),
+                    ])
+                    .on_click(|_, _, cx| cx.stop_propagation())
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .p(px(20.0))
+                    .flex()
+                    .flex_col()
+                    .text_color(theme.text)
+                    .child(
+                        div()
+                            .pr(px(28.0))
+                            .text_size(px(20.0))
+                            .line_height(px(28.0))
+                            .font_weight(gpui::FontWeight(600.0))
+                            .child(confirmation.title()),
+                    )
+                    .child(
+                        div()
+                            .mt(px(4.0))
+                            .text_size(px(14.0))
+                            .line_height(px(21.0))
+                            .text_color(theme.chat_search_description)
+                            .child(confirmation.description()),
+                    )
+                    .child(
+                        div()
+                            .pt(px(12.0))
+                            .flex()
+                            .justify_end()
+                            .gap(px(12.0))
+                            .child(
+                                div()
+                                    .id("activity-archive-cancel")
+                                    .role(Role::Button)
+                                    .aria_label(crate::i18n::text("取消"))
+                                    .h(px(32.0))
+                                    .px(px(16.0))
+                                    .py(px(6.0))
+                                    .rounded(px(12.5))
+                                    .border(px(1.0))
+                                    .border_color(theme.chat_search_border)
+                                    .bg(theme.edit_button_surface)
+                                    .flex()
+                                    .items_center()
+                                    .text_size(px(14.0))
+                                    .line_height(px(18.0))
+                                    .when(archiving, |button| button.opacity(0.4))
+                                    .when(!archiving, |button| {
+                                        button
+                                            .cursor_pointer()
+                                            .hover(move |style| style.bg(theme.sidebar_hover))
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.sidebar.update(cx, |sidebar, cx| {
+                                                    sidebar.dismiss_activity_archive(cx)
+                                                })
+                                            }))
+                                    })
+                                    .child(crate::i18n::text("取消")),
+                            )
+                            .child(
+                                div()
+                                    .id("activity-archive-confirm")
+                                    .role(Role::Button)
+                                    .aria_label(confirmation.confirm_label())
+                                    .h(px(32.0))
+                                    .px(px(16.0))
+                                    .py(px(6.0))
+                                    .rounded(px(12.5))
+                                    .bg(rgba(0xe02e2a1a))
+                                    .flex()
+                                    .items_center()
+                                    .text_size(px(14.0))
+                                    .line_height(px(18.0))
+                                    .text_color(rgba(0xe02e2aff))
+                                    .when(archiving, |button| button.opacity(0.4))
+                                    .when(!archiving, |button| {
+                                        button
+                                            .cursor_pointer()
+                                            .hover(|style| style.bg(rgba(0xe02e2a33)))
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.sidebar.update(cx, |sidebar, cx| {
+                                                    sidebar.confirm_activity_archive(cx)
+                                                })
+                                            }))
+                                    })
+                                    .child(confirmation.confirm_label()),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .id("activity-archive-close")
+                            .role(Role::Button)
+                            .aria_label(crate::i18n::text("关闭对话框"))
+                            .absolute()
+                            .top(px(16.0))
+                            .right(px(16.0))
+                            .size(px(24.0))
+                            .rounded(px(4.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .when(!archiving, |button| {
+                                button
+                                    .cursor_pointer()
+                                    .hover(move |style| style.bg(theme.sidebar_hover))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.sidebar.update(cx, |sidebar, cx| {
+                                            sidebar.dismiss_activity_archive(cx)
+                                        })
+                                    }))
+                            })
+                            .child(
+                                icon("close-dialog", theme.text.alpha(0.8).into()).size(px(16.0)),
+                            ),
+                    ),
+            )
+    }
+
     /// Logout confirmation measured from the live ChatGPT desktop app: a
     /// centered 380x170 dialog with a 20px inset, a 20px title, and two 32px
     /// buttons. The destructive action only runs after this confirmation.

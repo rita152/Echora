@@ -812,3 +812,122 @@ fn history_loads_every_turn_page_and_items_endpoint_remains_agent_neutral() {
         let _ = fs::remove_dir_all(parent);
     }
 }
+
+fn status(thread_id: &str, state: AgentThreadStatusState) -> AgentConnectionEvent {
+    AgentConnectionEvent::ThreadStatusChanged(crate::agent::AgentThreadStatus {
+        thread_id: thread_id.to_owned(),
+        state,
+    })
+}
+
+#[test]
+fn finished_turns_and_requests_leave_unseen_chats_unread_until_they_are_viewed() {
+    use crate::agent::AgentThreadActiveFlag;
+    let backend = FakeWorkspaceBackend::new();
+    let path = test_preferences_path("unread");
+    let store = WorkspaceStore::with_preferences_path(backend.clone(), path.clone());
+    store.refresh_all();
+    wait_until(|| !store.snapshot().loading.recent);
+    let running = || AgentThreadStatusState::Active {
+        active_flags: Vec::new(),
+    };
+    let activity = |store: &WorkspaceStore, id: &str| {
+        store
+            .snapshot()
+            .thread(id)
+            .map(|thread| thread.activity.clone())
+    };
+
+    // `thread-b` is on screen: its finished turn is read; `thread-a` is not.
+    store.set_viewed_thread(Some("thread-b".to_owned()));
+    for id in ["thread-a", "thread-b"] {
+        backend
+            .events_tx
+            .send_blocking(status(id, running()))
+            .unwrap();
+        wait_until(|| matches!(activity(&store, id), Some(ThreadActivity::Active { .. })));
+        backend
+            .events_tx
+            .send_blocking(status(id, AgentThreadStatusState::Idle))
+            .unwrap();
+        wait_until(|| activity(&store, id) == Some(ThreadActivity::Idle));
+    }
+    let unread = store.snapshot().preferences.unread_thread_ids;
+    assert!(unread.contains("thread-a") && !unread.contains("thread-b"));
+
+    // A pending approval leaves an unseen chat unread as soon as it arrives.
+    store.set_viewed_thread(None);
+    backend
+        .events_tx
+        .send_blocking(status(
+            "thread-b",
+            AgentThreadStatusState::Active {
+                active_flags: vec![AgentThreadActiveFlag::WaitingOnApproval],
+            },
+        ))
+        .unwrap();
+    wait_until(|| {
+        store
+            .snapshot()
+            .preferences
+            .unread_thread_ids
+            .contains("thread-b")
+    });
+
+    // The read state is the app's own and survives a restart (the file is
+    // written just after the snapshot is published).
+    let saved = || {
+        fs::read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<UiPreferences>(&bytes).ok())
+            .map(|preferences| preferences.unread_thread_ids)
+    };
+    wait_until(|| saved() == Some(["thread-a".to_owned(), "thread-b".to_owned()].into()));
+    let reopened = WorkspaceStore::with_preferences_path(backend.clone(), path.clone());
+    assert_eq!(
+        reopened.snapshot().preferences.unread_thread_ids,
+        ["thread-a".to_owned(), "thread-b".to_owned()].into()
+    );
+
+    // Opening a chat reads it; `Mark all as read` reads the rest.
+    store.set_viewed_thread(Some("thread-a".to_owned()));
+    assert!(
+        !store
+            .snapshot()
+            .preferences
+            .unread_thread_ids
+            .contains("thread-a")
+    );
+    store.mark_threads_read(&["thread-b".to_owned()]);
+    assert!(store.snapshot().preferences.unread_thread_ids.is_empty());
+    if let Some(parent) = path.parent() {
+        let _ = fs::remove_dir_all(parent);
+    }
+}
+
+#[test]
+fn archiving_priority_chats_reports_each_outcome() {
+    let backend = FakeWorkspaceBackend::new();
+    let path = test_preferences_path("archive-priority");
+    let store = WorkspaceStore::with_preferences_path(backend.clone(), path.clone());
+    store.refresh_all();
+    wait_until(|| !store.snapshot().loading.recent);
+    let outcome = store
+        .archive_threads(vec!["thread-a".to_owned(), "thread-b".to_owned()])
+        .recv_blocking()
+        .unwrap();
+    assert_eq!(outcome, (2, 0));
+    assert!(store.snapshot().thread("thread-a").is_none_or(|thread| {
+        store
+            .snapshot()
+            .archived_threads
+            .iter()
+            .any(|archived| archived.thread_id == thread.thread_id)
+    }));
+    let calls = backend.calls();
+    assert!(calls.contains(&"thread/archive:thread-a".to_owned()));
+    assert!(calls.contains(&"thread/archive:thread-b".to_owned()));
+    if let Some(parent) = path.parent() {
+        let _ = fs::remove_dir_all(parent);
+    }
+}

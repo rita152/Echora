@@ -43,6 +43,7 @@ node scripts/scan_reference_rpc_methods.mjs /Applications/ChatGPT.app/Contents/R
 - **自动复核**：复核记录与人工审批请求分开，所有复核通知统一通过线程订阅与单调快照分发，避免轮次通道关闭时的竞争。未绑定 turn 的提前通知按完整标识等待真实 turn/start 响应，复核通知不会抢占启动中的轮次；已结束轮次的迟到通知经线程订阅更新原活动或历史快照。中断／失败／完成后本地结束等待展示，保留服务端原始状态与时间，不伪造完成通知；后续真实结果仍可补全。重复开始、重复完成和较旧完成消息不会回退已有结果。视图复用完整复核键，有目标项时随对应工具展示（MCP 拒绝独立展示），无目标项时独立展示；通过态隐藏但保留数据。当前 schema 未提供复核历史 item，应用重启后仅恢复服务端实际返回的历史，不从 rollout 或本地数据库补造复核。
 - **终止与恢复**：turn 完成、中断或业务失败不关闭共享进程。EOF、崩溃、写失败或致命协议错误使旧 generation 的 pending RPC 和活动轮次各失败一次；回收旧进程后，下一次显式操作可重建连接，不自动重放提示词。应用退出时幂等终止并 wait 子进程。
 - **状态通知**：应用／线程状态通过 `AgentConnectionEvent` 快照订阅，轮次事件进入各自 `AgentRun`。工作区通知可先于 RPC 响应；内存覆盖层防止迟到列表撤销重命名、移动、归档或删除。
+- **活动视图与未读**：侧边栏铃铛打开的活动视图只读取 `thread/list` 与 `thread/status/changed`：`active` 带 waitingOnApproval／waitingOnUserInput 为待处理，其余 `active` 为进行中。协议没有线程已读标记，因此未读由客户端维护：线程离开 `active` 进入 idle／systemError，或进入待处理时，若它不是主区域正在显示的会话，就记为未读；打开该会话或在活动视图中「全部标为已读」后清除。未读 id 保存在本地 UI 偏好（与参考应用自行保存 `unread-thread-ids-by-host` 一致），不写入 app-server。只有本应用自身连接上发生的轮次能被观察到，另一个客户端（例如 ChatGPT 应用）中运行的线程不会显示为进行中。「归档聊天」逐个调用 `thread/archive`。
 - **工作区与历史**：以服务端稳定 id 管理项目和线程；置顶使用服务端 `Pinned` 分区，当前 schema 无 `isPinned`。历史先 `thread/read(includeTurns=false)`，再分页读取 `thread/turns/list(itemsView=full)`；实际非 full 的轮次由 `thread/items/list` 补全。不维护本地会话数据库。
 - **临时侧边聊天**：`thread/fork → thread/inject_items` 完成后才允许发送。父历史仅供参考，侧边说明禁止延续父任务或调用子 agent；新消息明确要求的修改才属于侧边请求。关闭使用 `thread/unsubscribe`；临时 id 只在所属 generation 使用，失效后保留可读消息，禁止 resume。
 
@@ -448,7 +449,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/reverted` | 默认 | 已接入 | 仅 threadId；可先于 thread/revert 响应到达，按“通知先于 RPC 响应”暂存为该请求的确认。非本客户端发起的回退作为连接事件发布，令所属会话把已归约历史标记为过期并按分页路径重载，不改变侧栏条目身份。 | `manager/dispatch`、`manager/revert`、`manager/connection` |
 | `thread/settings/updated` | 默认 | 已接入 | 按原 threadId／generation 同步 model/effort/serviceTier/cwd 与有效权限；匹配本次期望值才满足 waiter，处理响应前通知、重复／已知迟到回执及关闭临时线程。 | `manager/dispatch`、`manager/settings`、`notifications` |
 | `thread/started` | 默认 | 已接入 | 校验 params.thread.id，关联当前 start/resume/fork；RPC 响应是最终 id 来源。已加载线程的迟到通知不得绑定到下一次生命周期请求。 | `manager/dispatch` |
-| `thread/status/changed` | 默认 | 已接入 | 按 threadId 保存 notLoaded/idle/systemError/active；active 仅接受 waitingOnApproval/waitingOnUserInput，不替代 turn 终态。 | `manager/dispatch`、`notifications` |
+| `thread/status/changed` | 默认 | 已接入 | 按 threadId 保存 notLoaded/idle/systemError/active；active 仅接受 waitingOnApproval/waitingOnUserInput，不替代 turn 终态。活动视图据此区分进行中与待处理，并记录客户端维护的未读状态（见“连接与状态”）。 | `manager/dispatch`、`notifications` |
 | `thread/tokenUsage/updated` | 默认 | 已接入 | 连接级分发，允许 resume 响应前上报已结束轮次的用量；按 threadId/turnId 保存 tokenUsage.total/last 与可选 context window，不绑定运行轮次、不创建活动或结束轮次。 | `notifications` |
 | `thread/unarchived` | 默认 | 已接入 | 从归档移除，刷新最近及项目列表；覆盖迟到快照。 | `manager/dispatch` |
 | `turn/completed` | 默认 | 已接入 | 接受 completed/interrupted/failed；失败读取 message/details。保留服务端可选 startedAt、completedAt、durationMs，实时完成沿用历史的时间标签与用时；缺失时不推算用时。每轮只发送一个终态并清理自身请求，其他轮次及共享连接继续存活。 | `dispatch`、`manager/connection` |

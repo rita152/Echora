@@ -149,6 +149,25 @@ pub struct Theme {
     pub settings_description: Rgba,
     pub settings_control: Rgba,
     pub settings_button: Rgba,
+    /// Sidebar activity view, measured from ChatGPT 26.917 over CDP. The bell
+    /// turns into an `info` `soft` button while the view is open
+    /// (`--color-text-info-soft` on `#0285ff` at 13%, 25% on hover); unread
+    /// rows and the bell's badge use `--color-background-info-solid`; the
+    /// running spinner prints `text-text/70` and the list loader
+    /// `text-secondary`.
+    pub activity_info: Rgba,
+    pub activity_info_soft: Rgba,
+    pub activity_info_soft_hover: Rgba,
+    pub activity_badge: Rgba,
+    pub activity_spinner: Rgba,
+    pub activity_loader: Rgba,
+    /// The compact tooltip pill is dark in both themes.
+    pub tooltip_surface: Rgba,
+    pub tooltip_border: Rgba,
+    pub tooltip_text: Rgba,
+    pub tooltip_shortcut_surface: Rgba,
+    pub tooltip_shortcut_text: Rgba,
+    pub tooltip_shadow: Rgba,
 }
 
 impl Theme {
@@ -279,6 +298,18 @@ impl Theme {
                 settings_description: rgba(0x1a1c1fa6),
                 settings_control: rgba(0xf7f7f7ff),
                 settings_button: rgba(0xf0f0f0ff),
+                activity_info: rgba(0x339cffff),
+                activity_info_soft: rgba(0x0285ff21),
+                activity_info_soft_hover: rgba(0x0285ff40),
+                activity_badge: rgba(0x339cffff),
+                activity_spinner: rgba(0x1a1c1f98),
+                activity_loader: rgba(0x1a1c1fa6),
+                tooltip_surface: rgba(0x1b1b1bff),
+                tooltip_border: rgba(0xffffff0d),
+                tooltip_text: rgba(0xffffffff),
+                tooltip_shortcut_surface: rgba(0xffffff40),
+                tooltip_shortcut_text: rgba(0xcdcdcdff),
+                tooltip_shadow: rgba(0x0f172a33),
             },
             ThemeMode::Dark => Self {
                 surface: rgba(0x181818ff),
@@ -382,6 +413,18 @@ impl Theme {
                 settings_description: rgba(0xdfdfdfa6),
                 settings_control: rgba(0x262626ff),
                 settings_button: rgba(0x292929ff),
+                activity_info: rgba(0x339cffff),
+                activity_info_soft: rgba(0x0285ff21),
+                activity_info_soft_hover: rgba(0x0285ff40),
+                activity_badge: rgba(0x339cffff),
+                activity_spinner: rgba(0xdfdfdf98),
+                activity_loader: rgba(0xdfdfdfa6),
+                tooltip_surface: rgba(0x1b1b1bff),
+                tooltip_border: rgba(0xffffff0d),
+                tooltip_text: rgba(0xffffffff),
+                tooltip_shortcut_surface: rgba(0xffffff40),
+                tooltip_shortcut_text: rgba(0xcdcdcdff),
+                tooltip_shadow: rgba(0x0f172a33),
             },
         }
     }

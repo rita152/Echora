@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::{BTreeSet, HashMap, HashSet},
     path::PathBuf,
     process::Command,
@@ -27,8 +27,16 @@ use crate::{
     },
     git_review::ProjectRepo,
     theme::{Theme, ThemeMode},
-    workspace::{WorkspaceSnapshot, WorkspaceStore, project_id_for_thread},
+    workspace::{
+        WorkspaceSnapshot, WorkspaceStore, activity::ActivitySession, project_id_for_thread,
+    },
 };
+
+mod activity;
+mod sticky;
+
+use activity::ActivityTooltipTarget;
+pub use activity::{ActivityArchiveConfirmation, ActivityCaptureRequest};
 
 pub struct OpenSettings;
 pub struct OpenProjectCreation;
@@ -143,6 +151,11 @@ const SCROLLBAR_THUMB_INSET_RIGHT: f32 = 2.0;
 const SCROLLBAR_TRACK_INSET_TOP: f32 = 3.0;
 const SCROLLBAR_TRACK_INSET_BOTTOM: f32 = 6.0;
 const SCROLLBAR_THUMB_MIN_LENGTH: f32 = 18.0;
+/// The header's `after:h-[0.5px] after:bg-text/10` rule, drawn once rows are
+/// under the header: it sits at the bottom of the header's grown 4 px
+/// padding, 3.5 px below the list's top edge.
+const SCROLLED_HEADER_RULE_TOP: f32 = 3.5;
+const SCROLLED_HEADER_RULE_ALPHA: f32 = 0.1;
 /// Gap between the rows of one list (navigation block, project tasks, recents).
 const ROW_GAP: f32 = 1.0;
 /// Gap between the sidebar's scroll children: the navigation block, the
@@ -815,7 +828,6 @@ pub struct SidebarView {
     /// Whether the last render reserved the classic-scrollbar gutter, so the
     /// frame that first discovers (or loses) overflow can re-render once.
     scrollbar_gutter: Rc<std::cell::Cell<bool>>,
-    activity_scroll: ScrollHandle,
     scroll_to_bottom: bool,
     selected_project_id: Option<ProjectId>,
     selected_thread_id: Option<ThreadId>,
@@ -867,7 +879,25 @@ pub struct SidebarView {
     pinned_menu_open: bool,
     profile_menu_open: bool,
     account: AccountView,
-    activity_open: bool,
+    /// The activity view the bell toggles, with the Priority snapshot it took
+    /// when it opened.
+    activity: Option<ActivitySession>,
+    activity_menu_open: bool,
+    activity_options_anchor: Rc<Cell<Option<Bounds<Pixels>>>>,
+    /// The page the loader last asked for, so it asks once per page.
+    activity_loader_requested: Rc<Cell<Option<usize>>>,
+    /// Tooltip on screen, the control the pointer rests on, and every tooltip
+    /// trigger's window bounds from the last frame.
+    activity_tooltip: Option<ActivityTooltipTarget>,
+    activity_tooltip_hovered: Option<ActivityTooltipTarget>,
+    activity_tooltip_anchors: Rc<RefCell<HashMap<ActivityTooltipTarget, Bounds<Pixels>>>>,
+    activity_archive: Option<ActivityArchiveConfirmation>,
+    /// The chat the main area shows, as the application reports it.
+    viewed_thread: Option<ThreadId>,
+    pending_activity_capture: Option<ActivityCaptureRequest>,
+    activity_capture_applied: bool,
+    activity_capture_saw_load: bool,
+    activity_capture_scroll: Cell<Option<f32>>,
     archived_open: bool,
     /// True while the main content area shows the Pull Requests page.
     pull_requests_open: bool,
@@ -900,6 +930,8 @@ impl SidebarView {
             while let Ok(snapshot) = receiver.recv().await {
                 let _ = this.update(cx, |this, cx| {
                     this.snapshot = snapshot;
+                    this.refresh_activity();
+                    this.apply_pending_activity_capture(cx);
                     if let Some(project) = this.pending_project_hover_card.clone() {
                         this.pending_project_hover_card = None;
                         this.open_project_hover_card_for_capture(&project, cx);
@@ -924,7 +956,6 @@ impl SidebarView {
             snapshot,
             scroll: ScrollHandle::new(),
             scrollbar_gutter: Rc::new(std::cell::Cell::new(false)),
-            activity_scroll: ScrollHandle::new(),
             scroll_to_bottom,
             selected_project_id: None,
             selected_thread_id: None,
@@ -960,7 +991,19 @@ impl SidebarView {
             pinned_menu_open: false,
             profile_menu_open: false,
             account: AccountView::default(),
-            activity_open: false,
+            activity: None,
+            activity_menu_open: false,
+            activity_options_anchor: Rc::new(Cell::new(None)),
+            activity_loader_requested: Rc::new(Cell::new(None)),
+            activity_tooltip: None,
+            activity_tooltip_hovered: None,
+            activity_tooltip_anchors: Rc::new(RefCell::new(HashMap::new())),
+            activity_archive: None,
+            viewed_thread: None,
+            pending_activity_capture: None,
+            activity_capture_applied: false,
+            activity_capture_saw_load: false,
+            activity_capture_scroll: Cell::new(None),
             archived_open: false,
             pull_requests_open: false,
             local_error: None,
@@ -1021,32 +1064,6 @@ impl SidebarView {
         true
     }
 
-    pub fn set_activity_open(&mut self, open: bool, cx: &mut Context<Self>) {
-        self.close_transient_menus(cx);
-        self.activity_open = open;
-        self.archived_open = false;
-        cx.notify();
-    }
-
-    pub fn set_activity_scroll_for_capture(&mut self, offset: f32, cx: &mut Context<Self>) {
-        self.activity_scroll.set_offset(point(px(0.0), px(-offset)));
-        cx.notify();
-    }
-
-    pub fn set_activity_hovered_thread_for_capture(
-        &mut self,
-        thread_id: ThreadId,
-        cx: &mut Context<Self>,
-    ) {
-        self.hovered_thread_id = self
-            .snapshot
-            .recent_threads
-            .iter()
-            .any(|thread| thread.thread_id == thread_id)
-            .then_some(thread_id);
-        cx.notify();
-    }
-
     pub fn open_projects_section_menu_for_capture(&mut self, cx: &mut Context<Self>) {
         self.projects_section_menu_open = true;
         cx.notify();
@@ -1058,6 +1075,7 @@ impl SidebarView {
         self.projects_section_menu_open = false;
         self.pinned_menu_open = false;
         self.profile_menu_open = false;
+        self.activity_menu_open = false;
         self.delete_confirmation = None;
         cx.notify();
     }
@@ -1135,7 +1153,7 @@ impl SidebarView {
             self.pending_thread_hover_card = Some(thread.to_owned());
             return;
         };
-        if self.project_for_thread(&thread_id).is_none() {
+        if self.activity.is_none() && self.project_for_thread(&thread_id).is_none() {
             return;
         }
         self.thread_hover_card = Some(thread_id);
@@ -1194,8 +1212,10 @@ impl SidebarView {
     }
 
     fn schedule_thread_hover_card(&mut self, thread_id: ThreadId, cx: &mut Context<Self>) {
+        // The activity view prints the card for projectless chats too (the
+        // reference's `isProjectlessHoverCard`), with the title row alone.
         if self.thread_hover_card.as_deref() == Some(thread_id.as_str())
-            || self.project_for_thread(thread_id.as_str()).is_none()
+            || (self.activity.is_none() && self.project_for_thread(thread_id.as_str()).is_none())
         {
             return;
         }
@@ -1315,7 +1335,6 @@ impl SidebarView {
     /// drives the matching conversation load directly from `ChatApp`.
     pub fn select_thread_for_capture(&mut self, thread_id: ThreadId, cx: &mut Context<Self>) {
         self.selected_thread_id = Some(thread_id);
-        self.activity_open = false;
         self.archived_open = false;
         self.project_menu_id = None;
         self.thread_menu_id = None;
@@ -1338,7 +1357,6 @@ impl SidebarView {
 
     fn select_thread(&mut self, thread_id: ThreadId, cx: &mut Context<Self>) {
         self.selected_thread_id = Some(thread_id.clone());
-        self.activity_open = false;
         self.archived_open = false;
         self.project_menu_id = None;
         self.thread_menu_id = None;
@@ -1832,6 +1850,14 @@ impl SidebarView {
         let pending = self.snapshot.is_pending_thread(&thread_id);
         let active = matches!(thread.activity, ThreadActivity::Active { .. });
         let status_error = matches!(thread.activity, ThreadActivity::SystemError);
+        // An unread turn prints the reference's 8 px `bg-info-solid` dot where
+        // a running chat prints its spinner.
+        let unread = !active
+            && self
+                .snapshot
+                .preferences
+                .unread_thread_ids
+                .contains(thread_id.as_str());
         let can_pin = self
             .snapshot
             .capabilities
@@ -1909,11 +1935,13 @@ impl SidebarView {
             .ml(px(3.0))
             .flex_none()
             .when(hovered, |rail| rail.w(px(48.0)).min_w(px(48.0)))
-            .when(active && !hovered, |rail| rail.w(px(25.0)).min_w(px(25.0)))
+            .when((active || unread) && !hovered, |rail| {
+                rail.w(px(25.0)).min_w(px(25.0))
+            })
             .when(status_error && !hovered && !active, |rail| {
                 rail.w(px(16.0)).min_w(px(16.0))
             })
-            .when(!hovered && !active && !status_error, |rail| {
+            .when(!hovered && !active && !unread && !status_error, |rail| {
                 rail.w(px(0.0)).min_w(px(0.0))
             });
         // Task rows rename through the modal panel the reference shows on
@@ -2004,7 +2032,20 @@ impl SidebarView {
                         .child(spinner),
                 )
             })
-            .when(status_error && !hovered, |row| {
+            .when(unread && !hovered, |row| {
+                row.child(
+                    div()
+                        .absolute()
+                        .right(px(5.0))
+                        .top(px(5.0))
+                        .size(px(20.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(div().size(px(8.0)).rounded_full().bg(theme.activity_badge)),
+                )
+            })
+            .when(status_error && !hovered && !unread, |row| {
                 row.child(
                     div()
                         .absolute()
@@ -2532,7 +2573,7 @@ impl SidebarView {
     fn thread_hover_card(
         &self,
         thread: &ThreadSummary,
-        project: &Project,
+        project: Option<&Project>,
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
@@ -2640,41 +2681,43 @@ impl SidebarView {
                     .pb(px(2.0))
                     .child(title_row),
             )
-            .child(
-                div()
-                    .w_full()
-                    .min_w(px(0.0))
-                    .h(px(THREAD_HOVER_ROW_HEIGHT))
-                    .flex()
-                    .items_center()
-                    .gap(px(THREAD_HOVER_PROJECT_GAP))
-                    .child(
-                        div()
-                            .flex_none()
-                            .w(px(THREAD_HOVER_PROJECT_ICON))
-                            .h(px(THREAD_HOVER_ROW_HEIGHT))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(
-                                icon("thread-hover-project", theme.text_tertiary.into())
-                                    .size(px(THREAD_HOVER_PROJECT_ICON)),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .min_w(px(0.0))
-                            .flex_1()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_overflow(gpui::TextOverflow::Truncate("…".into()))
-                            .font(hover_card_font(crate::theme::UI_BODY_FONT_WEIGHT))
-                            .text_size(px(13.0))
-                            .line_height(px(THREAD_HOVER_ROW_HEIGHT))
-                            .text_color(theme.text)
-                            .child(project.name.clone()),
-                    ),
-            )
+            .when_some(project, |card, project| {
+                card.child(
+                    div()
+                        .w_full()
+                        .min_w(px(0.0))
+                        .h(px(THREAD_HOVER_ROW_HEIGHT))
+                        .flex()
+                        .items_center()
+                        .gap(px(THREAD_HOVER_PROJECT_GAP))
+                        .child(
+                            div()
+                                .flex_none()
+                                .w(px(THREAD_HOVER_PROJECT_ICON))
+                                .h(px(THREAD_HOVER_ROW_HEIGHT))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(
+                                    icon("thread-hover-project", theme.text_tertiary.into())
+                                        .size(px(THREAD_HOVER_PROJECT_ICON)),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .min_w(px(0.0))
+                                .flex_1()
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .text_overflow(gpui::TextOverflow::Truncate("…".into()))
+                                .font(hover_card_font(crate::theme::UI_BODY_FONT_WEIGHT))
+                                .text_size(px(13.0))
+                                .line_height(px(THREAD_HOVER_ROW_HEIGHT))
+                                .text_color(theme.text)
+                                .child(project.name.clone()),
+                        ),
+                )
+            })
     }
 
     /// A read-only hover card row: icon column plus a single text line.
@@ -2969,83 +3012,6 @@ impl SidebarView {
         section.child(list)
     }
 
-    fn activity_content(
-        &self,
-        theme: Theme,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> gpui::Stateful<Div> {
-        let mut seen = HashSet::new();
-        let active = self
-            .snapshot
-            .pinned_threads
-            .iter()
-            .chain(&self.snapshot.recent_threads)
-            .filter(|thread| {
-                seen.insert(thread.thread_id.as_str())
-                    && matches!(
-                        thread.activity,
-                        ThreadActivity::Active { .. } | ThreadActivity::SystemError
-                    )
-            })
-            .collect::<Vec<_>>();
-        let mut content = div()
-            .id("activity-content")
-            .flex_1()
-            .overflow_y_scroll()
-            .track_scroll(&self.activity_scroll)
-            .px(px(8.0))
-            .pt(px(8.0))
-            .child(
-                div()
-                    .h(px(SECTION_HEADER_HEIGHT))
-                    .px(px(8.0))
-                    .flex()
-                    .items_center()
-                    .text_size(px(14.0))
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .text_color(theme.sidebar_text_muted)
-                    .child(crate::i18n::text("活动")),
-            );
-        if let Some(error) = self.snapshot.error.clone() {
-            return content.child(self.retryable_error_row(
-                "activity-error",
-                error,
-                None,
-                theme,
-                cx,
-            ));
-        }
-        if (self.snapshot.loading.recent || self.snapshot.loading.pinned) && active.is_empty() {
-            return content.child(self.status_row(
-                "activity-loading",
-                crate::i18n::text("正在加载…"),
-                theme,
-            ));
-        }
-        if active.is_empty() {
-            return content.child(self.status_row(
-                "activity-empty",
-                crate::i18n::text("暂无进行中的聊天"),
-                theme,
-            ));
-        }
-        for thread in active {
-            content = content.child(self.thread_row(
-                thread,
-                ThreadRowPlacement {
-                    indented: false,
-                    pinned: false,
-                    archived: false,
-                },
-                theme,
-                window,
-                cx,
-            ));
-        }
-        content
-    }
-
     fn archived_content(
         &self,
         theme: Theme,
@@ -3133,16 +3099,42 @@ impl SidebarView {
         let rendered_gutter = self.scrollbar_gutter.clone();
         let scroll = self.scroll.clone();
         let classic_scrollers = !cx.should_auto_hide_scrollbars();
+        // Once rows are under the header the reference draws the header's
+        // 0.5 px `bg-text/10` rule 4 px into the list and masks the list's
+        // first 4 px (`--sidebar-scroll-header-spacing`).
+        let scrolled = f32::from(self.scroll.offset().y) < -0.5;
+        let scale = window.scale_factor().max(1.0);
+        let hairline_top = (SCROLLED_HEADER_RULE_TOP * scale).round() / scale;
+        let rule = gpui::Rgba {
+            a: theme.sidebar_text.a * SCROLLED_HEADER_RULE_ALPHA,
+            ..theme.sidebar_text
+        };
         div()
             .relative()
             .flex_1()
             .min_h(px(0.0))
             .flex()
             .flex_col()
-            .child(
+            .child(sticky::top_clip(
                 self.workspace_content(theme, window, cx)
                     .when(gutter, |content| content.pr(px(SCROLLBAR_GUTTER))),
-            )
+                if scrolled {
+                    sticky::SCROLLED_HEADER_CLIP
+                } else {
+                    0.0
+                },
+            ))
+            .when(scrolled, |area| {
+                area.child(
+                    div()
+                        .absolute()
+                        .top(px(hairline_top))
+                        .left_0()
+                        .right_0()
+                        .h(px(1.0 / scale))
+                        .bg(rule),
+                )
+            })
             .when(gutter, |area| area.child(self.scrollbar_thumb(theme)))
             .child(
                 // Overflow is only known after layout. When this frame's
@@ -3256,11 +3248,17 @@ impl SidebarView {
                         theme,
                     )),
             )
-            .when(!self.snapshot.pinned_threads.is_empty(), |content| {
-                content.child(self.pinned_section(theme, window, cx))
+            .when(self.activity.is_some(), |content| {
+                content.child(self.activity_list(theme, window, cx))
             })
-            .child(self.projects_section(theme, window, cx))
-            .child(self.recent_section(theme, window, cx))
+            .when(self.activity.is_none(), |content| {
+                content
+                    .when(!self.snapshot.pinned_threads.is_empty(), |content| {
+                        content.child(self.pinned_section(theme, window, cx))
+                    })
+                    .child(self.projects_section(theme, window, cx))
+                    .child(self.recent_section(theme, window, cx))
+            })
     }
 
     fn menu_shell(
@@ -3659,7 +3657,8 @@ impl SidebarView {
                 .when(can_list_threads, |row| {
                     row.on_click(cx.listener(|this, _, _, cx| {
                         this.archived_open = true;
-                        this.activity_open = false;
+                        this.activity = None;
+                        this.activity_menu_open = false;
                         this.projects_section_menu_open = false;
                         cx.notify();
                     }))
@@ -3672,10 +3671,6 @@ impl SidebarView {
             .snapshot
             .capabilities
             .supports(AgentCapability::ThreadSearch);
-        let can_list_threads = self
-            .snapshot
-            .capabilities
-            .supports(AgentCapability::ThreadList);
         let new_project = self
             .selected_project_id
             .as_deref()
@@ -3713,17 +3708,7 @@ impl SidebarView {
                     cx.notify();
                 }))
             });
-        let activity = Self::nav_icon_button("sidebar-activity", "activity", theme)
-            .when(!can_list_threads, |button| {
-                button.opacity(0.4).cursor_default()
-            })
-            .when(can_list_threads, |button| {
-                button.on_click(cx.listener(|this, _, _, cx| {
-                    this.activity_open = true;
-                    this.archived_open = false;
-                    cx.notify();
-                }))
-            });
+        let activity = self.activity_bell(theme, cx);
         div()
             .flex_none()
             .px(px(ROW_HORIZONTAL_PADDING))
@@ -3785,7 +3770,6 @@ impl SidebarView {
             .child(
                 Self::nav_icon_button("sidebar-back", "back", theme).on_click(cx.listener(
                     |this, _, _, cx| {
-                        this.activity_open = false;
                         this.archived_open = false;
                         cx.notify();
                     },
@@ -4141,11 +4125,7 @@ impl Render for SidebarView {
             // this content view would compound its alpha and make the settled
             // sidebar appear opaque in both light and dark themes.
             .text_color(theme.sidebar_text);
-        if self.activity_open {
-            sidebar = sidebar
-                .child(self.subpage_header(crate::i18n::text("活动"), theme, cx))
-                .child(self.activity_content(theme, window, cx));
-        } else if self.archived_open {
+        if self.archived_open {
             sidebar = sidebar
                 .child(self.subpage_header(crate::i18n::text("已归档"), theme, cx))
                 .child(self.archived_content(theme, window, cx));
@@ -4204,6 +4184,12 @@ impl Render for SidebarView {
                     .child(self.account_menu(theme, window.scale_factor(), cx)),
             ));
         }
+        if let Some(menu) = self.activity_options_menu(theme, window.scale_factor(), cx) {
+            sidebar = sidebar.child(deferred(menu));
+        }
+        if let Some(tooltip) = self.activity_tooltip_overlay(theme, window) {
+            sidebar = sidebar.child(deferred(tooltip).with_priority(1));
+        }
         let hover_card_anchor = self.project_hover_card.as_deref().and_then(|project_id| {
             self.project_row_bounds
                 .borrow()
@@ -4240,7 +4226,8 @@ impl Render for SidebarView {
         });
         if let Some((thread_id, bounds)) = thread_card_anchor
             && let Some(thread) = self.snapshot.thread(&thread_id).cloned()
-            && let Some(project) = self.project_for_thread(&thread_id)
+            && let project = self.project_for_thread(&thread_id)
+            && (project.is_some() || self.activity.is_some())
         {
             // Anchored to the row, not the pointer, and deferred for the same
             // reason as the project card: the reference tooltip overhangs the
@@ -4252,7 +4239,7 @@ impl Render for SidebarView {
                     .absolute()
                     .left(px(left))
                     .top(px(top))
-                    .child(self.thread_hover_card(&thread, &project, theme, cx)),
+                    .child(self.thread_hover_card(&thread, project.as_ref(), theme, cx)),
             ));
         }
         sidebar

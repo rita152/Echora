@@ -307,6 +307,38 @@ fn terminal_shortcut_restores_focus_and_preserves_the_session() {
 }
 
 #[test]
+fn option_command_u_toggles_the_sidebar_activity_view() {
+    let mut app = TestApp::new();
+    app.update(|cx| {
+        cx.bind_keys([gpui::KeyBinding::new(
+            "cmd-alt-u",
+            super::ToggleActivityView,
+            None,
+        )]);
+    });
+    let mut window = app.open_window(|_, cx| ChatApp::new(ThemeMode::Dark, false, cx));
+    window.update(|chat, window, cx| {
+        chat.complete_startup_for_capture(cx);
+        chat.conversation_hosts[&chat.active_conversation]
+            .composer
+            .read(cx)
+            .prompt_focus_handle(cx)
+            .focus(window, cx);
+    });
+    window.draw();
+    let open = |window: &gpui::TestAppWindow<ChatApp>| {
+        window.read(|chat, cx| chat.sidebar.read(cx).activity_is_open())
+    };
+    assert!(!open(&window));
+    window.simulate_keystroke("cmd-alt-u");
+    window.draw();
+    assert!(open(&window));
+    window.simulate_keystroke("cmd-alt-u");
+    window.draw();
+    assert!(!open(&window));
+}
+
+#[test]
 fn right_panel_stays_open_until_its_titlebar_toggle_is_clicked_again() {
     let mut app = TestApp::new();
     let mut window = app.open_window_with_options(

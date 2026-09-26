@@ -35,7 +35,9 @@ gpui::actions!(
         OpenSideChat,
         OpenSettingsPage,
         NextSettingsControl,
-        PreviousSettingsControl
+        PreviousSettingsControl,
+        /// ⌥⌘U: open or close the sidebar activity view.
+        ToggleActivityView
     ]
 );
 

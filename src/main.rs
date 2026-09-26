@@ -188,6 +188,53 @@ fn schedule_screenshot(window: &mut gpui::Window, path: String, frames: usize) {
     });
 }
 
+/// Frames the activity view must stay ready before it is saved: anchored
+/// overlays (the options menu, tooltips) land one frame after their trigger.
+#[cfg(feature = "screenshot")]
+const ACTIVITY_STABLE_FRAMES: usize = 6;
+
+/// The activity view waits for the workspace's real chats (and the capture
+/// state applied to them) before capturing.
+#[cfg(feature = "screenshot")]
+fn schedule_activity_screenshot(
+    window: &mut gpui::Window,
+    app: gpui::Entity<ChatApp>,
+    path: String,
+    deadline: Instant,
+    stable: usize,
+) {
+    window.on_next_frame(move |window, cx| {
+        let ready = app.read(cx).activity_capture_ready(cx);
+        if ready && stable == 0 {
+            match save_screenshot(window, &path) {
+                Ok(()) => println!("{path}"),
+                Err(error) => {
+                    eprintln!("failed to save screenshot: {error:#}");
+                    std::process::exit(1);
+                }
+            }
+            cx.quit();
+            return;
+        }
+        if Instant::now() >= deadline {
+            eprintln!("activity view did not load before the capture deadline");
+            std::process::exit(1);
+        }
+        window.refresh();
+        schedule_activity_screenshot(
+            window,
+            app.clone(),
+            path.clone(),
+            deadline,
+            if ready {
+                stable - 1
+            } else {
+                ACTIVITY_STABLE_FRAMES
+            },
+        );
+    });
+}
+
 /// Account surfaces wait for the real account read before capturing, so the
 /// image shows the backend's account and quota rather than a pending state.
 #[cfg(feature = "screenshot")]
@@ -1094,13 +1141,29 @@ fn main() {
         .find_map(|arg| arg.strip_prefix("--thread-rename=").map(ToOwned::to_owned));
     let project_create_open = args.iter().any(|arg| arg == "--project-create-open");
     let project_create_remote = args.iter().any(|arg| arg == "--project-create-remote");
-    let activity_open = args.iter().any(|arg| arg == "--activity-open");
+    // `--activity-open` opens the sidebar activity view; the other activity
+    // flags imply it and put it in one deterministic state for the capture.
     let activity_scroll = args
         .iter()
         .find_map(|arg| arg.strip_prefix("--activity-scroll=")?.parse::<f32>().ok());
-    let activity_hover_recent = args.iter().find_map(|arg| {
-        arg.strip_prefix("--activity-hover-recent=")
+    let activity_hover = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--activity-hover=").map(ToOwned::to_owned));
+    let activity_options_open = args.iter().any(|arg| arg == "--activity-options-open");
+    let activity_tooltip = args.iter().find_map(|arg| {
+        arg.strip_prefix("--activity-tooltip=")
             .map(ToOwned::to_owned)
+    });
+    let activity_capture = (args.iter().any(|arg| arg == "--activity-open")
+        || activity_scroll.is_some()
+        || activity_hover.is_some()
+        || activity_options_open
+        || activity_tooltip.is_some())
+    .then_some(components::sidebar::ActivityCaptureRequest {
+        scroll: activity_scroll,
+        hover: activity_hover,
+        options_open: activity_options_open,
+        tooltip: activity_tooltip,
     });
     let model_picker_open = args.iter().any(|arg| arg == "--model-picker-open");
     let model_picker_submenu = args.iter().find_map(|arg| {
@@ -1245,6 +1308,7 @@ fn main() {
                 gpui::KeyBinding::new("ctrl-shift-g", app::ToggleReview, None),
                 gpui::KeyBinding::new("cmd-alt-s", app::OpenSideChat, None),
                 gpui::KeyBinding::new("cmd-,", app::OpenSettingsPage, None),
+                gpui::KeyBinding::new("cmd-alt-u", app::ToggleActivityView, None),
                 gpui::KeyBinding::new("tab", app::NextSettingsControl, Some("Settings")),
                 gpui::KeyBinding::new("shift-tab", app::PreviousSettingsControl, Some("Settings")),
             ]);
@@ -1412,16 +1476,8 @@ fn main() {
                         if project_create_remote {
                             app.open_project_creation_remote_for_capture(cx);
                         }
-                        if activity_open {
-                            app.open_activity(cx);
-                        }
-                        if let Some(offset) = activity_scroll {
-                            app.open_activity(cx);
-                            app.set_activity_scroll_for_capture(offset, cx);
-                        }
-                        if let Some(thread_id) = activity_hover_recent {
-                            app.open_activity(cx);
-                            app.set_activity_hovered_thread_for_capture(thread_id, cx);
+                        if let Some(request) = activity_capture.clone() {
+                            app.capture_activity(request, cx);
                         }
                         if model_picker_open {
                             app.open_model_picker(cx);
@@ -1640,6 +1696,14 @@ fn main() {
                                 path,
                                 Instant::now() + Duration::from_secs(60),
                                 3,
+                            );
+                        } else if activity_capture.is_some() {
+                            schedule_activity_screenshot(
+                                window,
+                                app.clone(),
+                                path,
+                                Instant::now() + Duration::from_secs(60),
+                                ACTIVITY_STABLE_FRAMES,
                             );
                         } else if profile_menu_open || account_ready_capture {
                             schedule_account_screenshot(

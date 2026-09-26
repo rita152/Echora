@@ -10,7 +10,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::agent::{ProjectId, ThreadSectionId};
+use crate::agent::{ProjectId, ThreadId, ThreadSectionId};
 
 const PREFERENCES_VERSION: u32 = 1;
 
@@ -34,6 +34,40 @@ pub struct UiPreferences {
     pub review: ReviewPreferences,
     #[serde(default)]
     pub skip_side_chat_close_confirmation: bool,
+    #[serde(default)]
+    pub activity: ActivityPreferences,
+    /// Chats with a turn the user has not opened since it finished or asked
+    /// for a response. The app-server has no read state, so the app keeps it,
+    /// as the reference keeps its own `unread-thread-ids-by-host`.
+    #[serde(default)]
+    pub unread_thread_ids: BTreeSet<ThreadId>,
+}
+
+/// The activity view's `Show` options. Defaults match the reference: the
+/// Priority section on, the Pinned section and scheduled task runs off.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ActivityPreferences {
+    pub show_priority: bool,
+    pub show_pinned: bool,
+    pub show_scheduled: bool,
+}
+
+impl Default for ActivityPreferences {
+    fn default() -> Self {
+        Self {
+            show_priority: true,
+            show_pinned: false,
+            show_scheduled: false,
+        }
+    }
+}
+
+impl ActivityPreferences {
+    /// `Restore defaults` is offered only once a choice differs from them.
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

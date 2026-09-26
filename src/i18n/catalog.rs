@@ -2018,6 +2018,30 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "；认证已失效，请重新连接该服务" => {
             "; authentication expired, please reconnect this service"
         }
+        "查看活动" => "View activity",
+        "查看活动，需要关注" => "View activity, needs attention",
+        "关闭活动视图" => "Turn off activity view",
+        "优先级" => "Priority",
+        "暂无需要关注的任务" => "Nothing needs attention",
+        "今天" => "Today",
+        "昨天" => "Yesterday",
+        "活动视图选项" => "Activity view options",
+        "显示" => "Show",
+        "优先事项部分" => "Priority section",
+        "定时任务" => "Scheduled",
+        "恢复默认设置" => "Restore defaults",
+        "清除已读聊天" => "Clear read chats",
+        "置顶聊天" => "Pin chat",
+        "取消置顶聊天" => "Unpin chat",
+        "归档会停止所有正在进行的工作。你可以稍后在设置中恢复该聊天。" => {
+            "Archiving will stop any ongoing work. You can restore the chat later in settings."
+        }
+        "归档会停止所有正在进行的工作。你可以稍后在设置中恢复这些聊天。" => {
+            "Archiving will stop any ongoing work. You can restore the chats later in settings."
+        }
+        "最近的对话串不会被归档" => "Recent threads won’t be archived",
+        "正在归档…" => "Archiving…",
+        "停止并归档" => "Stop and archive",
         _ => return None,
     })
 }

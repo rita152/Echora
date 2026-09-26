@@ -255,10 +255,6 @@ impl ChatApp {
         self.sidebar
             .update(cx, |sidebar, cx| sidebar.set_profile_menu_open(true, cx));
     }
-    pub fn open_activity(&mut self, cx: &mut Context<Self>) {
-        self.sidebar
-            .update(cx, |sidebar, cx| sidebar.set_activity_open(true, cx));
-    }
     pub fn open_projects_section_menu(&mut self, cx: &mut Context<Self>) {
         self.sidebar.update(cx, |sidebar, cx| {
             sidebar.open_projects_section_menu_for_capture(cx)
@@ -305,19 +301,19 @@ impl ChatApp {
         self.sidebar
             .update(cx, |sidebar, cx| sidebar.submit_thread_rename(cx));
     }
-    pub fn set_activity_scroll_for_capture(&mut self, offset: f32, cx: &mut Context<Self>) {
-        self.sidebar.update(cx, |sidebar, cx| {
-            sidebar.set_activity_scroll_for_capture(offset, cx)
-        });
-    }
-    pub fn set_activity_hovered_thread_for_capture(
+    /// Opens the activity view in a capture state once the workspace loads.
+    pub fn capture_activity(
         &mut self,
-        thread_id: ThreadId,
+        request: crate::components::sidebar::ActivityCaptureRequest,
         cx: &mut Context<Self>,
     ) {
-        self.sidebar.update(cx, |sidebar, cx| {
-            sidebar.set_activity_hovered_thread_for_capture(thread_id, cx)
-        });
+        self.complete_startup_for_capture(cx);
+        self.sidebar
+            .update(cx, |sidebar, cx| sidebar.capture_activity(request, cx));
+    }
+    #[cfg(feature = "screenshot")]
+    pub fn activity_capture_ready(&self, cx: &gpui::App) -> bool {
+        self.sidebar.read(cx).activity_capture_ready() && self.account_capture_ready()
     }
     pub fn open_model_picker(&mut self, cx: &mut Context<Self>) {
         self.home.update(cx, |home, cx| home.open_model_picker(cx));

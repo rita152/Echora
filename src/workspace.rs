@@ -1,3 +1,4 @@
+pub mod activity;
 mod loaders;
 mod preferences;
 
@@ -22,8 +23,8 @@ use loaders::{
     load_all_projects, load_all_search_results, load_all_sections, load_all_threads,
     load_all_turns, receive,
 };
+pub use preferences::{ActivityPreferences, ReviewPreferences, UiPreferences, preferred_language};
 use preferences::{PreferenceStore, default_preferences_path};
-pub use preferences::{ReviewPreferences, UiPreferences, preferred_language};
 
 /// One row of the chat search dialog: the thread plus the match snippet the
 /// backend returned for the current query. The reference collapses the snippet
@@ -191,6 +192,8 @@ pub struct WorkspaceStore {
     preference_save_lock: Mutex<()>,
     thread_notification_overlays: Mutex<HashMap<ThreadId, ThreadNotificationOverlay>>,
     deleted_project_ids: Mutex<HashSet<ProjectId>>,
+    /// The chat the main area shows. A turn that finishes there is read.
+    viewed_thread: Mutex<Option<ThreadId>>,
 }
 
 impl WorkspaceStore {
@@ -223,6 +226,7 @@ impl WorkspaceStore {
             preference_save_lock: Mutex::new(()),
             thread_notification_overlays: Mutex::new(HashMap::new()),
             deleted_project_ids: Mutex::new(HashSet::new()),
+            viewed_thread: Mutex::new(None),
         });
         Self::listen_for_backend_events(&store);
         store
@@ -354,6 +358,7 @@ impl WorkspaceStore {
             AgentConnectionEvent::ThreadDeleted { thread_id } => {
                 self.update_thread_overlay(&thread_id, |overlay| overlay.deleted = true);
                 self.update(|snapshot| remove_thread(snapshot, &thread_id));
+                self.mark_threads_read(std::slice::from_ref(&thread_id));
             }
             AgentConnectionEvent::ThreadNameUpdated { thread_id, name } => {
                 self.update_thread_overlay(&thread_id, |overlay| overlay.name = Some(name.clone()));
@@ -397,6 +402,18 @@ impl WorkspaceStore {
             }
             AgentConnectionEvent::ThreadStatusChanged(status) => {
                 let activity = activity_from_connection_status(&status.state);
+                let previous = self
+                    .thread_overlays()
+                    .get(&status.thread_id)
+                    .and_then(|overlay| overlay.activity.clone())
+                    .or_else(|| {
+                        self.snapshot()
+                            .thread(&status.thread_id)
+                            .map(|thread| thread.activity.clone())
+                    });
+                if turn_left_unread(previous.as_ref(), &activity) {
+                    self.mark_unread_unless_viewed(&status.thread_id);
+                }
                 self.update_thread_overlay(&status.thread_id, |overlay| {
                     overlay.activity = Some(activity.clone())
                 });
@@ -909,32 +926,62 @@ impl WorkspaceStore {
     }
 
     pub fn archive_thread(self: &Arc<Self>, thread_id: ThreadId) {
+        let store = Arc::clone(self);
+        std::thread::spawn(move || {
+            if store.archive_blocking(thread_id) {
+                store.refresh_archived();
+            }
+        });
+    }
+
+    /// The activity view's `Archive chats`: archives each chat in turn and
+    /// answers with how many succeeded and how many failed.
+    pub fn archive_threads(
+        self: &Arc<Self>,
+        thread_ids: Vec<ThreadId>,
+    ) -> Receiver<(usize, usize)> {
+        let (sender, receiver) = async_channel::bounded(1);
+        let store = Arc::clone(self);
+        std::thread::spawn(move || {
+            let total = thread_ids.len();
+            let succeeded = thread_ids
+                .into_iter()
+                .filter(|thread_id| store.archive_blocking(thread_id.clone()))
+                .count();
+            if succeeded > 0 {
+                store.refresh_archived();
+            }
+            let _ = sender.send_blocking((succeeded, total - succeeded));
+        });
+        receiver
+    }
+
+    fn archive_blocking(&self, thread_id: ThreadId) -> bool {
         let operation = WorkspaceOperation::ArchiveThread(thread_id.clone());
         self.begin(operation.clone());
         let receiver = self.backend.archive_thread(thread_id.clone());
-        let store = Arc::clone(self);
-        std::thread::spawn(
-            move || match receive(receiver, crate::i18n::text("归档会话")) {
-                Ok(()) => {
-                    store
-                        .update_thread_overlay(&thread_id, |overlay| overlay.archived = Some(true));
-                    store.update(|snapshot| {
-                        snapshot
-                            .recent_threads
-                            .retain(|thread| thread.thread_id != thread_id);
-                        snapshot
-                            .pinned_threads
-                            .retain(|thread| thread.thread_id != thread_id);
-                    });
-                    store.finish(&operation, None);
-                    store.refresh_archived();
-                }
-                Err(error) => store.finish(
+        match receive(receiver, crate::i18n::text("归档会话")) {
+            Ok(()) => {
+                self.update_thread_overlay(&thread_id, |overlay| overlay.archived = Some(true));
+                self.update(|snapshot| {
+                    snapshot
+                        .recent_threads
+                        .retain(|thread| thread.thread_id != thread_id);
+                    snapshot
+                        .pinned_threads
+                        .retain(|thread| thread.thread_id != thread_id);
+                });
+                self.finish(&operation, None);
+                true
+            }
+            Err(error) => {
+                self.finish(
                     &operation,
                     Some(error.user_message(crate::i18n::text("归档聊天"))),
-                ),
-            },
-        );
+                );
+                false
+            }
+        }
     }
 
     pub fn unarchive_thread(self: &Arc<Self>, thread_id: ThreadId) {
@@ -1123,6 +1170,68 @@ impl WorkspaceStore {
             snapshot.pending.remove(operation);
             snapshot.error = error;
         });
+    }
+
+    /// The main area now shows `thread_id` (or no chat). Showing a chat reads
+    /// it, like opening it in the reference.
+    pub fn set_viewed_thread(&self, thread_id: Option<ThreadId>) {
+        if let Ok(mut viewed) = self.viewed_thread.lock() {
+            if *viewed == thread_id {
+                return;
+            }
+            viewed.clone_from(&thread_id);
+        }
+        if let Some(thread_id) = thread_id {
+            self.mark_threads_read(&[thread_id]);
+        }
+    }
+
+    /// A finished turn or a new request leaves a chat unread unless it is the
+    /// chat on screen.
+    fn mark_unread_unless_viewed(&self, thread_id: &str) {
+        let viewed = self
+            .viewed_thread
+            .lock()
+            .map(|viewed| viewed.as_deref() == Some(thread_id))
+            .unwrap_or(false);
+        if viewed
+            || self
+                .snapshot()
+                .preferences
+                .unread_thread_ids
+                .contains(thread_id)
+        {
+            return;
+        }
+        self.update(|snapshot| {
+            snapshot
+                .preferences
+                .unread_thread_ids
+                .insert(thread_id.to_owned());
+        });
+        self.save_preferences();
+    }
+
+    /// `Mark all as read` in the activity view, and chats that were opened.
+    pub fn mark_threads_read(&self, thread_ids: &[ThreadId]) {
+        let unread = &self.snapshot().preferences.unread_thread_ids;
+        if !thread_ids
+            .iter()
+            .any(|thread_id| unread.contains(thread_id))
+        {
+            return;
+        }
+        self.update(|snapshot| {
+            for thread_id in thread_ids {
+                snapshot.preferences.unread_thread_ids.remove(thread_id);
+            }
+        });
+        self.save_preferences();
+    }
+
+    pub fn set_activity_preferences(&self, activity: ActivityPreferences) {
+        self.update(|snapshot| snapshot.preferences.activity = activity);
+        self.save_preferences();
     }
 
     pub fn set_project_collapsed(&self, project_id: ProjectId, collapsed: bool) {
@@ -1326,6 +1435,15 @@ fn activity_from_connection_status(status: &AgentThreadStatusState) -> ThreadAct
             flags: active_flags.clone(),
         },
     }
+}
+
+/// The reference marks a chat unread when a turn completes and when the agent
+/// asks for an approval or a reply; both show up here as a status change.
+fn turn_left_unread(previous: Option<&ThreadActivity>, current: &ThreadActivity) -> bool {
+    let waiting = |activity: &ThreadActivity| matches!(activity, ThreadActivity::Active { flags } if !flags.is_empty());
+    let finished = matches!(previous, Some(ThreadActivity::Active { .. }))
+        && matches!(current, ThreadActivity::Idle | ThreadActivity::SystemError);
+    finished || (waiting(current) && !previous.is_some_and(waiting))
 }
 
 #[derive(Clone, Copy)]
