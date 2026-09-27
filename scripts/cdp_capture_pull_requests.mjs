@@ -574,6 +574,14 @@ const states = {
       await cdp.click(hide.x, hide.y);
       await cdp.sleep(800);
     }
+    // A review tab reopens at the diff offset it last showed, so start it at
+    // the top as the native capture does.
+    await cdp.evaluate(`(() => {
+      const scrollers = [...document.querySelectorAll('*')].filter(node => node.getBoundingClientRect().x > 800
+        && node.scrollHeight > node.clientHeight + 50 && /(auto|scroll)/.test(getComputedStyle(node).overflowY));
+      const diff = scrollers.sort((a, b) => b.clientHeight - a.clientHeight)[0];
+      if (diff) diff.scrollTop = 0;
+    })()`);
     await cdp.sleep(400);
     await capture('review-tab');
   },
