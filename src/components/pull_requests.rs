@@ -791,6 +791,24 @@ impl PullRequestsView {
                     self.collapsed_files.extend(all);
                 }
                 "review-options" => self.review_options_open = true,
+                "expand-commits" => {
+                    let groups: Vec<usize> = self
+                        .detail
+                        .as_ref()
+                        .map(|detail| {
+                            detail
+                                .activity
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, item)| {
+                                    matches!(item, crate::pull_requests::ActivityItem::Commits { commits } if commits.len() > 1)
+                                })
+                                .map(|(index, _)| index)
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    self.expanded_commit_groups.extend(groups);
+                }
                 "filter-menu" => self.list_menu = Some(ListMenu::Filter),
                 "filter-status" => {
                     self.list_menu = Some(ListMenu::Filter);
@@ -959,6 +977,7 @@ impl PullRequestsView {
                                     .iter()
                                     .map(|comment| comment.avatar_url.clone())
                             }))
+                            .chain(detail.commits.iter().map(|commit| commit.avatar_url()))
                             .flatten()
                             .collect();
                         view.request_avatars(urls, cx);

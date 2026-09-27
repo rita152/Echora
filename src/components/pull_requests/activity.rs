@@ -235,10 +235,14 @@ impl PullRequestsView {
                                 .size(px(14.0))
                                 .opacity(0.0)
                                 .group_hover("pr-commit-group", |style| style.opacity(1.0))
+                                // `group-focus-within:opacity-100`: the group
+                                // just opened keeps focus, so its chevron shows.
                                 .when(open, |chevron| {
-                                    chevron.with_transformation(gpui::Transformation::rotate(
-                                        gpui::radians(std::f32::consts::FRAC_PI_2),
-                                    ))
+                                    chevron.opacity(1.0).with_transformation(
+                                        gpui::Transformation::rotate(gpui::radians(
+                                            std::f32::consts::FRAC_PI_2,
+                                        )),
+                                    )
                                 }),
                         ),
                 )
