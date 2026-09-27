@@ -13,7 +13,7 @@ const SYNTAX_LINES: usize = 1024;
 const CODE_SCROLLBAR_TRACK: f32 = 15.0;
 /// Line text, language, and for a word-highlighted line its partner's text
 /// and whether it is the deleted side.
-type SyntaxKey = (String, Option<&'static str>, Option<(String, bool)>);
+type SyntaxKey = (String, Option<&'static str>);
 
 #[derive(Default)]
 struct SyntaxCache {
@@ -155,12 +155,11 @@ impl DiffViewport {
         &self,
         text: &str,
         language: Option<&'static str>,
-        emphasis: Option<(String, bool)>,
         build: impl FnOnce() -> Vec<TextRun>,
     ) -> Rc<Vec<TextRun>> {
         self.syntax
             .borrow_mut()
-            .get_or_insert((text.to_owned(), language, emphasis), build)
+            .get_or_insert((text.to_owned(), language), build)
     }
     pub(super) fn partner(&self, file: usize, hunk: usize, line: usize) -> Option<usize> {
         self.partners
@@ -704,21 +703,21 @@ mod tests {
     fn syntax_cache_reuses_more_than_the_shared_sixteen_line_cache() {
         let mut cache = SyntaxCache::default();
         for i in 0..100 {
-            cache.get_or_insert((format!("let line_{i} = {i};"), Some("rs"), None), Vec::new);
+            cache.get_or_insert((format!("let line_{i} = {i};"), Some("rs")), Vec::new);
         }
         for i in 0..100 {
-            cache.get_or_insert((format!("let line_{i} = {i};"), Some("rs"), None), || {
+            cache.get_or_insert((format!("let line_{i} = {i};"), Some("rs")), || {
                 panic!("reparsed a warm line")
             });
         }
         for i in 0..2000 {
-            cache.get_or_insert((format!("{i}{}", "x".repeat(8192)), None, None), Vec::new);
+            cache.get_or_insert((format!("{i}{}", "x".repeat(8192)), None), Vec::new);
         }
         assert!(cache.bytes <= SYNTAX_BYTES);
         assert!(cache.entries.len() <= SYNTAX_LINES);
         assert_eq!(cache.entries.len(), cache.order.len());
         let count = cache.entries.len();
-        cache.get_or_insert(("x".repeat(SYNTAX_BYTES), None, None), Vec::new);
+        cache.get_or_insert(("x".repeat(SYNTAX_BYTES), None), Vec::new);
         assert_eq!(cache.entries.len(), count);
     }
     #[test]

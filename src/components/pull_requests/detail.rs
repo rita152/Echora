@@ -272,17 +272,8 @@ impl PullRequestsView {
             .unwrap_or_default();
         let close_view = view.clone();
         let fullscreen = self.fullscreen;
-        // The tab's 8% fill over the surface, which the title fades into.
-        let tab_fill = {
-            let (base, over) = (theme.surface, theme.control_hover);
-            let mix = |b: f32, o: f32| b + (o - b) * over.a;
-            gpui::Rgba {
-                r: mix(base.r, over.r),
-                g: mix(base.g, over.g),
-                b: mix(base.b, over.b),
-                a: 1.0,
-            }
-        };
+        // The selected tab's surface, which the title fades into.
+        let tab_fill = theme.tab_selected_surface;
         div()
             .flex_none()
             .h(px(TOOLBAR_HEIGHT))
@@ -305,9 +296,15 @@ impl PullRequestsView {
                         .items_center()
                         .gap(px(8.0))
                         .rounded(px(12.5))
-                        .bg(theme.control_hover)
+                        .bg(tab_fill)
                         .border(px(0.5))
                         .border_color(theme.border)
+                        // `shadow-sm`
+                        .shadow(vec![
+                            gpui::BoxShadow::new(px(0.0), px(1.0), gpui::rgba(0x00000014).into())
+                                .blur_radius(px(2.0))
+                                .spread_radius(px(-1.0)),
+                        ])
                         .role(gpui::Role::Tab)
                         .aria_selected(true)
                         .aria_label(SharedString::from(format!("{title} tab")))

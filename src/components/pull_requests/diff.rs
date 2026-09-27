@@ -64,6 +64,9 @@ fn tree_children(prefix: &str, files: &[&FileDiff]) -> (bool, Vec<String>) {
     (direct, folders)
 }
 
+/// A changed line's word spans (byte ranges) and their highlight color.
+type WordSpans = (Vec<std::ops::Range<usize>>, gpui::Rgba);
+
 impl PullRequestsView {
     /// Bounded, diff-local syntax runs. The shared Markdown cache only retains
     /// sixteen blocks and is not a suitable per-line scrolling working set.
@@ -72,7 +75,7 @@ impl PullRequestsView {
         text: &str,
         language: Option<&'static str>,
     ) -> std::rc::Rc<Vec<gpui::TextRun>> {
-        self.diff_viewport.syntax_runs(text, language, None, || {
+        self.diff_viewport.syntax_runs(text, language, || {
             syntax::code_runs(text, language, self.mode)
         })
     }
@@ -82,21 +85,23 @@ impl PullRequestsView {
             .with_runs(self.code_runs(text, language).as_ref().clone())
     }
 
+    /// A diff line's text, and for a changed line with a partner the word
+    /// spans the pair changed, with their highlight color.
     fn highlighted_line(
         &self,
         file_index: usize,
         file: &FileDiff,
         hunk: usize,
         index: usize,
-    ) -> gpui::StyledText {
+    ) -> (gpui::StyledText, Option<WordSpans>) {
         let line = &file.hunks[hunk].lines[index];
-        let language = Self::language_for(&file.path);
+        let text = self.code_text(&line.text, Self::language_for(&file.path));
         let pair = self
             .words
             .then(|| self.diff_viewport.partner(file_index, hunk, index))
             .flatten();
         let Some(pair) = pair else {
-            return self.code_text(&line.text, language);
+            return (text, None);
         };
         let deleted = line.kind == LineKind::Deleted;
         let partner = &file.hunks[hunk].lines[pair].text;
@@ -107,7 +112,7 @@ impl PullRequestsView {
         };
         let spans = if deleted { old_spans } else { new_spans };
         if spans.is_empty() {
-            return self.code_text(&line.text, language);
+            return (text, None);
         }
         let theme = self.theme();
         let color = if deleted {
@@ -115,37 +120,7 @@ impl PullRequestsView {
         } else {
             theme.diff_added_word
         };
-        let runs = self.diff_viewport.syntax_runs(
-            &line.text,
-            language,
-            Some((partner.clone(), deleted)),
-            || {
-                let mut cuts: Vec<usize> = spans
-                    .iter()
-                    .flat_map(|span| [span.start, span.end])
-                    .collect();
-                let mut runs = Vec::new();
-                let mut start = 0;
-                for run in syntax::code_runs(&line.text, language, self.mode) {
-                    let end = start + run.len;
-                    cuts.retain(|cut| *cut > start);
-                    let mut pieces = vec![start];
-                    pieces.extend(cuts.iter().copied().filter(|cut| *cut < end));
-                    pieces.push(end);
-                    for piece in pieces.windows(2) {
-                        let mut run = run.clone();
-                        run.len = piece[1] - piece[0];
-                        if spans.iter().any(|span| span.contains(&piece[0])) {
-                            run.background_color = Some(color.into());
-                        }
-                        runs.push(run);
-                    }
-                    start = end;
-                }
-                runs
-            },
-        );
-        gpui::StyledText::new(line.text.clone()).with_runs(runs.as_ref().clone())
+        (text, Some((spans, color)))
     }
 
     /// Language name for the syntax highlighter, derived from the file suffix.
@@ -750,7 +725,7 @@ impl PullRequestsView {
                     .line_height(px(21.0))
                     .bg(theme.diff_header_surface)
                     // `hover:bg-primary-ghost-hover`
-                    .hover(move |style| style.bg(theme.control_hover))
+                    .hover(move |style| style.bg(theme.row_hover))
                     .child(
                         div()
                             .flex_1()
@@ -1179,6 +1154,8 @@ impl PullRequestsView {
         // for deletions; a row without either number offers no comment button.
         let anchor = if old { line.old } else { line.new };
         let line_number = anchor.unwrap_or(0);
+        let (text, words) = self.highlighted_line(file_index, file, hunk_index, line_index);
+        let layout = text.layout().clone();
         let row = div()
             .min_w(px(0.0))
             .flex()
@@ -1206,7 +1183,9 @@ impl PullRequestsView {
                         .whitespace_normal()
                     })
                     .when(!self.wrap, |code| code.whitespace_nowrap())
-                    .child(self.highlighted_line(file_index, file, hunk_index, line_index)),
+                    .relative()
+                    .children(words.map(|(spans, color)| word_boxes(layout, spans, color)))
+                    .child(text),
             );
         div()
             .relative()
@@ -1370,6 +1349,9 @@ impl PullRequestsView {
             .bottom_0()
             .right_0()
             .w(px(self.tree_width()))
+            // The panel floats over the diff: the lines under it take no
+            // hover or clicks.
+            .block_mouse_except_scroll()
             .flex()
             .flex_col()
             .bg(theme.surface)
@@ -1457,8 +1439,9 @@ impl PullRequestsView {
                 row.child(div().flex_none().w(px(depth as f32 * TREE_INDENT - 5.0)))
             })
             .when(selected, |row| row.bg(theme.row_selected))
-            // Hover fills 8% (`primary-ghost-hover`), selection 5%.
-            .hover(move |style| style.bg(theme.control_hover).text_color(theme.text))
+            // Hover fills `primary-ghost-hover` (`--trees-bg-muted`), selection
+            // `primary-soft-active`.
+            .hover(move |style| style.bg(theme.row_hover).text_color(theme.text))
             .on_hover(move |hovered, _, cx| {
                 let key = hover_key.clone();
                 view.update(cx, |view, cx| view.set_tree_hover(key, *hovered, cx));
@@ -1483,9 +1466,9 @@ impl PullRequestsView {
                     .border(px(1.0))
                     .border_color(gpui::Rgba {
                         a: 0.05,
-                        ..theme.text
+                        ..theme.tooltip_text
                     })
-                    .bg(theme.popover_surface)
+                    .bg(theme.tooltip_surface)
                     .shadow(vec![
                         gpui::BoxShadow::new(px(0.0), px(8.0), gpui::rgba(0x0f172a33).into())
                             .blur_radius(px(18.0)),
@@ -1493,7 +1476,7 @@ impl PullRequestsView {
                     .text_size(px(13.0))
                     .line_height(px(18.0))
                     .font_weight(crate::theme::UI_BODY_FONT_WEIGHT)
-                    .text_color(theme.text)
+                    .text_color(theme.tooltip_text)
                     .child(name),
             ),
         )
@@ -1607,8 +1590,9 @@ impl PullRequestsView {
                 })
                 .child(Self::menu_check_slot(selected, theme))
                 .child(
+                    // Content-sized, so the flyout is as wide as its longest
+                    // commit; it truncates only when the window is narrower.
                     div()
-                        .flex_1()
                         .min_w(px(0.0))
                         .whitespace_nowrap()
                         .overflow_hidden()
@@ -2054,6 +2038,72 @@ fn tree_label(name: &str, file: bool) -> Div {
 /// The view toggle's glyph: the current layout (`rectangle-view-unified`,
 /// `…-split`, or the diagonal auto glyph), its frame in the text color and its
 /// two panes in the fixed `#F84E63` / `#36D958` at half opacity.
+/// The `[data-diff-span]` highlights of a changed line, painted behind its
+/// text: 3px-radius boxes over the code font's content area (as an inline
+/// background covers it), not the 21.6px line box a run background fills.
+/// Each visual line of a wrapped span gets its own box.
+fn word_boxes(
+    layout: gpui::TextLayout,
+    spans: Vec<std::ops::Range<usize>>,
+    color: gpui::Rgba,
+) -> impl IntoElement {
+    gpui::canvas(
+        |_, _, _| {},
+        move |_, _, window, _| {
+            let text = layout.text();
+            let Some(line) = layout.line_layout_for_index(0) else {
+                return;
+            };
+            let unwrapped = &line.unwrapped_layout;
+            let font = unwrapped
+                .runs
+                .first()
+                .map(|run| run.font_id)
+                .unwrap_or_else(|| {
+                    window
+                        .text_system()
+                        .resolve_font(&gpui::font(UI_MONOSPACE_FONT_FAMILY))
+                });
+            let size = unwrapped.font_size;
+            let content = window.text_system().ascent(font, size)
+                + window.text_system().descent(font, size).abs();
+            let inset = (layout.line_height() - content) / 2.0;
+            for span in spans {
+                let mut current: Option<gpui::Bounds<gpui::Pixels>> = None;
+                let mut boxes = Vec::new();
+                for (offset, ch) in text.get(span.clone()).unwrap_or_default().char_indices() {
+                    let index = span.start + offset;
+                    let Some(origin) = layout.position_for_index(index) else {
+                        continue;
+                    };
+                    let advance =
+                        unwrapped.x_for_index(index + ch.len_utf8()) - unwrapped.x_for_index(index);
+                    match current.as_mut() {
+                        Some(bounds) if bounds.origin.y == origin.y + inset => {
+                            bounds.size.width = origin.x + advance - bounds.origin.x;
+                        }
+                        _ => {
+                            boxes.extend(current.take());
+                            current = Some(gpui::Bounds::new(
+                                gpui::point(origin.x, origin.y + inset),
+                                gpui::size(advance, content),
+                            ));
+                        }
+                    }
+                }
+                boxes.extend(current);
+                for bounds in boxes {
+                    window.paint_quad(gpui::fill(bounds, color).corner_radii(px(3.0)));
+                }
+            }
+        },
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full()
+}
+
 fn view_mode_glyph(layout: super::DiffLayout, theme: super::theme::PrTheme) -> Div {
     let (deleted, added) = match layout {
         super::DiffLayout::Unified => ("pr-view-unified-deleted", "pr-view-unified-added"),

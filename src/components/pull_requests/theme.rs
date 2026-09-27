@@ -108,6 +108,13 @@ pub struct PrTheme {
     /// Opaque popover surface used by the reviewer picker (the reference
     /// renders that panel solid: white / `rgb(45,45,45)`).
     pub popover_surface: Rgba,
+    /// Tooltip surface and text: inverted in light (`rgb(26,28,31)` on
+    /// white), the elevated surface in dark.
+    pub tooltip_surface: Rgba,
+    pub tooltip_text: Rgba,
+    /// A selected app-shell tab (`bg-surface-elevated-secondary
+    /// dark:bg-primary-ghost-hover`), opaque over the surface: white / 8%.
+    pub tab_selected_surface: Rgba,
     pub menu_hover: Rgba,
     pub menu_shadow: Rgba,
     /// Diff colors: the computed styles of the reference diff viewer's rows
@@ -229,6 +236,9 @@ impl PrTheme {
                 gpui::rgba(0x2d2d2de6)
             },
             popover_surface: light(is_light, 0xffffffff, 0x2d2d2dff),
+            tooltip_surface: light(is_light, 0x1a1c1fff, 0x2d2d2dff),
+            tooltip_text: light(is_light, 0xffffffff, 0xdfdfdfff),
+            tab_selected_surface: light(is_light, 0xffffffff, 0x2a2a2aff),
             // `data-highlighted`: rgba(26,28,31,0.055) / rgba(255,255,255,0.08).
             menu_hover: if is_light {
                 gpui::rgba(0x1a1c1f0e)
