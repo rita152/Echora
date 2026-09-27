@@ -6,6 +6,16 @@ use super::{PullRequestsView, theme::*};
 use crate::components::icons::icon;
 use crate::theme::ui_font;
 
+type ClickHandler = Box<dyn Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App)>;
+
+/// What a composer's footer buttons do.
+pub(super) struct ComposerActions {
+    pub cancel: Option<ClickHandler>,
+    pub post_label: &'static str,
+    pub post_enabled: bool,
+    pub post: ClickHandler,
+}
+
 impl gpui::Render for PullRequestsView {
     fn render(
         &mut self,
@@ -346,12 +356,19 @@ impl PullRequestsView {
             })
     }
 
-    /// A menu item's 16px leading glyph at `opacity-75`.
+    /// A menu item's 16px leading glyph at `opacity-75`, fully opaque while
+    /// its row is hovered (`group-hover:opacity-100`).
     pub(super) fn menu_icon(name: &'static str, theme: PrTheme) -> impl IntoElement {
-        icon(name, theme.text.into())
+        Self::tinted_menu_icon(name, theme.text)
+    }
+
+    /// [`Self::menu_icon`] in the row's own color, as a `danger` item draws it.
+    pub(super) fn tinted_menu_icon(name: &'static str, color: gpui::Rgba) -> impl IntoElement {
+        icon(name, color.into())
             .flex_none()
             .size(px(MENU_ICON_SIZE))
             .opacity(0.75)
+            .group_hover("pr-menu-row", |style| style.opacity(1.0))
     }
 
     /// A GitHub avatar at `size`: `rounded-full bg-white`, the cached image
@@ -549,6 +566,106 @@ impl PullRequestsView {
             .child(results)
     }
 
+    /// The reference's `ComposerLayout` for comments and replies: the 14/28
+    /// field (`pt-2.5 px-3`), then a 28px footer with the viewer's avatar, an
+    /// optional ghost cancel, and the round submit arrow (`opacity-40` while
+    /// the field is empty). The page composer sits on the composer surface
+    /// inside a hairline; the reply composer is borderless inside its footer.
+    pub(super) fn composer(
+        &self,
+        editor: gpui::Entity<super::FileEditor>,
+        key: &'static str,
+        surface: bool,
+        actions: ComposerActions,
+        cx: &mut gpui::Context<Self>,
+    ) -> Div {
+        let ComposerActions {
+            cancel: on_cancel,
+            post_label,
+            post_enabled,
+            post: on_post,
+        } = actions;
+        let theme = self.theme();
+        let lines = editor.read(cx).visual_line_count().clamp(1, 12);
+        let viewer_avatar = self
+            .detail
+            .as_ref()
+            .and_then(|detail| detail.viewer.as_ref())
+            .and_then(|viewer| viewer.avatar_url.clone());
+        div()
+            .rounded(px(12.5))
+            .overflow_hidden()
+            .flex()
+            .flex_col()
+            .when(surface, |composer| {
+                composer
+                    .border(px(1.0))
+                    .border_color(theme.border)
+                    .bg(theme.composer_surface)
+            })
+            .child(div().px(px(12.0)).pt(px(10.0)).child(Self::editor_frame(
+                editor,
+                28.0 * lines as f32,
+                key,
+            )))
+            .child(
+                div()
+                    .mt(px(4.0))
+                    .mb(px(8.0))
+                    .px(px(8.0))
+                    .h(px(28.0))
+                    .flex()
+                    .items_center()
+                    .gap(px(5.0))
+                    .child(self.avatar(viewer_avatar.as_deref(), 24.0))
+                    .child(
+                        div().flex_1().min_w(px(0.0)).flex().justify_end().child(
+                            div()
+                                .flex_none()
+                                .flex()
+                                .items_center()
+                                .gap(px(8.0))
+                                .when_some(on_cancel, |row, on_cancel| {
+                                    row.child(
+                                        Self::toolbar_button(
+                                            SharedString::from(format!("{key}-cancel")),
+                                            theme,
+                                            false,
+                                        )
+                                        .w(px(28.0))
+                                        .px(px(0.0))
+                                        .justify_center()
+                                        .aria_label("Cancel")
+                                        .on_click(on_cancel)
+                                        .child(icon("pr-close", theme.text.into()).size(px(16.0))),
+                                    )
+                                })
+                                .child(
+                                    div()
+                                        .id(SharedString::from(format!("{key}-post")))
+                                        .flex_none()
+                                        .size(px(28.0))
+                                        .rounded_full()
+                                        .border(px(1.0))
+                                        .border_color(theme.border)
+                                        .bg(theme.inverted_surface)
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .role(gpui::Role::Button)
+                                        .aria_label(post_label)
+                                        .when(!post_enabled, |button| button.opacity(0.4))
+                                        .when(post_enabled, |button| button.on_click(on_post))
+                                        .child(
+                                            icon("pr-arrow-up", theme.inverted_text.into())
+                                                .size(px(16.0)),
+                                        ),
+                                ),
+                        ),
+                    ),
+            )
+    }
+
     pub(super) fn editor_frame(
         editor: gpui::Entity<super::FileEditor>,
         height: f32,
@@ -562,39 +679,5 @@ impl PullRequestsView {
             .h(px(height))
             .flex_none()
             .child(editor)
-    }
-
-    /// Shared pill button used by the detail header (`h-7 rounded-full px-2`).
-    pub(super) fn header_pill(
-        id: &'static str,
-        label: &'static str,
-        theme: PrTheme,
-        filled: bool,
-    ) -> gpui::Stateful<Div> {
-        div()
-            .id(id)
-            .role(gpui::Role::Button)
-            .aria_label(label)
-            .flex_none()
-            .h(px(28.0))
-            .px(px(8.0))
-            .flex()
-            .items_center()
-            .gap(px(4.0))
-            .rounded(px(12.5))
-            .text_size(px(13.0))
-            .cursor_pointer()
-            .when(filled, |button| {
-                button
-                    .bg(theme.inverted_surface)
-                    .text_color(theme.inverted_text)
-            })
-            .when(!filled, |button| {
-                button
-                    .bg(theme.control)
-                    .text_color(theme.text)
-                    .hover(move |style| style.bg(theme.control_hover))
-            })
-            .child(label)
     }
 }

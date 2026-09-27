@@ -7,6 +7,7 @@
 //! rows, the detail header with its nested buttons, the activity timeline, the
 //! diff toolbar and file headers, the right-hand file tree, and the review tab.
 
+mod activity;
 mod detail;
 mod diff;
 mod list;
@@ -35,6 +36,15 @@ use crate::{
 
 /// Pause after the last keystroke before the search refetches.
 const SEARCH_DEBOUNCE_MS: u64 = 250;
+
+/// `Open chat`: the header opens the chat the reference already started for
+/// the pull request.
+#[derive(Clone, Debug)]
+pub struct OpenPullRequestChat {
+    pub thread_id: String,
+}
+
+impl EventEmitter<OpenPullRequestChat> for PullRequestsView {}
 
 /// The reference opens a new conversation from the detail header with the pull
 /// request prefilled but not sent.
@@ -109,8 +119,8 @@ pub struct PullRequestsView {
     /// Width at the start of a separator drag, and the pointer x it began at.
     detail_resize: Option<(f32, f32)>,
     list_scroll: gpui::ScrollHandle,
-    /// Avatar URL → cached file (`None` while the download runs or failed).
-    avatars: std::collections::HashMap<String, Option<PathBuf>>,
+    /// Avatar downloads by URL.
+    avatars: std::collections::HashMap<String, AvatarState>,
     control_bounds: std::rc::Rc<
         std::cell::RefCell<std::collections::HashMap<String, gpui::Bounds<gpui::Pixels>>>,
     >,
@@ -136,6 +146,8 @@ pub struct PullRequestsView {
 
     // Detail pane.
     detail: Option<PullRequestDetail>,
+    /// The chat the reference associated with the selected pull request.
+    chat_thread: Option<String>,
     detail_loading: bool,
     detail_error: Option<String>,
     detail_tab: DetailTab,
@@ -155,10 +167,15 @@ pub struct PullRequestsView {
     reviewers_query: Option<Entity<PromptInput>>,
     reviewers_results: Vec<User>,
     reviewers_selected: HashSet<String>,
+    /// Comments whose collapse state the user flipped from its default.
     collapsed_comments: HashSet<String>,
+    /// Activity commit groups the user opened, by feed index.
+    expanded_commit_groups: HashSet<usize>,
+    /// Clamped comment bodies the user expanded with `Show more`.
+    expanded_bodies: HashSet<String>,
+    body_measurements: activity::BodyMeasurements,
     checks_expanded: bool,
     activity_expanded: bool,
-    commits_expanded: bool,
 
     // Diff surfaces.
     diff: Vec<FileDiff>,
@@ -235,6 +252,13 @@ pub(super) fn detail_panel_ratio(page: f32, width: f32) -> f32 {
     ((width.clamp(minimum, maximum) - minimum) / (maximum - minimum)).clamp(0.0, 1.0)
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum AvatarState {
+    Loading,
+    Ready(PathBuf),
+    Failed,
+}
+
 /// Emitted when the separator drag ends, so the host can persist the ratio.
 #[derive(Clone, Copy, Debug)]
 pub struct DetailPanelResized {
@@ -271,6 +295,7 @@ impl PullRequestsView {
             // `Pull request comment` accessible name.
             editor.set_placeholder("Leave a comment", cx);
             editor.set_accessible_name("Pull request comment");
+            editor.set_text_metrics(14.0, 28.0, cx);
             editor
         });
         cx.subscribe(
@@ -331,6 +356,7 @@ impl PullRequestsView {
             filter_submenu: None,
             filter_loading: false,
             detail: None,
+            chat_thread: None,
             detail_loading: false,
             detail_error: None,
             detail_tab: DetailTab::Summary,
@@ -351,9 +377,11 @@ impl PullRequestsView {
             reviewers_results: Vec::new(),
             reviewers_selected: HashSet::new(),
             collapsed_comments: HashSet::new(),
+            expanded_commit_groups: HashSet::new(),
+            expanded_bodies: HashSet::new(),
+            body_measurements: Default::default(),
             checks_expanded: true,
             activity_expanded: true,
-            commits_expanded: true,
             diff: Vec::new(),
             diff_loading: false,
             diff_error: None,
@@ -472,29 +500,36 @@ impl PullRequestsView {
                 continue;
             }
             if let Some(path) = crate::pull_requests::avatars::cached(&url) {
-                self.avatars.insert(url, Some(path));
+                self.avatars.insert(url, AvatarState::Ready(path));
                 continue;
             }
-            self.avatars.insert(url.clone(), None);
+            self.avatars.insert(url.clone(), AvatarState::Loading);
             cx.spawn(async move |this, cx| {
                 let fetch = url.clone();
                 let result = cx
                     .background_executor()
                     .spawn(async move { crate::pull_requests::avatars::fetch(&fetch) })
                     .await;
-                if let Ok(path) = result {
-                    let _ = this.update(cx, |view, cx| {
-                        view.avatars.insert(url, Some(path));
-                        cx.notify();
-                    });
-                }
+                let _ = this.update(cx, |view, cx| {
+                    view.avatars.insert(
+                        url,
+                        match result {
+                            Ok(path) => AvatarState::Ready(path),
+                            Err(_) => AvatarState::Failed,
+                        },
+                    );
+                    cx.notify();
+                });
             })
             .detach();
         }
     }
 
     pub(super) fn avatar_path(&self, url: &str) -> Option<&PathBuf> {
-        self.avatars.get(url).and_then(Option::as_ref)
+        match self.avatars.get(url) {
+            Some(AvatarState::Ready(path)) => Some(path),
+            _ => None,
+        }
     }
 
     /// Re-enters the page: refresh the list and the selected detail so the data
@@ -545,6 +580,14 @@ impl PullRequestsView {
     #[cfg(feature = "screenshot")]
     pub fn capture_ready(&self) -> bool {
         if self.list_loading || self.detail_loading || self.diff_loading {
+            return false;
+        }
+        // Avatars are part of the frame the reference shows.
+        if self
+            .avatars
+            .values()
+            .any(|state| *state == AvatarState::Loading)
+        {
             return false;
         }
         if self.capture_intent.is_some() || self.pending_detail_scroll.is_some() {
@@ -827,12 +870,17 @@ impl PullRequestsView {
         self.detail_error = None;
         cx.notify();
         cx.spawn(async move |this, cx| {
-            let result = cx
+            let (result, chat_thread) = cx
                 .background_executor()
                 .spawn(async move {
-                    client
-                        .detail(&repository, number)
-                        .map_err(|error| format!("{error:#}"))
+                    let chat_thread =
+                        crate::pull_requests::associations::chat_thread(&repository, number);
+                    (
+                        client
+                            .detail(&repository, number)
+                            .map_err(|error| format!("{error:#}")),
+                        chat_thread,
+                    )
                 })
                 .await;
             let _ = this.update(cx, |view, cx| {
@@ -840,8 +888,25 @@ impl PullRequestsView {
                     return;
                 }
                 view.detail_loading = false;
+                view.chat_thread = chat_thread;
                 match result {
                     Ok(detail) => {
+                        let urls: Vec<String> = std::iter::once(detail.author.avatar_url.clone())
+                            .chain(
+                                detail
+                                    .comments
+                                    .iter()
+                                    .map(|comment| comment.avatar_url.clone()),
+                            )
+                            .chain(detail.review_threads.iter().flat_map(|thread| {
+                                thread
+                                    .comments
+                                    .iter()
+                                    .map(|comment| comment.avatar_url.clone())
+                            }))
+                            .flatten()
+                            .collect();
+                        view.request_avatars(urls, cx);
                         view.selected = Some(detail.summary.clone());
                         view.detail = Some(detail);
                         view.detail_error = None;
@@ -1091,6 +1156,10 @@ impl PullRequestsView {
         self.detail_generation += 1;
         self.reset_diff(cx);
         self.detail = None;
+        self.chat_thread = None;
+        self.expanded_commit_groups.clear();
+        self.expanded_bodies.clear();
+        self.collapsed_comments.clear();
         self.detail_loading = false;
         self.detail_error = None;
         self.review_tab = None;
@@ -1299,8 +1368,17 @@ impl PullRequestsView {
         cx.notify();
     }
 
-    pub fn toggle_commits(&mut self, cx: &mut Context<Self>) {
-        self.commits_expanded = !self.commits_expanded;
+    pub fn toggle_commit_group(&mut self, index: usize, cx: &mut Context<Self>) {
+        if !self.expanded_commit_groups.remove(&index) {
+            self.expanded_commit_groups.insert(index);
+        }
+        cx.notify();
+    }
+
+    pub fn toggle_body_expanded(&mut self, id: String, cx: &mut Context<Self>) {
+        if !self.expanded_bodies.remove(&id) {
+            self.expanded_bodies.insert(id);
+        }
         cx.notify();
     }
 
@@ -1371,6 +1449,10 @@ impl PullRequestsView {
     /// `Chat` creates a conversation for the pull request, prefilled but not
     /// sent; `Open chat` reuses the existing one when the server reports it.
     pub fn open_chat(&mut self, cx: &mut Context<Self>) {
+        if let Some(thread_id) = self.chat_thread.clone() {
+            cx.emit(OpenPullRequestChat { thread_id });
+            return;
+        }
         let Some(summary) = self.selected.clone() else {
             return;
         };
@@ -1529,9 +1611,18 @@ impl PullRequestsView {
             return;
         }
         let mode = self.mode;
+        let author = self
+            .detail
+            .as_ref()
+            .and_then(|detail| thread.as_deref().and_then(|id| detail.thread(id)))
+            .and_then(|thread| thread.comments.first())
+            .map(|comment| comment.author.clone())
+            .unwrap_or_default();
         let editor = cx.new(|cx| {
             let mut editor = FileEditor::prose(mode, "Pull request reply", cx);
             editor.set_accessible_name("Pull request reply");
+            editor.set_placeholder(format!("Reply to {author}"), cx);
+            editor.set_text_metrics(14.0, 28.0, cx);
             if let Some(quote) = quote {
                 editor.set_text_silently(&quote, cx);
             }

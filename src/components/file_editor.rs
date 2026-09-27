@@ -151,6 +151,8 @@ pub struct FileEditor {
     language: Option<String>,
     prose_label: Option<String>,
     placeholder: String,
+    /// Font size and line height overriding the prose defaults.
+    metrics: Option<(f32, f32)>,
     composer: bool,
     read_only: bool,
     preview_collapsed: bool,
@@ -216,6 +218,7 @@ impl FileEditor {
             language,
             prose_label: None,
             placeholder: String::new(),
+            metrics: None,
             composer: false,
             read_only: false,
             preview_collapsed: false,
@@ -289,6 +292,12 @@ impl FileEditor {
     pub fn set_accessible_name(&mut self, label: impl Into<String>) {
         self.prose_label = Some(label.into());
     }
+    /// Uses `font_size` type on a `line_height` line box, like the Pull
+    /// Requests composers' 14/28 textareas.
+    pub fn set_text_metrics(&mut self, font_size: f32, line_height: f32, cx: &mut Context<Self>) {
+        self.metrics = Some((font_size, line_height));
+        cx.notify();
+    }
     pub fn set_placeholder(&mut self, placeholder: impl Into<String>, cx: &mut Context<Self>) {
         self.placeholder = placeholder.into();
         cx.notify();
@@ -297,6 +306,9 @@ impl FileEditor {
         self.reload(text.into(), cx);
     }
     fn line_height(&self) -> f32 {
+        if let Some((_, line_height)) = self.metrics {
+            return line_height;
+        }
         if self.read_only {
             18.0
         } else if self.composer {
@@ -308,6 +320,9 @@ impl FileEditor {
         }
     }
     fn font_size(&self) -> f32 {
+        if let Some((font_size, _)) = self.metrics {
+            return font_size;
+        }
         if self.read_only {
             12.0
         } else if self.composer {

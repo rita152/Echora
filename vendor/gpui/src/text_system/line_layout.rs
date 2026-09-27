@@ -236,6 +236,12 @@ impl LineLayout {
                 first_non_whitespace_ix = Some(boundary);
             }
 
+            // Blink lets spaces at a soft wrap hang past the line end, so a
+            // word that fits is never pushed down by the space after it.
+            if ch == ' ' {
+                continue;
+            }
+
             let next_x = glyphs.peek().map_or(self.width, |(_, _, x)| *x);
             let width = next_x - last_boundary_x;
 
@@ -1141,5 +1147,22 @@ mod tests {
         let boundaries = layout.compute_wrap_boundaries("对照。", px(28.), None);
         assert_eq!(boundaries.len(), 1);
         assert_eq!(boundaries[0].glyph_ix, 1);
+    }
+    #[test]
+    fn paragraph_wrap_lets_the_space_after_a_fitting_word_hang() {
+        // `ab cd`: `ab` ends at 20 and its space at 26; a 21px line keeps `ab`
+        // and its hanging space, and breaks before `cd`.
+        let mut layout = make_layout(vec![
+            glyph_at(0., 0),
+            glyph_at(10., 1),
+            glyph_at(20., 2),
+            glyph_at(26., 3),
+            glyph_at(36., 4),
+        ]);
+        layout.width = px(46.);
+        layout.len = "ab cd".len();
+        let boundaries = layout.compute_wrap_boundaries("ab cd", px(21.), None);
+        assert_eq!(boundaries.len(), 1);
+        assert_eq!(boundaries[0].glyph_ix, 3);
     }
 }

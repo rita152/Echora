@@ -485,6 +485,12 @@ impl LineWrapper {
     }
 
     #[inline(always)]
+    /// The summed advance of `text`'s characters, as truncation measures an
+    /// ellipsis.
+    pub(crate) fn text_width(&mut self, text: &str) -> Pixels {
+        text.chars().map(|c| self.width_for_char(c)).sum()
+    }
+
     fn width_for_char(&mut self, c: char) -> Pixels {
         if (c as u32) < 128 {
             if let Some(cached_width) = self.cached_ascii_char_widths[c as usize] {
@@ -508,7 +514,7 @@ impl LineWrapper {
     }
 }
 
-fn update_runs_after_truncation(
+pub(crate) fn update_runs_after_truncation(
     result: &str,
     ellipsis: &str,
     runs: &mut Vec<TextRun>,

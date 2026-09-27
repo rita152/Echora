@@ -699,6 +699,22 @@ impl TextLayout {
                 let (text, runs) = if let Some(truncate_width) = truncate_width {
                     if let Some(max_lines) = text_style.line_clamp
                         && let Some(wrap_width) = wrap_width
+                        && truncate_from == TruncateFrom::End
+                    {
+                        let affix_width = line_wrapper.text_width(&truncation_affix);
+                        blink_line_clamp(
+                            window,
+                            &text,
+                            font_size,
+                            &runs,
+                            (wrap_width, max_lines),
+                            (&truncation_affix, affix_width),
+                        )
+                        .map_or((text.clone(), Cow::Borrowed(&*runs)), |(text, runs)| {
+                            (text, Cow::Owned(runs))
+                        })
+                    } else if let Some(max_lines) = text_style.line_clamp
+                        && let Some(wrap_width) = wrap_width
                     {
                         line_wrapper.truncate_wrapped_line(
                             text.clone(),
@@ -1280,6 +1296,80 @@ impl IntoElement for InteractiveText {
     fn into_element(self) -> Self::Element {
         self
     }
+}
+
+
+/// Blink's `-webkit-line-clamp` with `text-overflow: ellipsis`: the text wraps
+/// as usual, and the ellipsis follows the content of the last visible line
+/// when it fits there; only otherwise are characters removed from the end of
+/// that line. `clamp` is the wrap width and line count, `affix` the ellipsis
+/// and its width. `None` when the text fits in the clamped lines.
+fn blink_line_clamp(
+    window: &mut Window,
+    text: &SharedString,
+    font_size: Pixels,
+    runs: &[TextRun],
+    (wrap_width, max_lines): (Pixels, usize),
+    (affix, affix_width): (&str, Pixels),
+) -> Option<(SharedString, Vec<TextRun>)> {
+    let lines = window
+        .text_system()
+        .shape_text(text.clone(), font_size, runs, Some(wrap_width), None)
+        .log_err()?;
+    let mut remaining = max_lines;
+    let mut offset = 0;
+    for (line_index, line) in lines.iter().enumerate() {
+        let layout = &line.layout.unwrapped_layout;
+        let starts: SmallVec<[usize; 4]> = std::iter::once(0)
+            .chain(
+                line.layout
+                    .wrap_boundaries
+                    .iter()
+                    .map(|boundary| layout.runs[boundary.run_ix].glyphs[boundary.glyph_ix].index),
+            )
+            .collect();
+        if starts.len() < remaining {
+            remaining -= starts.len();
+            offset += line.len() + 1;
+            continue;
+        }
+        let start = starts[remaining - 1];
+        let end = starts.get(remaining).copied().unwrap_or(line.len());
+        if remaining == starts.len() && line_index + 1 == lines.len() {
+            return None;
+        }
+        let x_at = |ix: usize| {
+            layout
+                .runs
+                .iter()
+                .flat_map(|run| run.glyphs.iter())
+                .find(|glyph| glyph.index >= ix)
+                .map_or(layout.width, |glyph| glyph.position.x)
+        };
+        let line_x = x_at(start);
+        let content_end = start + line.text[start..end].trim_end().len();
+        let fits = |ix: usize| x_at(ix) - line_x + affix_width <= wrap_width;
+        let cut = if fits(content_end) {
+            content_end
+        } else {
+            line.text[start..content_end]
+                .char_indices()
+                .rev()
+                .map(|(ix, _)| start + ix)
+                .find(|&ix| fits(ix))
+                .unwrap_or(start)
+        };
+        let result = format!("{}{affix}", &text[..offset + cut]);
+        let mut runs = runs.to_vec();
+        crate::text_system::update_runs_after_truncation(
+            &result,
+            affix,
+            &mut runs,
+            TruncateFrom::End,
+        );
+        return Some((result.into(), runs));
+    }
+    None
 }
 
 #[cfg(test)]

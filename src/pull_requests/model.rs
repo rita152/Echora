@@ -361,13 +361,26 @@ pub struct Check {
 pub struct Commit {
     pub sha: String,
     pub subject: String,
+    /// The GitHub login when the commit author maps to a user, otherwise the
+    /// git author name.
     pub author: String,
+    pub author_login: Option<String>,
     pub age: String,
+    /// ISO-8601 commit date, the activity feed's sort key.
+    pub at: String,
 }
 
 impl Commit {
     pub fn short_sha(&self) -> &str {
         self.sha.get(..7).unwrap_or(&self.sha)
+    }
+
+    /// `https://github.com/<login>.png?size=48`, the image the reference draws
+    /// next to a commit.
+    pub fn avatar_url(&self) -> Option<String> {
+        self.author_login
+            .as_ref()
+            .map(|login| format!("https://github.com/{login}.png?size=48"))
     }
 }
 
@@ -392,6 +405,9 @@ pub struct Comment {
     pub can_edit: bool,
     pub can_delete: bool,
     pub can_quote: bool,
+    /// The author is a GitHub App (`__typename: Bot`); the reference collapses
+    /// those comments by default.
+    pub author_is_bot: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -409,52 +425,86 @@ pub struct ReviewThread {
     pub path: String,
     pub line: Option<u32>,
     pub resolved: bool,
+    pub can_resolve: bool,
     pub comments: Vec<Comment>,
 }
 
-/// What one activity card shows. The reference interleaves the pull request's
-/// commits and state changes with its comments, in timestamp order.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum TimelineKind {
-    Comment,
-    Commit,
+/// State changes the activity feed draws as their own cards.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ActivityEventKind {
     Opened,
     Merged,
-    Closed,
-    Reopened,
+    Approved,
+    ChangesRequested,
 }
 
-/// One card of the activity feed.
+/// One card of the reference's activity feed (`activityItems`), in timestamp
+/// order: consecutive commits share a group, reviews without a body become
+/// `approved`/`requested changes` events, and every issue comment, review
+/// summary, and review thread is a comment card.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TimelineEntry {
-    pub kind: TimelineKind,
-    /// Timestamp the reference sorts by.
-    pub at: String,
-    pub actor: String,
-    pub age: String,
-    /// Comment cards render the `Comment` with this id.
-    pub comment_id: Option<String>,
-    pub commit_sha: Option<String>,
-    pub commit_subject: Option<String>,
+pub enum ActivityItem {
+    Commits {
+        commits: Vec<Commit>,
+    },
+    Event {
+        kind: ActivityEventKind,
+        actor: String,
+        age: String,
+        at: String,
+    },
+    Comment {
+        id: String,
+        at: String,
+    },
+    Thread {
+        id: String,
+        at: String,
+    },
 }
 
-impl TimelineEntry {
-    /// Sort key: ISO-8601 timestamps compare lexicographically.
-    pub fn sort_key(&self) -> &str {
-        &self.at
+impl ActivityItem {
+    fn at(&self) -> &str {
+        match self {
+            Self::Commits { commits } => commits.first().map_or("", |commit| commit.at.as_str()),
+            Self::Event { at, .. } | Self::Comment { at, .. } | Self::Thread { at, .. } => at,
+        }
     }
+
+    /// Whether the overview's `N comments` counts this card.
+    pub fn is_comment(&self) -> bool {
+        matches!(self, Self::Comment { .. } | Self::Thread { .. })
+    }
+}
+
+/// Orders activity cards by time (ISO-8601 compares lexicographically) and
+/// folds runs of adjacent commits into one group.
+pub fn build_activity(mut items: Vec<ActivityItem>) -> Vec<ActivityItem> {
+    items.sort_by(|left, right| left.at().cmp(right.at()));
+    let mut activity: Vec<ActivityItem> = Vec::with_capacity(items.len());
+    for item in items {
+        match (activity.last_mut(), item) {
+            (Some(ActivityItem::Commits { commits }), ActivityItem::Commits { commits: more }) => {
+                commits.extend(more)
+            }
+            (_, item) => activity.push(item),
+        }
+    }
+    activity
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PullRequestDetail {
+    /// The signed-in GitHub account, whose avatar the composers show.
+    pub viewer: Option<User>,
     pub summary: PullRequestSummary,
     pub body: String,
     pub requested_reviewers: Vec<User>,
     pub reviewers: Vec<User>,
     pub comments: Vec<Comment>,
     pub review_threads: Vec<ReviewThread>,
-    /// Activity cards in render order (events, commits, and comments).
-    pub timeline: Vec<TimelineEntry>,
+    /// Activity cards in render order.
+    pub activity: Vec<ActivityItem>,
     pub checks: Vec<Check>,
     pub commits: Vec<Commit>,
     pub author: User,
@@ -468,6 +518,20 @@ pub struct PullRequestDetail {
 }
 
 impl PullRequestDetail {
+    /// The overview's `N comments`: the reference counts every activity item
+    /// that is not an event or a commit group, which is each top-level comment
+    /// or review plus each review thread.
+    pub fn comment_count(&self) -> usize {
+        self.activity
+            .iter()
+            .filter(|item| item.is_comment())
+            .count()
+    }
+
+    pub fn thread(&self, id: &str) -> Option<&ReviewThread> {
+        self.review_threads.iter().find(|thread| thread.id == id)
+    }
+
     pub fn comment(&self, id: &str) -> Option<&Comment> {
         self.comments
             .iter()
@@ -525,7 +589,7 @@ pub fn format_count(value: u64) -> String {
     let digits = value.to_string();
     let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
     for (index, digit) in digits.chars().enumerate() {
-        if index > 0 && (digits.len() - index) % 3 == 0 {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
             grouped.push(',');
         }
         grouped.push(digit);
@@ -714,6 +778,53 @@ mod tests {
                 (GroupKind::Authored, vec![4]),
             ]
         );
+    }
+
+    #[test]
+    fn activity_orders_by_time_and_groups_adjacent_commits() {
+        let commit = |sha: &str, at: &str| Commit {
+            sha: sha.into(),
+            subject: sha.into(),
+            author: "a".into(),
+            author_login: Some("a".into()),
+            age: "1w".into(),
+            at: at.into(),
+        };
+        let items = vec![
+            ActivityItem::Event {
+                kind: ActivityEventKind::Opened,
+                actor: "a".into(),
+                age: "1w".into(),
+                at: "2026-09-10T00:00:03Z".into(),
+            },
+            ActivityItem::Commits {
+                commits: vec![commit("c2", "2026-09-10T00:00:02Z")],
+            },
+            ActivityItem::Commits {
+                commits: vec![commit("c1", "2026-09-10T00:00:01Z")],
+            },
+            ActivityItem::Comment {
+                id: "x".into(),
+                at: "2026-09-10T00:00:04Z".into(),
+            },
+            ActivityItem::Commits {
+                commits: vec![commit("c3", "2026-09-10T00:00:05Z")],
+            },
+        ];
+        let activity = build_activity(items);
+        assert_eq!(activity.len(), 4);
+        match &activity[0] {
+            ActivityItem::Commits { commits } => {
+                assert_eq!(
+                    commits.iter().map(|c| c.sha.as_str()).collect::<Vec<_>>(),
+                    ["c1", "c2"]
+                )
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(matches!(activity[1], ActivityItem::Event { .. }));
+        assert!(activity[2].is_comment());
+        assert!(matches!(&activity[3], ActivityItem::Commits { commits } if commits.len() == 1));
     }
 
     #[test]

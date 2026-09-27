@@ -80,6 +80,16 @@ pub struct PrTheme {
     pub menu_icon: Rgba,
     /// Classic scroller thumb, measured from the reference frame.
     pub scrollbar_thumb: Rgba,
+    /// `border-subtle` under section headers (`rgba(26,28,31,0.049)` /
+    /// `rgba(255,255,255,0.043)`).
+    pub border_subtle: Rgba,
+    /// `bg-primary-soft-alpha`: activity cards and their icon wells
+    /// (`rgba(255,255,255,0.96)` / `rgba(255,255,255,0.032)`).
+    pub soft_alpha: Rgba,
+    /// `bg-surface-secondary` (`#f6f6f6` / `#141414`).
+    pub surface_secondary: Rgba,
+    /// Comment composers (`--composer-background-color` over the surface).
+    pub composer_surface: Rgba,
     /// Search-field fill and outline.
     pub field_surface: Rgba,
     pub field_border: Rgba,
@@ -93,9 +103,6 @@ pub struct PrTheme {
     /// Opaque popover surface used by the reviewer picker (the reference
     /// renders that panel solid: white / `rgb(45,45,45)`).
     pub popover_surface: Rgba,
-    /// Activity-card surface: the reference lifts cards off the pane with
-    /// `rgb(31,31,31)` in dark mode (white in light mode).
-    pub card_surface: Rgba,
     pub menu_hover: Rgba,
     pub menu_shadow: Rgba,
     /// Diff colors measured from the reference diff viewer.
@@ -117,8 +124,6 @@ pub struct PrTheme {
     /// `+x` and `-y` counts.
     pub additions_text: Rgba,
     pub deletions_text: Rgba,
-    /// Merged-state accent used by the activity feed (`rgb(137,83,239)`).
-    pub merged_accent: Rgba,
     /// Syntax colors of the reference diff viewer, measured from its rendered
     /// tokens (`scripts/audit_pull_requests_colors.py` records the probe).
     pub syntax_plain: Rgba,
@@ -187,6 +192,18 @@ impl PrTheme {
                 gpui::rgba(0xffffff7f)
             },
             scrollbar_thumb: light(is_light, 0xedededff, 0x2b2b2bff),
+            soft_alpha: if is_light {
+                gpui::rgba(0xfffffff5)
+            } else {
+                gpui::rgba(0xffffff08)
+            },
+            surface_secondary: light(is_light, 0xf6f6f6ff, 0x141414ff),
+            composer_surface: light(is_light, 0xffffffff, 0x363636ff),
+            border_subtle: if is_light {
+                gpui::rgba(0x1a1c1f0d)
+            } else {
+                gpui::rgba(0xffffff0b)
+            },
             field_surface: if is_light {
                 gpui::rgba(0xffffffdc)
             } else {
@@ -210,7 +227,6 @@ impl PrTheme {
                 gpui::rgba(0x2d2d2de6)
             },
             popover_surface: light(is_light, 0xffffffff, 0x2d2d2dff),
-            card_surface: light(is_light, 0xffffffff, 0x1f1f1fff),
             // `data-highlighted`: rgba(26,28,31,0.055) / rgba(255,255,255,0.08).
             menu_hover: if is_light {
                 gpui::rgba(0x1a1c1f0e)
@@ -238,7 +254,6 @@ impl PrTheme {
             // light rgb(0,162,64) / rgb(186,38,35), dark rgb(64,201,119) / rgb(250,66,62).
             additions_text: light(is_light, 0x00a240ff, 0x40c977ff),
             deletions_text: light(is_light, 0xba2623ff, 0xfa423eff),
-            merged_accent: light(is_light, 0x8953efff, 0xb18cffff),
             // Measured token colors of the reference diff viewer. Light values
             // are the rendered `rgb(...)` of its tokens; dark values are the
             // same tokens with the app switched to dark.

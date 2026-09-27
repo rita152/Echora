@@ -64,13 +64,14 @@ fn summary(title: &str) -> crate::pull_requests::PullRequestSummary {
 }
 fn detail(title: &str) -> PullRequestDetail {
     PullRequestDetail {
+        viewer: None,
         summary: summary(title),
         body: String::new(),
         requested_reviewers: vec![],
         reviewers: vec![],
         comments: vec![],
         review_threads: vec![],
-        timeline: vec![],
+        activity: vec![],
         checks: vec![],
         commits: vec![],
         author: User {
@@ -246,12 +247,13 @@ fn description_and_comment_editors_have_visible_layout_height(cx: &mut gpui::Tes
             .height,
         px(280.0)
     );
+    // The reference composer grows 28px per line from a single empty line.
     assert_eq!(
         visual
             .debug_bounds("pr-comment-composer-frame")
             .unwrap()
             .size
             .height,
-        px(96.0)
+        px(28.0)
     );
 }

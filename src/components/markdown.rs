@@ -497,6 +497,9 @@ fn push_inline(inlines: &mut Vec<MarkdownInline>, inline: MarkdownInline) {
 struct MarkdownLayout {
     base_size: f32,
     base_line_height: f32,
+    /// `--markdown-space` (a quarter of the font size): the unit of every
+    /// block margin and heading line box.
+    markdown_space: f32,
     paragraph_space: f32,
     heading_top: f32,
     list_padding: f32,
@@ -545,6 +548,7 @@ const CHATGPT_MARKDOWN_BODY_WEIGHT: FontWeight = crate::theme::UI_BODY_FONT_WEIG
 const CHATGPT_MARKDOWN_LAYOUT: MarkdownLayout = MarkdownLayout {
     base_size: 14.0,
     base_line_height: 22.75,
+    markdown_space: 3.5,
     paragraph_space: 4.0,
     heading_top: 14.0,
     list_padding: 22.75,
@@ -614,14 +618,25 @@ struct MarkdownPalette {
     rule: Rgba,
 }
 
+/// `-webkit-line-clamp` over a root block sequence: the blocks after `block`
+/// are dropped, and that block, when it is a paragraph of plain prose, ends
+/// its `lines`-th line with an ellipsis.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MarkdownLineClamp {
+    pub block: usize,
+    pub lines: usize,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct MarkdownRenderStyle {
     selectable: bool,
     layout: MarkdownLayout,
-    /// Body text weight; the pull request surface compensates for GPUI's
-    /// heavier rasterization by rendering prose at 400.
+    /// Body text weight (430 for chat and pull request prose).
     body_weight: FontWeight,
     palette: MarkdownPalette,
+    line_clamp: Option<MarkdownLineClamp>,
+    /// Lines a plain paragraph shows before its ellipsis.
+    paragraph_lines: Option<usize>,
 }
 
 impl MarkdownRenderStyle {
@@ -630,6 +645,8 @@ impl MarkdownRenderStyle {
             selectable: false,
             body_weight: CHATGPT_MARKDOWN_BODY_WEIGHT,
             layout: CHATGPT_MARKDOWN_LAYOUT,
+            line_clamp: None,
+            paragraph_lines: None,
             palette: MarkdownPalette {
                 text: theme.markdown_text,
                 link: theme.markdown_link,
@@ -702,6 +719,8 @@ pub fn render_pull_request_markdown(source: &str, theme: Theme, scope: &str) -> 
     let document = parse_markdown(&source);
     let mut style = MarkdownRenderStyle::new(theme);
     style.layout.base_line_height = PULL_REQUEST_BODY_LINE_HEIGHT;
+    // `p { margin-bottom: var(--markdown-space) }` before a list or code.
+    style.layout.paragraph_space = style.layout.markdown_space;
     style.body_weight = PULL_REQUEST_BODY_WEIGHT;
     style.layout.quote_line_height = PULL_REQUEST_BODY_LINE_HEIGHT;
     render_block_sequence(
@@ -720,6 +739,60 @@ pub fn render_pull_request_markdown(source: &str, theme: Theme, scope: &str) -> 
     .font_weight(PULL_REQUEST_BODY_WEIGHT)
     .text_color(style.palette.text)
 }
+
+/// Pull request comment bodies (`textStyle: {kind: "small"}`): 13px type on a
+/// 21.125px line box, 1em between paragraphs, and 11.96px inline code.
+/// `line_clamp` applies the collapsed body's `line-clamp-6`.
+pub fn render_pull_request_comment_markdown(
+    source: &str,
+    theme: Theme,
+    scope: &str,
+    line_clamp: Option<MarkdownLineClamp>,
+) -> Div {
+    let source = strip_html_comments(source);
+    let document = parse_markdown(&source);
+    let mut style = MarkdownRenderStyle::new(theme);
+    style.line_clamp = line_clamp;
+    // Every block metric derives from the 13px `--markdown-space` (3.25px)
+    // and `--markdown-line-height` (1.625em).
+    let space = PULL_REQUEST_COMMENT_SIZE / 4.0;
+    style.layout.base_size = PULL_REQUEST_COMMENT_SIZE;
+    style.layout.base_line_height = PULL_REQUEST_COMMENT_LINE_HEIGHT;
+    style.layout.markdown_space = space;
+    style.layout.paragraph_space = space;
+    style.layout.heading_top = space * 4.0;
+    style.layout.list_padding = PULL_REQUEST_COMMENT_LINE_HEIGHT;
+    style.layout.list_item_padding = space * 1.5;
+    style.layout.quote_bottom = space * 2.0;
+    style.layout.quote_padding_y = space * 2.0;
+    style.layout.quote_padding_left = space * 6.0;
+    style.layout.quote_bar_width = space;
+    style.layout.quote_line_height = PULL_REQUEST_COMMENT_LINE_HEIGHT;
+    style.layout.rule_margin = space * 7.0;
+    style.layout.code_margin = space * 5.0;
+    style.layout.inline_code_size = 11.96;
+    style.layout.inline_code_flow_height = PULL_REQUEST_COMMENT_LINE_HEIGHT + 1.0;
+    style.layout.inline_code_line_height = 14.0;
+    style.body_weight = PULL_REQUEST_BODY_WEIGHT;
+    render_block_sequence(
+        &document.blocks,
+        style,
+        0,
+        SequenceContext::Root,
+        markdown_hash(scope),
+        &MarkdownFadeHandle::none(),
+    )
+    .w_full()
+    .min_w(px(0.0))
+    .text_size(px(PULL_REQUEST_COMMENT_SIZE))
+    .line_height(px(PULL_REQUEST_COMMENT_LINE_HEIGHT))
+    .font(pull_request_font())
+    .font_weight(PULL_REQUEST_BODY_WEIGHT)
+    .text_color(style.palette.text)
+}
+
+pub const PULL_REQUEST_COMMENT_SIZE: f32 = 13.0;
+pub const PULL_REQUEST_COMMENT_LINE_HEIGHT: f32 = 21.125;
 
 /// Font for pull request prose. The reference resolves Chinese runs through the
 /// system cascade to `.PingFangUI…` (a 0.9587em ideograph), while an explicit
@@ -767,13 +840,11 @@ mod strip_html_comments_tests {
     }
 }
 
-/// Pull request prose weight. The reference declares 430, but GPUI resolves
-/// that token to a heavier face than Chromium does, and the lighter instance
-/// matches the reference pixels most closely: against
-/// `artifacts/pull-requests-reference/detail-summary-light.png` the summary
-/// body scores 92.51 MAE / 79.81% identical pixels at 300, versus 92.13 / 79.40%
-/// at 400. Weights from 300 to 380 resolve to the same face.
-pub const PULL_REQUEST_BODY_WEIGHT: gpui::FontWeight = gpui::FontWeight(300.0);
+/// Pull request prose weight: the reference's `font-weight: 430`, the same
+/// `.SF NS` instance (and `.PingFangUIDisplaySC-Regular` for Chinese) the chat
+/// body uses. A lighter instance narrows Latin text enough to change where
+/// review comments wrap.
+pub const PULL_REQUEST_BODY_WEIGHT: gpui::FontWeight = crate::theme::UI_BODY_FONT_WEIGHT;
 
 pub fn render_selectable_plan(source: &str, theme: Theme, scope: &str) -> Div {
     let document = parse_markdown(source);
@@ -840,7 +911,19 @@ fn render_block_sequence(
     let mut previous: Option<&MarkdownBlock> = None;
     let mut previous_bottom = 0.0_f32;
 
+    let line_clamp = style
+        .line_clamp
+        .filter(|_| matches!(context, SequenceContext::Root));
     for (index, block) in blocks.iter().enumerate() {
+        if line_clamp.is_some_and(|clamp| index > clamp.block) {
+            break;
+        }
+        let mut block_style = style;
+        block_style.line_clamp = None;
+        block_style.paragraph_lines = line_clamp
+            .filter(|clamp| clamp.block == index && matches!(block, MarkdownBlock::Paragraph(_)))
+            .map(|clamp| clamp.lines);
+        let style = block_style;
         let block_identity = markdown_hash(&(identity_seed, index));
         let (top, bottom) = block_margins(block, previous, index == 0, style.layout, context);
         let collapsed_gap = if index == 0 {
@@ -886,8 +969,8 @@ fn block_margins(
     let default = match block {
         MarkdownBlock::Image { .. } => (12.0, 12.0),
         MarkdownBlock::Paragraph(_) => (0.0, layout.paragraph_space),
-        MarkdownBlock::Heading { level: 1, .. } => (0.0, 7.0),
-        MarkdownBlock::Heading { level: 2 | 3, .. } => (layout.heading_top, 3.5),
+        MarkdownBlock::Heading { level: 1, .. } => (0.0, layout.markdown_space * 2.0),
+        MarkdownBlock::Heading { level: 2 | 3, .. } => (layout.heading_top, layout.markdown_space),
         MarkdownBlock::Heading { level: 4, .. } => (layout.heading_top, 0.0),
         MarkdownBlock::Heading { .. } => (0.0, 0.0),
         MarkdownBlock::List { .. } | MarkdownBlock::Table { .. } => (0.0, 0.0),
@@ -901,14 +984,16 @@ fn block_margins(
             MarkdownBlock::Paragraph(_)
                 if matches!(previous, Some(MarkdownBlock::Paragraph(_))) =>
             {
-                (14.0, 14.0)
+                (layout.markdown_space * 4.0, layout.markdown_space * 4.0)
             }
+            // `h1`–`h3 + p` and `h4 + p` reset the paragraph's top margin,
+            // leaving only the heading's own bottom margin.
             MarkdownBlock::Paragraph(_)
-                if matches!(previous, Some(MarkdownBlock::Heading { level: 4, .. })) =>
+                if matches!(previous, Some(MarkdownBlock::Heading { level: 1..=4, .. })) =>
             {
                 (0.0, default.1)
             }
-            MarkdownBlock::Paragraph(_) if !is_first => (7.0, default.1),
+            MarkdownBlock::Paragraph(_) if !is_first => (layout.markdown_space * 2.0, default.1),
             _ => default,
         },
         SequenceContext::BlockQuote => match block {
@@ -919,7 +1004,7 @@ fn block_margins(
             MarkdownBlock::Paragraph(_)
                 if matches!(previous, Some(MarkdownBlock::Paragraph(_))) =>
             {
-                (14.0, 0.0)
+                (layout.markdown_space * 4.0, 0.0)
             }
             MarkdownBlock::Paragraph(_) | MarkdownBlock::List { .. } => (0.0, 0.0),
             _ => default,
@@ -1004,12 +1089,15 @@ fn render_block(
             fade,
         ),
         MarkdownBlock::Heading { level, content } => {
+            // `h1`–`h4` scale the body size (1.5, 1.25, 1.125, 1em) on line
+            // boxes of 8, 7, 7 and 6 `--markdown-space`.
+            let (base, space) = (style.layout.base_size, style.layout.markdown_space);
             let (size, line_height) = match level {
-                1 => (21.0, 28.0),
-                2 => (17.5, 24.5),
-                3 => (15.75, 24.5),
-                4 => (14.0, 21.0),
-                _ => (14.0, 22.75),
+                1 => (base * 1.5, space * 8.0),
+                2 => (base * 1.25, space * 7.0),
+                3 => (base * 1.125, space * 7.0),
+                4 => (base, space * 6.0),
+                _ => (base, style.layout.base_line_height),
             };
             render_inline_block(
                 content,
@@ -1197,6 +1285,9 @@ fn render_inline_block(
             .text_size(px(font_size))
             .line_height(px(line_height))
             .font_weight(font_weight)
+            .when_some(style.paragraph_lines, |paragraph, lines| {
+                paragraph.line_clamp(lines).text_ellipsis()
+            })
             .child(if style.selectable {
                 selection::selectable(
                     inline_identity,
@@ -1412,6 +1503,10 @@ struct InlineFragment {
     trailing_space: bool,
     link_destination: Option<String>,
     link_content: Option<Vec<MarkdownInline>>,
+    /// Whether this piece of an inline code span starts or ends the span.
+    /// Blink breaks inside a code span, slicing its padding and radius.
+    code_opens: bool,
+    code_closes: bool,
 }
 
 fn render_inline_boxes(
@@ -1429,190 +1524,329 @@ fn render_inline_boxes(
     let code_paint_height = (style.layout.inline_code_line_height * scale).round();
     let mut fragments = Vec::new();
     append_inline_fragments(inlines, InlineState::default(), &mut fragments);
-    fragments.into_iter().enumerate().fold(
+    let glued = (0..fragments.len())
+        .map(|index| index > 0 && glued_to_previous(&fragments[index - 1], &fragments[index]))
+        .collect::<Vec<_>>();
+    // The pieces of one code span fade in as one unit.
+    let mut code_alpha = None;
+    let mut render = |index: usize, fragment: InlineFragment| -> gpui::AnyElement {
+        if fragment.hard_break {
+            return div().w_full().h_0().into_any_element();
+        }
+        let file_reference = fragment
+            .link_destination
+            .as_deref()
+            .and_then(markdown_file_reference_path);
+        let github_reference = fragment
+            .link_destination
+            .as_deref()
+            .is_some_and(|url| url.starts_with("https://github.com/"));
+        let has_icon = file_reference.is_some() || github_reference;
+        let linked_inline_code = matches!(
+            fragment.link_content.as_deref(),
+            Some([MarkdownInline::Code(_)])
+        );
+        let expands_line_box = fragment.state.code || has_icon || linked_inline_code;
+        let color = if file_reference.is_some() {
+            style.palette.file_link
+        } else if fragment.state.link {
+            style.palette.link
+        } else if fragment.state.code {
+            style.palette.inline_code_text
+        } else {
+            style.palette.text
+        };
+        let weight = if fragment.state.strong {
+            FontWeight::SEMIBOLD
+        } else if fragment.state.link {
+            FontWeight::MEDIUM
+        } else {
+            base_weight
+        };
+        // ChatGPT fades a code span or link in as one unit and every word
+        // of plain text on its own.
+        let is_decoration =
+            fragment.state.code || linked_inline_code || fragment.link_destination.is_some();
+        let decoration_alpha = if fragment.state.code && !fragment.code_opens {
+            code_alpha
+        } else if is_decoration {
+            fade.next_segment_alpha()
+        } else {
+            None
+        };
+        if fragment.state.code {
+            code_alpha = decoration_alpha;
+        }
+        let mut element = div()
+            .flex_none()
+            .max_w_full()
+            .when_some(decoration_alpha, |element, alpha| element.opacity(alpha))
+            .font_weight(weight)
+            .text_color(color)
+            .when(fragment.state.emphasis, |element| element.italic())
+            .when(fragment.state.strikethrough, |element| {
+                element.line_through()
+            })
+            .when(expands_line_box, |element| {
+                element.flex().items_center().child(line_box_strut(
+                    line_height + style.layout.inline_code_flow_height
+                        - style.layout.base_line_height,
+                ))
+            })
+            .when(!fragment.state.code, |element| {
+                element
+                    .text_size(px(font_size))
+                    .line_height(px(line_height))
+            })
+            .when(has_icon, |element| {
+                element.px(px(2.0)).flex().items_center()
+            })
+            .when(fragment.trailing_space, |element| {
+                element.mr(px(font_size * 0.25))
+            });
+        if has_icon {
+            element = element.child(
+                icon(
+                    file_reference
+                        .map(markdown_file_reference_icon)
+                        .unwrap_or("markdown-github"),
+                    color.into(),
+                )
+                .size(px(16.0))
+                .flex_none()
+                .mr(px(3.0)),
+            );
+        }
+        let text = if let Some(link_content) = fragment.link_content.as_deref()
+            && file_reference.is_none()
+        {
+            render_styled_text_with_state(
+                link_content,
+                style,
+                FontWeight::MEDIUM,
+                fragment.state,
+                &MarkdownFadeHandle::none(),
+            )
+        } else {
+            let label = if file_reference.is_some() {
+                markdown_file_reference_label(
+                    &fragment.text,
+                    fragment.link_destination.as_deref().unwrap_or_default(),
+                )
+            } else {
+                fragment.text.clone()
+            };
+            if fade.is_active() && !is_decoration {
+                fading_fragment_text(label, fragment.state, weight, color, fade)
+            } else {
+                StyledText::new(label)
+            }
+        };
+        let element = if fragment.state.code || linked_inline_code {
+            let (opens, closes) = if linked_inline_code {
+                (true, true)
+            } else {
+                (fragment.code_opens, fragment.code_closes)
+            };
+            let code = match fragment.link_content.as_deref() {
+                Some([MarkdownInline::Code(code)]) => code.clone(),
+                _ => fragment.text,
+            };
+            element.child(
+                div()
+                    .min_w(px(0.0))
+                    .max_w_full()
+                    .whitespace_normal()
+                    .font_family(UI_MONOSPACE_FONT_FAMILY)
+                    .font_weight(weight)
+                    .text_color(color)
+                    .text_size(px(code_size))
+                    .line_height(px(code_paint_height))
+                    .when(opens, |piece| {
+                        piece
+                            .pl(px(style.layout.inline_code_padding_x))
+                            .rounded_l(px(style.layout.inline_code_radius))
+                    })
+                    .when(closes, |piece| {
+                        piece
+                            .pr(px(style.layout.inline_code_padding_x))
+                            .rounded_r(px(style.layout.inline_code_radius))
+                    })
+                    .py(px(style.layout.inline_code_padding_y))
+                    .bg(style.palette.inline_code_surface)
+                    .child(code),
+            )
+        } else {
+            element.child(
+                div()
+                    .min_w(px(0.0))
+                    .when(has_icon, |e| e.flex_1())
+                    .child(text),
+            )
+        };
+        if let Some(destination) = fragment.link_destination {
+            let link_id = markdown_element_id(
+                "markdown-link",
+                &(inline_identity, index, destination.as_str()),
+            );
+            let file_reference = markdown_file_reference_path(&destination).map(str::to_owned);
+            element
+                .id(link_id)
+                .cursor_pointer()
+                .hover(|element| element.underline())
+                .on_click(move |_, window, cx| {
+                    if let Some(file_reference) = &file_reference {
+                        let line = destination
+                            .rsplit_once(":")
+                            .and_then(|(_, n)| n.parse().ok())
+                            .or_else(|| {
+                                destination
+                                    .rsplit_once("#L")
+                                    .and_then(|(_, n)| n.parse().ok())
+                            });
+                        window.dispatch_action(
+                            Box::new(super::file_panel::OpenWorkspaceFile {
+                                path: file_reference.clone(),
+                                line,
+                            }),
+                            cx,
+                        );
+                    } else {
+                        cx.open_url(&destination);
+                    }
+                })
+                .into_any_element()
+        } else {
+            element.into_any_element()
+        }
+    };
+    let mut groups: Vec<Vec<gpui::AnyElement>> = Vec::new();
+    for (index, fragment) in fragments.into_iter().enumerate() {
+        let element = render(index, fragment);
+        match groups.last_mut() {
+            Some(group) if glued[index] => group.push(element),
+            _ => groups.push(vec![element]),
+        }
+    }
+    // A code span grows its line box downwards (23.75px for 22.75px prose):
+    // Blink keeps the line's baseline where plain text puts it, so fragments
+    // hang from the top of the line instead of centering in it.
+    groups.into_iter().fold(
         div()
             .w_full()
             .min_w(px(0.0))
             .flex()
             .flex_row()
             .flex_wrap()
-            .items_center(),
-        |line, (index, fragment)| {
-            if fragment.hard_break {
-                return line.child(div().w_full().h_0());
-            }
-            let file_reference = fragment
-                .link_destination
-                .as_deref()
-                .and_then(markdown_file_reference_path);
-            let github_reference = fragment
-                .link_destination
-                .as_deref()
-                .is_some_and(|url| url.starts_with("https://github.com/"));
-            let has_icon = file_reference.is_some() || github_reference;
-            let linked_inline_code = matches!(
-                fragment.link_content.as_deref(),
-                Some([MarkdownInline::Code(_)])
-            );
-            let expands_line_box = fragment.state.code || has_icon || linked_inline_code;
-            let color = if file_reference.is_some() {
-                style.palette.file_link
-            } else if fragment.state.link {
-                style.palette.link
-            } else if fragment.state.code {
-                style.palette.inline_code_text
-            } else {
-                style.palette.text
-            };
-            let weight = if fragment.state.strong {
-                FontWeight::SEMIBOLD
-            } else if fragment.state.link {
-                FontWeight::MEDIUM
-            } else {
-                base_weight
-            };
-            // ChatGPT fades a code span or link in as one unit and every word
-            // of plain text on its own.
-            let is_decoration =
-                fragment.state.code || linked_inline_code || fragment.link_destination.is_some();
-            let decoration_alpha = if is_decoration {
-                fade.next_segment_alpha()
-            } else {
-                None
-            };
-            let mut element = div()
-                .flex_none()
-                .max_w_full()
-                .when_some(decoration_alpha, |element, alpha| element.opacity(alpha))
-                .font_weight(weight)
-                .text_color(color)
-                .when(fragment.state.emphasis, |element| element.italic())
-                .when(fragment.state.strikethrough, |element| {
-                    element.line_through()
-                })
-                .when(expands_line_box, |element| {
-                    element
-                        .min_h(px(line_height + style.layout.inline_code_flow_height
-                            - style.layout.base_line_height))
-                        .flex()
-                        .items_center()
-                })
-                .when(!fragment.state.code, |element| {
-                    element
-                        .text_size(px(font_size))
-                        .line_height(px(line_height))
-                })
-                .when(has_icon, |element| {
-                    element.px(px(2.0)).flex().items_center()
-                })
-                .when(fragment.trailing_space, |element| {
-                    element.mr(px(font_size * 0.25))
-                });
-            if has_icon {
-                element = element.child(
-                    icon(
-                        file_reference
-                            .map(markdown_file_reference_icon)
-                            .unwrap_or("markdown-github"),
-                        color.into(),
-                    )
-                    .size(px(16.0))
-                    .flex_none()
-                    .mr(px(3.0)),
-                );
-            }
-            let text = if let Some(link_content) = fragment.link_content.as_deref()
-                && file_reference.is_none()
+            .items_start(),
+        |line, mut group| {
+            if group.len() == 1
+                && let Some(element) = group.pop()
             {
-                render_styled_text_with_state(
-                    link_content,
-                    style,
-                    FontWeight::MEDIUM,
-                    fragment.state,
-                    &MarkdownFadeHandle::none(),
-                )
-            } else {
-                let label = if file_reference.is_some() {
-                    markdown_file_reference_label(
-                        &fragment.text,
-                        fragment.link_destination.as_deref().unwrap_or_default(),
-                    )
-                } else {
-                    fragment.text.clone()
-                };
-                if fade.is_active() && !is_decoration {
-                    fading_fragment_text(label, fragment.state, weight, color, fade)
-                } else {
-                    StyledText::new(label)
-                }
-            };
-            let element = if fragment.state.code || linked_inline_code {
-                let code = match fragment.link_content.as_deref() {
-                    Some([MarkdownInline::Code(code)]) => code.clone(),
-                    _ => fragment.text,
-                };
-                element.child(
-                    div()
-                        .min_w(px(0.0))
-                        .max_w_full()
-                        .whitespace_normal()
-                        .font_family(UI_MONOSPACE_FONT_FAMILY)
-                        .font_weight(weight)
-                        .text_color(color)
-                        .text_size(px(code_size))
-                        .line_height(px(code_paint_height))
-                        .px(px(style.layout.inline_code_padding_x))
-                        .py(px(style.layout.inline_code_padding_y))
-                        .rounded(px(style.layout.inline_code_radius))
-                        .bg(style.palette.inline_code_surface)
-                        .child(code),
-                )
-            } else {
-                element.child(
-                    div()
-                        .min_w(px(0.0))
-                        .when(has_icon, |e| e.flex_1())
-                        .child(text),
-                )
-            };
-            if let Some(destination) = fragment.link_destination {
-                let link_id = markdown_element_id(
-                    "markdown-link",
-                    &(inline_identity, index, destination.as_str()),
-                );
-                let file_reference = markdown_file_reference_path(&destination).map(str::to_owned);
-                line.child(
-                    element
-                        .id(link_id)
-                        .cursor_pointer()
-                        .hover(|element| element.underline())
-                        .on_click(move |_, window, cx| {
-                            if let Some(file_reference) = &file_reference {
-                                let line = destination
-                                    .rsplit_once(":")
-                                    .and_then(|(_, n)| n.parse().ok())
-                                    .or_else(|| {
-                                        destination
-                                            .rsplit_once("#L")
-                                            .and_then(|(_, n)| n.parse().ok())
-                                    });
-                                window.dispatch_action(
-                                    Box::new(super::file_panel::OpenWorkspaceFile {
-                                        path: file_reference.clone(),
-                                        line,
-                                    }),
-                                    cx,
-                                );
-                            } else {
-                                cx.open_url(&destination);
-                            }
-                        }),
-                )
-            } else {
-                line.child(element)
+                return line.child(element);
             }
+            // Fragments without a break opportunity between them wrap as one.
+            line.child(
+                div()
+                    .flex_none()
+                    .max_w_full()
+                    .flex()
+                    .flex_row()
+                    .items_start()
+                    .children(group),
+            )
         },
     )
+}
+
+/// A zero-width text line that gives an inline box its taller line box. An
+/// authored `min_h` would be snapped to the device-pixel grid before layout
+/// (23.75px becomes 23.5px at 2x) and pull every following line up, while a
+/// measured text height keeps its fractional size.
+fn line_box_strut(height: f32) -> Div {
+    div()
+        .flex_none()
+        .w(px(0.0))
+        .overflow_hidden()
+        .line_height(px(height))
+        .child("\u{200B}")
+}
+
+/// Whether Blink keeps `next` on the line of `previous`: nothing separates
+/// them and their junction is no line-break opportunity. An inline code span
+/// (`unicode-bidi: isolate`) never takes a break before it, and the pieces of
+/// one span were already split at its opportunities; other junctions follow
+/// [`line_break_offsets`] across the two fragments, so closing punctuation
+/// stays with the code span or emphasis it follows.
+fn glued_to_previous(previous: &InlineFragment, next: &InlineFragment) -> bool {
+    if previous.hard_break || next.hard_break || previous.trailing_space {
+        return false;
+    }
+    if next.state.code {
+        return next.code_opens;
+    }
+    let (Some(last), Some(first)) = (previous.text.chars().last(), next.text.chars().next()) else {
+        return false;
+    };
+    let junction = format!("{last}{first}");
+    !line_break_offsets(&junction).contains(&last.len_utf8())
+}
+
+fn code_piece(text: &str, state: InlineState, opens: bool, closes: bool) -> InlineFragment {
+    InlineFragment {
+        text: text.to_owned(),
+        state,
+        hard_break: false,
+        trailing_space: false,
+        link_destination: None,
+        link_content: None,
+        code_opens: opens,
+        code_closes: closes,
+    }
+}
+
+/// Line-break opportunities (byte offsets, the end included) as Blink finds
+/// them: UAX #14, except between two printable ASCII characters, where Blink's
+/// own pair table (`kAsciiLineBreakTable`) decides instead.
+fn line_break_offsets(text: &str) -> Vec<usize> {
+    let bytes = text.as_bytes();
+    let printable = |byte: u8| (0x21..0x7f).contains(&byte);
+    let ascii_pair = |offset: usize| {
+        offset > 0
+            && offset < bytes.len()
+            && printable(bytes[offset - 1])
+            && printable(bytes[offset])
+    };
+    let mut offsets = unicode_linebreak::linebreaks(text)
+        .map(|(offset, _)| offset)
+        .filter(|&offset| !ascii_pair(offset))
+        .chain((1..bytes.len()).filter(|&offset| {
+            ascii_pair(offset)
+                && blink_ascii_break(bytes[offset - 1], bytes[offset])
+                // A `-` before a digit may be a minus sign: Blink breaks there
+                // only after an alphanumeric (`ABCD-1234`, `1234-5678`).
+                && !(bytes[offset - 1] == b'-'
+                    && bytes[offset].is_ascii_digit()
+                    && !(offset >= 2 && bytes[offset - 2].is_ascii_alphanumeric()))
+        }))
+        .collect::<Vec<_>>();
+    offsets.sort_unstable();
+    offsets.dedup();
+    offsets
+}
+
+/// Blink's break opportunities between two printable ASCII characters, read
+/// from the reference renderer pair by pair: after `-` and `?` unless closing
+/// punctuation follows, and before an opening bracket after other punctuation.
+/// Letters, digits, `/`, `.` and `_` never break against each other.
+fn blink_ascii_break(before: u8, after: u8) -> bool {
+    match before {
+        b'-' => !b"!$),./:;?]}".contains(&after),
+        b'?' => !b"!\"'),./:;?]}".contains(&after),
+        b'!' | b'"' | b'#' | b'%' | b'&' | b')' | b'*' | b'+' | b',' | b'.' | b':' | b';'
+        | b'=' | b'>' | b'\\' | b']' | b'|' | b'}' | b'~' => b"(<[{".contains(&after),
+        _ => false,
+    }
 }
 
 fn append_inline_fragments(
@@ -1624,10 +1858,10 @@ fn append_inline_fragments(
         match inline {
             MarkdownInline::Text(text) => {
                 // Word boundaries allow closing CJK punctuation to start a
-                // line. Use Unicode line-break opportunities, as browser inline
-                // layout does, so punctuation stays with its preceding text.
+                // line. Use Blink's line-break opportunities so punctuation
+                // stays with its preceding text.
                 let mut start = 0;
-                for (end, _) in unicode_linebreak::linebreaks(text) {
+                for end in line_break_offsets(text) {
                     let segment = &text[start..end];
                     start = end;
                     let word = segment.trim_end_matches(char::is_whitespace);
@@ -1643,6 +1877,8 @@ fn append_inline_fragments(
                             trailing_space: word.len() < segment.len(),
                             link_destination: None,
                             link_content: None,
+                            code_opens: false,
+                            code_closes: false,
                         });
                     }
                 }
@@ -1650,14 +1886,13 @@ fn append_inline_fragments(
             MarkdownInline::Code(text) => {
                 let mut next = state;
                 next.code = true;
-                fragments.push(InlineFragment {
-                    text: text.clone(),
-                    state: next,
-                    hard_break: false,
-                    trailing_space: false,
-                    link_destination: None,
-                    link_content: None,
-                });
+                let breaks = line_break_offsets(text);
+                let mut start = 0;
+                for end in breaks.into_iter().filter(|&end| end < text.len()) {
+                    fragments.push(code_piece(&text[start..end], next, start == 0, false));
+                    start = end;
+                }
+                fragments.push(code_piece(&text[start..], next, start == 0, true));
             }
             MarkdownInline::SoftBreak => {
                 if let Some(previous) = fragments.last_mut() {
@@ -1671,6 +1906,8 @@ fn append_inline_fragments(
                 trailing_space: false,
                 link_destination: None,
                 link_content: None,
+                code_opens: false,
+                code_closes: false,
             }),
             MarkdownInline::Strong(children) => {
                 let mut next = state;
@@ -1701,6 +1938,8 @@ fn append_inline_fragments(
                     trailing_space: false,
                     link_destination: Some(destination.clone()),
                     link_content: Some(content.clone()),
+                    code_opens: false,
+                    code_closes: false,
                 });
             }
         }
@@ -2681,14 +2920,16 @@ mod tests {
         let plain = visual.debug_bounds("plain-line").unwrap();
         let code = visual.debug_bounds("code-line").unwrap();
         let mention = visual.debug_bounds("mention-line").unwrap();
-        assert!(
-            (f32::from(code.size.height - plain.size.height) - 1.0).abs() <= 0.01,
-            "plain={plain:?} code={code:?} mention={mention:?}"
-        );
-        assert!(
-            (f32::from(mention.size.height - plain.size.height) - 1.0).abs() <= 0.01,
-            "plain={plain:?} code={code:?} mention={mention:?}"
-        );
+        // Line boxes keep their fractional heights (22.75, 23.75, 23.75), so
+        // only the snapped edges land on the device-pixel grid and the lines
+        // below them do not drift.
+        let top = plain.origin.y;
+        for (bounds, expected) in [(plain, 22.75), (code, 46.5), (mention, 70.25)] {
+            assert!(
+                (f32::from(bounds.bottom() - top) - expected).abs() <= 0.5,
+                "plain={plain:?} code={code:?} mention={mention:?}"
+            );
+        }
     }
 
     pub(super) struct FractionalInlineFlow;
@@ -2911,6 +3152,63 @@ mod tests {
     use super::*;
     use crate::theme::ThemeMode;
     use gpui::rgba;
+
+    /// The pieces Blink wraps as units, probed in the reference renderer with
+    /// `overflow-wrap: normal` at a 1px width.
+    fn blink_pieces(text: &str) -> Vec<&str> {
+        let mut start = 0;
+        line_break_offsets(text)
+            .into_iter()
+            .map(|end| {
+                let piece = &text[start..end];
+                start = end;
+                piece
+            })
+            .collect()
+    }
+
+    #[test]
+    fn ascii_breaks_follow_blinks_pair_table() {
+        assert_eq!(
+            blink_pieces("artifacts/app-server-schema-20260913"),
+            ["artifacts/app-", "server-", "schema-", "20260913"]
+        );
+        assert_eq!(blink_pieces("--schema-root"), ["-", "-", "schema-", "root"]);
+        assert_eq!(blink_pieces("-32601"), ["-32601"]);
+        assert_eq!(blink_pieces("x-1.2"), ["x-", "1.2"]);
+        assert_eq!(
+            blink_pieces("src/agent/codex/runtime.rs"),
+            ["src/agent/codex/runtime.rs"]
+        );
+        assert_eq!(
+            blink_pieces("codex-cli 0.154.0"),
+            ["codex-", "cli ", "0.154.0"]
+        );
+        assert_eq!(blink_pieces("ab／cd"), ["ab", "／", "cd"]);
+        assert_eq!(blink_pieces("README），统"), ["README），", "统"]);
+    }
+
+    #[test]
+    fn code_spans_glue_to_the_text_before_them_and_closing_punctuation_after() {
+        let blocks = parse_markdown("回 `-32601`」这 词`x`，`y`的 `a/b`／`c`");
+        let MarkdownBlock::Paragraph(inlines) = &blocks.blocks[0] else {
+            panic!("expected a paragraph");
+        };
+        let mut fragments = Vec::new();
+        append_inline_fragments(inlines, InlineState::default(), &mut fragments);
+        let mut units: Vec<String> = Vec::new();
+        for (index, fragment) in fragments.iter().enumerate() {
+            let glued = index > 0 && glued_to_previous(&fragments[index - 1], fragment);
+            match units.last_mut() {
+                Some(unit) if glued => unit.push_str(&fragment.text),
+                _ => units.push(fragment.text.clone()),
+            }
+        }
+        assert_eq!(
+            units,
+            ["回", "-32601」", "这", "词x，y", "的", "a/b", "／c"]
+        );
+    }
 
     #[test]
     fn parses_commonmark_and_gfm_nodes() {

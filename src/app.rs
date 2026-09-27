@@ -246,6 +246,17 @@ impl ChatApp {
         .detach();
         cx.subscribe(
             &pull_requests,
+            |this, _, event: &crate::components::pull_requests::OpenPullRequestChat, cx| {
+                this.showing_pull_requests = false;
+                this.sidebar
+                    .update(cx, |sidebar, cx| sidebar.set_pull_requests_open(false, cx));
+                this.select_conversation(event.thread_id.clone(), cx);
+                cx.notify();
+            },
+        )
+        .detach();
+        cx.subscribe(
+            &pull_requests,
             |this, _, event: &OpenChatForPullRequest, cx| {
                 let prompt = event.prompt.clone();
                 let cwd = this

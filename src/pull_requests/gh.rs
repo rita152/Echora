@@ -15,9 +15,10 @@ use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
 use super::model::{
-    Check, CheckState, CiStatus, Comment, Commit, GroupKind, ListTab, PullRequestDetail,
-    PullRequestFilter, PullRequestGroup, PullRequestStatus, PullRequestSummary, ReviewThread,
-    StatusFilter, TimelineEntry, TimelineKind, User, dedupe_sections, relative_age,
+    ActivityEventKind, ActivityItem, Check, CheckState, CiStatus, Comment, Commit, GroupKind,
+    ListTab, PullRequestDetail, PullRequestFilter, PullRequestGroup, PullRequestStatus,
+    PullRequestSummary, ReviewThread, StatusFilter, User, build_activity, dedupe_sections,
+    relative_age,
 };
 use crate::git_review::{FileDiff, process};
 
@@ -351,19 +352,20 @@ impl GhClient {
             .with_context(|| crate::i18n::format!("仓库名称必须是 owner/name（收到 {repository:?}）" => "Repository name must be owner/name (received {repository:?})"))?;
         let query = r#"
 query($owner: String!, $name: String!, $number: Int!) {
+  viewer { login avatarUrl(size: 48) }
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       number title url isDraft state additions deletions headRefOid
       headRefName baseRefName createdAt updatedAt merged mergeable
-      body
+      body viewerDidAuthor
       author { login avatarUrl }
       reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login name avatarUrl } } } }
-      reviews(first: 50) { nodes { id url viewerCanUpdate viewerCanDelete author { login avatarUrl } body submittedAt state } }
-      comments(first: 50) { nodes { id databaseId url viewerCanUpdate viewerCanDelete author { login avatarUrl } body createdAt } }
+      reviews(first: 50) { nodes { id url viewerCanUpdate viewerCanDelete author { __typename login avatarUrl(size: 48) } body submittedAt state } }
+      comments(first: 50) { nodes { id databaseId url viewerCanUpdate viewerCanDelete author { __typename login avatarUrl(size: 48) } body createdAt } }
       reviewThreads(first: 50) {
         nodes {
-          id isResolved path line
-          comments(first: 30) { nodes { diffHunk line originalLine id databaseId url viewerCanUpdate viewerCanDelete author { login avatarUrl } body createdAt } }
+          id isResolved viewerCanResolve viewerCanUnresolve path line
+          comments(first: 30) { nodes { diffHunk line originalLine id databaseId url viewerCanUpdate viewerCanDelete author { __typename login avatarUrl(size: 48) } body createdAt } }
         }
       }
       commits(first: 100) {
@@ -372,12 +374,7 @@ query($owner: String!, $name: String!, $number: Int!) {
       timelineItems(first: 100) {
         nodes {
           __typename
-          ... on PullRequestCommit { commit { oid messageHeadline committedDate } }
-          ... on IssueComment { id createdAt }
-          ... on PullRequestReview { id submittedAt }
           ... on MergedEvent { actor { login } createdAt }
-          ... on ClosedEvent { actor { login } createdAt }
-          ... on ReopenedEvent { actor { login } createdAt }
         }
       }
       statusCheckRollup {
@@ -410,12 +407,17 @@ query($owner: String!, $name: String!, $number: Int!) {
         }
         let mut summary = summary_from(&pull);
         summary.repository = repository.to_string();
-        let author = user_from(pull.get("author").unwrap_or(&Value::Null)).unwrap_or(User {
+        let mut author = user_from(pull.get("author").unwrap_or(&Value::Null)).unwrap_or(User {
             login: summary.author.clone(),
             name: None,
             avatar_url: None,
             is_self: false,
         });
+        // The reference's `isAuthor`: the signed-in account opened it.
+        author.is_self = pull
+            .get("viewerDidAuthor")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
 
         let mut requested_reviewers = Vec::new();
         for node in nodes(&pull, "/reviewRequests") {
@@ -428,9 +430,31 @@ query($owner: String!, $name: String!, $number: Int!) {
         for node in nodes(&pull, "/comments") {
             comments.push(comment_from(&node, None));
         }
+        // A review with a body is a comment card; without one, an approval or
+        // a change request is an event card and a plain `COMMENTED` review is
+        // only the container of its threads.
+        let mut activity = Vec::new();
         for node in nodes(&pull, "/reviews") {
             let body = text(&node, "body").unwrap_or_default();
             if body.trim().is_empty() {
+                let kind = match text(&node, "state").as_deref() {
+                    Some("APPROVED") => Some(ActivityEventKind::Approved),
+                    Some("CHANGES_REQUESTED") => Some(ActivityEventKind::ChangesRequested),
+                    _ => None,
+                };
+                if let Some(kind) = kind {
+                    let at = text(&node, "submittedAt").unwrap_or_default();
+                    activity.push(ActivityItem::Event {
+                        kind,
+                        actor: node
+                            .pointer("/author/login")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string(),
+                        age: relative_age(&at, now()),
+                        at,
+                    });
+                }
                 continue;
             }
             let mut comment = comment_from(&node, None);
@@ -438,7 +462,11 @@ query($owner: String!, $name: String!, $number: Int!) {
             comment.can_quote = true;
             comments.push(comment);
         }
-        comments.sort_by_key(|comment| comment.id.clone());
+        comments.sort_by(|left, right| left.at.cmp(&right.at));
+        activity.extend(comments.iter().map(|comment| ActivityItem::Comment {
+            id: comment.id.clone(),
+            at: comment.at.clone(),
+        }));
 
         let mut review_threads = Vec::new();
         for node in nodes(&pull, "/reviewThreads") {
@@ -452,6 +480,14 @@ query($owner: String!, $name: String!, $number: Int!) {
                 .get("isResolved")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
+            let can_resolve = node
+                .get(if resolved {
+                    "viewerCanUnresolve"
+                } else {
+                    "viewerCanResolve"
+                })
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             let thread_comments: Vec<Comment> = nodes(&node, "/comments")
                 .iter()
                 .map(|comment| {
@@ -460,11 +496,18 @@ query($owner: String!, $name: String!, $number: Int!) {
                     comment
                 })
                 .collect();
+            if let Some(first) = thread_comments.first() {
+                activity.push(ActivityItem::Thread {
+                    id: thread_id.clone(),
+                    at: first.at.clone(),
+                });
+            }
             review_threads.push(ReviewThread {
                 id: thread_id,
                 path,
                 line,
                 resolved,
+                can_resolve,
                 comments: thread_comments,
             });
         }
@@ -472,110 +515,50 @@ query($owner: String!, $name: String!, $number: Int!) {
         let mut commits = Vec::new();
         for node in nodes(&pull, "/commits") {
             let commit = node.get("commit").cloned().unwrap_or(Value::Null);
-            let author = commit
+            let author_login = commit
                 .pointer("/author/user/login")
                 .and_then(Value::as_str)
-                .map(str::to_string)
+                .map(str::to_string);
+            let author = author_login
+                .clone()
                 .or_else(|| text(commit.get("author").unwrap_or(&Value::Null), "name"))
                 .unwrap_or_default();
+            let at = text(&commit, "committedDate").unwrap_or_default();
             commits.push(Commit {
                 sha: text(&commit, "oid").unwrap_or_default(),
                 subject: text(&commit, "messageHeadline").unwrap_or_default(),
                 author,
-                age: relative_age(&text(&commit, "committedDate").unwrap_or_default(), now()),
+                author_login,
+                age: relative_age(&at, now()),
+                at,
             });
         }
-
-        // The activity feed interleaves the commits, the state changes the feed
-        // draws itself (`opened`), and the comments, ordered by timestamp.
-        let mut timeline = Vec::new();
-        timeline.push(TimelineEntry {
-            kind: TimelineKind::Opened,
-            at: text(&pull, "createdAt").unwrap_or_default(),
+        activity.extend(commits.iter().map(|commit| ActivityItem::Commits {
+            commits: vec![commit.clone()],
+        }));
+        let created_at = text(&pull, "createdAt").unwrap_or_default();
+        activity.push(ActivityItem::Event {
+            kind: ActivityEventKind::Opened,
             actor: author.login.clone(),
-            age: relative_age(&text(&pull, "createdAt").unwrap_or_default(), now()),
-            comment_id: None,
-            commit_sha: None,
-            commit_subject: None,
+            age: relative_age(&created_at, now()),
+            at: created_at,
         });
         for node in nodes(&pull, "/timelineItems") {
-            let kind = text(&node, "__typename").unwrap_or_default();
-            match kind.as_str() {
-                "PullRequestCommit" => {
-                    let commit = node.get("commit").cloned().unwrap_or(Value::Null);
-                    timeline.push(TimelineEntry {
-                        kind: TimelineKind::Commit,
-                        at: text(&commit, "committedDate").unwrap_or_default(),
-                        actor: String::new(),
-                        age: relative_age(
-                            &text(&commit, "committedDate").unwrap_or_default(),
-                            now(),
-                        ),
-                        comment_id: None,
-                        commit_sha: text(&commit, "oid"),
-                        commit_subject: text(&commit, "messageHeadline"),
-                    });
-                }
-                "IssueComment" | "PullRequestReview" => {
-                    let id = text(&node, "id").unwrap_or_default();
-                    if let Some(comment) = comments.iter().find(|comment| comment.id == id) {
-                        let at = text(&node, "createdAt")
-                            .or_else(|| text(&node, "submittedAt"))
-                            .unwrap_or_default();
-                        timeline.push(TimelineEntry {
-                            kind: TimelineKind::Comment,
-                            at,
-                            actor: comment.author.clone(),
-                            age: comment.age.clone(),
-                            comment_id: Some(id),
-                            commit_sha: None,
-                            commit_subject: None,
-                        });
-                    }
-                }
-                "MergedEvent" | "ClosedEvent" | "ReopenedEvent" => {
-                    // A merge closes the pull request too; the reference only
-                    // draws the `merged` card for that pair.
-                    if kind == "ClosedEvent"
-                        && timeline
-                            .iter()
-                            .any(|entry| entry.kind == TimelineKind::Merged)
-                    {
-                        continue;
-                    }
-                    let event_kind = match kind.as_str() {
-                        "MergedEvent" => TimelineKind::Merged,
-                        "ReopenedEvent" => TimelineKind::Reopened,
-                        _ => TimelineKind::Closed,
-                    };
-                    timeline.push(TimelineEntry {
-                        kind: event_kind,
-                        at: text(&node, "createdAt").unwrap_or_default(),
-                        actor: node
-                            .pointer("/actor/login")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_string(),
-                        age: relative_age(&text(&node, "createdAt").unwrap_or_default(), now()),
-                        comment_id: None,
-                        commit_sha: None,
-                        commit_subject: None,
-                    });
-                }
-                _ => {}
+            if text(&node, "__typename").as_deref() == Some("MergedEvent") {
+                let at = text(&node, "createdAt").unwrap_or_default();
+                activity.push(ActivityItem::Event {
+                    kind: ActivityEventKind::Merged,
+                    actor: node
+                        .pointer("/actor/login")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                    age: relative_age(&at, now()),
+                    at,
+                });
             }
         }
-        timeline.sort_by(|left, right| left.sort_key().cmp(right.sort_key()));
-        // A feed that only has the synthetic `opened` entry means the timeline
-        // query returned nothing useful; fall back to listing the comments.
-        let timeline: Vec<TimelineEntry> = if timeline
-            .iter()
-            .any(|entry| entry.kind != TimelineKind::Opened)
-        {
-            timeline
-        } else {
-            Vec::new()
-        };
+        let activity = build_activity(activity);
 
         let mut checks = Vec::new();
         for node in nodes(&pull, "/statusCheckRollup/contexts") {
@@ -611,14 +594,16 @@ query($owner: String!, $name: String!, $number: Int!) {
             }
         }
 
+        let viewer = value.pointer("/data/viewer").and_then(user_from);
         Ok(PullRequestDetail {
+            viewer,
             summary: summary.clone(),
             body: text(&pull, "body").unwrap_or_default(),
             requested_reviewers,
             reviewers: Vec::new(),
             comments,
             review_threads,
-            timeline,
+            activity,
             checks,
             commits,
             author,
@@ -981,6 +966,7 @@ fn comment_from(node: &Value, thread: Option<(&str, &str, Option<u32>)>) -> Comm
             .and_then(Value::as_bool)
             .unwrap_or(false),
         can_quote: !body.trim().is_empty(),
+        author_is_bot: text(author, "__typename").as_deref() == Some("Bot"),
     }
 }
 

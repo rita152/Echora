@@ -261,7 +261,7 @@ impl MacTextSystemState {
         if let Some(font) = self.hidden_fonts.get(&key) {
             return Some(font.clone());
         }
-        let font = hidden_ui_font(cascade, size.into(), weight)?;
+        let font = hidden_ui_font(family, cascade, size.into(), weight)?;
         self.hidden_fonts.insert(key, font.clone());
         Some(font)
     }
@@ -731,14 +731,13 @@ impl MacTextSystemState {
                             } else if family.starts_with('.') {
                                 // Hidden UI families (`.PingFang UI SC`,
                                 // `.AppleSymbols`, …) are not reachable through
-                                // the public family list, so re-selecting them
-                                // would fall back to a different public face.
-                                // Keep the face CoreText's cascade chose, which
-                                // carries Blink's optical size: for Simplified
-                                // Chinese `.PingFangUITextSC` (0.992em
-                                // ideographs) below 20px and the Display face
-                                // (0.952em) from 20px up. Only the weight is
-                                // re-applied.
+                                // the public family list, so font-kit would
+                                // fall back to a different public face. Blink
+                                // re-matches the cascade's family by name, which
+                                // for Simplified Chinese yields the Display face
+                                // (0.958em ideographs) at every size, not the
+                                // `.PingFangUITextSC` (0.992em) CoreText's
+                                // cascade picks below 20px.
                                 self.hidden_font(
                                     &family,
                                     &fallback,
@@ -779,6 +778,26 @@ impl MacTextSystemState {
                             unsafe { core_text::string_attributes::kCTKernAttributeName },
                             &CFNumber::from(spacing * f32::from(actual_font_size)),
                         );
+                    } else {
+                        // CoreText squeezes fullwidth CJK punctuation that ends
+                        // a line to half width. Blink keeps it full width in
+                        // running text, and GPUI lays out inline fragments as
+                        // separate lines, so every fragment ending in `。` or
+                        // `，` would lose half its advance. A zero kern on the
+                        // punctuation alone keeps its full advance without
+                        // touching Latin pair kerning.
+                        let mut offset = utf16_start;
+                        for character in text_run.chars() {
+                            let length = character.len_utf16() as isize;
+                            if is_fullwidth_cjk_punctuation(character) {
+                                string.set_attribute(
+                                    CFRange::init(offset, length),
+                                    unsafe { core_text::string_attributes::kCTKernAttributeName },
+                                    &CFNumber::from(0.0f32),
+                                );
+                            }
+                            offset += length;
+                        }
                     }
                 }
                 break_ligature = !break_ligature;
@@ -848,19 +867,47 @@ impl MacTextSystemState {
     }
 }
 
+/// CJK symbols and punctuation (`、。〈〉「」…`) and the fullwidth ASCII
+/// punctuation forms (`！，．：；？…`), which CoreText compresses at a line end.
+fn is_fullwidth_cjk_punctuation(character: char) -> bool {
+    matches!(
+        character,
+        '\u{3001}'..='\u{3003}'
+            | '\u{3008}'..='\u{3011}'
+            | '\u{3014}'..='\u{301F}'
+            | '\u{FF01}'..='\u{FF0F}'
+            | '\u{FF1A}'..='\u{FF20}'
+            | '\u{FF3B}'..='\u{FF40}'
+            | '\u{FF5B}'..='\u{FF65}'
+    )
+}
+
 /// Resolves a hidden system font face the way Blink does.
 ///
 /// `CTFontCreateWithName` refuses names that start with a dot (it returns Times
 /// New Roman), and font-kit only lists public families, so the system UI faces
-/// cannot be reached by name. The face CoreText's cascade returned for the run
-/// (`cascade`) already has the optical size Blink uses (`+[NSFont
-/// fontWithName:size:]` would always pick the Display face); only its weight
-/// instance is re-selected.
-fn hidden_ui_font(cascade: &CTFont, size: CGFloat, weight: f32) -> Option<CTFont> {
+/// cannot be reached by name. A descriptor carrying only the family name does
+/// resolve them, to the face Blink's family match picks (`.PingFangUIDisplaySC`
+/// for `.PingFang UI SC`). When the family cannot be resolved that way, the
+/// face CoreText's cascade returned for the run (`cascade`) is kept. The
+/// weight instance is re-selected afterwards.
+fn hidden_ui_font(family: &str, cascade: &CTFont, size: CGFloat, weight: f32) -> Option<CTFont> {
     use core_text::font::CTFontRef;
-    use core_text::font_descriptor::{kCTFontVariationAttribute, new_from_attributes};
+    use core_text::font_descriptor::{
+        kCTFontFamilyNameAttribute, kCTFontVariationAttribute, new_from_attributes,
+    };
 
-    let base = cascade.clone_with_font_size(size);
+    let family_attributes = CFDictionary::from_CFType_pairs(&[(
+        unsafe { CFString::wrap_under_get_rule(kCTFontFamilyNameAttribute) },
+        CFString::new(family).as_CFType(),
+    )]);
+    let matched =
+        core_text::font::new_from_descriptor(&new_from_attributes(&family_attributes), size);
+    let base = if matched.family_name() == family {
+        matched
+    } else {
+        cascade.clone_with_font_size(size)
+    };
     // The family exposes static faces at 400/500/600/700, and Blink's CSS font
     // matching picks the nearest one: 400 for 430, 500 for 500, 600 for bold
     // text. The plain face is already the 400 instance.
@@ -1300,6 +1347,31 @@ mod typography_tests {
                 font_id,
             }],
         )
+    }
+
+    #[test]
+    fn typography_cjk_punctuation_keeps_its_full_advance_at_a_fragment_end() {
+        let system = MacTextSystem::new();
+        let mut font = gpui::font(".SystemUIFont");
+        font.weight = FontWeight(430.0);
+        let font_id = system.font_id(&font).unwrap();
+        let width = |text: &str| {
+            f32::from(
+                system
+                    .layout_line(
+                        text,
+                        px(14.0),
+                        &[FontRun {
+                            len: text.len(),
+                            font_id,
+                        }],
+                    )
+                    .width,
+            )
+        };
+        // `表。` is two ideograph advances, as it is in the middle of a line.
+        assert!((width("表。") - 2.0 * width("表")).abs() < 0.05);
+        assert!((width("冲突，") - 3.0 * width("表")).abs() < 0.1);
     }
 
     #[test]

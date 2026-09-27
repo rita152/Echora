@@ -7,6 +7,7 @@
 //! free of GPUI and of the UI adapters, matching the boundary `src/git_review/`
 //! keeps for Git operations.
 
+pub mod associations;
 pub mod avatars;
 mod gh;
 mod model;
@@ -15,7 +16,7 @@ pub use gh::{GhClient, search_users};
 #[cfg(test)]
 pub use model::CiStatus;
 pub use model::{
-    CheckState, GroupKind, ListTab, NewReviewComment, PullRequestDetail, PullRequestFilter,
-    PullRequestGroup, PullRequestStatus, PullRequestSummary, StatusFilter, StatusIcon,
-    TimelineEntry, TimelineKind, User, filter_groups, format_count,
+    ActivityEventKind, ActivityItem, CheckState, Comment, Commit, GroupKind, ListTab,
+    NewReviewComment, PullRequestDetail, PullRequestFilter, PullRequestGroup, PullRequestStatus,
+    PullRequestSummary, ReviewThread, StatusFilter, StatusIcon, User, filter_groups, format_count,
 };

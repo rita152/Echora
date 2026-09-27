@@ -12,7 +12,6 @@ use crate::theme::Theme;
 pub(super) enum SectionKind {
     Checks,
     Activity,
-    Commits,
 }
 
 impl PullRequestsView {
@@ -39,6 +38,9 @@ impl PullRequestsView {
         let theme = self.theme();
         let has_detail = self.selected.is_some();
         let mut tabs = div()
+            .id("pr-detail-tabs")
+            .role(gpui::Role::TabList)
+            .aria_label("Pull request view")
             .flex_1()
             .min_w(px(0.0))
             .flex()
@@ -49,30 +51,18 @@ impl PullRequestsView {
                 let selected = self.review_tab.is_none() && self.detail_tab == tab;
                 let view = cx.entity();
                 tabs = tabs.child(
-                    div()
-                        .id(SharedString::from(format!("pr-detail-tab-{label}")))
-                        .h(px(28.0))
-                        .px(px(8.0))
-                        .flex()
-                        .items_center()
-                        .gap(px(4.0))
-                        .rounded(px(12.5))
-                        .text_size(px(13.0))
-                        .cursor_pointer()
-                        .role(gpui::Role::Button)
-                        .aria_label(SharedString::from(label))
-                        .when(selected, |button| {
-                            button.bg(theme.control).text_color(theme.text)
-                        })
-                        .when(!selected, |button| {
-                            button.text_color(theme.text_muted).hover(move |style| {
-                                style.bg(theme.control_hover).text_color(theme.text)
-                            })
-                        })
-                        .on_click(move |_, _, cx| {
-                            view.update(cx, |view, cx| view.set_detail_tab(tab, cx));
-                        })
-                        .child(label),
+                    Self::toolbar_button(
+                        SharedString::from(format!("pr-detail-tab-{label}")),
+                        theme,
+                        selected,
+                    )
+                    .role(gpui::Role::Tab)
+                    .aria_label(SharedString::from(label))
+                    .aria_selected(selected)
+                    .on_click(move |_, _, cx| {
+                        view.update(cx, |view, cx| view.set_detail_tab(tab, cx));
+                    })
+                    .child(label),
                 );
             }
             if let Some(review) = self.review_tab.clone() {
@@ -166,105 +156,84 @@ impl PullRequestsView {
             .detail
             .as_ref()
             .is_some_and(|detail| detail.summary.status == PullRequestStatus::Draft);
+        let status = self.selected.as_ref().map(|pr| pr.status);
         let view = cx.entity();
         let mut actions = div().flex_none().flex().items_center().gap(px(4.0));
         if has_detail {
             let browser_view = view.clone();
             actions = actions.child(
-                div()
-                    .id("pr-open-browser")
-                    .size(px(28.0))
-                    .flex()
-                    .items_center()
+                Self::toolbar_button("pr-open-browser", theme, false)
+                    .w(px(28.0))
+                    .px(px(0.0))
                     .justify_center()
-                    .rounded(px(12.5))
-                    .cursor_pointer()
-                    .hover(move |style| style.bg(theme.control_hover))
-                    .role(gpui::Role::Button)
                     .aria_label("Open in browser")
                     .on_click(move |_, _, cx| {
                         browser_view.update(cx, |view, cx| view.open_in_browser(cx));
                     })
-                    .child(icon("pr-open-browser", theme.text.into()).size(px(18.0))),
+                    .child(icon("pr-open-browser", theme.text.into()).size(px(16.0))),
             );
             let chat_view = view.clone();
-            actions = actions.child(Self::header_pill("pr-chat", "Chat", theme, false).on_click(
-                move |_, _, cx| {
-                    chat_view.update(cx, |view, cx| view.open_chat(cx));
-                },
-            ));
-            let merge_view = view.clone();
+            let chat_label = if self.chat_thread.is_some() {
+                "Open chat"
+            } else {
+                "Chat"
+            };
             actions = actions.child(
-                div()
-                    .id("pr-merge")
-                    .h(px(28.0))
-                    .px(px(8.0))
-                    .flex()
-                    .items_center()
-                    .gap(px(4.0))
-                    .rounded(px(12.5))
-                    .text_size(px(13.0))
-                    .bg(theme.inverted_surface)
-                    .text_color(theme.inverted_text)
-                    .when(
-                        !draft
-                            && self.detail.is_some()
-                            && !self.mutation_pending
-                            && self
-                                .selected
-                                .as_ref()
-                                .is_some_and(|pr| pr.status == PullRequestStatus::Open),
-                        |button| {
-                            button.cursor_pointer().on_click(move |_, _, cx| {
+                Self::toolbar_button("pr-chat", theme, true)
+                    .aria_label(chat_label)
+                    .on_click(move |_, _, cx| {
+                        chat_view.update(cx, |view, cx| view.open_chat(cx));
+                    })
+                    .child(chat_label),
+            );
+            // Merging only exists for open pull requests; a draft keeps the
+            // button but disables it.
+            if matches!(
+                status,
+                Some(PullRequestStatus::Open | PullRequestStatus::Draft)
+            ) {
+                let merge_view = view.clone();
+                let enabled = !draft && self.detail.is_some() && !self.mutation_pending;
+                actions = actions.child(
+                    div()
+                        .id("pr-merge")
+                        .h(px(28.0))
+                        .px(px(9.0))
+                        .flex()
+                        .items_center()
+                        .gap(px(4.0))
+                        .rounded(px(12.5))
+                        .text_size(px(13.0))
+                        .line_height(px(18.0))
+                        .bg(theme.inverted_surface)
+                        .text_color(theme.inverted_text)
+                        .when(enabled, |button| {
+                            button.on_click(move |_, _, cx| {
                                 merge_view.update(cx, |view, cx| view.merge(cx));
                             })
-                        },
-                    )
-                    .when(
-                        draft
-                            || self.detail.is_none()
-                            || self.mutation_pending
-                            || self
-                                .selected
-                                .as_ref()
-                                .is_some_and(|pr| pr.status != PullRequestStatus::Open),
-                        |button| button.opacity(0.4),
-                    )
-                    .role(gpui::Role::Button)
-                    .aria_label(if self.mutation_pending {
-                        "Saving to GitHub"
-                    } else if self.detail.is_none() {
-                        "Merge unavailable: details are loading"
-                    } else if self.selected.as_ref().is_some_and(|pr| {
-                        matches!(
-                            pr.status,
-                            PullRequestStatus::Closed | PullRequestStatus::Merged
-                        )
-                    }) {
-                        "Merge unavailable: pull request is closed"
-                    } else if draft {
-                        "Merge unavailable: Mark as \"Ready for review\" to merge"
-                    } else {
-                        "Merge"
-                    })
-                    .child(icon("pr-merge", theme.inverted_text.into()).size(px(18.0)))
-                    .child("Merge"),
-            );
-        }
-        if has_detail {
+                        })
+                        .when(!enabled, |button| button.opacity(0.5))
+                        .role(gpui::Role::Button)
+                        .aria_label(if self.mutation_pending {
+                            "Saving to GitHub"
+                        } else if self.detail.is_none() {
+                            "Merge unavailable: details are loading"
+                        } else if draft {
+                            "Merge unavailable: Mark as \"Ready for review\" to merge"
+                        } else {
+                            "Merge"
+                        })
+                        .child(icon("pr-merge", theme.inverted_text.into()).size(px(16.0)))
+                        .child("Merge"),
+                );
+            }
             let fullscreen_view = view.clone();
             let fullscreen = self.fullscreen;
             actions = actions.child(
-                div()
-                    .id("pr-fullscreen")
-                    .size(px(28.0))
-                    .flex()
-                    .items_center()
+                Self::toolbar_button("pr-fullscreen", theme, false)
+                    .w(px(28.0))
+                    .px(px(0.0))
                     .justify_center()
-                    .rounded(px(12.5))
-                    .cursor_pointer()
-                    .hover(move |style| style.bg(theme.control_hover))
-                    .role(gpui::Role::Button)
                     .aria_label(if fullscreen {
                         "Exit full screen"
                     } else {
@@ -273,10 +242,22 @@ impl PullRequestsView {
                     .on_click(move |_, _, cx| {
                         fullscreen_view.update(cx, |view, cx| view.toggle_fullscreen(cx));
                     })
-                    .child(icon("pr-fullscreen", theme.text.into()).size(px(18.0))),
+                    .child(
+                        icon(
+                            if fullscreen {
+                                "pr-exit-fullscreen"
+                            } else {
+                                "pr-fullscreen"
+                            },
+                            theme.text_muted.into(),
+                        )
+                        .size(px(16.0)),
+                    ),
             );
         }
 
+        // `grid h-toolbar px-toolbar`: at this panel width the state glyph,
+        // the tab list, and the actions sit in one row 4px apart.
         div()
             .flex_none()
             .h(px(TOOLBAR_HEIGHT))
@@ -284,18 +265,13 @@ impl PullRequestsView {
             .flex()
             .items_center()
             .gap(px(4.0))
-            .when(has_detail, |header| {
-                header.child(icon("pull-request", theme.text_muted.into()).size(px(18.0)))
+            .when_some(status.filter(|_| has_detail), |header, status| {
+                header.child(Self::state_glyph(status, theme, 18.0))
             })
             .when(self.compact(), |header| {
                 header.child(
-                    div()
-                        .id("pr-back-list")
-                        .flex_none()
-                        .px(px(6.0))
-                        .role(gpui::Role::Button)
+                    Self::toolbar_button("pr-back-list", theme, false)
                         .aria_label("Back to pull requests")
-                        .cursor_pointer()
                         .child("Back")
                         .on_click({
                             let view = cx.entity();
@@ -311,6 +287,34 @@ impl PullRequestsView {
             })
             .child(tabs)
             .child(actions)
+    }
+
+    /// The plain state glyph (`PullRequestStatusIcon`): draft and open in
+    /// `text-codex-description`, merged in `text-purple`, closed in
+    /// `text-chart-red`.
+    pub(super) fn state_glyph(
+        status: PullRequestStatus,
+        theme: PrTheme,
+        size: f32,
+    ) -> impl IntoElement {
+        let (name, color) = match status {
+            PullRequestStatus::Draft => ("pr-status-draft", theme.text_muted),
+            PullRequestStatus::Open => ("pr-status-open", theme.text_muted),
+            PullRequestStatus::Merged => ("pr-status-merged", theme.purple),
+            PullRequestStatus::Closed => ("pr-status-closed", theme.chart_red),
+        };
+        icon(name, color.into()).flex_none().size(px(size))
+    }
+
+    /// Title and body edits exist only for the author of an open pull request.
+    pub(super) fn can_edit(&self) -> bool {
+        self.detail.as_ref().is_some_and(|detail| {
+            detail.author.is_self
+                && matches!(
+                    detail.summary.status,
+                    PullRequestStatus::Open | PullRequestStatus::Draft
+                )
+        })
     }
 
     fn detail_body(&self, cx: &mut gpui::Context<Self>) -> gpui::AnyElement {
@@ -388,16 +392,10 @@ impl PullRequestsView {
             Theme::for_mode(self.mode),
             "pull-request-description",
         );
+        // `main.px-5.pb-5` with the stable 11px scrollbar gutter, then the
+        // page column (`gap-[var(--detail-page-section-gap)]`, 24px).
         let mut column = div()
-            .flex_1()
-            .min_h(px(0.0))
-            .overflow_hidden()
-            // The detail column reserves the reference's scrollbar gutter on the
-            // right (20px padding + an 11px gutter), so the description body is
-            // 578px wide at a 1440px window and breaks at the same words.
-            // The reference insets the scroll body 2px inside the pane padding
-            // (its content column starts at 816.9, not 814.9).
-            .pl(px(PANE_PADDING + 2.0))
+            .pl(px(PANE_PADDING))
             .pr(px(PANE_PADDING + SCROLLBAR_GUTTER))
             .pb(px(PANE_PADDING))
             .flex()
@@ -406,54 +404,26 @@ impl PullRequestsView {
             .child(self.title_block(cx))
             .child(self.meta_rows(cx));
 
-        // Description.
-        let description_toggle = {
-            let view = cx.entity();
-            div()
-                .id("pr-description-toggle")
-                .h(px(28.0))
-                .flex()
-                .items_center()
-                .gap(px(6.0))
-                .cursor_pointer()
-                .role(gpui::Role::Button)
-                .aria_label("Description")
-                .on_click(move |_, _, cx| {
-                    view.update(cx, |view, cx| view.toggle_description(cx));
-                })
-                .child(
-                    div()
-                        .text_size(px(16.0))
-                        .font_weight(gpui::FontWeight::MEDIUM)
-                        .text_color(theme.text)
-                        .child("Description"),
-                )
-                .child(
-                    icon("section-chevron", theme.text_muted.into())
-                        .size(px(14.0))
-                        .when(self.description_collapsed, |chevron| {
-                            chevron.with_transformation(gpui::Transformation::rotate(
-                                gpui::radians(-std::f32::consts::FRAC_PI_2),
-                            ))
-                        }),
-                )
-        };
+        let description_view = cx.entity();
         let mut description = div().flex().flex_col().gap(px(16.0)).child(
-            div()
-                .h(px(37.0))
-                .pl(px(8.0))
-                .pr(px(2.0))
-                .pb(px(8.0))
-                .flex()
-                .items_center()
-                .gap(px(12.0))
-                .child(description_toggle)
-                .child(div().flex_1())
-                .child(self.description_actions(cx)),
+            Self::section_summary(
+                "pr-description-toggle".into(),
+                theme,
+                "Description".into(),
+                None,
+                !self.description_collapsed,
+            )
+            .on_click(move |_, _, cx| {
+                description_view.update(cx, |view, cx| view.toggle_description(cx));
+            })
+            .when(self.can_edit(), |summary| {
+                summary.child(self.description_actions(cx))
+            }),
         );
         if !self.description_collapsed {
             description = description.child(if let Some(editor) = self.description_edit.clone() {
                 div()
+                    .px(px(8.0))
                     .flex()
                     .flex_col()
                     .gap(px(8.0))
@@ -463,6 +433,13 @@ impl PullRequestsView {
                         "pr-description-editor-frame",
                     ))
                     .child(self.description_edit_actions(cx))
+            } else if detail.body.trim().is_empty() {
+                div()
+                    .px(px(8.0))
+                    .text_size(px(14.0))
+                    .line_height(px(20.0))
+                    .text_color(theme.text_muted)
+                    .child("No description provided")
             } else {
                 div().px(px(8.0)).child(markdown)
             });
@@ -470,8 +447,7 @@ impl PullRequestsView {
         column = column.child(description);
         column = column.child(self.checks_section(cx));
         column = column.child(self.activity_section(cx));
-        column = column.child(self.commits_section(cx));
-        column = column.child(self.comment_composer(cx));
+        column = column.child(div().px(px(8.0)).child(self.comment_composer(cx)));
         // The reference scrolls the whole tab body so long descriptions reach
         // the Checks / Activity / commits sections.
         let capture_offset = (self.capture_offset > 0.0).then_some(self.capture_offset);
@@ -491,6 +467,9 @@ impl PullRequestsView {
             .into_any_element()
     }
 
+    /// `header.flex.flex-col.gap-4.px-2` under `pt-4`: the 24px title (1.2
+    /// line box) and, 6px below it, the author line in `text-secondary`. The
+    /// edit pencil exists only when the viewer may edit the title.
     fn title_block(&self, cx: &mut gpui::Context<Self>) -> Div {
         let theme = self.theme();
         let Some(detail) = self.detail.as_ref() else {
@@ -498,9 +477,9 @@ impl PullRequestsView {
         };
         let title = detail.summary.title.clone();
         let author = detail.author.login.clone();
-        let age = detail.age.clone();
+        let age = detail.created_age.clone();
         let view = cx.entity();
-        let mut title_row = div().flex().items_center().gap(px(12.0));
+        let mut title_row = div().flex().items_start().justify_between().gap(px(16.0));
         if let Some(editor) = self.title_edit.clone() {
             let save_view = view.clone();
             let cancel_view = view.clone();
@@ -519,38 +498,26 @@ impl PullRequestsView {
                         .child(div().flex_1().min_w(px(0.0)).child(editor)),
                 )
                 .child(
-                    div()
-                        .id("pr-title-cancel")
-                        .size(px(28.0))
-                        .flex()
-                        .items_center()
+                    Self::toolbar_button("pr-title-cancel", theme, false)
+                        .w(px(28.0))
+                        .px(px(0.0))
                         .justify_center()
-                        .rounded(px(12.5))
-                        .cursor_pointer()
-                        .hover(move |style| style.bg(theme.control_hover))
-                        .role(gpui::Role::Button)
                         .aria_label("Cancel title editing")
                         .on_click(move |_, window, cx| {
                             cancel_view.update(cx, |view, cx| view.cancel_title_edit(window, cx));
                         })
-                        .child(icon("close-dialog", theme.text_muted.into()).size(px(18.0))),
+                        .child(icon("close-dialog", theme.text_muted.into()).size(px(16.0))),
                 )
                 .child(
-                    div()
-                        .id("pr-title-save")
-                        .size(px(28.0))
-                        .flex()
-                        .items_center()
+                    Self::toolbar_button("pr-title-save", theme, false)
+                        .w(px(28.0))
+                        .px(px(0.0))
                         .justify_center()
-                        .rounded(px(12.5))
-                        .cursor_pointer()
-                        .hover(move |style| style.bg(theme.control_hover))
-                        .role(gpui::Role::Button)
                         .aria_label("Save title")
                         .on_click(move |_, _, cx| {
                             save_view.update(cx, |view, cx| view.save_title(cx));
                         })
-                        .child(icon("check", theme.text.into()).size(px(18.0))),
+                        .child(icon("check", theme.text.into()).size(px(16.0))),
                 );
         } else {
             title_row = title_row
@@ -558,257 +525,260 @@ impl PullRequestsView {
                     div()
                         .flex_1()
                         .min_w(px(0.0))
-                        // Reference: 24px title on a 1.2 line box (28.8px), so the
-                        // wrapped second line sits 29px below the first.
-                        .text_size(px(24.0))
-                        .line_height(px(28.8))
-                        .font_weight(gpui::FontWeight::MEDIUM)
-                        .text_color(theme.text)
-                        .child(title),
-                )
-                .child(
-                    div()
-                        .id("pr-edit-title")
-                        .size(px(28.0))
-                        .flex_none()
                         .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded(px(12.5))
-                        .cursor_pointer()
-                        .hover(move |style| style.bg(theme.control_hover))
-                        .role(gpui::Role::Button)
-                        .aria_label("Edit title")
-                        .on_click({
-                            let view = view.clone();
-                            move |_, _, cx| {
-                                view.update(cx, |view, cx| view.begin_title_edit(cx));
-                            }
-                        })
-                        .child(icon("pr-edit-title", theme.text_muted.into()).size(px(18.0))),
-                );
-        }
-        // Reference: the title block carries only `padding: 16px 0 0`; the 8px
-        // bottom inset belongs to the meta list below it.
-        div()
-            .pt(px(16.0))
-            .px(px(8.0))
-            .pb(px(4.0))
-            .flex()
-            .flex_col()
-            .gap(px(6.0))
-            .child(title_row)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.0))
-                    .text_size(px(14.0))
-                    .text_color(theme.text_muted)
-                    .child(
-                        div()
-                            .size(px(20.0))
-                            .rounded(px(9999.0))
-                            .bg(theme.control)
-                            .flex()
-                            .items_center()
+                        .flex_col()
+                        .gap(px(6.0))
+                        .child(
+                            div()
+                                .text_size(px(24.0))
+                                .line_height(px(28.8))
+                                .font_weight(gpui::FontWeight::MEDIUM)
+                                .text_color(theme.text)
+                                .child(title),
+                        )
+                        .child(
+                            div()
+                                .mt(px(1.0))
+                                .h(px(21.0))
+                                .flex()
+                                .items_center()
+                                .gap(px(8.0))
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .text_size(px(14.0))
+                                .line_height(px(21.0))
+                                .text_color(theme.icon_muted)
+                                .child(self.avatar(detail.author.avatar_url.as_deref(), 18.0))
+                                .child(author)
+                                .when(!age.is_empty(), |line| line.child("·").child(age)),
+                        ),
+                )
+                .when(self.can_edit(), |row| {
+                    row.child(
+                        Self::toolbar_button("pr-edit-title", theme, false)
+                            .w(px(28.0))
+                            .px(px(0.0))
                             .justify_center()
-                            .text_size(px(11.0))
-                            .text_color(theme.text)
-                            .child(
-                                author
-                                    .chars()
-                                    .next()
-                                    .map(|letter| letter.to_uppercase().to_string())
-                                    .unwrap_or_default(),
-                            ),
+                            .aria_label("Edit title")
+                            .on_click({
+                                let view = view.clone();
+                                move |_, _, cx| {
+                                    view.update(cx, |view, cx| view.begin_title_edit(cx));
+                                }
+                            })
+                            .child(icon("pr-edit-title", theme.text.into()).size(px(16.0))),
                     )
-                    .child(div().text_color(theme.text).child(author))
-                    .child("·")
-                    .child(age),
-            )
+                });
+        }
+        div().pt(px(16.0)).child(div().px(px(8.0)).child(title_row))
     }
 
+    /// The overview `dl`: `px-2 pb-2`, rows of `grid gap-x-3` with a 120px
+    /// label column, `py-row-y` (5px), and 14/20 type.
     fn meta_rows(&self, cx: &mut gpui::Context<Self>) -> Div {
         let theme = self.theme();
         let Some(detail) = self.detail.as_ref() else {
             return div();
         };
+        let editable = self.can_edit();
         let mut list = div().flex().flex_col().px(px(8.0)).pb(px(8.0));
 
+        let (additions, deletions) = (detail.summary.additions, detail.summary.deletions);
         let branch = div()
-            // The reference's branch row is 28px tall inside a 4px-padded row
-            // (36px total); the other meta rows carry 24 or 20px content.
-            .h(px(28.0))
+            .min_w(px(0.0))
             .flex()
             .items_center()
             .gap(px(8.0))
             .child(
                 div()
-                    .flex_1()
                     .min_w(px(0.0))
-                    .max_w(px(260.0))
-                    .text_ellipsis()
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .child(detail.summary.head_branch.clone()),
-            )
-            .child(icon("settings-chevron-next", theme.text_muted.into()).size(px(14.0)))
-            .child(
-                div()
-                    .max_w(px(120.0))
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .child(detail.summary.base_branch.clone()),
-            )
-            // The reference right-aligns the change counts inside the row.
-            .child(div().flex_1())
-            .child({
-                let view = cx.entity();
-                let (additions, deletions) = (detail.summary.additions, detail.summary.deletions);
-                div()
-                    .id("pr-review-changes")
-                    .flex_none()
-                    .h(px(24.0))
-                    .pl(px(6.0))
-                    .pr(px(24.0))
                     .flex()
                     .items_center()
-                    .gap(px(4.0))
-                    .rounded(px(9999.0))
-                    .text_size(px(13.0))
-                    .cursor_pointer()
-                    .hover(move |style| style.bg(theme.control_hover))
-                    .role(gpui::Role::Button)
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .min_w(px(0.0))
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .child(detail.summary.head_branch.clone()),
+                    )
+                    .child(
+                        icon("pr-chevron-right", theme.text_muted.into())
+                            .flex_none()
+                            .size(px(14.0)),
+                    )
+                    .child(
+                        div()
+                            .min_w(px(0.0))
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .child(detail.summary.base_branch.clone()),
+                    ),
+            )
+            .child({
+                let view = cx.entity();
+                Self::toolbar_button("pr-review-changes", theme, false)
                     .aria_label("Review pull request changes")
                     .on_click(move |_, _, cx| {
                         view.update(cx, |view, cx| view.open_review_tab(cx));
                     })
-                    .child(
-                        div()
-                            .text_color(theme.additions_text)
-                            .child(format!("+{additions}")),
-                    )
-                    .child(
-                        div()
-                            .text_color(theme.deletions_text)
-                            .child(format!("-{deletions}")),
-                    )
+                    .child(Self::diff_stats(
+                        additions,
+                        deletions,
+                        theme.additions_text,
+                        theme.deletions_text,
+                        13.0,
+                    ))
             });
-        list = list.child(self.meta_row("branch", "Branch", theme, branch));
+        list = list.child(self.meta_row(
+            "Branch",
+            Self::meta_label_icon("pr-meta-branch", theme),
+            theme,
+            branch,
+        ));
 
         let view = cx.entity();
-        let reviewers: gpui::AnyElement = if detail.requested_reviewers.is_empty() {
-            div()
-                .id("pr-request-reviewers")
-                .relative()
-                .child(self.control_anchor("pr-request-reviewers"))
-                .h(px(24.0))
-                .px(px(8.0))
-                .flex()
-                .items_center()
-                .gap(px(4.0))
-                .rounded(px(9999.0))
-                .text_size(px(13.0))
-                .cursor_pointer()
-                .hover(move |style| style.bg(theme.control_hover))
-                .role(gpui::Role::Button)
-                .aria_label("Request reviewers")
-                .on_click(move |_, _, cx| {
-                    view.update(cx, |view, cx| view.open_reviewers(cx));
-                })
-                .child("+ Request")
-                .into_any_element()
+        let mut reviewers = div()
+            .flex_1()
+            .min_w(px(0.0))
+            .flex()
+            .items_center()
+            .gap(px(8.0));
+        let requested = &detail.requested_reviewers;
+        if requested.is_empty() && !editable {
+            reviewers = reviewers.child(div().text_color(theme.text_muted).child("No reviewers"));
+        }
+        for user in requested {
+            reviewers = reviewers.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .child(self.avatar(user.avatar_url.as_deref(), 18.0))
+                    .child(user.login.clone()),
+            );
+        }
+        if editable {
+            reviewers = reviewers.child(
+                div()
+                    .flex_none()
+                    .when(requested.is_empty(), |slot| slot.ml(px(-8.0)))
+                    .child(
+                        Self::toolbar_button("pr-request-reviewers", theme, false)
+                            .relative()
+                            .child(self.control_anchor("pr-request-reviewers"))
+                            .text_color(theme.text)
+                            .aria_label(if requested.is_empty() {
+                                "Request reviewers"
+                            } else {
+                                "Manage reviewers"
+                            })
+                            .on_click(move |_, _, cx| {
+                                view.update(cx, |view, cx| view.open_reviewers(cx));
+                            })
+                            .child(icon("pr-plus", theme.text.into()).size(px(14.0)))
+                            .when(requested.is_empty(), |button| {
+                                button.child(div().pr(px(4.0)).child("Request"))
+                            }),
+                    ),
+            );
+        }
+        list = list.child(self.meta_row(
+            "Reviewers",
+            Self::meta_label_icon("pr-meta-reviewers", theme),
+            theme,
+            reviewers,
+        ));
+
+        let count = detail.comment_count();
+        let comments = div().child(match count {
+            0 => "No comments".to_string(),
+            1 => "1 comment".to_string(),
+            count => format!("{count} comments"),
+        });
+        list = list.child(self.meta_row(
+            "Comments",
+            Self::meta_label_icon("pr-meta-comments", theme),
+            theme,
+            comments,
+        ));
+
+        let checks = div().child(if detail.checks.is_empty() {
+            "No CI checks".to_string()
+        } else if detail
+            .checks
+            .iter()
+            .any(|check| check.state == CheckState::Failed)
+        {
+            "Failing".to_string()
+        } else if detail
+            .checks
+            .iter()
+            .any(|check| check.state == CheckState::Pending)
+        {
+            "Pending".to_string()
         } else {
-            div()
-                .flex()
-                .items_center()
-                .gap(px(6.0))
-                .children(detail.requested_reviewers.iter().map(|user| {
-                    div()
-                        .h(px(24.0))
-                        .px(px(8.0))
-                        .flex()
-                        .items_center()
-                        .rounded(px(9999.0))
-                        .bg(theme.control)
-                        .text_size(px(13.0))
-                        .child(user.login.clone())
-                }))
-                .into_any_element()
-        };
-        list = list.child(self.meta_row("reviewers", "Reviewers", theme, reviewers));
-
-        let comments = div()
-            .h(px(20.0))
-            .flex()
-            .items_center()
-            .text_size(px(14.0))
-            .child(if detail.comments.is_empty() {
-                "No comments".to_string()
-            } else {
-                format!("{} comments", detail.comments.len())
-            });
-        list = list.child(self.meta_row("comments", "Comments", theme, comments));
-
-        let checks = div()
-            .h(px(20.0))
-            .flex()
-            .items_center()
-            .text_size(px(14.0))
-            .child(if detail.checks.is_empty() {
-                "No CI checks".to_string()
-            } else {
-                format!("{} checks", detail.checks.len())
-            });
-        list = list.child(self.meta_row("checks", "Checks", theme, checks));
+            "Successful".to_string()
+        });
+        list = list.child(self.meta_row(
+            "Checks",
+            Self::meta_label_icon("pr-meta-checks", theme),
+            theme,
+            checks,
+        ));
 
         let status = detail.summary.status;
         let status_menu_view = cx.entity();
-        let status_row = div()
-            .id("pr-status")
-            .relative()
-            .child(self.control_anchor("pr-status"))
-            .h(px(24.0))
-            .px(px(8.0))
-            .flex()
-            .items_center()
-            .gap(px(4.0))
-            .rounded(px(9999.0))
-            .text_size(px(13.0))
-            .text_color(theme.text)
-            .when(!status.is_merged(), |button| {
-                button
-                    .cursor_pointer()
-                    .hover(move |style| style.bg(theme.control_hover))
-                    .role(gpui::Role::Button)
-                    .aria_label("Change pull request status")
-                    .on_click(move |_, _, cx| {
-                        status_menu_view.update(cx, |view, cx| view.toggle_status_menu(cx));
-                    })
-            })
-            .child(status.label())
-            .when(!status.is_merged(), |button| {
-                button.child(icon("section-chevron", theme.text_muted.into()).size(px(12.0)))
-            });
-        list = list.child(self.meta_row("status", "Status", theme, status_row));
+        let status_value: gpui::AnyElement = if status.is_merged() || !detail.author.is_self {
+            div().child(status.label()).into_any_element()
+        } else {
+            Self::toolbar_button("pr-status", theme, false)
+                .relative()
+                .child(self.control_anchor("pr-status"))
+                .ml(px(-9.0))
+                .text_color(theme.text)
+                .text_size(px(14.0))
+                .aria_label("Change pull request status")
+                .on_click(move |_, _, cx| {
+                    status_menu_view.update(cx, |view, cx| view.toggle_status_menu(cx));
+                })
+                .child(status.label())
+                .child(icon("section-chevron", theme.text_muted.into()).size(px(14.0)))
+                .into_any_element()
+        };
+        list = list.child(self.meta_row(
+            "Status",
+            Self::state_glyph(status, theme, 18.0).into_any_element(),
+            theme,
+            status_value,
+        ));
         list
+    }
+
+    fn meta_label_icon(name: &'static str, theme: PrTheme) -> gpui::AnyElement {
+        icon(name, theme.text_muted.into())
+            .flex_none()
+            .size(px(18.0))
+            .into_any_element()
     }
 
     fn meta_row(
         &self,
-        _id: &'static str,
         label: &'static str,
+        glyph: gpui::AnyElement,
         theme: PrTheme,
         content: impl IntoElement,
     ) -> Div {
         div()
-            // Measured row padding: the reference stacks `dt` rows with 36/32/
-            // 28/28/32px pitch, which is the row content plus 4px on each side.
-            .py(px(4.0))
+            .min_h(px(30.0))
+            .py(px(5.0))
             .flex()
-            .items_start()
+            .items_center()
             .gap(px(12.0))
+            .text_size(px(14.0))
+            .line_height(px(20.0))
             .child(
                 div()
                     .w(px(120.0))
@@ -816,30 +786,19 @@ impl PullRequestsView {
                     .flex()
                     .items_center()
                     .gap(px(8.0))
-                    .text_size(px(14.0))
                     .text_color(theme.text_muted)
-                    .child(icon(Self::meta_icon(label), theme.text_muted.into()).size(px(18.0)))
+                    .child(glyph)
                     .child(label),
             )
             .child(
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .text_size(px(14.0))
+                    .flex()
+                    .items_center()
                     .text_color(theme.text)
                     .child(content),
             )
-    }
-
-    /// Row icons extracted from the reference DOM (`scripts/extract_pull_request_icons.mjs`).
-    fn meta_icon(label: &str) -> &'static str {
-        match label {
-            "Branch" => "pr-meta-branch",
-            "Reviewers" => "pr-meta-reviewers",
-            "Comments" => "pr-meta-comments",
-            "Checks" => "pr-meta-checks",
-            _ => "pr-meta-status",
-        }
     }
 
     fn description_actions(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
@@ -911,6 +870,7 @@ impl PullRequestsView {
             )
     }
 
+    /// `Checks`: without checks, one centered tertiary `No CI checks` row.
     fn checks_section(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let theme = self.theme();
         let Some(detail) = self.detail.as_ref() else {
@@ -922,30 +882,47 @@ impl PullRequestsView {
             .gap(px(16.0))
             .child(self.section_header("Checks", self.checks_expanded, SectionKind::Checks, cx));
         if self.checks_expanded {
+            let mut rows = div().flex().flex_col().gap(px(4.0)).px(px(8.0));
             if detail.checks.is_empty() {
-                section = section.child(
+                rows = rows.child(
                     div()
-                        .px(px(8.0))
+                        .min_h(px(30.0))
+                        .py(px(5.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .gap(px(8.0))
                         .text_size(px(14.0))
+                        .line_height(px(20.0))
                         .text_color(theme.text_muted)
                         .child("No CI checks"),
                 );
             } else {
-                let mut rows = div().flex().flex_col().gap(px(4.0)).px(px(8.0));
                 for check in &detail.checks {
                     let color = match check.state {
-                        CheckState::Passed => theme.additions_text,
-                        CheckState::Failed => theme.deletions_text,
+                        CheckState::Passed => theme.chart_green,
+                        CheckState::Failed => theme.chart_red,
                         _ => theme.text_muted,
                     };
                     rows = rows.child(
                         div()
+                            .min_h(px(30.0))
+                            .py(px(5.0))
                             .flex()
                             .items_center()
                             .gap(px(8.0))
                             .text_size(px(14.0))
+                            .line_height(px(20.0))
                             .child(icon("check", color.into()).size(px(16.0)))
-                            .child(check.name.clone())
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w(px(0.0))
+                                    .overflow_hidden()
+                                    .whitespace_nowrap()
+                                    .text_ellipsis()
+                                    .child(check.name.clone()),
+                            )
                             .child(
                                 div()
                                     .text_color(theme.text_muted)
@@ -953,92 +930,6 @@ impl PullRequestsView {
                             ),
                     );
                 }
-                section = section.child(rows);
-            }
-        }
-        section
-    }
-
-    fn activity_section(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
-        let Some(detail) = self.detail.as_ref() else {
-            return div();
-        };
-        let label = format!("Activity {}", detail.comments.len());
-        div()
-            .flex()
-            .flex_col()
-            .gap(px(16.0))
-            .child(self.section_header_owned(
-                label,
-                self.activity_expanded,
-                SectionKind::Activity,
-                cx,
-            ))
-            .when(self.activity_expanded, |section| {
-                section.child(self.activity_timeline(cx))
-            })
-    }
-
-    fn commits_section(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
-        let theme = self.theme();
-        let Some(detail) = self.detail.as_ref() else {
-            return div();
-        };
-        if detail.commits.is_empty() {
-            return div();
-        }
-        let label = format!("{} commits", detail.commits.len());
-        let mut section = div()
-            .flex()
-            .flex_col()
-            .gap(px(16.0))
-            .child(self.section_header_owned(
-                label,
-                self.commits_expanded,
-                SectionKind::Commits,
-                cx,
-            ));
-        if self.commits_expanded {
-            let mut rows = div().flex().flex_col().gap(px(6.0)).px(px(8.0));
-            for commit in &detail.commits {
-                let sha = commit.sha.clone();
-                let url = format!(
-                    "https://github.com/{}/commit/{}",
-                    detail.summary.repository, commit.sha
-                );
-                rows = rows.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(8.0))
-                        .text_size(px(14.0))
-                        .child(
-                            div()
-                                .id(SharedString::from(format!("pr-commit-{sha}")))
-                                .font_family(crate::theme::UI_MONOSPACE_FONT_FAMILY)
-                                .text_size(px(13.0))
-                                .text_color(theme.text)
-                                .cursor_pointer()
-                                .role(gpui::Role::Link)
-                                .aria_label(format!("Commit {}", commit.short_sha()))
-                                .on_click(move |_, _, cx| cx.open_url(&url))
-                                .child(commit.short_sha().to_string()),
-                        )
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w(px(0.0))
-                                .overflow_hidden()
-                                .whitespace_nowrap()
-                                .child(commit.subject.clone()),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(12.0))
-                                .text_color(theme.text_muted)
-                                .child(commit.age.clone()),
-                        ),
-                );
             }
             section = section.child(rows);
         }
@@ -1052,132 +943,110 @@ impl PullRequestsView {
         section: SectionKind,
         cx: &mut gpui::Context<Self>,
     ) -> gpui::Stateful<Div> {
-        self.section_header_owned(label.to_string(), expanded, section, cx)
+        self.section_header_owned(label.to_string(), None, expanded, section, cx)
     }
 
-    fn section_header_owned(
+    /// A `details > summary` section header: `ps-2 pe-0.5 pb-2` over a
+    /// `border-subtle` rule, the 16/24 medium label, the 14px chevron in the
+    /// label's color (turned right while closed), and an optional tertiary
+    /// count after it (`Activity ⌄ 7`).
+    pub(super) fn section_header_owned(
         &self,
         label: String,
+        count: Option<usize>,
         expanded: bool,
         section: SectionKind,
         cx: &mut gpui::Context<Self>,
     ) -> gpui::Stateful<Div> {
         let theme = self.theme();
         let view = cx.entity();
+        Self::section_summary(
+            SharedString::from(format!("pr-section-{label}")),
+            theme,
+            label.clone(),
+            count,
+            expanded,
+        )
+        .on_click(move |_, _, cx| {
+            view.update(cx, |view, cx| match section {
+                SectionKind::Checks => view.toggle_checks(cx),
+                SectionKind::Activity => view.toggle_activity(cx),
+            });
+        })
+    }
+
+    pub(super) fn section_summary(
+        id: SharedString,
+        theme: PrTheme,
+        label: String,
+        count: Option<usize>,
+        expanded: bool,
+    ) -> gpui::Stateful<Div> {
         div()
-            .id(SharedString::from(format!("pr-section-{label}")))
-            .h(px(28.0))
+            .id(id)
+            .flex_none()
             .pl(px(8.0))
             .pr(px(2.0))
+            .pb(px(8.0))
+            .border_b(px(1.0))
+            .border_color(theme.border_subtle)
             .flex()
             .items_center()
+            .justify_between()
             .gap(px(12.0))
-            .cursor_pointer()
             .role(gpui::Role::Button)
             .aria_label(SharedString::from(label.clone()))
-            .on_click(move |_, _, cx| {
-                view.update(cx, |view, cx| match section {
-                    SectionKind::Checks => view.toggle_checks(cx),
-                    SectionKind::Activity => view.toggle_activity(cx),
-                    SectionKind::Commits => view.toggle_commits(cx),
-                });
-            })
+            .aria_expanded(expanded)
             .child(
                 div()
+                    .min_h(px(28.0))
                     .flex()
                     .items_center()
                     .gap(px(6.0))
                     .text_size(px(16.0))
+                    .line_height(px(24.0))
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.text)
-                    .child(label.clone())
+                    .child(label)
                     .child(
-                        icon("section-chevron", theme.text_muted.into())
+                        icon("section-chevron", theme.text.into())
                             .size(px(14.0))
                             .when(!expanded, |chevron| {
                                 chevron.with_transformation(gpui::Transformation::rotate(
                                     gpui::radians(-std::f32::consts::FRAC_PI_2),
                                 ))
                             }),
-                    ),
+                    )
+                    .when_some(count, |row, count| {
+                        row.child(
+                            div()
+                                .font_weight(crate::theme::UI_BODY_FONT_WEIGHT)
+                                .text_color(theme.text_muted)
+                                .child(count.to_string()),
+                        )
+                    }),
             )
     }
 
+    /// The page's footer composer (`Pull request comment`).
     fn comment_composer(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
-        let theme = self.theme();
         let view = cx.entity();
         let has_text =
             !self.mutation_pending && !self.comment_box.read(cx).text().trim().is_empty();
-        // The reference draws the composer as one bordered card: the editor on
-        // top and a footer with the author avatar and a round send button.
-        div()
-            .rounded(px(16.0))
-            .border(px(1.0))
-            .border_color(theme.field_border)
-            .bg(theme.surface)
-            .pt(px(10.0))
-            .px(px(12.0))
-            .pb(px(12.0))
-            .flex_col()
-            .child(Self::editor_frame(
-                self.comment_box.clone(),
-                96.0,
-                "pr-comment-composer-frame",
-            ))
-            .child(
-                div()
-                    .mt(px(8.0))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        div()
-                            .size(px(28.0))
-                            .rounded(px(9999.0))
-                            .bg(theme.control)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_size(px(13.0))
-                            .text_color(theme.text)
-                            .child(
-                                self.detail
-                                    .as_ref()
-                                    .and_then(|detail| detail.author.login.chars().next())
-                                    .map(|letter| letter.to_uppercase().to_string())
-                                    .unwrap_or_default(),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .id("pr-post-comment")
-                            .h(px(28.0))
-                            .w(px(28.0))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded(px(9999.0))
-                            .text_size(px(13.0))
-                            .when(has_text, |button| {
-                                button
-                                    .bg(theme.inverted_surface)
-                                    .text_color(theme.inverted_text)
-                                    .cursor_pointer()
-                                    .on_click(move |_, _, cx| {
-                                        view.update(cx, |view, cx| view.post_comment(cx));
-                                    })
-                            })
-                            .when(!has_text, |button| {
-                                button
-                                    .bg(theme.control)
-                                    .text_color(theme.text_muted)
-                                    .opacity(0.6)
-                            })
-                            .role(gpui::Role::Button)
-                            .aria_label("Post comment")
-                            .child(icon("pr-send", theme.inverted_text.into()).size(px(16.0))),
-                    ),
-            )
+        self.composer(
+            self.comment_box.clone(),
+            "pr-comment-composer-frame",
+            true,
+            super::render::ComposerActions {
+                cancel: None,
+                post_label: "Post comment",
+                post_enabled: has_text,
+                post: Box::new(move |_, _, cx: &mut gpui::App| {
+                    view.update(cx, |view, cx| view.post_comment(cx));
+                }),
+            },
+            cx,
+        )
     }
 
     pub(super) fn summary_scope_label(&self) -> String {

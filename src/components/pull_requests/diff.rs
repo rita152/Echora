@@ -81,7 +81,7 @@ impl PullRequestsView {
         })
     }
 
-    fn code_text(&self, text: &str, language: Option<&'static str>) -> gpui::StyledText {
+    pub(super) fn code_text(&self, text: &str, language: Option<&'static str>) -> gpui::StyledText {
         gpui::StyledText::new(text.to_owned())
             .with_runs(self.code_runs(text, language).as_ref().clone())
     }
@@ -145,7 +145,7 @@ impl PullRequestsView {
     }
 
     /// Language name for the syntax highlighter, derived from the file suffix.
-    fn language_for(path: &str) -> Option<&'static str> {
+    pub(super) fn language_for(path: &str) -> Option<&'static str> {
         let extension = path.rsplit('.').next().unwrap_or_default();
         Some(match extension {
             "rs" => "rs",
