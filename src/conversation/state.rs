@@ -28,6 +28,9 @@ pub(crate) struct ConversationState {
     pub(crate) transcript: Vec<ConversationTranscriptTurn>,
     pub(crate) resumed_turn: Option<ResumedTurnPresentation>,
     pub(crate) assistant_message_phases: HashMap<String, Option<String>>,
+    /// Assistant messages whose `item/completed` snapshot has arrived. The
+    /// view paces and fades only the message that is still streaming.
+    pub(crate) completed_assistant_messages: std::collections::HashSet<String>,
     pub(crate) cwd: PathBuf,
     pub(crate) project_id: Option<ProjectId>,
     pub(crate) history_loading: bool,
@@ -93,6 +96,7 @@ impl Default for ConversationState {
             transcript: Vec::new(),
             resumed_turn: None,
             assistant_message_phases: HashMap::new(),
+            completed_assistant_messages: Default::default(),
             cwd: std::env::current_dir().unwrap_or_default(),
             project_id: None,
             history_loading: false,

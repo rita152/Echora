@@ -111,7 +111,7 @@ impl ComposerView {
     }
 }
 
-struct CaptureInterrupt(async_channel::Sender<crate::agent::AgentEvent>);
+pub(super) struct CaptureInterrupt(pub(super) async_channel::Sender<crate::agent::AgentEvent>);
 impl crate::agent::AgentInterruptControl for CaptureInterrupt {
     fn request_interrupt(&self) -> Result<crate::agent::AgentInterruptOutcome, String> {
         eprintln!("progress capture: interrupt requested");

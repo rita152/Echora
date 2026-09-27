@@ -411,6 +411,13 @@ impl ComposerView {
         self.conversation.has_active_image_generation()
     }
 
+    /// The assistant message still receiving deltas, if any.
+    pub fn streaming_assistant_message_id(&self) -> Option<String> {
+        self.conversation
+            .streaming_assistant_message_id()
+            .map(ToOwned::to_owned)
+    }
+
     pub fn transcript_render_snapshot(&self) -> Vec<ConversationTranscriptTurn> {
         self.conversation.transcript_render_snapshot()
     }

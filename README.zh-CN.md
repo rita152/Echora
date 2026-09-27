@@ -49,7 +49,7 @@
 | **按 prompt 导航** | 通过会话左侧的提示轨在用户 prompt 之间跳转：标记会高亮当前屏幕内的轮次，指针悬停时立即向两侧递减，并以 ChatGPT 应用的 160 ms 弹性曲线过渡。指针进入提示轨 250 ms 后弹出预览（300 ms 内返回则立即弹出），预览跟随悬停的标记，指针移向预览途中保持打开；上方是 prompt，下方是该 prompt 在本轮中收到的最后一条回复，排版与 ChatGPT 的三行 Markdown 预览一致（代码块按纯文本显示，段落间距相同）。点击标记会平滑滚动到附近的轮次（较远的轮次直接跳转）并闪烁该气泡；按住沿提示轨拖动可快速浏览对话。在会话中任意位置（包括输入框）按 Alt+↑ / Alt+↓ 可跳到上一条或下一条 prompt。每轮的首条 prompt 停在距顶部 16 px 处，追加的 prompt 停在顶部，对话在透明的会话标题栏下方保持可见。标记较多时提示轨自身滚动、两端渐隐，并保持当前标记可见；在其上滚动滚轮不会滚动对话。收藏某个轮次后会保存本次运行的标记；Codex app-server 没有收藏方法，这些键由 Echora 自己维护。 |
 | **项目与会话** | 创建、恢复、搜索、重命名、归档、删除、移动和置顶会话；切换会话时保留后台轮次。 |
 | **查看活动** | 侧边栏铃铛（或 `Option+Cmd+U`）把项目与最近列表换成活动视图：顶部“优先级”列出进行中、等待批准或回复、以及有未读轮次的聊天，下方按“今天”“昨天”和星期分组列出最近七天，分组标题在滚动时吸顶，每次显示十行。聊天读过后仍留在优先级中，直到点击“清除已读聊天”；新需要关注的聊天会随时追加。点击行会打开对应会话且不离开活动视图，第二行显示所属项目（或 Codex），悬停时提供置顶与归档。`…` 菜单可显示或隐藏优先级与置顶分区、把优先级全部标为已读，并在确认后归档优先级中的聊天。 |
-| **边运行边沟通** | 流式显示回复，向当前活动轮次追加输入；在时间线中查看计划、搜索、等待、工具活动与文件改动。 |
+| **边运行边沟通** | 流式显示回复，向当前活动轮次追加输入；在时间线中查看计划、搜索、等待、工具活动与文件改动。尚未完成的回复按 ChatGPT 应用的自适应节奏揭示（每 50 ms 放出一批字符，速率跟随积压），新出现的词、行内代码与链接以 0.7 s 淡入，列表项、表格行、引用与分割线以 0.15 s 淡入；未写完的语法不会闪现：最后一行未闭合的链接、图片或引用标记在闭合前保持隐藏，悬空的 `*`、`**` 会提前补齐。完成快照到达即显示全文，开启“减少动态效果”时逐条直接显示。 |
 | **审批操作** | 通过原生卡片检查命令、文件和附加权限请求，查看自动复核结果，选择服务端支持的权限配置。 |
 | **MCP 请求输入** | 以原生 form、url 卡片响应 `mcpServer/elicitation/request`：校验必填、类型、范围与选项，接受才提交结构化内容，跳过／取消分别对应协议动作，并等待 `serverRequest/resolved` 后收束。 |
 | **处理文件** | 浏览本地文件树、筛选路径、多标签编辑、预览 Markdown 和图片，以及通过文件链接定位到行。 |
@@ -237,6 +237,7 @@ Computer Use 只能驱动 macOS 视作用户应用的 bundle，而且驱动过�
 | `--auto-approval-ui-state=inProgress/approved/denied/timedOut/aborted/strict/warning` | 自动复核，支持 `--auto-approval-expanded`、`--auto-approval-details-expanded` 与 `--reduce-motion`；长说明和动态采样使用 `--auto-approval-rationale-file`、`--auto-approval-motion-output`。 |
 | `--runtime-ui-state=completed/running/turnless/auth-started/auth-completed/interrupted/disconnected/history/long/deprecation` | 确定性 Hook、hookPrompt、认证与应用提示，不执行 Hook 或模型请求；`GPUI_RUNTIME_AUDIT_OUTPUT` 输出原始状态与本地收束原因。 |
 | `--progress-ui-state=running/streaming/completed/interrupted` | 计划、搜索与等待归约；streaming 定时产生更新和完成，running 可中断。 |
+| `--streaming-reply-ui-state=streaming/completed` | 通过归约器按定时 token 突发喂入一段固定回复，配合 `--screenshot-delay-ms=`（开始计帧前按真实时间等待）可截到流式中途的节奏揭示与逐词淡入；completed 会补上完成快照，`--reduce-motion` 则按原样逐条显示、不做节奏与淡入。 |
 | `--typography-specimen --typography-display=N` | 字体样本与显示器选择，见 `src/typography.rs`。 |
 | `--pull-requests [--pull-requests-select=N \| --pull-requests-title=TEXT] [--pull-requests-tab=code\|review] [--pull-requests-list-tab=all\|reviewing\|authored] [--pull-requests-status=open\|merged\|closed\|all] [--pull-requests-search=TEXT] [--pull-requests-file-tree] [--pull-requests-scroll=px] [--pull-requests-action=...] [--pull-requests-comment-menu]` | Pull Requests 页面确定性状态：列表、标签、搜索、过滤、分组、详情分节、diff、文件树、Review 标签，以及 `scripts/capture_pull_requests_gpui.sh` 使用的交互状态。 |
 | `--project-hover-card=NAME` | 不依赖指针直接打开指定项目（按名称或稳定 id）的侧栏悬停卡片，用于悬停卡片截图的静态部分。 |
@@ -298,6 +299,8 @@ python3 scripts/compare_typography.py \
 ```
 
 `cargo test live_conversation_stream_timings -- --ignored --nocapture` 测量 500 次实时会话更新与 GPUI 布局耗时，并验证向上滚动后继续输出不会移动阅读位置。
+
+`cargo test streaming_reply` 与 `cargo test streaming::tests fade::tests repair::tests` 覆盖流式回复的节奏揭示（节拍、完成时补齐、减少动态效果）、淡入所依赖的分词、时间线与缓动曲线，以及未写完 Markdown 尾部的修复。
 
 `cargo test streaming_highlight_timings -- --ignored --nocapture` 对比 500 次逐步增长的 Rust 代码更新在增量高亮与完整解析下的耗时，并校验高亮区间完全相等。
 

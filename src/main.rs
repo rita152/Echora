@@ -936,6 +936,18 @@ fn main() {
                 .ok()
         })
         .unwrap_or(2);
+    // Wall-clock wait before the frame count starts. Frame counts alone vary
+    // with the display's refresh rate and with how busy the machine is, so
+    // timed fixtures (streaming replies) use this to capture a fixed moment.
+    #[cfg(feature = "screenshot")]
+    let screenshot_delay = args
+        .iter()
+        .find_map(|arg| {
+            arg.strip_prefix("--screenshot-delay-ms=")?
+                .parse::<u64>()
+                .ok()
+        })
+        .map(Duration::from_millis);
     let resume_thread = args.iter().find_map(|arg| {
         arg.strip_prefix("--resume-thread=")
             .map(normalize_resume_thread_id)
@@ -1070,6 +1082,11 @@ fn main() {
     #[cfg(feature = "screenshot")]
     let runtime_ui_state = args.iter().find_map(|arg| {
         arg.strip_prefix("--runtime-ui-state=")
+            .map(ToOwned::to_owned)
+    });
+    #[cfg(feature = "screenshot")]
+    let streaming_reply_ui_state = args.iter().find_map(|arg| {
+        arg.strip_prefix("--streaming-reply-ui-state=")
             .map(ToOwned::to_owned)
     });
     let image_generation_ui_state = args.iter().find_map(|arg| {
@@ -1301,6 +1318,11 @@ fn main() {
         .with_assets(assets::Assets::load_from(asset_status))
         .run(move |cx: &mut App| {
             typography::initialize_fonts(cx);
+            // Mirror the system "reduce motion" preference for captures, so
+            // paced reveals, fades, and shimmers render in their static form.
+            if args.iter().any(|arg| arg == "--reduce-motion") {
+                cx.set_reduce_motion(true);
+            }
             #[cfg(feature = "screenshot")]
             cx.bind_keys([gpui::KeyBinding::new(
                 "cmd-shift-f12",
@@ -1547,6 +1569,11 @@ fn main() {
                             app.complete_startup_for_capture(cx);
                             app.set_runtime_for_capture(state, cx);
                         }
+                        #[cfg(feature = "screenshot")]
+                        if let Some(state) = streaming_reply_ui_state.as_deref() {
+                            app.complete_startup_for_capture(cx);
+                            app.set_streaming_reply_for_capture(state, cx);
+                        }
                         if let Some(state) = image_generation_ui_state.as_deref() {
                             app.set_image_generation_for_capture(
                                 state,
@@ -1768,15 +1795,24 @@ fn main() {
                                 RESUMED_THREAD_STABLE_FRAMES,
                             );
                         } else {
-                            schedule_screenshot(
-                                window,
-                                path,
-                                if maximize_after_open {
-                                    screenshot_frames.max(90)
-                                } else {
-                                    screenshot_frames
-                                },
-                            );
+                            let frames = if maximize_after_open {
+                                screenshot_frames.max(90)
+                            } else {
+                                screenshot_frames
+                            };
+                            if let Some(delay) = screenshot_delay {
+                                window
+                                    .spawn(cx, async move |cx| {
+                                        cx.background_executor().timer(delay).await;
+                                        let _ = cx.update(|window, _| {
+                                            schedule_screenshot(window, path, frames);
+                                            window.refresh();
+                                        });
+                                    })
+                                    .detach();
+                            } else {
+                                schedule_screenshot(window, path, frames);
+                            }
                         }
                     }
                     app

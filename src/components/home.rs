@@ -20,6 +20,7 @@ mod progress;
 mod reasoning;
 mod requests;
 mod runtime;
+mod streaming;
 pub(crate) use navigation::{
     NextUserMessage, PreviousUserMessage, init_keyboard as init_navigation_keyboard,
 };
@@ -52,6 +53,7 @@ use crate::{
         },
         file_change::{DiffReviewPresentation, FileApprovalEvent, FileChangeActivityEvent},
         file_editor::FileEditor,
+        markdown::MarkdownFadeHandle,
         permissions_approval::PermissionApprovalEvent,
         user_input_request::UserInputRequestEvent,
     },
@@ -72,6 +74,7 @@ use conversation::{
 use landing::home;
 use notices::ConfigWarningFile;
 use reasoning::{ReasoningDisclosureTransition, reasoning_body_text};
+use streaming::{STREAMING_REVEAL_TICK, StreamingReveal};
 use timeline::{
     ActivityStreamUnit, ConversationListRow, activity_stream_units, conversation_list_rows,
     conversation_status, user_message_navigation_items,
@@ -90,6 +93,15 @@ pub struct HomeView {
     thinking_shimmer_progress: f32,
     thinking_shimmer_cycle: u64,
     thinking_shimmer_running: bool,
+    /// Paced reveal of the assistant message that is still arriving; the
+    /// cached rows carry its revealed prefix instead of the received text.
+    streaming_reveal: Option<StreamingReveal>,
+    streaming_reveal_cycle: u64,
+    streaming_reveal_running: bool,
+    /// Byte length of the revealed text the rows were last built with.
+    streaming_revealed_len: usize,
+    /// Fade timeline of that message; inert while nothing streams.
+    streaming_fade: MarkdownFadeHandle,
     response_feedback: i8,
     response_feedback_menu: Option<u64>,
     hook_tooltip_focus: Option<FocusHandle>,
@@ -381,6 +393,11 @@ impl HomeView {
             thinking_shimmer_progress: 0.0,
             thinking_shimmer_cycle: 0,
             thinking_shimmer_running: false,
+            streaming_reveal: None,
+            streaming_reveal_cycle: 0,
+            streaming_reveal_running: false,
+            streaming_revealed_len: 0,
+            streaming_fade: MarkdownFadeHandle::none(),
             response_feedback: 0,
             response_feedback_menu: None,
             hook_tooltip_focus: None,
@@ -438,8 +455,10 @@ impl HomeView {
             user_message_time,
             assistant_message,
             assistant_message_time,
-            conversation_activity,
+            mut conversation_activity,
         ) = self.composer.read(cx).conversation_render_snapshot();
+        self.sync_streaming_reveal(&conversation_activity, cx);
+        self.apply_streaming_reveal(&mut conversation_activity);
         let current_answer = assistant_message.clone();
         let rows = conversation_list_rows(
             transcript.clone(),
@@ -487,6 +506,142 @@ impl HomeView {
         self.conversation_cache_dirty = true;
         sync_list_item_count(&self.conversation_list, self.conversation_rows.len());
         self.flush_pending_navigation_capture(cx);
+    }
+
+    /// Keeps the paced reveal bound to the message that is still arriving.
+    /// Its text shows at once when it first appears; later deltas drain at
+    /// the reference cadence. Completion, a new message, or reduced motion
+    /// drops the reveal so the received text renders as is.
+    fn sync_streaming_reveal(
+        &mut self,
+        activities: &[ConversationActivity],
+        cx: &mut Context<Self>,
+    ) {
+        let streaming = if cx.reduce_motion() {
+            None
+        } else {
+            self.composer.read(cx).streaming_assistant_message_id()
+        };
+        let Some(item_id) = streaming else {
+            self.stop_streaming_reveal();
+            return;
+        };
+        let source = activities
+            .iter()
+            .rev()
+            .find_map(|activity| match activity {
+                ConversationActivity::AssistantMessage { item_id: id, text } if *id == item_id => {
+                    Some(text.as_str())
+                }
+                _ => None,
+            })
+            .unwrap_or_default();
+        let now = cx.background_executor().now();
+        match &mut self.streaming_reveal {
+            Some(reveal) if reveal.item_id() == item_id => {
+                reveal.update(&item_id, source, true, now)
+            }
+            _ => {
+                self.streaming_reveal = Some(StreamingReveal::new(&item_id, source, true));
+                self.streaming_fade = MarkdownFadeHandle::new(now);
+                self.streaming_revealed_len = 0;
+            }
+        }
+        let revealed_len = self
+            .streaming_reveal
+            .as_ref()
+            .map_or(0, |reveal| reveal.revealed_text().len());
+        if revealed_len != self.streaming_revealed_len {
+            self.streaming_revealed_len = revealed_len;
+            self.streaming_fade.note_change(now);
+        }
+        if self
+            .streaming_reveal
+            .as_ref()
+            .is_some_and(StreamingReveal::should_update)
+        {
+            self.ensure_streaming_reveal_task(cx);
+        }
+    }
+
+    fn stop_streaming_reveal(&mut self) {
+        if self.streaming_reveal.take().is_some() {
+            self.streaming_reveal_cycle = self.streaming_reveal_cycle.wrapping_add(1);
+            self.streaming_reveal_running = false;
+        }
+        self.streaming_fade = MarkdownFadeHandle::none();
+    }
+
+    /// Replaces the streaming message's received text with its revealed
+    /// prefix before the rows are built.
+    fn apply_streaming_reveal(&self, activities: &mut [ConversationActivity]) {
+        let Some(reveal) = &self.streaming_reveal else {
+            return;
+        };
+        let revealed = reveal.revealed_text();
+        if let Some(ConversationActivity::AssistantMessage { text, .. }) =
+            activities.iter_mut().rev().find(|activity| {
+                matches!(
+                    activity,
+                    ConversationActivity::AssistantMessage { item_id, .. }
+                        if item_id == reveal.item_id()
+                )
+            })
+            && text.len() != revealed.len()
+        {
+            *text = revealed.to_owned();
+        }
+    }
+
+    /// Drains the reveal every 50 ms, like the reference's timeout chain,
+    /// and stops on its own once the revealed text catches up.
+    fn ensure_streaming_reveal_task(&mut self, cx: &mut Context<Self>) {
+        if self.streaming_reveal_running {
+            return;
+        }
+        self.streaming_reveal_cycle = self.streaming_reveal_cycle.wrapping_add(1);
+        let cycle = self.streaming_reveal_cycle;
+        self.streaming_reveal_running = true;
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(STREAMING_REVEAL_TICK).await;
+                let should_continue = this
+                    .update(cx, |this, cx| {
+                        if this.streaming_reveal_cycle != cycle {
+                            return false;
+                        }
+                        let now = cx.background_executor().now();
+                        let Some(reveal) = this.streaming_reveal.as_mut() else {
+                            this.streaming_reveal_running = false;
+                            return false;
+                        };
+                        if reveal.tick(now) {
+                            this.refresh_conversation_cache(cx);
+                            let item_count = this.conversation_list.item_count();
+                            if item_count > 0 {
+                                this.conversation_list
+                                    .remeasure_items(item_count.saturating_sub(2)..item_count);
+                            }
+                            cx.notify();
+                        }
+                        if this
+                            .streaming_reveal
+                            .as_ref()
+                            .is_some_and(StreamingReveal::should_update)
+                        {
+                            true
+                        } else {
+                            this.streaming_reveal_running = false;
+                            false
+                        }
+                    })
+                    .unwrap_or(false);
+                if !should_continue {
+                    return;
+                }
+            }
+        })
+        .detach();
     }
 
     fn toggle_resumed_turn(&mut self, id: &str, cx: &mut Context<Self>) {
@@ -1472,6 +1627,13 @@ impl HomeView {
 impl Render for HomeView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::for_mode(self.mode);
+        // Every alpha of this frame reads one clock. Frames keep coming only
+        // while a newly revealed word may still be fading; a model pause with
+        // every word settled costs no redraws.
+        self.streaming_fade.set_now(cx.background_executor().now());
+        if self.streaming_fade.is_animating() {
+            window.request_animation_frame();
+        }
         if self.message_edit_focus_pending {
             self.message_edit_focus_pending = false;
             if let Some(input) = self.message_edit_input.clone() {
@@ -1489,8 +1651,9 @@ impl Render for HomeView {
                 )
             } else {
                 let transcript = self.composer.read(cx).transcript_render_snapshot();
-                let (phase, _, _, assistant_message, _, activity) =
+                let (phase, _, _, assistant_message, _, mut activity) =
                     self.composer.read(cx).conversation_render_snapshot();
+                self.apply_streaming_reveal(&mut activity);
                 (transcript, phase, assistant_message, Rc::new(activity))
             };
         let user_input_other = self.composer.read(cx).user_input_other_entity();
@@ -1744,6 +1907,11 @@ impl Render for HomeView {
                     request_owner: context::RequestOwner::new(self.composer.clone(), cx),
                     theme,
                     thinking_shimmer_progress: self.thinking_shimmer_progress,
+                    streaming_fade: self.streaming_fade.clone(),
+                    streaming_message_id: self
+                        .streaming_reveal
+                        .as_ref()
+                        .map(|reveal| reveal.item_id().to_owned()),
                     response_feedback: self.response_feedback,
                     user_message_actions_visible_for_capture: self
                         .user_message_actions_visible_for_capture,
@@ -1783,6 +1951,11 @@ impl Render for HomeView {
                     request_owner: context::RequestOwner::new(self.composer.clone(), cx),
                     theme,
                     thinking_shimmer_progress: self.thinking_shimmer_progress,
+                    streaming_fade: self.streaming_fade.clone(),
+                    streaming_message_id: self
+                        .streaming_reveal
+                        .as_ref()
+                        .map(|reveal| reveal.item_id().to_owned()),
                     response_feedback: self.response_feedback,
                     user_message_actions_visible_for_capture: false,
                     disclosures: Rc::new(DisclosureRenderState {
@@ -1917,6 +2090,12 @@ impl HomeView {
     pub fn set_runtime_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
         self.composer
             .update(cx, |view, cx| view.set_runtime_for_capture(state, cx));
+        cx.notify();
+    }
+    pub fn set_streaming_reply_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
+        self.composer.update(cx, |view, cx| {
+            view.set_streaming_reply_for_capture(state, cx)
+        });
         cx.notify();
     }
 }

@@ -41,6 +41,10 @@ pub(super) struct ConversationRenderContext {
     pub(super) request_owner: RequestOwner,
     pub(super) theme: Theme,
     pub(super) thinking_shimmer_progress: f32,
+    /// Fade timeline of the assistant message still arriving; inert otherwise.
+    pub(super) streaming_fade: crate::components::markdown::MarkdownFadeHandle,
+    /// The assistant message whose revealed words fade in.
+    pub(super) streaming_message_id: Option<String>,
     pub(super) response_feedback: i8,
     pub(super) user_message_actions_visible_for_capture: bool,
     pub(super) disclosures: Rc<DisclosureRenderState>,

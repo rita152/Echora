@@ -48,31 +48,7 @@ pub(super) fn tool_group_chevron_transition_ease(progress: f32) -> f32 {
 }
 
 pub(super) fn cubic_bezier_ease(progress: f32, x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
-    let progress = progress.clamp(0.0, 1.0);
-    if progress == 0.0 || progress == 1.0 {
-        return progress;
-    }
-
-    // Invert x for the reference cubic Bézier, then evaluate y.
-    let mut lower = 0.0;
-    let mut upper = 1.0;
-    for _ in 0..10 {
-        let parameter = (lower + upper) * 0.5;
-        let inverse = 1.0 - parameter;
-        let x = 3.0 * inverse * inverse * parameter * x1
-            + 3.0 * inverse * parameter * parameter * x2
-            + parameter * parameter * parameter;
-        if x < progress {
-            lower = parameter;
-        } else {
-            upper = parameter;
-        }
-    }
-    let parameter = (lower + upper) * 0.5;
-    let inverse = 1.0 - parameter;
-    3.0 * inverse * inverse * parameter * y1
-        + 3.0 * inverse * parameter * parameter * y2
-        + parameter * parameter * parameter
+    crate::components::markdown::cubic_bezier_ease(progress, x1, y1, x2, y2)
 }
 
 pub(super) fn thinking_shimmer(theme: Theme, progress: f32) -> impl IntoElement {
