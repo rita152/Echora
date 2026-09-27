@@ -50,7 +50,10 @@ const EXPAND_ANCHOR_FRAMES: u8 = 4;
 const REVIEW_EXPANSION_LINES: u32 = 100;
 
 /// How long the pointer rests on a file-tree row before its name tooltip.
-const TREE_TOOLTIP_DELAY: Duration = Duration::from_millis(500);
+/// The file tree's own name tooltip waits about 600ms; the app's Radix
+/// tooltips on buttons wait 250ms (both measured in the reference).
+const TREE_TOOLTIP_DELAY: Duration = Duration::from_millis(600);
+const TOOLTIP_DELAY: Duration = Duration::from_millis(250);
 
 /// The Code tab's diff layout, cycled by its view toggle.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -148,10 +151,10 @@ pub struct PullRequestsView {
     /// The system shows classic scroll bars, so the diff reserves their
     /// 11px gutter (`overflow-y-auto` without `scrollbar-gutter`).
     classic_scrollbars: bool,
-    /// The file-tree row under the pointer, and the one whose name tooltip
-    /// shows (after `TREE_TOOLTIP_DELAY`, or at once while one is open).
-    tree_hover: Option<String>,
-    tree_tooltip: Option<String>,
+    /// The tooltip trigger under the pointer, and the one whose tooltip
+    /// shows (after its delay, or at once while another is open).
+    tooltip_hover: Option<String>,
+    tooltip: Option<String>,
     /// Lines a review tab revealed per gap (`path:hunk` → from its start,
     /// from its end).
     expanded_gaps: std::collections::HashMap<String, (u32, u32)>,
@@ -391,8 +394,8 @@ impl PullRequestsView {
             list_width: 593.0,
             compact_layout: false,
             classic_scrollbars: false,
-            tree_hover: None,
-            tree_tooltip: None,
+            tooltip_hover: None,
+            tooltip: None,
             expanded_gaps: Default::default(),
             capture_expand_first_gap: false,
             pending_expand_anchor: None,
@@ -671,7 +674,7 @@ impl PullRequestsView {
             return false;
         }
         // A hovered tree row is still waiting for its tooltip.
-        if self.tree_hover.is_some() && self.tree_tooltip.is_none() {
+        if self.tooltip_hover.is_some() && self.tooltip.is_none() {
             return false;
         }
         // The `Commits` flyout places itself once its row has laid out.
@@ -1935,33 +1938,47 @@ impl PullRequestsView {
         cx.notify();
     }
 
-    /// Tracks the pointer over file-tree rows for their name tooltip.
-    pub(super) fn set_tree_hover(&mut self, key: String, hovered: bool, cx: &mut Context<Self>) {
+    /// Tracks the pointer over a tooltip trigger: its tooltip shows after
+    /// `delay`, or at once while another one is open, as Radix skips the
+    /// delay between neighbouring triggers.
+    pub(super) fn set_tooltip_hover(
+        &mut self,
+        key: String,
+        hovered: bool,
+        delay: Duration,
+        cx: &mut Context<Self>,
+    ) {
         if !hovered {
-            if self.tree_hover.as_deref() == Some(key.as_str()) {
-                self.tree_hover = None;
-                self.tree_tooltip = None;
+            if self.tooltip_hover.as_deref() == Some(key.as_str()) {
+                self.tooltip_hover = None;
+                self.tooltip = None;
                 cx.notify();
             }
             return;
         }
-        self.tree_hover = Some(key.clone());
-        // Moving between rows keeps the tooltip up, as Radix skips the delay.
-        if self.tree_tooltip.is_some() {
-            self.tree_tooltip = Some(key);
+        self.tooltip_hover = Some(key.clone());
+        if self.tooltip.is_some() {
+            self.tooltip = Some(key);
             cx.notify();
             return;
         }
         cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(TREE_TOOLTIP_DELAY).await;
+            cx.background_executor().timer(delay).await;
             let _ = this.update(cx, |view, cx| {
-                if view.tree_hover.as_deref() == Some(key.as_str()) {
-                    view.tree_tooltip = Some(key);
+                if view.tooltip_hover.as_deref() == Some(key.as_str()) {
+                    view.tooltip = Some(key);
                     cx.notify();
                 }
             });
         })
         .detach();
+    }
+
+    /// Pressing a trigger closes its tooltip until the pointer enters again.
+    pub(super) fn dismiss_tooltip(&mut self, cx: &mut Context<Self>) {
+        if self.tooltip_hover.take().is_some() | self.tooltip.take().is_some() {
+            cx.notify();
+        }
     }
 
     pub fn toggle_folder(&mut self, path: String, cx: &mut Context<Self>) {

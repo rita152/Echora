@@ -320,3 +320,30 @@ fn scope_commits_flyout_flips_left_without_room(cx: &mut gpui::TestAppContext) {
         "{row:?} {flyout:?}"
     );
 }
+
+#[gpui::test]
+fn tooltips_wait_for_their_delay_and_close_when_pressed(cx: &mut gpui::TestAppContext) {
+    let view = cx.new(|cx| PullRequestsView::build(ThemeMode::Light, None, false, cx));
+    let shown = |cx: &mut gpui::TestAppContext| view.read_with(cx, |view, _| view.tooltip.clone());
+    view.update(cx, |view, cx| {
+        view.set_tooltip_hover("tip:a".into(), true, TOOLTIP_DELAY, cx)
+    });
+    cx.executor()
+        .advance_clock(TOOLTIP_DELAY - std::time::Duration::from_millis(10));
+    cx.run_until_parked();
+    assert_eq!(shown(cx), None);
+    cx.executor()
+        .advance_clock(std::time::Duration::from_millis(20));
+    cx.run_until_parked();
+    assert_eq!(shown(cx).as_deref(), Some("tip:a"));
+    view.update(cx, |view, cx| view.dismiss_tooltip(cx));
+    assert_eq!(shown(cx), None);
+    // Leaving before the delay cancels it.
+    view.update(cx, |view, cx| {
+        view.set_tooltip_hover("tip:b".into(), true, TOOLTIP_DELAY, cx);
+        view.set_tooltip_hover("tip:b".into(), false, TOOLTIP_DELAY, cx);
+    });
+    cx.executor().advance_clock(TOOLTIP_DELAY * 2);
+    cx.run_until_parked();
+    assert_eq!(shown(cx), None);
+}

@@ -2,6 +2,7 @@
 
 use gpui::{Div, SharedString, div, prelude::*, px};
 
+use super::render::TooltipPlacement;
 use super::{DetailTab, PullRequestsView, ReviewScope, theme::*};
 use crate::components::icons::icon;
 use crate::pull_requests::{CheckState, PullRequestStatus};
@@ -79,17 +80,22 @@ impl PullRequestsView {
         let mut actions = div().flex_none().flex().items_center().gap(px(4.0));
         if has_detail {
             let browser_view = view.clone();
-            actions = actions.child(
-                Self::toolbar_button("pr-open-browser", theme, false)
-                    .w(px(28.0))
-                    .px(px(0.0))
-                    .justify_center()
-                    .aria_label("Open in browser")
-                    .on_click(move |_, _, cx| {
-                        browser_view.update(cx, |view, cx| view.open_in_browser(cx));
-                    })
-                    .child(icon("pr-open-browser", theme.text.into()).size(px(16.0))),
-            );
+            let browser = Self::toolbar_button("pr-open-browser", theme, false)
+                .w(px(28.0))
+                .px(px(0.0))
+                .justify_center()
+                .aria_label("Open in browser")
+                .on_click(move |_, _, cx| {
+                    browser_view.update(cx, |view, cx| view.open_in_browser(cx));
+                })
+                .child(icon("pr-open-browser", theme.text.into()).size(px(16.0)));
+            actions = actions.child(self.with_tooltip(
+                browser,
+                "pr-open-browser",
+                "Open in browser",
+                TooltipPlacement::Below,
+                cx,
+            ));
             let chat_view = view.clone();
             let chat_label = if self.chat_thread.is_some() {
                 "Open chat"
@@ -148,29 +154,32 @@ impl PullRequestsView {
             let fullscreen_view = view.clone();
             let fullscreen = self.fullscreen;
             actions = actions.child(
-                Self::toolbar_button("pr-fullscreen", theme, false)
-                    .w(px(28.0))
-                    .px(px(0.0))
-                    .justify_center()
-                    .aria_label(if fullscreen {
-                        "Exit full screen"
-                    } else {
-                        "Enter full screen"
-                    })
-                    .on_click(move |_, _, cx| {
-                        fullscreen_view.update(cx, |view, cx| view.toggle_fullscreen(cx));
-                    })
-                    .child(
-                        icon(
-                            if fullscreen {
-                                "pr-exit-fullscreen"
-                            } else {
-                                "pr-fullscreen"
-                            },
-                            theme.text_muted.into(),
-                        )
-                        .size(px(16.0)),
-                    ),
+                self.fullscreen_button(
+                    Self::toolbar_button("pr-fullscreen", theme, false)
+                        .w(px(28.0))
+                        .px(px(0.0))
+                        .justify_center()
+                        .aria_label(if fullscreen {
+                            "Exit full screen"
+                        } else {
+                            "Enter full screen"
+                        })
+                        .on_click(move |_, _, cx| {
+                            fullscreen_view.update(cx, |view, cx| view.toggle_fullscreen(cx));
+                        })
+                        .child(
+                            icon(
+                                if fullscreen {
+                                    "pr-exit-fullscreen"
+                                } else {
+                                    "pr-fullscreen"
+                                },
+                                theme.text_muted.into(),
+                            )
+                            .size(px(16.0)),
+                        ),
+                    cx,
+                ),
             );
         }
 
@@ -274,6 +283,18 @@ impl PullRequestsView {
         let fullscreen = self.fullscreen;
         // The selected tab's surface, which the title fades into.
         let tab_fill = theme.tab_selected_surface;
+        // The task tab names its source: `host/owner/repo #N — title (local)`.
+        let tab_tooltip = self
+            .detail
+            .as_ref()
+            .map(|detail| {
+                format!(
+                    "github.com/{} #{} \u{2014} {title} (local)",
+                    detail.summary.repository.to_lowercase(),
+                    detail.summary.number
+                )
+            })
+            .unwrap_or_else(|| title.clone());
         div()
             .flex_none()
             .h(px(TOOLBAR_HEIGHT))
@@ -319,30 +340,37 @@ impl PullRequestsView {
                         // `-ms-1 text-fade-truncate`: the title sits 4px from
                         // the glyph and fades out instead of an ellipsis.
                         .child(
-                            div()
-                                .relative()
-                                .flex_1()
-                                .min_w(px(0.0))
-                                .ml(px(-4.0))
-                                .overflow_hidden()
-                                .whitespace_nowrap()
-                                .child(title.clone())
-                                .child(
-                                    div()
-                                        .absolute()
-                                        .top_0()
-                                        .bottom_0()
-                                        .right_0()
-                                        .w(px(24.0))
-                                        .bg(gpui::linear_gradient(
-                                            90.0,
-                                            gpui::linear_color_stop(
-                                                gpui::Rgba { a: 0.0, ..tab_fill },
-                                                0.0,
-                                            ),
-                                            gpui::linear_color_stop(tab_fill, 1.0),
-                                        )),
-                                ),
+                            self.with_tooltip(
+                                div()
+                                    .id("pr-review-tab-title")
+                                    .relative()
+                                    .flex_1()
+                                    .min_w(px(0.0))
+                                    .ml(px(-4.0))
+                                    .overflow_hidden()
+                                    .whitespace_nowrap()
+                                    .child(title.clone())
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .top_0()
+                                            .bottom_0()
+                                            .right_0()
+                                            .w(px(24.0))
+                                            .bg(gpui::linear_gradient(
+                                                90.0,
+                                                gpui::linear_color_stop(
+                                                    gpui::Rgba { a: 0.0, ..tab_fill },
+                                                    0.0,
+                                                ),
+                                                gpui::linear_color_stop(tab_fill, 1.0),
+                                            )),
+                                    ),
+                                "pr-review-tab-title",
+                                tab_tooltip,
+                                TooltipPlacement::Below,
+                                cx,
+                            ),
                         )
                         .child(
                             div()
@@ -367,30 +395,47 @@ impl PullRequestsView {
                 ),
             )
             .child(
-                Self::toolbar_button("pr-fullscreen", theme, false)
-                    .w(px(28.0))
-                    .px(px(0.0))
-                    .justify_center()
-                    .aria_label(if fullscreen {
-                        "Exit full screen"
-                    } else {
-                        "Enter full screen"
-                    })
-                    .on_click(move |_, _, cx| {
-                        view.update(cx, |view, cx| view.toggle_fullscreen(cx));
-                    })
-                    .child(
-                        icon(
-                            if fullscreen {
-                                "pr-exit-fullscreen"
-                            } else {
-                                "pr-fullscreen"
-                            },
-                            theme.text_muted.into(),
-                        )
-                        .size(px(16.0)),
-                    ),
+                self.fullscreen_button(
+                    Self::toolbar_button("pr-fullscreen", theme, false)
+                        .w(px(28.0))
+                        .px(px(0.0))
+                        .justify_center()
+                        .aria_label(if fullscreen {
+                            "Exit full screen"
+                        } else {
+                            "Enter full screen"
+                        })
+                        .on_click(move |_, _, cx| {
+                            view.update(cx, |view, cx| view.toggle_fullscreen(cx));
+                        })
+                        .child(
+                            icon(
+                                if fullscreen {
+                                    "pr-exit-fullscreen"
+                                } else {
+                                    "pr-fullscreen"
+                                },
+                                theme.text_muted.into(),
+                            )
+                            .size(px(16.0)),
+                        ),
+                    cx,
+                ),
             )
+    }
+
+    /// The full screen toggle with its tooltip below.
+    fn fullscreen_button(
+        &self,
+        button: gpui::Stateful<Div>,
+        cx: &mut gpui::Context<Self>,
+    ) -> gpui::Stateful<Div> {
+        let label = if self.fullscreen {
+            "Exit full screen"
+        } else {
+            "Enter full screen"
+        };
+        self.with_tooltip(button, "pr-fullscreen", label, TooltipPlacement::Below, cx)
     }
 
     /// The plain state glyph (`PullRequestStatusIcon`): draft and open in

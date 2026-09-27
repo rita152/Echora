@@ -346,6 +346,97 @@ impl PullRequestsView {
             .text_color(theme.text)
     }
 
+    /// A control with the app's Radix tooltip: `label` after
+    /// `TOOLTIP_DELAY` of hover. Pressing the control closes it.
+    pub(super) fn with_tooltip(
+        &self,
+        element: gpui::Stateful<Div>,
+        key: &str,
+        label: impl Into<SharedString>,
+        placement: TooltipPlacement,
+        cx: &mut gpui::Context<Self>,
+    ) -> gpui::Stateful<Div> {
+        let key = format!("tip:{key}");
+        let open = self.tooltip.as_deref() == Some(key.as_str());
+        let tooltip = open.then(|| self.tooltip_overlay(&key, label.into(), placement));
+        let hover_view = cx.entity();
+        let press_view = cx.entity();
+        let hover_key = key.clone();
+        element
+            .relative()
+            .child(self.control_anchor(key))
+            .children(tooltip)
+            .on_hover(move |hovered, _, cx| {
+                let key = hover_key.clone();
+                hover_view.update(cx, |view, cx| {
+                    view.set_tooltip_hover(key, *hovered, super::TOOLTIP_DELAY, cx)
+                });
+            })
+            .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+                press_view.update(cx, |view, cx| view.dismiss_tooltip(cx));
+            })
+    }
+
+    /// The tooltip pill (`role=tooltip`): 13/18 type tracked -0.15px, `px-3 py-[5px]`, 20px
+    /// radius, a 5% hairline and `0 8px 18px` shadow, 2px from the trigger
+    /// and kept 8px inside the window. Radix tooltips center on the trigger
+    /// and wrap at 512px; the file tree's sits under the row's start.
+    pub(super) fn tooltip_overlay(
+        &self,
+        key: &str,
+        label: SharedString,
+        placement: TooltipPlacement,
+    ) -> gpui::AnyElement {
+        let theme = self.theme();
+        let mut anchored = gpui::anchored().snap_to_window_with_margin(px(8.0));
+        if let Some(bounds) = self.control_bounds.borrow().get(key) {
+            let gap = px(2.0);
+            anchored = match placement {
+                TooltipPlacement::Above => anchored
+                    .anchor(gpui::Anchor::BottomCenter)
+                    .position(bounds.top_center() - gpui::point(px(0.0), gap)),
+                TooltipPlacement::Below => anchored
+                    .anchor(gpui::Anchor::TopCenter)
+                    .position(bounds.bottom_center() + gpui::point(px(0.0), gap)),
+                TooltipPlacement::BelowStart => {
+                    anchored.position(bounds.bottom_left() + gpui::point(px(0.0), gap))
+                }
+            };
+        }
+        let tree = placement == TooltipPlacement::BelowStart;
+        gpui::deferred(
+            anchored.child(
+                div()
+                    .max_w(px(if tree { 320.0 } else { 512.0 }))
+                    .px(px(12.0))
+                    .py(px(5.0))
+                    .rounded(px(20.0))
+                    .border(px(1.0))
+                    .border_color(gpui::Rgba {
+                        a: 0.05,
+                        ..theme.tooltip_text
+                    })
+                    .bg(theme.tooltip_surface)
+                    .shadow(vec![
+                        gpui::BoxShadow::new(px(0.0), px(8.0), gpui::rgba(0x0f172a33).into())
+                            .blur_radius(px(18.0)),
+                    ])
+                    .text_size(px(13.0))
+                    .line_height(px(18.0))
+                    .font_weight(crate::theme::UI_BODY_FONT_WEIGHT)
+                    // The tooltip text theme's `letter-spacing: -0.15px`.
+                    .font_features(gpui::FontFeatures::default().with_letter_spacing(-0.15 / 13.0))
+                    .text_color(theme.tooltip_text)
+                    // `whitespace-normal break-words`, whatever the trigger sets.
+                    .whitespace_normal()
+                    .when(!tree, |tooltip| tooltip.text_center())
+                    .child(label),
+            ),
+        )
+        .with_priority(2)
+        .into_any_element()
+    }
+
     /// The opaque dropdown surface (`bg-surface-elevated-secondary`, white /
     /// `rgb(45,45,45)`) with a single 0.5px ring, as the review toolbar's
     /// menus draw it.
@@ -773,4 +864,13 @@ impl PullRequestsView {
             .flex_none()
             .child(editor)
     }
+}
+
+/// Where a tooltip opens against its trigger.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum TooltipPlacement {
+    Above,
+    Below,
+    /// Under the trigger's start edge, as the file tree places its tooltip.
+    BelowStart,
 }

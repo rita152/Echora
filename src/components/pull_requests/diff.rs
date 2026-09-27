@@ -8,6 +8,7 @@ pub(super) use viewport::DiffViewport;
 
 use gpui::{Div, SharedString, div, prelude::*, px};
 
+use super::render::TooltipPlacement;
 use super::{
     DetailTab, PullRequestsView, ReviewScope,
     theme::{DETAIL_MIN_WIDTH, MENU_SUBMENU_WIDTH},
@@ -420,62 +421,68 @@ impl PullRequestsView {
             .items_center()
             .text_size(px(13.0))
             .child(
-                pill(
-                    div()
-                        .id("pr-review-tab-scope")
-                        .relative()
-                        .child(self.control_anchor("pr-review-tab-scope"))
-                        .h(px(32.0))
-                        .pl(px(12.0))
-                        .pr(px(6.0))
-                        .min_w(px(0.0))
-                        .flex()
-                        .items_center()
-                        .gap(px(4.0))
-                        .cursor_pointer()
-                        .role(gpui::Role::Button)
-                        .aria_label("Pull request changes scope")
-                        .on_click(move |_, _, cx| {
-                            view.update(cx, |view, cx| view.toggle_scope_menu(cx));
-                        }),
-                )
-                .line_height(px(20.0))
-                .text_color(theme.text)
-                .child(
-                    div()
-                        .min_w(px(0.0))
-                        .flex()
-                        .items_center()
-                        .gap(px(12.0))
-                        .child(
-                            div()
-                                .min_w(px(0.0))
-                                .truncate()
-                                .child(self.summary_scope_label()),
-                        )
-                        .child(
-                            div()
-                                .flex_none()
-                                .mr(px(4.0))
-                                .flex()
-                                .items_center()
-                                .gap(px(4.0))
-                                .line_height(px(13.0))
-                                .font_features(super::list::stats_font_features())
-                                .child(div().text_color(theme.additions_text).child(format!(
-                                    "+{}",
-                                    crate::pull_requests::format_count(additions as u64)
-                                )))
-                                .child(div().text_color(theme.deletions_text).child(format!(
-                                    "-{}",
-                                    crate::pull_requests::format_count(deletions as u64)
-                                ))),
-                        ),
-                )
-                .child(
-                    icon("pr-tree-chevron", theme.text.into())
-                        .flex_none()
-                        .size(px(12.0)),
+                self.with_tooltip(
+                    pill(
+                        div()
+                            .id("pr-review-tab-scope")
+                            .relative()
+                            .child(self.control_anchor("pr-review-tab-scope"))
+                            .h(px(32.0))
+                            .pl(px(12.0))
+                            .pr(px(6.0))
+                            .min_w(px(0.0))
+                            .flex()
+                            .items_center()
+                            .gap(px(4.0))
+                            .cursor_pointer()
+                            .role(gpui::Role::Button)
+                            .aria_label("Pull request changes scope")
+                            .on_click(move |_, _, cx| {
+                                view.update(cx, |view, cx| view.toggle_scope_menu(cx));
+                            }),
+                    )
+                    .line_height(px(20.0))
+                    .text_color(theme.text)
+                    .child(
+                        div()
+                            .min_w(px(0.0))
+                            .flex()
+                            .items_center()
+                            .gap(px(12.0))
+                            .child(
+                                div()
+                                    .min_w(px(0.0))
+                                    .truncate()
+                                    .child(self.summary_scope_label()),
+                            )
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .mr(px(4.0))
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(4.0))
+                                    .line_height(px(13.0))
+                                    .font_features(super::list::stats_font_features())
+                                    .child(div().text_color(theme.additions_text).child(format!(
+                                        "+{}",
+                                        crate::pull_requests::format_count(additions as u64)
+                                    )))
+                                    .child(div().text_color(theme.deletions_text).child(format!(
+                                        "-{}",
+                                        crate::pull_requests::format_count(deletions as u64)
+                                    ))),
+                            ),
+                    )
+                    .child(
+                        icon("pr-tree-chevron", theme.text.into())
+                            .flex_none()
+                            .size(px(12.0)),
+                    ),
+                    "pr-review-tab-scope",
+                    self.summary_scope_label(),
+                    TooltipPlacement::Below,
+                    cx,
                 ),
             )
             .child(
@@ -556,7 +563,7 @@ impl PullRequestsView {
         } else {
             (32.0, 16.0)
         };
-        div()
+        let button = div()
             .id(id)
             .relative()
             .child(self.control_anchor(id))
@@ -578,7 +585,8 @@ impl PullRequestsView {
                 "pr-file-tree" => view.update(cx, |view, cx| view.toggle_file_tree(cx)),
                 _ => {}
             })
-            .child(glyph)
+            .child(glyph);
+        self.with_tooltip(button, id, label, TooltipPlacement::Above, cx)
     }
 
     /// The header of the file whose rows fill the top of the diff, pinned
@@ -854,10 +862,29 @@ impl PullRequestsView {
         let mut row = div().flex_none().flex().items_center().gap(px(2.0));
         // `Copy path` is 24px, the others 20px; all show on header hover with
         // 14px (`icon-2xs`) tertiary glyphs.
-        for (id, glyph, label, size) in [
-            ("pr-copy-path", "pr-copy-path", "Copy path", 24.0),
-            ("pr-toggle-file", "pr-toggle-file", "Toggle file diff", 20.0),
-            ("pr-open-file", "pr-open-file", "Open file", 20.0),
+        // `Copy path` and `Open file` (`Open in editor`) carry tooltips.
+        for (id, glyph, label, size, tooltip) in [
+            (
+                "pr-copy-path",
+                "pr-copy-path",
+                "Copy path",
+                24.0,
+                Some("Copy path"),
+            ),
+            (
+                "pr-toggle-file",
+                "pr-toggle-file",
+                "Toggle file diff",
+                20.0,
+                None,
+            ),
+            (
+                "pr-open-file",
+                "pr-open-file",
+                "Open file",
+                20.0,
+                Some("Open in editor"),
+            ),
         ] {
             let path = path.to_string();
             let view = view.clone();
@@ -869,36 +896,39 @@ impl PullRequestsView {
             } else {
                 glyph
             };
-            row = row.child(
-                div()
-                    .id(SharedString::from(if prefix == "pr" {
-                        format!("{id}-{path}")
-                    } else {
-                        format!("{prefix}-{id}-{path}")
-                    }))
-                    .flex_none()
-                    .size(px(size))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(10.0))
-                    .cursor_pointer()
-                    .opacity(0.0)
-                    .group_hover("pr-file-header", |style| style.opacity(1.0))
-                    .hover(move |style| style.bg(theme.control_hover))
-                    .role(gpui::Role::Button)
-                    .aria_label(SharedString::from(label.to_string()))
-                    .on_click(move |_, _, cx| match id {
-                        "pr-copy-path" => {
-                            view.update(cx, |view, cx| view.copy_path(path.clone(), cx))
-                        }
-                        "pr-toggle-file" => {
-                            view.update(cx, |view, cx| view.toggle_file(path.clone(), cx))
-                        }
-                        _ => view.update(cx, |view, cx| view.open_file(path.clone(), None, cx)),
-                    })
-                    .child(glyph),
-            );
+            let key = if prefix == "pr" {
+                format!("{id}-{path}")
+            } else {
+                format!("{prefix}-{id}-{path}")
+            };
+            let button = div()
+                .id(SharedString::from(key.clone()))
+                .flex_none()
+                .size(px(size))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(10.0))
+                .cursor_pointer()
+                .opacity(0.0)
+                .group_hover("pr-file-header", |style| style.opacity(1.0))
+                .hover(move |style| style.bg(theme.control_hover))
+                .role(gpui::Role::Button)
+                .aria_label(SharedString::from(label.to_string()))
+                .on_click(move |_, _, cx| match id {
+                    "pr-copy-path" => view.update(cx, |view, cx| view.copy_path(path.clone(), cx)),
+                    "pr-toggle-file" => {
+                        view.update(cx, |view, cx| view.toggle_file(path.clone(), cx))
+                    }
+                    _ => view.update(cx, |view, cx| view.open_file(path.clone(), None, cx)),
+                })
+                .child(glyph);
+            row = row.child(match tooltip {
+                Some(tooltip) => {
+                    self.with_tooltip(button, &key, tooltip, TooltipPlacement::Above, cx)
+                }
+                None => button,
+            });
         }
         row
     }
@@ -1419,8 +1449,8 @@ impl PullRequestsView {
         let theme = self.theme();
         let view = cx.entity();
         let hover_key = key.clone();
-        let tooltip = (self.tree_tooltip.as_deref() == Some(key.as_str()))
-            .then(|| self.tree_tooltip_overlay(&key, name));
+        let tooltip = (self.tooltip.as_deref() == Some(key.as_str()))
+            .then(|| self.tooltip_overlay(&key, name.into(), TooltipPlacement::BelowStart));
         div()
             .id(SharedString::from(key.clone()))
             .relative()
@@ -1444,44 +1474,10 @@ impl PullRequestsView {
             .hover(move |style| style.bg(theme.row_hover).text_color(theme.text))
             .on_hover(move |hovered, _, cx| {
                 let key = hover_key.clone();
-                view.update(cx, |view, cx| view.set_tree_hover(key, *hovered, cx));
+                view.update(cx, |view, cx| {
+                    view.set_tooltip_hover(key, *hovered, super::TREE_TOOLTIP_DELAY, cx)
+                });
             })
-    }
-
-    /// The tree row tooltip (`role=tooltip`, `data-side=bottom`): 13/18 type in
-    /// a 20px-radius popover 2px under the row's left edge.
-    fn tree_tooltip_overlay(&self, key: &str, name: String) -> gpui::AnyElement {
-        let theme = self.theme();
-        let mut anchored = gpui::anchored().snap_to_window_with_margin(px(8.0));
-        if let Some(bounds) = self.control_bounds.borrow().get(key) {
-            anchored = anchored.position(bounds.bottom_left() + gpui::point(px(0.0), px(2.0)));
-        }
-        gpui::deferred(
-            anchored.child(
-                div()
-                    .max_w(px(320.0))
-                    .px(px(12.0))
-                    .py(px(5.0))
-                    .rounded(px(20.0))
-                    .border(px(1.0))
-                    .border_color(gpui::Rgba {
-                        a: 0.05,
-                        ..theme.tooltip_text
-                    })
-                    .bg(theme.tooltip_surface)
-                    .shadow(vec![
-                        gpui::BoxShadow::new(px(0.0), px(8.0), gpui::rgba(0x0f172a33).into())
-                            .blur_radius(px(18.0)),
-                    ])
-                    .text_size(px(13.0))
-                    .line_height(px(18.0))
-                    .font_weight(crate::theme::UI_BODY_FONT_WEIGHT)
-                    .text_color(theme.tooltip_text)
-                    .child(name),
-            ),
-        )
-        .with_priority(2)
-        .into_any_element()
     }
 
     /// The review tab's scope dropdown (`menuWide`, 240px, opaque): `All PR
