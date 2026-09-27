@@ -936,9 +936,9 @@ impl PullRequestsView {
     /// A hunk separator: a 32px row whose `6px 8px 8px 6px` box, inset 2px,
     /// reads `N unmodified lines` in 12px system type. The Code tab cannot
     /// load the file there, so its row is static; a review tab puts 53px
-    /// expand buttons over the gutter: one above the first hunk, and between
-    /// hunks a top half (below the previous hunk) and a bottom half (above
-    /// this one).
+    /// expand buttons over the gutter: one above the first hunk, one below
+    /// the last (the lines after it), and between hunks a top half (below
+    /// the previous hunk) and a bottom half (above this one).
     fn hunk_expander(
         &self,
         file_index: usize,

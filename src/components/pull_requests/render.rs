@@ -59,6 +59,7 @@ impl gpui::Render for PullRequestsView {
             .on_key_down(cx.listener(|view, event: &gpui::KeyDownEvent, _, cx| {
                 if event.keystroke.key == "escape" {
                     view.dismiss_menus(cx);
+                    view.dismiss_tooltip(cx);
                     view.cancel_inline_comment(cx);
                     cx.stop_propagation();
                 }
