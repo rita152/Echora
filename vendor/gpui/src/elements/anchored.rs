@@ -20,6 +20,7 @@ pub struct Anchored {
     anchor_position: Option<Point<Pixels>>,
     position_mode: AnchoredPositionMode,
     offset: Option<Point<Pixels>>,
+    switched_position: Option<Point<Pixels>>,
 }
 
 /// anchored gives you an element that will avoid overflowing the window bounds.
@@ -32,6 +33,7 @@ pub fn anchored() -> Anchored {
         anchor_position: None,
         position_mode: AnchoredPositionMode::Window,
         offset: None,
+        switched_position: None,
     }
 }
 
@@ -61,6 +63,13 @@ impl Anchored {
     /// While Window will have it interpret the position as relative to the window.
     pub fn position_mode(mut self, mode: AnchoredPositionMode) -> Self {
         self.position_mode = mode;
+        self
+    }
+
+    /// Where the element anchors once `SwitchAnchor` flips it horizontally,
+    /// as a submenu moves to the far edge of the menu that opened it.
+    pub fn switched_position(mut self, position: Point<Pixels>) -> Self {
+        self.switched_position = Some(position);
         self
     }
 
@@ -139,7 +148,7 @@ impl Element for Anchored {
             .reduce(|acc, bounds| acc.union(&bounds))
             .unwrap();
 
-        let (origin, mut desired) = self.position_mode.get_position_and_bounds(
+        let (mut origin, mut desired) = self.position_mode.get_position_and_bounds(
             self.anchor_position,
             self.anchor,
             children_bounds.size,
@@ -156,13 +165,26 @@ impl Element for Anchored {
             let mut anchor = self.anchor;
 
             if desired.left() < limits.left() || desired.right() > limits.right() {
-                let switched = Bounds::from_anchor_and_size(
-                    anchor.other_side_along(Axis::Horizontal),
-                    origin,
-                    children_bounds.size,
-                );
+                let (switched_origin, switched) = match self.switched_position {
+                    Some(position) => self.position_mode.get_position_and_bounds(
+                        Some(position),
+                        anchor.other_side_along(Axis::Horizontal),
+                        children_bounds.size,
+                        bounds,
+                        self.offset,
+                    ),
+                    None => (
+                        origin,
+                        Bounds::from_anchor_and_size(
+                            anchor.other_side_along(Axis::Horizontal),
+                            origin,
+                            children_bounds.size,
+                        ),
+                    ),
+                };
                 if !(switched.left() < limits.left() || switched.right() > limits.right()) {
                     anchor = anchor.other_side_along(Axis::Horizontal);
+                    origin = switched_origin;
                     desired = switched
                 }
             }

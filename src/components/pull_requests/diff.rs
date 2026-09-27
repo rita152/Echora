@@ -8,7 +8,10 @@ pub(super) use viewport::DiffViewport;
 
 use gpui::{Div, SharedString, div, prelude::*, px};
 
-use super::{DetailTab, PullRequestsView, ReviewScope, theme::DETAIL_MIN_WIDTH};
+use super::{
+    DetailTab, PullRequestsView, ReviewScope,
+    theme::{DETAIL_MIN_WIDTH, MENU_SUBMENU_WIDTH},
+};
 use crate::components::icons::icon;
 use crate::git_review::{FileDiff, LineKind};
 use crate::theme::UI_MONOSPACE_FONT_FAMILY;
@@ -983,14 +986,17 @@ impl PullRequestsView {
                 })
         };
         let buttons = review.then(|| {
-            if hunk_index == 0 {
+            // The first gap only reveals upwards, the one after the last hunk
+            // only downwards, and those between both ways.
+            if hunk_index == 0 || hunk_index == file.hunks.len() {
+                let below = hunk_index > 0;
                 div()
                     .flex_none()
                     .rounded_l(px(8.0))
                     .overflow_hidden()
                     .child(button(
-                        format!("pr-expand-above-{key}"),
-                        false,
+                        format!("pr-expand-{}-{key}", if below { "below" } else { "above" }),
+                        below,
                         SEPARATOR_HEIGHT,
                     ))
             } else {
@@ -1495,144 +1501,127 @@ impl PullRequestsView {
         .into_any_element()
     }
 
-    /// Scope dropdown of the review tab: all changes or a single commit.
+    /// The review tab's scope dropdown (`menuWide`, 240px, opaque): `All PR
+    /// changes` with the pull request's counts, a rule, then the `Commits`
+    /// row whose flyout lists each commit. The chosen scope carries the
+    /// leading check.
     pub(super) fn scope_menu(&self, cx: &mut gpui::Context<Self>) -> gpui::Stateful<Div> {
         let theme = self.theme();
         let view = cx.entity();
-        let scope = self
+        let all_selected = self
             .review_tab
             .as_ref()
-            .map(|tab| tab.scope.clone())
-            .unwrap_or(ReviewScope::AllChanges);
-        let commits = self
-            .review_tab
-            .as_ref()
-            .map(|tab| tab.commits.clone())
-            .unwrap_or_default();
+            .is_none_or(|tab| tab.scope == ReviewScope::AllChanges);
         let (additions, deletions) = self
             .detail
             .as_ref()
             .map(|detail| (detail.additions, detail.deletions))
             .unwrap_or_default();
-        let mut menu = div()
-            .id("pr-scope-menu")
-            .p(px(4.0))
-            .w(px(300.0))
-            .rounded(px(20.0))
-            .bg(theme.menu_surface)
-            .shadow(vec![
-                gpui::BoxShadow::new(px(0.0), px(0.0), theme.border.into())
-                    .blur_radius(px(0.0))
-                    .spread_radius(px(0.5)),
-                gpui::BoxShadow::new(px(0.0), px(8.0), theme.menu_shadow.into())
-                    .blur_radius(px(16.0))
-                    .spread_radius(px(-4.0)),
-            ])
-            .text_size(px(13.0))
-            .text_color(theme.text);
-        let all_selected = matches!(scope, ReviewScope::AllChanges);
-        menu = menu.child(
-            div()
-                .id("pr-scope-all")
-                .h(px(28.5))
-                .px(px(8.0))
-                .rounded(px(15.0))
-                .flex()
-                .items_center()
-                .gap(px(8.0))
-                .cursor_pointer()
-                .hover(move |style| style.bg(theme.menu_hover))
-                .role(gpui::Role::MenuItem)
-                .aria_label("All PR changes")
-                .on_click({
-                    let view = view.clone();
-                    move |_, _, cx| {
-                        view.update(cx, |view, cx| {
+        let all_view = view.clone();
+        let leave_view = view.clone();
+        let hover_view = view.clone();
+        let click_view = view;
+        Self::solid_menu_surface("pr-scope-menu", theme)
+            .w(px(240.0))
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .child(
+                Self::menu_row("pr-scope-all", theme, false, false)
+                    .aria_label("All PR changes")
+                    .aria_selected(all_selected)
+                    .on_hover(move |hovered, _, cx| {
+                        if *hovered {
+                            leave_view
+                                .update(cx, |view, cx| view.set_scope_commits_open(false, cx));
+                        }
+                    })
+                    .on_click(move |_, _, cx| {
+                        all_view.update(cx, |view, cx| {
                             view.set_review_scope(ReviewScope::AllChanges, cx)
                         });
-                    }
-                })
-                .child(div().flex_1().child("All PR changes"))
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(4.0))
-                        .text_size(px(12.0))
-                        .child(
-                            div()
-                                .text_color(theme.additions_text)
-                                .child(format!("+{additions}")),
-                        )
-                        .child(
-                            div()
-                                .text_color(theme.deletions_text)
-                                .child(format!("-{deletions}")),
-                        ),
-                )
-                .when(all_selected, |row| {
-                    row.child(icon("check", theme.text.into()).size(px(14.0)))
-                }),
-        );
-        menu = menu.child(
-            div()
-                .px(px(8.0))
-                .py(px(6.0))
-                .text_color(theme.text_muted)
-                .child("Commits"),
-        );
-        let mut children = div()
-            .id("pr-scope-commit-list")
-            .max_h(px(300.0))
-            .overflow_y_scroll()
-            .flex()
-            .flex_col();
-        for (sha, subject) in &commits {
-            let sha = sha.clone();
-            let sha_label = sha.clone();
-            let select_view = view.clone();
-            let selected = matches!(&scope, ReviewScope::Commit(current) if current == &sha);
-            children = children.child(
-                div()
-                    .id(SharedString::from(format!("pr-scope-commit-{sha}")))
-                    .flex_none()
-                    .aria_label(format!("Commit {}: {subject}", &sha[..7.min(sha.len())]))
-                    .h(px(28.5))
-                    .px(px(8.0))
-                    .rounded(px(15.0))
-                    .flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .cursor_pointer()
-                    .hover(move |style| style.bg(theme.menu_hover))
-                    .role(gpui::Role::MenuItem)
-                    .on_click(move |_, _, cx| {
-                        select_view.update(cx, |view, cx| {
-                            view.set_review_scope(ReviewScope::Commit(sha.clone()), cx)
-                        });
                     })
-                    .child(
-                        div()
-                            .font_family(UI_MONOSPACE_FONT_FAMILY)
-                            .text_size(px(12.0))
-                            .text_color(theme.text_muted)
-                            .child(sha_label.get(..7).unwrap_or(sha_label.as_str()).to_string()),
-                    )
+                    .child(Self::menu_check_slot(all_selected, theme))
                     .child(
                         div()
                             .flex_1()
                             .min_w(px(0.0))
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .child(subject.clone()),
+                            .truncate()
+                            .child("All PR changes"),
                     )
-                    .when(selected, |row| {
-                        row.child(icon("check", theme.text.into()).size(px(14.0)))
-                    }),
+                    .child(Self::menu_diff_stats(additions, deletions, theme)),
+            )
+            .child(Self::menu_rule(theme))
+            .child(
+                Self::menu_row("pr-scope-commits", theme, self.scope_commits_open, false)
+                    .debug_selector(|| "pr-scope-commits".into())
+                    .relative()
+                    .child(self.control_anchor("pr-scope-commits"))
+                    .aria_label("Commits")
+                    .aria_expanded(self.scope_commits_open)
+                    .on_hover(move |hovered, _, cx| {
+                        if *hovered {
+                            hover_view.update(cx, |view, cx| view.set_scope_commits_open(true, cx));
+                        }
+                    })
+                    .on_click(move |_, _, cx| {
+                        click_view.update(cx, |view, cx| view.set_scope_commits_open(true, cx));
+                    })
+                    .child(Self::menu_check_slot(false, theme))
+                    .child(div().flex_1().min_w(px(0.0)).truncate().child("Commits"))
+                    .child(Self::tinted_menu_icon("pr-chevron-right", theme.menu_icon)),
+            )
+    }
+
+    /// The `Commits` flyout: each commit as `<short sha> <title>` in a
+    /// `max-h-80` scroller, on the translucent submenu surface.
+    pub(super) fn scope_commits_menu(&self, cx: &mut gpui::Context<Self>) -> gpui::Stateful<Div> {
+        let theme = self.theme();
+        let view = cx.entity();
+        let (scope, commits) = self
+            .review_tab
+            .as_ref()
+            .map(|tab| (tab.scope.clone(), tab.commits.clone()))
+            .unwrap_or((ReviewScope::AllChanges, Vec::new()));
+        let mut list = div()
+            .id("pr-scope-commit-list")
+            .max_h(px(320.0))
+            .overflow_y_scroll()
+            .flex()
+            .flex_col();
+        for (sha, subject) in commits {
+            let selected = matches!(&scope, ReviewScope::Commit(current) if *current == sha);
+            let label = format!("{} {subject}", sha.get(..7).unwrap_or(&sha));
+            let select_view = view.clone();
+            list = list.child(
+                Self::menu_row(
+                    SharedString::from(format!("pr-scope-commit-{sha}")),
+                    theme,
+                    false,
+                    false,
+                )
+                .aria_label(SharedString::from(label.clone()))
+                .aria_selected(selected)
+                .on_click(move |_, _, cx| {
+                    select_view.update(cx, |view, cx| {
+                        view.set_review_scope(ReviewScope::Commit(sha.clone()), cx)
+                    });
+                })
+                .child(Self::menu_check_slot(selected, theme))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .whitespace_nowrap()
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .child(label),
+                ),
             );
         }
-        menu = menu.child(children);
-        menu
+        Self::menu_surface("pr-scope-commits-menu", theme)
+            .debug_selector(|| "pr-scope-commits-menu".into())
+            .min_w(px(MENU_SUBMENU_WIDTH))
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .child(list)
     }
 
     /// `Review options` menu of the diff toolbar.
@@ -1678,8 +1667,7 @@ impl PullRequestsView {
             ),
         ];
         // This menu is opaque (`rgb(45,45,45)` / white), unlike the inbox's.
-        let mut menu = Self::menu_surface("pr-review-options-menu", theme)
-            .bg(theme.popover_surface)
+        let mut menu = Self::solid_menu_surface("pr-review-options-menu", theme)
             .w(px(220.0))
             .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation());
         for (index, (label, action, glyph, shown)) in entries.into_iter().enumerate() {
@@ -1707,13 +1695,7 @@ impl PullRequestsView {
                 .child(div().flex_1().min_w(px(0.0)).truncate().child(label)),
             );
             if index == 0 {
-                // `Menu.Separator`: a 1px rule in a `py-1 px-2` block.
-                menu = menu.child(
-                    div()
-                        .py(px(4.0))
-                        .px(px(8.0))
-                        .child(div().h(px(1.0)).bg(theme.border)),
-                );
+                menu = menu.child(Self::menu_rule(theme));
             }
         }
         div().id("pr-review-options-popover").child(menu)

@@ -164,7 +164,36 @@ impl PullRequestsView {
             ));
         }
         if self.scope_menu_open {
-            overlays.push(self.popup("pr-review-tab-scope", self.scope_menu(cx)));
+            // The menu (`m-px`) opens 2px under the pill, flush with its start.
+            let pill = self
+                .control_bounds
+                .borrow()
+                .get("pr-review-tab-scope")
+                .copied();
+            let mut popup = gpui::anchored()
+                .snap_to_window_with_margin(px(8.0))
+                .child(self.scope_menu(cx));
+            if let Some(pill) = pill {
+                popup = popup.position(pill.bottom_left() + gpui::point(px(1.0), px(2.0)));
+            }
+            overlays.push(gpui::deferred(popup).into_any_element());
+            let row = self
+                .control_bounds
+                .borrow()
+                .get("pr-scope-commits")
+                .copied();
+            if self.scope_commits_open
+                && let Some(row) = row
+            {
+                // The flyout opens 5px past the menu's edge (its row sits 4px
+                // inside), level with the row's menu padding; without room on
+                // the right it opens to the left instead.
+                let popup = gpui::anchored()
+                    .position(row.top_right() + gpui::point(px(9.0), px(-4.0)))
+                    .switched_position(row.origin + gpui::point(px(-9.0), px(-4.0)))
+                    .child(self.scope_commits_menu(cx));
+                overlays.push(gpui::deferred(popup).into_any_element());
+            }
         }
         if let Some(id) = &self.comment_menu
             && self

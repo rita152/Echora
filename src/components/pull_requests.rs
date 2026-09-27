@@ -240,6 +240,8 @@ pub struct PullRequestsView {
     words: bool,
     review_options_open: bool,
     scope_menu_open: bool,
+    /// The scope menu's `Commits` flyout, opened by hovering its row.
+    scope_commits_open: bool,
     file_tree_open: bool,
     tree_filter: Entity<PromptInput>,
     collapsed_folders: HashSet<String>,
@@ -456,6 +458,7 @@ impl PullRequestsView {
             words: true,
             review_options_open: false,
             scope_menu_open: false,
+            scope_commits_open: false,
             file_tree_open: false,
             tree_filter,
             collapsed_folders: HashSet::new(),
@@ -671,6 +674,15 @@ impl PullRequestsView {
         if self.tree_hover.is_some() && self.tree_tooltip.is_none() {
             return false;
         }
+        // The `Commits` flyout places itself once its row has laid out.
+        if self.scope_commits_open
+            && !self
+                .control_bounds
+                .borrow()
+                .contains_key("pr-scope-commits")
+        {
+            return false;
+        }
         if self.capture_expect_selection && self.selected.is_none() {
             return false;
         }
@@ -706,6 +718,10 @@ impl PullRequestsView {
     #[cfg(feature = "screenshot")]
     pub fn open_action_for_capture(&mut self, action: &str, cx: &mut Context<Self>) {
         self.capture_action = Some(action.to_string());
+        // The inbox's menus need no selection; the rest wait for the detail.
+        if action.starts_with("filter-") {
+            self.apply_capture_intent(cx);
+        }
         cx.notify();
     }
 
@@ -815,6 +831,25 @@ impl PullRequestsView {
                     self.collapsed_files.extend(all);
                 }
                 "review-options" => self.review_options_open = true,
+                "scope-menu" => self.scope_menu_open = true,
+                "scope-commits" => {
+                    self.scope_menu_open = true;
+                    self.scope_commits_open = true;
+                }
+                "scope-commit" | "scope-commit-menu" => {
+                    let first = self
+                        .review_tab
+                        .as_ref()
+                        .and_then(|tab| tab.commits.first())
+                        .map(|(sha, _)| sha.clone());
+                    if let Some(sha) = first {
+                        self.set_review_scope(ReviewScope::Commit(sha), cx);
+                    }
+                    if action == "scope-commit-menu" {
+                        self.scope_menu_open = true;
+                        self.scope_commits_open = true;
+                    }
+                }
                 "fullscreen" => self.fullscreen = true,
                 "expand-first-gap" => self.capture_expand_first_gap = true,
                 "expand-commits" => {
@@ -1349,6 +1384,7 @@ impl PullRequestsView {
             commits,
         });
         self.scope_menu_open = false;
+        self.scope_commits_open = false;
         self.load_diff(cx);
         cx.notify();
     }
@@ -1362,6 +1398,7 @@ impl PullRequestsView {
             self.load_diff(cx);
         }
         self.scope_menu_open = false;
+        self.scope_commits_open = false;
         cx.notify();
     }
 
@@ -1395,13 +1432,22 @@ impl PullRequestsView {
         self.status_menu = false;
         self.description_menu = false;
         self.scope_menu_open = false;
+        self.scope_commits_open = false;
         cx.notify();
     }
 
     pub fn toggle_scope_menu(&mut self, cx: &mut Context<Self>) {
         self.scope_menu_open = !self.scope_menu_open;
+        self.scope_commits_open = false;
         self.review_options_open = false;
         cx.notify();
+    }
+
+    pub fn set_scope_commits_open(&mut self, open: bool, cx: &mut Context<Self>) {
+        if self.scope_commits_open != open {
+            self.scope_commits_open = open;
+            cx.notify();
+        }
     }
 
     pub fn toggle_comment_menu(&mut self, id: String, cx: &mut Context<Self>) {
@@ -1440,6 +1486,7 @@ impl PullRequestsView {
         }
         if self.scope_menu_open {
             self.scope_menu_open = false;
+            self.scope_commits_open = false;
             dismissed = true;
         }
         if self.reviewers_open {
@@ -1932,6 +1979,30 @@ impl PullRequestsView {
     /// Loads one file's lines at the head commit for the rich preview and a
     /// review tab's expanded context.
     fn load_file_lines(&mut self, path: String, cx: &mut Context<Self>) {
+        self.fetch_file_lines(path, true, cx);
+    }
+
+    /// A review tab reads each file it draws in full, as the reference does,
+    /// so its separators can reveal lines and it can count those after the
+    /// last hunk. A failure only leaves the separators as they are.
+    pub(super) fn prefetch_review_file(&mut self, file: usize, cx: &mut Context<Self>) {
+        let Some(file) = self.diff.get(file) else {
+            return;
+        };
+        if file.binary || matches!(file.status, 'A' | 'D') || file.hunks.is_empty() {
+            return;
+        }
+        let path = &file.path;
+        if self.file_lines.contains_key(path)
+            || self.file_lines_loading.contains(path)
+            || self.file_errors.contains_key(path)
+        {
+            return;
+        }
+        self.fetch_file_lines(path.clone(), false, cx);
+    }
+
+    fn fetch_file_lines(&mut self, path: String, report: bool, cx: &mut Context<Self>) {
         let Some(summary) = self.selected.clone() else {
             return;
         };
@@ -1964,7 +2035,9 @@ impl PullRequestsView {
                     }
                     Err(error) => {
                         view.file_errors.insert(path.clone(), error.clone());
-                        view.show_notice(error, cx);
+                        if report {
+                            view.show_notice(error, cx);
+                        }
                     }
                 }
                 cx.notify();

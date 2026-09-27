@@ -245,3 +245,78 @@ fn description_and_comment_editors_have_visible_layout_height(cx: &mut gpui::Tes
         px(28.0)
     );
 }
+
+/// The review scope menu, with the detail pane taking `ratio` of a 1440px
+/// window and one commit titled `subject`, its `Commits` flyout open:
+/// (row, flyout) bounds.
+fn scope_flyout(
+    cx: &mut gpui::TestAppContext,
+    ratio: f32,
+    subject: &str,
+) -> (gpui::Bounds<gpui::Pixels>, gpui::Bounds<gpui::Pixels>) {
+    use gpui::{VisualTestContext, px, size};
+    let subject = subject.to_string();
+    let handle = cx.open_window(size(px(1440.0), px(900.0)), move |_, cx| {
+        let mut view = PullRequestsView::build(ThemeMode::Light, None, false, cx);
+        view.list_loading = false;
+        view.selected = Some(summary("Scope"));
+        view.detail = Some(detail("Scope"));
+        view.detail_ratio = Some(ratio);
+        // No diff request: the header and its menu are what is measured.
+        view.diff_loading = true;
+        view.review_tab = Some(ReviewTab {
+            scope: ReviewScope::AllChanges,
+            commits: vec![("b".repeat(40), subject)],
+        });
+        view.scope_menu_open = true;
+        view.scope_commits_open = true;
+        view
+    });
+    let mut visual = VisualTestContext::from_window(handle.into(), cx);
+    // The flyout places itself from the row bounds of the previous frame.
+    for _ in 0..2 {
+        visual.update(|window, cx| window.draw(cx).clear(cx));
+    }
+    (
+        visual.debug_bounds("pr-scope-commits").unwrap(),
+        visual.debug_bounds("pr-scope-commits-menu").unwrap(),
+    )
+}
+
+/// `anchored` places popups on whole pixels.
+fn near(a: gpui::Pixels, b: gpui::Pixels) -> bool {
+    (f32::from(a) - f32::from(b)).abs() <= 0.5
+}
+
+#[gpui::test]
+fn scope_commits_flyout_opens_beside_its_row(cx: &mut gpui::TestAppContext) {
+    use gpui::px;
+    // Room on the right: 5px past the menu edge, level with its padding.
+    let (row, flyout) = scope_flyout(cx, 0.6, "Short");
+    assert!(
+        near(flyout.left(), row.right() + px(9.0)),
+        "{row:?} {flyout:?}"
+    );
+    assert!(
+        near(flyout.top(), row.top() - px(4.0)),
+        "{row:?} {flyout:?}"
+    );
+}
+
+#[gpui::test]
+fn scope_commits_flyout_flips_left_without_room(cx: &mut gpui::TestAppContext) {
+    use gpui::px;
+    let (row, flyout) = scope_flyout(
+        cx,
+        0.3,
+        "Reconcile the app-server integration table with the implemented protocol",
+    );
+    assert!(
+        near(flyout.right(), row.left() - px(9.0)),
+        "{row:?} {flyout:?}"
+    );
+    assert!(
+        near(flyout.top(), row.top() - px(4.0)),
+        "{row:?} {flyout:?}"
+    );
+}

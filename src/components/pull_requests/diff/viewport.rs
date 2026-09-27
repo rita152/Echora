@@ -433,6 +433,32 @@ impl PullRequestsView {
                     }
                 }
             }
+            // Once a review tab has read the file it also counts the lines
+            // after the last hunk (`data-separator-last`), which reveal
+            // downwards.
+            if let (Some(expanded), Some(last), Some(lines)) = (
+                key.expanded.as_ref(),
+                file.hunks.last(),
+                self.file_lines.get(&file.path),
+            ) {
+                let hunk = file.hunks.len();
+                let start = hunk_new_end(&last.header)
+                    .map(|end| end.saturating_add(1))
+                    .unwrap_or(1);
+                let gap = (lines.len() as u32 + 1).saturating_sub(start);
+                let below = expanded
+                    .get(&format!("{}:{hunk}", file.path))
+                    .map_or(0, |(below, _)| (*below).min(gap));
+                for number in start..start + below {
+                    push(RowKind::Context { hunk, number });
+                }
+                if gap > below {
+                    push(RowKind::Gap {
+                        hunk,
+                        count: gap - below,
+                    });
+                }
+            }
             push(RowKind::End);
         }
         rows
@@ -531,9 +557,12 @@ impl PullRequestsView {
             return;
         }
         // Scrolling up crosses rows still at the estimated height; repeat on
-        // the next frames, once they are measured.
-        self.pending_expand_anchor = (frames > 1).then_some((file, hunk, offset, frames - 1));
-        if self.pending_expand_anchor.is_some() {
+        // the next frames, once they are measured. Files still loading
+        // rebuild the rows when they arrive, so the count waits for them.
+        let loading = !self.file_lines_loading.is_empty();
+        let remaining = if loading { frames } else { frames - 1 };
+        self.pending_expand_anchor = (remaining > 0).then_some((file, hunk, offset, remaining));
+        if self.pending_expand_anchor.is_some() && !loading {
             cx.notify();
         }
         if let Some(index) = self.first_hunk_row(file, hunk) {
@@ -576,10 +605,13 @@ impl PullRequestsView {
         .h_full()
         .into_any_element()
     }
-    fn render_diff_row(&self, index: usize, cx: &mut gpui::Context<Self>) -> gpui::AnyElement {
+    fn render_diff_row(&mut self, index: usize, cx: &mut gpui::Context<Self>) -> gpui::AnyElement {
         let Some(row) = self.diff_viewport.rows.get(index).copied() else {
             return div().into_any_element();
         };
+        if self.review_tab.is_some() {
+            self.prefetch_review_file(row.file, cx);
+        }
         let file = &self.diff[row.file];
         let element = match row.kind {
             RowKind::Header => self
@@ -750,6 +782,15 @@ mod tests {
             assert_eq!(rows[1].kind, RowKind::Gap { hunk: 0, count: 1 });
             assert_eq!(rows[2].kind, RowKind::Context { hunk: 0, number: 2 });
             assert_eq!(rows[3].kind, RowKind::Context { hunk: 0, number: 3 });
+            // It also counts the lines after the last hunk, which reveal
+            // downwards from the hunk.
+            view.file_lines.insert("b.rs".into(), ["one", "two", "three", "after", "five", "six", "seven"].map(String::from).to_vec());
+            let rows = view.build_diff_rows(&key);
+            assert_eq!(&rows[rows.len() - 2..], &[Row { file: 1, kind: RowKind::Gap { hunk: 1, count: 3 } }, Row { file: 1, kind: RowKind::End }]);
+            key.expanded = Some([("b.rs:1".to_string(), (2, 0))].into_iter().collect());
+            let kinds: Vec<_> = view.build_diff_rows(&key).into_iter().rev().take(4).map(|row| row.kind).collect();
+            assert_eq!(kinds, [RowKind::End, RowKind::Gap { hunk: 1, count: 1 }, RowKind::Context { hunk: 1, number: 6 }, RowKind::Context { hunk: 1, number: 5 }]);
+            view.file_lines.remove("b.rs");
             key.expanded = None;
             key.layout = crate::components::pull_requests::DiffLayout::Split;
             let rows = view.build_diff_rows(&key);

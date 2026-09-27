@@ -190,6 +190,8 @@ impl PullRequestsView {
     pub(super) fn control_anchor<K: Into<String>>(&self, key: K) -> impl IntoElement + use<K> {
         let state = self.control_bounds.clone();
         let key = key.into();
+        // Pinned to the padding box, so the bounds are the whole control's
+        // rather than starting after its leading padding.
         gpui::canvas(
             move |bounds, _, _| bounds,
             move |_, bounds, _, _| {
@@ -197,6 +199,8 @@ impl PullRequestsView {
             },
         )
         .absolute()
+        .top_0()
+        .left_0()
         .size_full()
     }
 
@@ -340,6 +344,67 @@ impl PullRequestsView {
             .text_size(px(MENU_TEXT_SIZE))
             .line_height(px(MENU_LINE_HEIGHT))
             .text_color(theme.text)
+    }
+
+    /// The opaque dropdown surface (`bg-surface-elevated-secondary`, white /
+    /// `rgb(45,45,45)`) with a single 0.5px ring, as the review toolbar's
+    /// menus draw it.
+    pub(super) fn solid_menu_surface(id: &'static str, theme: PrTheme) -> gpui::Stateful<Div> {
+        Self::menu_surface(id, theme)
+            .bg(theme.popover_surface)
+            .shadow(vec![
+                gpui::BoxShadow::new(px(0.0), px(0.0), theme.border.into())
+                    .blur_radius(px(0.0))
+                    .spread_radius(px(0.5)),
+                gpui::BoxShadow::new(px(0.0), px(8.0), theme.menu_shadow.into())
+                    .blur_radius(px(16.0))
+                    .spread_radius(px(-4.0)),
+            ])
+    }
+
+    /// `Menu.Separator`: a 1px rule in a `py-1 px-2` block.
+    pub(super) fn menu_rule(theme: PrTheme) -> Div {
+        div()
+            .flex_none()
+            .py(px(4.0))
+            .px(px(8.0))
+            .child(div().h(px(1.0)).bg(theme.border))
+    }
+
+    /// A selectable item's `ItemIcon` slot (16px): the check while chosen,
+    /// otherwise empty so labels stay aligned.
+    pub(super) fn menu_check_slot(checked: bool, theme: PrTheme) -> gpui::AnyElement {
+        if checked {
+            Self::menu_icon("pr-menu-check-xs", theme).into_any_element()
+        } else {
+            div()
+                .flex_none()
+                .size(px(MENU_ICON_SIZE))
+                .into_any_element()
+        }
+    }
+
+    /// A menu item's trailing `+N -M` counts, or an em dash when both are 0.
+    pub(super) fn menu_diff_stats(additions: u64, deletions: u64, theme: PrTheme) -> Div {
+        let stats = div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(px(4.0))
+            .line_height(px(13.0))
+            .font_features(super::list::stats_font_features());
+        if additions == 0 && deletions == 0 {
+            return stats.text_color(theme.text_muted).child("\u{2014}");
+        }
+        stats
+            .child(div().text_color(theme.additions_text).child(format!(
+                "+{}",
+                crate::pull_requests::format_count(additions)
+            )))
+            .child(div().text_color(theme.deletions_text).child(format!(
+                "-{}",
+                crate::pull_requests::format_count(deletions)
+            )))
     }
 
     /// One menu item: 28.56px, `px-2 py-[5px]`, 15px radius, 6px gap.

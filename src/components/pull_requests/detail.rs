@@ -264,14 +264,12 @@ impl PullRequestsView {
     fn review_tab_strip(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let theme = self.theme();
         let view = cx.entity();
-        let title = match self.review_tab.as_ref().map(|tab| &tab.scope) {
-            Some(ReviewScope::Commit(_)) => self.summary_scope_label(),
-            _ => self
-                .detail
-                .as_ref()
-                .map(|detail| detail.summary.title.clone())
-                .unwrap_or_default(),
-        };
+        // The tab keeps the pull request's title whatever its scope.
+        let title = self
+            .detail
+            .as_ref()
+            .map(|detail| detail.summary.title.clone())
+            .unwrap_or_default();
         let close_view = view.clone();
         let fullscreen = self.fullscreen;
         // The tab's 8% fill over the surface, which the title fades into.
@@ -1162,6 +1160,8 @@ impl PullRequestsView {
         )
     }
 
+    /// The scope pill's label: `All PR changes`, or just `Commit` while one
+    /// commit is chosen (its menu names which).
     pub(super) fn summary_scope_label(&self) -> String {
         match self
             .review_tab
@@ -1170,7 +1170,7 @@ impl PullRequestsView {
             .unwrap_or(&ReviewScope::AllChanges)
         {
             ReviewScope::AllChanges => "All PR changes".to_string(),
-            ReviewScope::Commit(sha) => format!("Commit {}", sha.get(..7).unwrap_or(sha.as_str())),
+            ReviewScope::Commit(_) => "Commit".to_string(),
         }
     }
 }
