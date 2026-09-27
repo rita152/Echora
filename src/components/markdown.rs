@@ -27,9 +27,14 @@ use crate::{
     theme::{Theme, UI_MONOSPACE_FONT_FAMILY, ui_font},
 };
 
+mod fade;
 mod highlight;
 use highlight::highlighted_code_spans;
 mod preview;
+mod repair;
+pub(crate) use fade::cubic_bezier_ease;
+use fade::fade_segments;
+pub use fade::{MarkdownFadeHandle, STREAMING_BLOCK_FADE_DURATION, STREAMING_TEXT_FADE_DURATION};
 mod selection;
 pub use preview::MarkdownPreview;
 
@@ -666,7 +671,25 @@ enum SequenceContext {
 /// (list markers, tables, code gutters) stays out of it.
 pub fn render_assistant_markdown(source: &str, theme: Theme, message_scope: &str) -> Div {
     let document = parse_markdown(source);
-    render_markdown_document(&document, theme, markdown_hash(message_scope))
+    render_markdown_document(
+        &document,
+        theme,
+        markdown_hash(message_scope),
+        &MarkdownFadeHandle::none(),
+    )
+}
+
+/// The assistant message that is still arriving. Every newly revealed word,
+/// decoration and block fades in through `fade`, as ChatGPT's animated
+/// markdown root does until the message completes.
+pub fn render_streaming_assistant_markdown(
+    source: &str,
+    theme: Theme,
+    message_scope: &str,
+    fade: &MarkdownFadeHandle,
+) -> Div {
+    let document = parse_markdown(&repair::repair_streaming_markdown(source));
+    render_markdown_document(&document, theme, markdown_hash(message_scope), fade)
 }
 
 /// Pull request descriptions and review comments: the reference renders this
@@ -687,6 +710,7 @@ pub fn render_pull_request_markdown(source: &str, theme: Theme, scope: &str) -> 
         0,
         SequenceContext::Root,
         markdown_hash(scope),
+        &MarkdownFadeHandle::none(),
     )
     .w_full()
     .min_w(px(0.0))
@@ -769,6 +793,7 @@ pub fn render_selectable_markdown_document(
         0,
         SequenceContext::Root,
         markdown_hash(scope),
+        &MarkdownFadeHandle::none(),
     )
     .w_full()
     .min_w(px(0.0))
@@ -779,7 +804,12 @@ pub fn render_selectable_markdown_document(
     .text_color(style.palette.text)
 }
 
-fn render_markdown_document(document: &MarkdownDocument, theme: Theme, identity_seed: u64) -> Div {
+fn render_markdown_document(
+    document: &MarkdownDocument,
+    theme: Theme,
+    identity_seed: u64,
+    fade: &MarkdownFadeHandle,
+) -> Div {
     let style = MarkdownRenderStyle::new(theme);
     render_block_sequence(
         &document.blocks,
@@ -787,6 +817,7 @@ fn render_markdown_document(document: &MarkdownDocument, theme: Theme, identity_
         0,
         SequenceContext::Root,
         identity_seed,
+        fade,
     )
     .w_full()
     .min_w(px(0.0))
@@ -803,6 +834,7 @@ fn render_block_sequence(
     list_depth: usize,
     context: SequenceContext,
     identity_seed: u64,
+    fade: &MarkdownFadeHandle,
 ) -> Div {
     let mut sequence = div().w_full().min_w(px(0.0)).flex().flex_col();
     let mut previous: Option<&MarkdownBlock> = None;
@@ -835,6 +867,7 @@ fn render_block_sequence(
                     list_depth,
                     context,
                     block_identity,
+                    fade,
                 )),
         );
         previous = Some(block);
@@ -907,6 +940,7 @@ fn render_block(
     list_depth: usize,
     context: SequenceContext,
     block_identity: u64,
+    fade: &MarkdownFadeHandle,
 ) -> Div {
     match block {
         MarkdownBlock::Image {
@@ -967,6 +1001,7 @@ fn render_block(
             },
             style.body_weight,
             block_identity,
+            fade,
         ),
         MarkdownBlock::Heading { level, content } => {
             let (size, line_height) = match level {
@@ -983,15 +1018,20 @@ fn render_block(
                 line_height,
                 FontWeight::SEMIBOLD,
                 block_identity,
+                fade,
             )
         }
         MarkdownBlock::List { start, items } => {
-            render_list(*start, items, style, list_depth, block_identity)
+            render_list(*start, items, style, list_depth, block_identity, fade)
         }
         MarkdownBlock::BlockQuote(blocks) => div()
             .relative()
             .w_full()
             .min_w(px(0.0))
+            .when_some(
+                fade.block_alpha(block_identity, STREAMING_BLOCK_FADE_DURATION),
+                |quote, alpha| quote.opacity(alpha),
+            )
             .pl(px(style.layout.quote_padding_left))
             .py(px(style.layout.quote_padding_y))
             .line_height(px(style.layout.quote_line_height))
@@ -1011,12 +1051,17 @@ fn render_block(
                 list_depth,
                 SequenceContext::BlockQuote,
                 block_identity,
+                fade,
             )),
         MarkdownBlock::HorizontalRule => div()
             .w_full()
             .h_0()
             .border_t_1()
-            .border_color(style.palette.rule),
+            .border_color(style.palette.rule)
+            .when_some(
+                fade.block_alpha(block_identity, STREAMING_BLOCK_FADE_DURATION),
+                |rule, alpha| rule.opacity(alpha),
+            ),
         MarkdownBlock::CodeBlock { language, code, .. } => {
             render_code_block(language.as_deref(), code, style, block_identity)
         }
@@ -1024,7 +1069,7 @@ fn render_block(
             alignments,
             header,
             rows,
-        } => render_table(alignments, header, rows, style, block_identity),
+        } => render_table(alignments, header, rows, style, block_identity, fade),
     }
 }
 
@@ -1034,6 +1079,7 @@ fn render_list(
     style: MarkdownRenderStyle,
     depth: usize,
     block_identity: u64,
+    fade: &MarkdownFadeHandle,
 ) -> Div {
     let is_task_list = list_uses_task_layout(start, items);
     let mut list = div()
@@ -1069,15 +1115,26 @@ fn render_list(
         } else {
             style.layout.list_item_padding
         };
+        let item_identity = markdown_hash(&(block_identity, index));
+        // ChatGPT fades a streaming list item in as a block over the basic
+        // transition, while its marker follows the slower text fade.
         list = list.child(
             div()
                 .relative()
                 .w_full()
                 .min_w(px(0.0))
                 .pl(px(content_padding))
+                .when_some(
+                    fade.block_alpha(item_identity, STREAMING_BLOCK_FADE_DURATION),
+                    |item, alpha| item.opacity(alpha),
+                )
                 .child(
                     div()
                         .absolute()
+                        .when_some(
+                            fade.block_alpha(item_identity, STREAMING_TEXT_FADE_DURATION),
+                            |marker, alpha| marker.opacity(alpha),
+                        )
                         .left(px(marker_left))
                         .top(px(if item.checked.is_some() {
                             style.layout.paragraph_space
@@ -1097,7 +1154,8 @@ fn render_list(
                     style,
                     depth + 1,
                     SequenceContext::ListItem,
-                    markdown_hash(&(block_identity, index)),
+                    item_identity,
+                    fade,
                 )),
         );
     }
@@ -1119,7 +1177,9 @@ fn render_inline_block(
     line_height: f32,
     font_weight: FontWeight,
     inline_identity: u64,
+    fade: &MarkdownFadeHandle,
 ) -> Div {
+    fade.begin_inline(inline_identity);
     if requires_inline_boxes(content) {
         render_inline_boxes(
             content,
@@ -1128,6 +1188,7 @@ fn render_inline_block(
             line_height,
             font_weight,
             inline_identity,
+            fade,
         )
     } else {
         div()
@@ -1139,11 +1200,11 @@ fn render_inline_block(
             .child(if style.selectable {
                 selection::selectable(
                     inline_identity,
-                    render_styled_text(content, style, font_weight),
+                    render_styled_text(content, style, font_weight, fade),
                 )
                 .into_any_element()
             } else {
-                render_styled_text(content, style, font_weight).into_any_element()
+                render_styled_text(content, style, font_weight, fade).into_any_element()
             })
     }
 }
@@ -1171,8 +1232,9 @@ fn render_styled_text(
     inlines: &[MarkdownInline],
     style: MarkdownRenderStyle,
     base_weight: FontWeight,
+    fade: &MarkdownFadeHandle,
 ) -> StyledText {
-    render_styled_text_with_state(inlines, style, base_weight, InlineState::default())
+    render_styled_text_with_state(inlines, style, base_weight, InlineState::default(), fade)
 }
 
 fn render_styled_text_with_state(
@@ -1180,10 +1242,19 @@ fn render_styled_text_with_state(
     style: MarkdownRenderStyle,
     base_weight: FontWeight,
     state: InlineState,
+    fade: &MarkdownFadeHandle,
 ) -> StyledText {
     let mut text = String::new();
     let mut runs = Vec::new();
-    append_inline_runs(inlines, state, style, base_weight, &mut text, &mut runs);
+    append_inline_runs(
+        inlines,
+        state,
+        style,
+        base_weight,
+        &mut text,
+        &mut runs,
+        fade,
+    );
     StyledText::new(text).with_runs(runs)
 }
 
@@ -1194,42 +1265,43 @@ fn append_inline_runs(
     base_weight: FontWeight,
     text: &mut String,
     runs: &mut Vec<TextRun>,
+    fade: &MarkdownFadeHandle,
 ) {
     for inline in inlines {
         match inline {
             MarkdownInline::Text(value) => {
-                append_text_run(value, state, style, base_weight, text, runs)
+                append_text_run(value, state, style, base_weight, text, runs, fade)
             }
             MarkdownInline::Code(value) => {
                 let mut next = state;
                 next.code = true;
-                append_text_run(value, next, style, base_weight, text, runs);
+                append_text_run(value, next, style, base_weight, text, runs, fade);
             }
             MarkdownInline::SoftBreak => {
-                append_text_run(" ", state, style, base_weight, text, runs)
+                append_text_run(" ", state, style, base_weight, text, runs, fade)
             }
             MarkdownInline::HardBreak => {
-                append_text_run("\n", state, style, base_weight, text, runs)
+                append_text_run("\n", state, style, base_weight, text, runs, fade)
             }
             MarkdownInline::Strong(children) => {
                 let mut next = state;
                 next.strong = true;
-                append_inline_runs(children, next, style, base_weight, text, runs);
+                append_inline_runs(children, next, style, base_weight, text, runs, fade);
             }
             MarkdownInline::Emphasis(children) => {
                 let mut next = state;
                 next.emphasis = true;
-                append_inline_runs(children, next, style, base_weight, text, runs);
+                append_inline_runs(children, next, style, base_weight, text, runs, fade);
             }
             MarkdownInline::Strikethrough(children) => {
                 let mut next = state;
                 next.strikethrough = true;
-                append_inline_runs(children, next, style, base_weight, text, runs);
+                append_inline_runs(children, next, style, base_weight, text, runs, fade);
             }
             MarkdownInline::Link { content, .. } => {
                 let mut next = state;
                 next.link = true;
-                append_inline_runs(content, next, style, base_weight, text, runs);
+                append_inline_runs(content, next, style, base_weight, text, runs, fade);
             }
         }
     }
@@ -1242,6 +1314,7 @@ fn append_text_run(
     base_weight: FontWeight,
     text: &mut String,
     runs: &mut Vec<TextRun>,
+    fade: &MarkdownFadeHandle,
 ) {
     if value.is_empty() {
         return;
@@ -1262,23 +1335,74 @@ fn append_text_run(
         FontStyle::Normal
     };
     let color = if state.link {
-        style.palette.link.into()
+        style.palette.link
     } else if state.code {
-        style.palette.inline_code_text.into()
+        style.palette.inline_code_text
     } else {
-        style.palette.text.into()
+        style.palette.text
     };
-    runs.push(TextRun {
-        len: value.len(),
-        font,
-        color,
+    let run = |len: usize, color: Rgba| TextRun {
+        len,
+        font: font.clone(),
+        color: color.into(),
         background_color: state.code.then(|| style.palette.inline_code_surface.into()),
         underline: None,
         strikethrough: state.strikethrough.then_some(StrikethroughStyle {
             thickness: px(1.0),
             color: None,
         }),
-    });
+    };
+    // Breaks and other whitespace-only runs join the word before them in the
+    // reference, so they neither count as a segment nor fade on their own.
+    if fade.is_active() && !value.chars().all(char::is_whitespace) {
+        for segment in fade_segments(value) {
+            let alpha = fade.segment_alpha(segment).unwrap_or(1.0);
+            runs.push(run(segment.len(), faded(color, alpha)));
+        }
+    } else {
+        runs.push(run(value.len(), color));
+    }
+}
+
+fn faded(color: Rgba, alpha: f32) -> Rgba {
+    Rgba {
+        a: color.a * alpha,
+        ..color
+    }
+}
+
+/// Plain text of an inline-box fragment while the message streams: one run
+/// per fade segment, carrying the fragment's own weight, slant and color so
+/// the runs paint exactly like the element's inherited text style.
+fn fading_fragment_text(
+    label: String,
+    state: InlineState,
+    weight: FontWeight,
+    color: Rgba,
+    fade: &MarkdownFadeHandle,
+) -> StyledText {
+    let mut font = ui_font();
+    font.weight = weight;
+    font.style = if state.emphasis {
+        FontStyle::Italic
+    } else {
+        FontStyle::Normal
+    };
+    let runs = fade_segments(&label)
+        .into_iter()
+        .map(|segment| TextRun {
+            len: segment.len(),
+            font: font.clone(),
+            color: faded(color, fade.segment_alpha(segment).unwrap_or(1.0)).into(),
+            background_color: None,
+            underline: None,
+            strikethrough: state.strikethrough.then_some(StrikethroughStyle {
+                thickness: px(1.0),
+                color: None,
+            }),
+        })
+        .collect::<Vec<_>>();
+    StyledText::new(label).with_runs(runs)
 }
 
 struct InlineFragment {
@@ -1297,6 +1421,7 @@ fn render_inline_boxes(
     line_height: f32,
     base_weight: FontWeight,
     inline_identity: u64,
+    fade: &MarkdownFadeHandle,
 ) -> Div {
     // ChatGPT uses .92em here; table cells inherit a smaller font than prose.
     let scale = font_size / style.layout.base_size;
@@ -1346,9 +1471,19 @@ fn render_inline_boxes(
             } else {
                 base_weight
             };
+            // ChatGPT fades a code span or link in as one unit and every word
+            // of plain text on its own.
+            let is_decoration =
+                fragment.state.code || linked_inline_code || fragment.link_destination.is_some();
+            let decoration_alpha = if is_decoration {
+                fade.next_segment_alpha()
+            } else {
+                None
+            };
             let mut element = div()
                 .flex_none()
                 .max_w_full()
+                .when_some(decoration_alpha, |element, alpha| element.opacity(alpha))
                 .font_weight(weight)
                 .text_color(color)
                 .when(fragment.state.emphasis, |element| element.italic())
@@ -1394,6 +1529,7 @@ fn render_inline_boxes(
                     style,
                     FontWeight::MEDIUM,
                     fragment.state,
+                    &MarkdownFadeHandle::none(),
                 )
             } else {
                 let label = if file_reference.is_some() {
@@ -1404,7 +1540,11 @@ fn render_inline_boxes(
                 } else {
                     fragment.text.clone()
                 };
-                StyledText::new(label)
+                if fade.is_active() && !is_decoration {
+                    fading_fragment_text(label, fragment.state, weight, color, fade)
+                } else {
+                    StyledText::new(label)
+                }
             };
             let element = if fragment.state.code || linked_inline_code {
                 let code = match fragment.link_content.as_deref() {
@@ -2130,6 +2270,7 @@ fn render_table(
     rows: &[Vec<MarkdownTableCell>],
     style: MarkdownRenderStyle,
     block_identity: u64,
+    fade: &MarkdownFadeHandle,
 ) -> Div {
     div().w_full().min_w(px(0.0)).child(MarkdownTable {
         alignments: alignments.to_vec(),
@@ -2137,6 +2278,7 @@ fn render_table(
         rows: rows.to_vec(),
         style,
         block_identity,
+        fade: fade.clone(),
     })
 }
 
@@ -2147,6 +2289,7 @@ struct MarkdownTable {
     rows: Vec<Vec<MarkdownTableCell>>,
     style: MarkdownRenderStyle,
     block_identity: u64,
+    fade: MarkdownFadeHandle,
 }
 
 impl gpui::RenderOnce for MarkdownTable {
@@ -2157,6 +2300,7 @@ impl gpui::RenderOnce for MarkdownTable {
             rows,
             style,
             block_identity,
+            fade,
         } = self;
         let widths = table_column_widths(
             &alignments,
@@ -2191,6 +2335,7 @@ impl gpui::RenderOnce for MarkdownTable {
                 },
                 column_count,
                 &widths,
+                &fade,
             );
         }
         for (index, row) in rows.iter().enumerate() {
@@ -2205,6 +2350,7 @@ impl gpui::RenderOnce for MarkdownTable {
                 },
                 column_count,
                 &widths,
+                &fade,
             );
         }
 
@@ -2270,6 +2416,7 @@ fn table_column_widths(
                     CHATGPT_MARKDOWN_BODY_WEIGHT
                 },
                 markdown_hash(&(block_identity, "measure", row_index, index)),
+                &MarkdownFadeHandle::none(),
             )
             .w_auto()
             .font(ui_font())
@@ -2304,16 +2451,21 @@ fn append_table_row(
     presentation: TableRowPresentation,
     column_count: usize,
     widths: &[f32],
+    fade: &MarkdownFadeHandle,
 ) -> Div {
     let TableRowPresentation {
         is_header,
         is_last_row,
         row_identity,
     } = presentation;
+    // The grid has no row element; every cell of a streaming row fades with
+    // the row's own start time.
+    let row_alpha = fade.block_alpha(row_identity, STREAMING_BLOCK_FADE_DURATION);
     for (index, width) in widths[..column_count].iter().copied().enumerate() {
         let cell = cells.get(index);
         let mut element = div()
             .debug_selector(move || format!("markdown-table-cell-{row_identity}-{index}"))
+            .when_some(row_alpha, |cell, alpha| cell.opacity(alpha))
             .w(px(width))
             .min_w(px(0.0))
             .h_full()
@@ -2372,6 +2524,7 @@ fn append_table_row(
                     CHATGPT_MARKDOWN_BODY_WEIGHT
                 },
                 markdown_hash(&(row_identity, index)),
+                fade,
             );
             element = element.child(content.justify_start());
         }
@@ -2602,6 +2755,7 @@ mod tests {
                 rows,
                 MarkdownRenderStyle::new(Theme::for_mode(ThemeMode::Light)),
                 42,
+                &MarkdownFadeHandle::none(),
             ))
         }
     }
@@ -2667,6 +2821,7 @@ mod tests {
                 &document,
                 Theme::for_mode(ThemeMode::Dark),
                 42,
+                &MarkdownFadeHandle::none(),
             ))
         }
     }
@@ -3249,4 +3404,53 @@ pub(super) struct TableRowPresentation {
     pub(super) is_header: bool,
     pub(super) is_last_row: bool,
     pub(super) row_identity: u64,
+}
+
+#[cfg(test)]
+mod streaming_fade_tests {
+    use super::*;
+    use crate::theme::ThemeMode;
+    use std::time::{Duration, Instant};
+
+    /// Renders one paragraph through the streaming path and returns how many
+    /// distinct fade segments the timeline holds afterwards.
+    fn render_paragraph(source: &str, fade: &MarkdownFadeHandle) -> usize {
+        let _ = render_streaming_assistant_markdown(
+            source,
+            Theme::for_mode(ThemeMode::Dark),
+            "paragraph",
+            fade,
+        );
+        fade.segment_count()
+    }
+
+    #[test]
+    fn a_paragraph_switching_to_inline_boxes_keeps_its_word_keys() {
+        let start = Instant::now();
+        let fade = MarkdownFadeHandle::new(start);
+        // Plain text renders as one styled run; punctuation after spaces
+        // attaches differently than in the inline-box path.
+        let plain = "Use the (optional) flag, \"quoted\" — and 中文（括号）说明 `cargo";
+        let before = render_paragraph(plain, &fade);
+        fade.set_now(start + Duration::from_secs(2));
+        // Closing the code span switches the paragraph to inline boxes; only
+        // the code span itself may register a new segment.
+        let after = render_paragraph(&format!("{plain}`"), &fade);
+        assert_eq!(after, before, "no word may restart its fade");
+        let later = render_paragraph(&format!("{plain}` then"), &fade);
+        assert_eq!(later, before + 1);
+    }
+
+    #[test]
+    fn streaming_render_hides_an_unfinished_link() {
+        let document = parse_markdown(&repair::repair_streaming_markdown(
+            "see [GPUI](https://github.com/zed",
+        ));
+        assert_eq!(
+            document.blocks,
+            vec![MarkdownBlock::Paragraph(vec![MarkdownInline::Text(
+                "see".into()
+            )])]
+        );
+    }
 }

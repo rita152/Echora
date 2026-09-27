@@ -533,4 +533,10 @@ impl ChatApp {
             .update(cx, |view, cx| view.set_runtime_for_capture(state, cx));
         cx.notify();
     }
+    pub fn set_streaming_reply_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
+        self.home.update(cx, |view, cx| {
+            view.set_streaming_reply_for_capture(state, cx)
+        });
+        cx.notify();
+    }
 }

@@ -14,6 +14,7 @@ impl ConversationState {
         self.turn_id = None;
         self.resumed_turn = None;
         self.assistant_message_phases.clear();
+        self.completed_assistant_messages.clear();
         self.turn_identity = None;
         self.seen_user_items.clear();
         self.history_loading = false;

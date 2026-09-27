@@ -395,6 +395,7 @@ impl ConversationState {
                     phase,
                 } => {
                     self.assistant_message_phases.insert(item_id.clone(), phase);
+                    self.completed_assistant_messages.insert(item_id.clone());
                     if let Some(ConversationActivity::AssistantMessage { text: existing, .. }) = self.activities.iter_mut().find(|a| matches!(a, ConversationActivity::AssistantMessage { item_id: id, .. } if id == &item_id)) {
                         *existing = text;
                     } else {

@@ -2354,8 +2354,18 @@ fn live_conversation_stream_timings() {
                 );
             })
         });
+        // One paced reveal tick per delta, so every sample lays out the
+        // growing message instead of a reply still held in the buffer.
+        app.advance_clock(super::streaming::STREAMING_REVEAL_TICK);
+        app.run_until_parked();
         window.draw();
         timings.push(start.elapsed().as_secs_f64() * 1000.);
+    }
+    // Let the reveal catch up so the reply overflows before the anchor check.
+    for _ in 0..60 {
+        app.advance_clock(super::streaming::STREAMING_REVEAL_TICK);
+        app.run_until_parked();
+        window.draw();
     }
     assert!(window.read(|home, _| home.conversation_list.is_following_tail()));
     window.simulate_scroll(point(px(20.), px(300.)), point(px(0.), px(150.)));
@@ -2372,7 +2382,11 @@ fn live_conversation_stream_timings() {
             );
         })
     });
-    window.draw();
+    for _ in 0..10 {
+        app.advance_clock(super::streaming::STREAMING_REVEAL_TICK);
+        app.run_until_parked();
+        window.draw();
+    }
     let after = window.read(|home, _| home.conversation_list.logical_scroll_top());
     assert_eq!(before.item_ix, after.item_ix);
     assert_eq!(before.offset_in_item, after.offset_in_item);
@@ -2385,4 +2399,182 @@ fn live_conversation_stream_timings() {
         timings[475],
         timings[499]
     );
+}
+
+fn streamed_reply_text(home: &HomeView) -> String {
+    home.conversation_rows
+        .iter()
+        .rev()
+        .find_map(|row| match row {
+            super::timeline::ConversationListRow::Activity {
+                unit:
+                    super::timeline::ActivityStreamUnit::Standalone(
+                        ConversationActivity::AssistantMessage { text, .. },
+                    ),
+                ..
+            }
+            | super::timeline::ConversationListRow::AssistantMarkdown { text, .. } => {
+                Some(text.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
+fn open_streaming_reply(app: &mut TestApp, reply: &str) -> TestAppWindow<HomeView> {
+    use crate::agent::{AgentEvent as E, AgentTurnIdentity};
+    let mut window = app.open_window_with_options(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                point(px(0.), px(0.)),
+                size(px(1440.), px(900.)),
+            ))),
+            ..Default::default()
+        },
+        |_, cx| HomeView::new(ThemeMode::Dark, cx),
+    );
+    let reply = reply.to_owned();
+    window.update(|home, _, cx| {
+        home.composer.update(cx, |composer, cx| {
+            composer.submit_prompt_for_capture("hello", cx);
+            composer.apply_events_for_capture(
+                vec![
+                    E::ThreadCreated {
+                        thread_id: "reveal".into(),
+                    },
+                    E::TurnReady(AgentTurnIdentity {
+                        generation: 1,
+                        thread_id: "reveal".into(),
+                        turn_id: "turn".into(),
+                    }),
+                    E::AssistantMessageStarted {
+                        item_id: "answer".into(),
+                        phase: Some("final_answer".into()),
+                    },
+                ],
+                cx,
+            );
+        })
+    });
+    window.draw();
+    // The first delta arrives in a later batch than the started event, as it
+    // does whenever the model takes longer than one collection window.
+    window.update(|home, _, cx| {
+        home.composer.update(cx, |composer, cx| {
+            composer.apply_events_for_capture(
+                vec![E::TextDelta {
+                    item_id: "answer".into(),
+                    delta: reply,
+                }],
+                cx,
+            );
+        })
+    });
+    window.draw();
+    window
+}
+
+#[test]
+fn streaming_reply_is_revealed_at_the_reference_cadence_until_it_completes() {
+    use crate::agent::AgentEvent as E;
+    let reply = "Hello! What would you like to work on? I can start with the streaming view.";
+    let mut app = TestApp::new();
+    let mut window = open_streaming_reply(&mut app, reply);
+
+    // The started event mounted the message empty, so the first delta is
+    // paced like every later one instead of landing at once.
+    assert!(window.read(|home, _| streamed_reply_text(home).len() < reply.len()));
+    assert!(reply.starts_with(&window.read(|home, _| streamed_reply_text(home))));
+    assert!(window.read(|home, _| home.streaming_fade.is_active()));
+    assert_eq!(
+        window.read(|home, _| home
+            .streaming_reveal
+            .as_ref()
+            .map(|reveal| reveal.item_id().to_owned())),
+        Some("answer".to_owned())
+    );
+
+    let mut lengths = Vec::new();
+    for _ in 0..80 {
+        app.advance_clock(super::streaming::STREAMING_REVEAL_TICK);
+        app.run_until_parked();
+        window.draw();
+        lengths.push(window.read(|home, _| streamed_reply_text(home).chars().count()));
+    }
+    assert!(
+        lengths.windows(2).all(|pair| pair[0] <= pair[1]),
+        "{lengths:?}"
+    );
+    assert!(
+        lengths[9] > 0 && lengths[9] < reply.chars().count(),
+        "text should be partially revealed after half a second: {lengths:?}"
+    );
+    assert_eq!(window.read(|home, _| streamed_reply_text(home)), reply);
+    // The reveal has caught up, and the message still streams and fades.
+    assert!(window.read(|home, _| !home.streaming_reveal_running));
+    assert!(window.read(|home, _| home.streaming_fade.is_active()));
+
+    window.update(|home, _, cx| {
+        home.composer.update(cx, |composer, cx| {
+            composer.apply_events_for_capture(
+                vec![
+                    E::AssistantMessageCompleted {
+                        item_id: "answer".into(),
+                        text: reply.into(),
+                        phase: Some("final_answer".into()),
+                    },
+                    E::Completed,
+                ],
+                cx,
+            );
+        })
+    });
+    window.draw();
+    assert_eq!(window.read(|home, _| streamed_reply_text(home)), reply);
+    assert!(window.read(|home, _| home.streaming_reveal.is_none()));
+    assert!(window.read(|home, _| !home.streaming_fade.is_active()));
+}
+
+#[test]
+fn completion_publishes_the_buffered_tail_at_once() {
+    use crate::agent::AgentEvent as E;
+    let reply = "A reply whose completion snapshot arrives while most of it is still buffered.";
+    let mut app = TestApp::new();
+    let mut window = open_streaming_reply(&mut app, reply);
+    app.advance_clock(super::streaming::STREAMING_REVEAL_TICK);
+    app.run_until_parked();
+    window.draw();
+    assert!(window.read(|home, _| streamed_reply_text(home).len() < reply.len()));
+
+    window.update(|home, _, cx| {
+        home.composer.update(cx, |composer, cx| {
+            composer.apply_events_for_capture(
+                vec![E::AssistantMessageCompleted {
+                    item_id: "answer".into(),
+                    text: reply.into(),
+                    phase: Some("final_answer".into()),
+                }],
+                cx,
+            );
+        })
+    });
+    window.draw();
+    assert_eq!(window.read(|home, _| streamed_reply_text(home)), reply);
+    assert!(window.read(|home, _| home.streaming_reveal.is_none()));
+    // Later ticks of the finished reveal must not disturb the settled rows.
+    app.advance_clock(super::streaming::STREAMING_REVEAL_TICK * 4);
+    app.run_until_parked();
+    window.draw();
+    assert_eq!(window.read(|home, _| streamed_reply_text(home)), reply);
+}
+
+#[test]
+fn reduced_motion_prints_deltas_as_they_arrive_without_fading() {
+    let reply = "Reduced motion shows every delta as soon as it arrives.";
+    let mut app = TestApp::new();
+    app.update(|cx| cx.set_reduce_motion(true));
+    let window = open_streaming_reply(&mut app, reply);
+    assert_eq!(window.read(|home, _| streamed_reply_text(home)), reply);
+    assert!(window.read(|home, _| home.streaming_reveal.is_none()));
+    assert!(window.read(|home, _| !home.streaming_fade.is_active()));
 }

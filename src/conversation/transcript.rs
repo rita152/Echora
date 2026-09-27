@@ -315,6 +315,16 @@ impl ConversationState {
         self.project_id = history.thread.project_id.clone();
         self.history_loading = false;
         self.history_error = None;
+        self.completed_assistant_messages = history
+            .turns
+            .last()
+            .into_iter()
+            .flat_map(|turn| turn.items.iter())
+            .filter_map(|item| match item {
+                ThreadHistoryItem::AssistantMessage { item_id, .. } => Some(item_id.clone()),
+                _ => None,
+            })
+            .collect();
         self.assistant_message_phases = history
             .turns
             .last()
@@ -591,6 +601,30 @@ impl ConversationState {
     }
     pub(crate) fn resumed_turn(&self) -> Option<ResumedTurnPresentation> {
         self.resumed_turn.clone()
+    }
+    /// The assistant message whose text is still arriving: the newest
+    /// message of a running turn without a completion snapshot. ChatGPT
+    /// paces and fades only this message; everything else renders settled.
+    pub(crate) fn streaming_assistant_message_id(&self) -> Option<&str> {
+        if !matches!(
+            self.phase,
+            ConversationPhase::Starting
+                | ConversationPhase::Thinking
+                | ConversationPhase::Streaming
+                | ConversationPhase::Stopping
+        ) {
+            return None;
+        }
+        self.activities
+            .iter()
+            .rev()
+            .find_map(|activity| match activity {
+                ConversationActivity::AssistantMessage { item_id, .. } => {
+                    (!self.completed_assistant_messages.contains(item_id))
+                        .then_some(item_id.as_str())
+                }
+                _ => None,
+            })
     }
     pub(crate) fn conversation_render_snapshot(
         &self,

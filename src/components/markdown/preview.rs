@@ -262,6 +262,7 @@ fn render_item(
             },
             widths.len(),
             widths,
+            &MarkdownFadeHandle::none(),
         );
         outer.child(
             div().w_full().min_w(px(0.)).flex().justify_center().child(
@@ -292,6 +293,7 @@ fn render_item(
                     0,
                     SequenceContext::Root,
                     block_identity,
+                    &MarkdownFadeHandle::none(),
                 )),
         )
     }

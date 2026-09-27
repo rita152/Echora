@@ -1306,3 +1306,5 @@ impl ComposerView {
 mod progress;
 #[cfg(feature = "screenshot")]
 mod runtime;
+#[cfg(feature = "screenshot")]
+mod streaming_reply;

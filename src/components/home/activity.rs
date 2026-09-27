@@ -20,7 +20,7 @@ use super::{
 use crate::{
     components::{
         file_change::{FileChangeActivityCallback, render_file_change_activity},
-        markdown::render_assistant_markdown,
+        markdown::{render_assistant_markdown, render_streaming_assistant_markdown},
     },
     conversation::ConversationActivity,
 };
@@ -104,7 +104,17 @@ pub(super) fn render_activity_stream_unit(
                     .into_any_element()
             }
             ConversationActivity::AssistantMessage { item_id, text } if !text.is_empty() => {
-                render_assistant_markdown(&text, theme, &item_id).into_any_element()
+                if render.streaming_message_id.as_deref() == Some(item_id.as_str()) {
+                    render_streaming_assistant_markdown(
+                        &text,
+                        theme,
+                        &item_id,
+                        &render.streaming_fade,
+                    )
+                    .into_any_element()
+                } else {
+                    render_assistant_markdown(&text, theme, &item_id).into_any_element()
+                }
             }
             ConversationActivity::Reasoning(reasoning) => {
                 let expanded =
