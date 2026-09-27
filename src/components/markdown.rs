@@ -1805,48 +1805,10 @@ fn code_piece(text: &str, state: InlineState, opens: bool, closes: bool) -> Inli
     }
 }
 
-/// Line-break opportunities (byte offsets, the end included) as Blink finds
-/// them: UAX #14, except between two printable ASCII characters, where Blink's
-/// own pair table (`kAsciiLineBreakTable`) decides instead.
+/// Line-break opportunities as Blink finds them (see
+/// [`gpui::line_break_opportunities`]), shared with GPUI's text wrapping.
 fn line_break_offsets(text: &str) -> Vec<usize> {
-    let bytes = text.as_bytes();
-    let printable = |byte: u8| (0x21..0x7f).contains(&byte);
-    let ascii_pair = |offset: usize| {
-        offset > 0
-            && offset < bytes.len()
-            && printable(bytes[offset - 1])
-            && printable(bytes[offset])
-    };
-    let mut offsets = unicode_linebreak::linebreaks(text)
-        .map(|(offset, _)| offset)
-        .filter(|&offset| !ascii_pair(offset))
-        .chain((1..bytes.len()).filter(|&offset| {
-            ascii_pair(offset)
-                && blink_ascii_break(bytes[offset - 1], bytes[offset])
-                // A `-` before a digit may be a minus sign: Blink breaks there
-                // only after an alphanumeric (`ABCD-1234`, `1234-5678`).
-                && !(bytes[offset - 1] == b'-'
-                    && bytes[offset].is_ascii_digit()
-                    && !(offset >= 2 && bytes[offset - 2].is_ascii_alphanumeric()))
-        }))
-        .collect::<Vec<_>>();
-    offsets.sort_unstable();
-    offsets.dedup();
-    offsets
-}
-
-/// Blink's break opportunities between two printable ASCII characters, read
-/// from the reference renderer pair by pair: after `-` and `?` unless closing
-/// punctuation follows, and before an opening bracket after other punctuation.
-/// Letters, digits, `/`, `.` and `_` never break against each other.
-fn blink_ascii_break(before: u8, after: u8) -> bool {
-    match before {
-        b'-' => !b"!$),./:;?]}".contains(&after),
-        b'?' => !b"!\"'),./:;?]}".contains(&after),
-        b'!' | b'"' | b'#' | b'%' | b'&' | b')' | b'*' | b'+' | b',' | b'.' | b':' | b';'
-        | b'=' | b'>' | b'\\' | b']' | b'|' | b'}' | b'~' => b"(<[{".contains(&after),
-        _ => false,
-    }
+    gpui::line_break_opportunities(text)
 }
 
 fn append_inline_fragments(

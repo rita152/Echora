@@ -34,15 +34,9 @@ const TREE_WIDTH: f32 = 360.0;
 /// File-tree row height and radius measured from the reference rows.
 const TREE_ROW_HEIGHT: f32 = 29.0;
 const TREE_ROW_RADIUS: f32 = 6.0;
-/// Each tree level indents its chevron by this much (1102 → 1119.5 → 1137).
-const TREE_INDENT: f32 = 17.5;
-
-/// The status a folder row advertises: `A` when every changed descendant is
-/// added, otherwise `M`.
-fn tree_status(files: &[&FileDiff]) -> (char, bool) {
-    let all_added = !files.is_empty() && files.iter().all(|file| file.status == 'A');
-    if all_added { ('A', true) } else { ('M', false) }
-}
+/// Each tree level indents its row by this much (`spacing` 7.5px plus the
+/// 5px gap: icons at 1095 → 1107.5).
+const TREE_INDENT: f32 = 12.5;
 
 /// Splits the files below `prefix` into "has direct files" and the distinct
 /// subfolders directly under it, in first-seen order.
@@ -203,22 +197,21 @@ impl PullRequestsView {
         } else {
             page - self.list_width
         };
-        let tree = if self.file_tree_open {
-            self.tree_width()
-        } else {
-            0.0
-        };
+        // The file tree floats over the diff, which keeps its width.
+        let tree = 0.0;
         let gutter = if self.classic_scrollbars {
             super::theme::SCROLLBAR_GUTTER
         } else {
             0.0
         };
-        let cell = (self.pane_width - tree - gutter) / if self.split { 2.0 } else { 1.0 };
-        self.set_code_width((cell - GUTTER_WIDTH - CELL_PADDING * 2.0).max(40.0));
+        let cell = self.pane_width - tree - gutter;
+        let code = |cell: f32| (cell - GUTTER_WIDTH - CELL_PADDING * 2.0).max(40.0);
+        // A split half gives 1px to the 2px gap between the halves.
+        self.set_code_width(code(cell), code(cell / 2.0 - 1.0));
     }
 
     fn tree_width(&self) -> f32 {
-        TREE_WIDTH.min(self.pane_width * 0.42)
+        TREE_WIDTH.min(self.pane_width)
     }
 
     /// File navigation addresses a header in the flattened virtual row index,
@@ -281,6 +274,7 @@ impl PullRequestsView {
                 )
             });
         let mut body = div()
+            .relative()
             .flex_1()
             .min_h(px(0.0))
             .flex()
@@ -382,12 +376,12 @@ impl PullRequestsView {
                     )
                     .child(self.diff_toolbar_button(
                         "pr-split-toggle",
-                        if self.split {
-                            "Switch to unified diff"
-                        } else {
-                            "Switch to split diff"
+                        match self.diff_layout {
+                            super::DiffLayout::Unified => "Switch to split diff",
+                            super::DiffLayout::Split => "Switch to Auto diff",
+                            super::DiffLayout::Auto => "Auto diff: switch to unified diff",
                         },
-                        view_mode_glyph(self.split, theme).into_any_element(),
+                        view_mode_glyph(self.diff_layout, theme).into_any_element(),
                         cx,
                     ))
                     .child(
@@ -416,8 +410,8 @@ impl PullRequestsView {
     ) -> impl IntoElement {
         let theme = self.theme();
         let view = cx.entity();
-        let open = (id == "pr-review-options" && self.review_options_open)
-            || (id == "pr-file-tree" && self.file_tree_open);
+        // An open `Review options` menu leaves its trigger unfilled.
+        let open = id == "pr-file-tree" && self.file_tree_open;
         let (size, radius) = if id == "pr-file-tree" {
             (28.0, 12.5)
         } else {
@@ -558,7 +552,6 @@ impl PullRequestsView {
         let prefix = if sticky { "pr-sticky" } else { "pr" };
         let theme = self.theme();
         let collapsed = self.collapsed_files.contains(&file.path);
-        let selected = self.selected_file.as_deref() == Some(file.path.as_str());
         let path = file.path.clone();
         let view = cx.entity();
         let (asset, glyph_color) = file_icons::file_icon(&file.path, self.mode);
@@ -592,7 +585,6 @@ impl PullRequestsView {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .bg(theme.diff_header_surface)
-                    .when(selected, |header| header.bg(theme.control))
                     .child(
                         div()
                             .flex_1()
@@ -788,6 +780,9 @@ impl PullRequestsView {
         } else {
             format!("{gap} unmodified lines")
         };
+        if self.file_splits(file) {
+            return self.split_hunk_expander(file_index, key, label, cx);
+        }
         div()
             .id(SharedString::from(format!("pr-expander-{key}")))
             .h(px(SEPARATOR_HEIGHT))
@@ -816,6 +811,62 @@ impl PullRequestsView {
                     .line_height(px(LINE_HEIGHT))
                     .text_color(theme.diff_gutter_text)
                     .child(div().truncate().child(label)),
+            )
+    }
+
+    /// A hunk separator in split view: each half is a filled band (the old
+    /// side from the edge, the new side ending 8px short with 8px corners)
+    /// across the 2px gap, and only the old side reads `N unmodified lines`.
+    fn split_hunk_expander(
+        &self,
+        file_index: usize,
+        key: String,
+        label: String,
+        cx: &mut gpui::Context<Self>,
+    ) -> gpui::Stateful<Div> {
+        let theme = self.theme();
+        let view = cx.entity();
+        div()
+            .id(SharedString::from(format!("pr-expander-{key}")))
+            .h(px(SEPARATOR_HEIGHT))
+            .flex()
+            .bg(theme.surface)
+            .cursor_pointer()
+            .role(gpui::Role::Button)
+            .aria_label(SharedString::from(label.clone()))
+            .on_click(move |_, _, cx| {
+                view.update(cx, |view, cx| {
+                    view.expand_context(file_index, key.clone(), cx)
+                });
+            })
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .mr(px(1.0))
+                    .flex()
+                    .bg(theme.diff_expander_surface)
+                    .child(div().flex_none().w(px(GUTTER_WIDTH)))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.0))
+                            .flex()
+                            .items_center()
+                            .px(px(7.6242))
+                            .text_size(px(12.0))
+                            .line_height(px(LINE_HEIGHT))
+                            .text_color(theme.diff_gutter_text)
+                            .child(div().truncate().child(label)),
+                    ),
+            )
+            .child(
+                div().flex_1().min_w(px(0.0)).ml(px(1.0)).pr(px(8.0)).child(
+                    div()
+                        .size_full()
+                        .rounded_r(px(8.0))
+                        .bg(theme.diff_expander_surface),
+                ),
             )
     }
 
@@ -936,8 +987,10 @@ impl PullRequestsView {
                     .text_color(theme.diff_context_text)
                     .line_height(px(LINE_HEIGHT))
                     .when(self.wrap, |code| {
-                        code.w(px(self.code_width() + CELL_PADDING * 2.0))
-                            .whitespace_normal()
+                        code.w(px(
+                            self.code_width(self.file_splits(file)) + CELL_PADDING * 2.0
+                        ))
+                        .whitespace_normal()
                     })
                     .when(!self.wrap, |code| code.whitespace_nowrap())
                     .child(self.highlighted_line(file_index, file, hunk_index, line_index)),
@@ -1084,6 +1137,9 @@ impl PullRequestsView {
     }
 
     /// Right-hand file tree with git status badges and a filter field.
+    /// The file tree (`absolute inset-y-0`, 360px, `ps-2 pe-4`): a panel over
+    /// the right of the diff, which keeps its width underneath, with the
+    /// `Filter files…` field above the rows.
     fn file_tree(&self, cx: &mut gpui::Context<Self>) -> Div {
         let theme = self.theme();
         let filter = self.tree_filter.read(cx).text().trim().to_lowercase();
@@ -1094,32 +1150,47 @@ impl PullRequestsView {
             .collect();
         let rows = self.tree_rows("", &files, 0, cx);
         div()
-            .flex_none()
+            .absolute()
+            .top_0()
+            .bottom_0()
+            .right_0()
             .w(px(self.tree_width()))
-            .h_full()
             .flex()
             .flex_col()
             .bg(theme.surface)
             .pt(px(8.0))
             .pl(px(8.0))
             .pr(px(16.0))
+            .shadow(vec![
+                gpui::BoxShadow::new(px(0.0), px(0.0), theme.tree_panel_ring.into())
+                    .spread_radius(px(0.5)),
+                gpui::BoxShadow::new(px(0.0), px(3.0), gpui::rgba(0x0000000a).into())
+                    .blur_radius(px(7.5)),
+                gpui::BoxShadow::new(px(0.0), px(0.0), gpui::rgba(0x0000000d).into())
+                    .blur_radius(px(20.0)),
+            ])
             .child(
-                div().pb(px(4.0)).child(
+                div().flex_none().pb(px(4.0)).child(
                     div()
                         .h(px(28.0))
-                        .px(px(8.0))
                         .flex()
                         .items_center()
-                        .gap(px(6.0))
-                        .rounded(px(9999.0))
-                        .bg(theme.field_surface)
+                        .gap(px(4.0))
+                        .rounded(px(12.5))
+                        .bg(theme.soft_alpha)
                         .border(px(1.0))
-                        .border_color(theme.field_border)
-                        .child(icon("search", theme.icon_muted.into()).size(px(14.0)))
+                        .border_color(theme.border)
+                        .child(
+                            icon("pr-search", theme.text_muted.into())
+                                .flex_none()
+                                .ml(px(8.0))
+                                .size(px(16.0)),
+                        )
                         .child(
                             div()
                                 .flex_1()
                                 .min_w(px(0.0))
+                                .pr(px(6.0))
                                 .child(self.tree_filter.clone()),
                         ),
                 ),
@@ -1129,8 +1200,9 @@ impl PullRequestsView {
                     .flex_1()
                     .min_h(px(0.0))
                     .overflow_hidden()
-                    .pl(px(8.0))
-                    .pr(px(8.0))
+                    .px(px(4.0))
+                    .text_size(px(13.0))
+                    .font_weight(gpui::FontWeight::NORMAL)
                     .child(rows),
             )
     }
@@ -1276,9 +1348,15 @@ impl PullRequestsView {
     }
 
     /// `Review options` menu of the diff toolbar.
+    /// `Review options`: word wrap, then (below a rule) rich preview when a
+    /// Markdown file can preview, and word diffs, each with its 16px glyph.
     pub(super) fn review_options_menu(&self, cx: &mut gpui::Context<Self>) -> gpui::Stateful<Div> {
         let theme = self.theme();
         let view = cx.entity();
+        let previewable = self
+            .diff
+            .iter()
+            .any(|file| file.path.ends_with(".md") && file.status != 'D');
         let entries = [
             (
                 if self.wrap {
@@ -1287,16 +1365,18 @@ impl PullRequestsView {
                     "Enable word wrap"
                 },
                 "wrap",
-                self.wrap,
+                "pr-menu-wrap",
+                true,
             ),
             (
                 if self.rich {
-                    "Disable Markdown preview"
+                    "Disable rich preview"
                 } else {
-                    "Enable Markdown preview"
+                    "Enable rich preview"
                 },
                 "rich",
-                self.rich,
+                "pr-menu-rich-preview",
+                previewable,
             ),
             (
                 if self.words {
@@ -1305,63 +1385,50 @@ impl PullRequestsView {
                     "Enable word diffs"
                 },
                 "words",
-                self.words,
+                "pr-menu-word-diffs",
+                true,
             ),
         ];
-        let mut menu = div()
-            .id("pr-review-options-menu")
-            .p(px(4.0))
+        // This menu is opaque (`rgb(45,45,45)` / white), unlike the inbox's.
+        let mut menu = Self::menu_surface("pr-review-options-menu", theme)
+            .bg(theme.popover_surface)
             .w(px(220.0))
-            .rounded(px(20.0))
-            .bg(theme.menu_surface)
-            .shadow(vec![
-                gpui::BoxShadow::new(px(0.0), px(0.0), theme.border.into())
-                    .blur_radius(px(0.0))
-                    .spread_radius(px(0.5)),
-                gpui::BoxShadow::new(px(0.0), px(8.0), theme.menu_shadow.into())
-                    .blur_radius(px(16.0))
-                    .spread_radius(px(-4.0)),
-            ])
-            .text_size(px(13.0))
-            .text_color(theme.text);
-        for (label, action, checked) in entries {
-            if action == "rich"
-                && !self
-                    .diff
-                    .iter()
-                    .any(|file| file.path.ends_with(".md") && file.status != 'D')
-            {
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation());
+        for (index, (label, action, glyph, shown)) in entries.into_iter().enumerate() {
+            if !shown {
                 continue;
             }
             let view = view.clone();
             menu = menu.child(
-                div()
-                    .id(SharedString::from(format!("pr-review-option-{action}")))
-                    .h(px(28.5))
-                    .px(px(8.0))
-                    .rounded(px(15.0))
-                    .flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .cursor_pointer()
-                    .hover(move |style| style.bg(theme.menu_hover))
-                    .role(gpui::Role::MenuItem)
-                    .aria_label(label)
-                    .on_click(move |_, _, cx| {
-                        view.update(cx, |view, cx| match action {
-                            "wrap" => view.toggle_wrap(cx),
-                            "rich" => view.toggle_rich(cx),
-                            "words" => view.toggle_words(cx),
-                            _ => {}
-                        });
-                    })
-                    .child(div().flex_1().child(label))
-                    .when(checked, |row| {
-                        row.child(icon("check", theme.text.into()).size(px(14.0)))
-                    }),
+                Self::menu_row(
+                    SharedString::from(format!("pr-review-option-{action}")),
+                    theme,
+                    false,
+                    false,
+                )
+                .aria_label(label)
+                .on_click(move |_, _, cx| {
+                    view.update(cx, |view, cx| match action {
+                        "wrap" => view.toggle_wrap(cx),
+                        "rich" => view.toggle_rich(cx),
+                        "words" => view.toggle_words(cx),
+                        _ => {}
+                    });
+                })
+                .child(Self::menu_icon(glyph, theme))
+                .child(div().flex_1().min_w(px(0.0)).truncate().child(label)),
             );
+            if index == 0 {
+                // `Menu.Separator`: a 1px rule in a `py-1 px-2` block.
+                menu = menu.child(
+                    div()
+                        .py(px(4.0))
+                        .px(px(8.0))
+                        .child(div().h(px(1.0)).bg(theme.border)),
+                );
+            }
         }
-        menu
+        div().id("pr-review-options-popover").child(menu)
     }
 
     /// The `Status` submenu of the detail header.
@@ -1563,58 +1630,47 @@ impl PullRequestsView {
                 .filter(|file| file.path.starts_with(&deepest))
                 .collect();
             let toggle = folder_path.clone();
-            let name = label.clone();
+            let chevron = icon("pr-tree-chevron", TREE_CHEVRON.into()).size(px(12.0));
+            let chevron = if collapsed {
+                chevron.with_transformation(gpui::Transformation::rotate(gpui::radians(
+                    -std::f32::consts::FRAC_PI_2,
+                )))
+            } else {
+                chevron
+            };
             rows = rows.child(
-                div()
-                    .id(SharedString::from(format!("pr-tree-folder-{folder_path}")))
-                    .h(px(TREE_ROW_HEIGHT))
-                    .pl(px(6.0 + depth as f32 * TREE_INDENT))
-                    .pr(px(6.0))
-                    .flex()
-                    .items_center()
-                    .gap(px(10.0))
-                    .rounded(px(TREE_ROW_RADIUS))
-                    .cursor_pointer()
-                    .hover(move |style| style.bg(theme.control_hover))
-                    .role(gpui::Role::Button)
-                    .aria_label(SharedString::from(name.clone()))
-                    .on_click(move |_, _, cx| {
-                        view.update(cx, |view, cx| view.toggle_folder(toggle.clone(), cx));
-                    })
-                    .child(
-                        icon("section-chevron", theme.text_muted.into())
-                            .size(px(16.0))
-                            .when(collapsed, |chevron| {
-                                chevron.with_transformation(gpui::Transformation::rotate(
-                                    gpui::radians(-std::f32::consts::FRAC_PI_2),
-                                ))
-                            }),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w(px(0.0))
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_size(px(13.0))
-                            .text_color(theme.text)
-                            .child(name),
-                    )
-                    .child(
-                        // The reference marks a folder that contains changes
-                        // with a 6px dot in the status colour at half opacity.
-                        div().w(px(20.0)).flex().justify_center().child(
-                            div().size(px(6.0)).rounded(px(9999.0)).bg({
-                                let (status, _) = tree_status(&children);
-                                let base = if status == 'A' {
-                                    theme.status_added
-                                } else {
-                                    theme.status_modified
-                                };
-                                gpui::Rgba { a: 0.5, ..base }
-                            }),
-                        ),
-                    ),
+                tree_row(
+                    SharedString::from(format!("pr-tree-folder-{folder_path}")),
+                    depth,
+                    false,
+                    theme,
+                )
+                .aria_label(SharedString::from(label.clone()))
+                .aria_expanded(!collapsed)
+                .text_color(theme.text)
+                .on_click(move |_, _, cx| {
+                    view.update(cx, |view, cx| view.toggle_folder(toggle.clone(), cx));
+                })
+                .child(
+                    div()
+                        .flex_none()
+                        .w(px(16.0))
+                        .flex()
+                        .justify_center()
+                        .child(chevron),
+                )
+                .child(tree_label(&label, false))
+                // A folder that holds changes carries a 6px dot in the
+                // modified color at half opacity (`[data-item-section=git]`).
+                .child(
+                    div()
+                        .flex_none()
+                        .w(px(20.0))
+                        .flex()
+                        .justify_center()
+                        .opacity(0.5)
+                        .child(icon("pr-tree-dot", theme.status_modified.into()).size(px(6.0))),
+                ),
             );
             if !collapsed && !children.is_empty() {
                 rows = rows.child(self.tree_rows(&deepest, &children, depth + 1, cx));
@@ -1628,93 +1684,135 @@ impl PullRequestsView {
             let selected = self.selected_file.as_deref() == Some(file.path.as_str());
             let path = file.path.clone();
             let view = cx.entity();
-            let status = file.status;
-            let name = file_name(&file.path);
-            let full_path = file.path.clone();
+            let (asset, glyph_color) = file_icons::file_icon(&file.path, self.mode);
+            let threads = self.detail.as_ref().map_or(0, |detail| {
+                detail
+                    .review_threads
+                    .iter()
+                    .filter(|thread| thread.path == file.path)
+                    .count()
+            });
+            let (badge, badge_color) = match file.status {
+                'A' => ("pr-tree-status-added", theme.status_added),
+                'D' => ("pr-tree-status-modified", theme.diff_deleted_text),
+                _ => ("pr-tree-status-modified", theme.status_modified),
+            };
             rows = rows.child(
-                div()
-                    .id(SharedString::from(format!("pr-tree-{}", file.path)))
-                    .h(px(TREE_ROW_HEIGHT))
-                    .pl(px(6.0 + depth as f32 * TREE_INDENT))
-                    .pr(px(6.0))
-                    .flex()
-                    .items_center()
-                    .gap(px(10.0))
-                    .rounded(px(TREE_ROW_RADIUS))
-                    .cursor_pointer()
-                    .when(selected, |row| row.bg(theme.control))
-                    .hover(move |style| style.bg(theme.control_hover))
-                    .role(gpui::Role::Button)
-                    .aria_label(SharedString::from(full_path.clone()))
-                    .on_click({
-                        let path = path.clone();
-                        move |_, _, cx| {
-                            view.update(cx, |view, cx| view.scroll_to_file(path.clone(), cx));
-                        }
-                    })
-                    .child(icon("markdown-file-rust", theme.status_modified.into()).size(px(16.0)))
-                    .child(
+                tree_row(
+                    SharedString::from(format!("pr-tree-{}", file.path)),
+                    depth,
+                    selected,
+                    theme,
+                )
+                .aria_label(SharedString::from(file.path.clone()))
+                .aria_selected(selected)
+                // Unselected files read in tertiary type.
+                .text_color(if selected {
+                    theme.text
+                } else {
+                    theme.text_muted
+                })
+                .on_click({
+                    let path = path.clone();
+                    move |_, _, cx| {
+                        view.update(cx, |view, cx| view.scroll_to_file(path.clone(), cx));
+                    }
+                })
+                .child(
+                    gpui::svg()
+                        .path(format!("icons/{asset}.svg"))
+                        .flex_none()
+                        .size(px(16.0))
+                        .text_color(glyph_color),
+                )
+                .child(tree_label(&file_name(&file.path), true))
+                .when(threads > 0, |row| {
+                    row.child(
                         div()
-                            .flex_1()
-                            .min_w(px(0.0))
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_size(px(13.0))
-                            .text_color(theme.text)
-                            .child(name),
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .text_color(TREE_CHEVRON)
+                            .text_size(px(12.0))
+                            .child(icon("pr-tree-comment", TREE_CHEVRON.into()).size(px(18.0)))
+                            // `review-file-tree-comment-N` sets the count at
+                            // x 22 of its 29px glyph.
+                            .child(div().ml(px(4.0)).child(threads.to_string())),
                     )
-                    .child(self.tree_status_badge(status, cx)),
+                })
+                .child(
+                    div()
+                        .flex_none()
+                        .w(px(20.0))
+                        .flex()
+                        .justify_center()
+                        .child(icon(badge, badge_color.into()).size(px(20.0))),
+                ),
             );
         }
         rows
     }
-
-    /// The reference draws the row status as an 18px rounded square outline
-    /// with a centred dot (`M`) or plus (`A`).
-    fn tree_status_badge(&self, status: char, _cx: &mut gpui::Context<Self>) -> Div {
-        let theme = self.theme();
-        let (color, added) = if status == 'A' {
-            (theme.status_added, true)
-        } else {
-            (theme.status_modified, false)
-        };
-        div().w(px(20.0)).flex().justify_center().child(
-            div()
-                .size(px(18.0))
-                .rounded(px(6.0))
-                .border(px(1.5))
-                .border_color(color)
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(if added {
-                    div()
-                        .size(px(9.0))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .child(icon("add", color.into()).size(px(9.0)))
-                        .into_any_element()
-                } else {
-                    div()
-                        .size(px(6.0))
-                        .rounded(px(9999.0))
-                        .bg(color)
-                        .into_any_element()
-                }),
-        )
-    }
 }
 
-/// Align each contiguous deletion/addition block without pairing across context.
-/// The view toggle's glyph: the current layout (`rectangle-view-unified` or
-/// `…-split`), its frame in the text color and its two panes in the fixed
-/// `#F84E63` / `#36D958` at half opacity.
-fn view_mode_glyph(split: bool, theme: super::theme::PrTheme) -> Div {
-    let (deleted, added) = if split {
-        ("pr-view-split-deleted", "pr-view-split-added")
-    } else {
-        ("pr-view-unified-deleted", "pr-view-unified-added")
+/// The reference tree's chevron and comment glyph color (`#84848a`).
+const TREE_CHEVRON: gpui::Rgba = gpui::Rgba {
+    r: 0x84 as f32 / 255.0,
+    g: 0x84 as f32 / 255.0,
+    b: 0x8a as f32 / 255.0,
+    a: 1.0,
+};
+
+/// A tree row (`[data-type=item]`): 29px, `px-[3px]`, 5px gaps, 6px radius,
+/// indented 12.5px per level, filled while selected or hovered.
+fn tree_row(
+    id: SharedString,
+    depth: usize,
+    selected: bool,
+    theme: super::theme::PrTheme,
+) -> gpui::Stateful<Div> {
+    div()
+        .id(id)
+        .flex_none()
+        .h(px(TREE_ROW_HEIGHT))
+        .px(px(3.0))
+        .flex()
+        .items_center()
+        .gap(px(5.0))
+        .rounded(px(TREE_ROW_RADIUS))
+        .cursor_pointer()
+        .role(gpui::Role::TreeItem)
+        .when(depth > 0, |row| {
+            row.child(div().flex_none().w(px(depth as f32 * TREE_INDENT - 5.0)))
+        })
+        .when(selected, |row| row.bg(theme.row_selected))
+        .hover(move |style| style.bg(theme.row_selected))
+}
+
+/// A tree row's name: the stem truncates while a file keeps its extension.
+fn tree_label(name: &str, file: bool) -> Div {
+    let (stem, extension) = match name.rfind('.') {
+        Some(dot) if file && dot > 0 => (&name[..=dot], &name[dot + 1..]),
+        _ => (name, ""),
+    };
+    div()
+        .flex_1()
+        .min_w(px(0.0))
+        .flex()
+        .whitespace_nowrap()
+        .child(div().min_w(px(0.0)).truncate().child(stem.to_owned()))
+        .when(!extension.is_empty(), |label| {
+            label.child(div().flex_none().child(extension.to_owned()))
+        })
+}
+
+/// The view toggle's glyph: the current layout (`rectangle-view-unified`,
+/// `…-split`, or the diagonal auto glyph), its frame in the text color and its
+/// two panes in the fixed `#F84E63` / `#36D958` at half opacity.
+fn view_mode_glyph(layout: super::DiffLayout, theme: super::theme::PrTheme) -> Div {
+    let (deleted, added) = match layout {
+        super::DiffLayout::Unified => ("pr-view-unified-deleted", "pr-view-unified-added"),
+        super::DiffLayout::Split => ("pr-view-split-deleted", "pr-view-split-added"),
+        super::DiffLayout::Auto => ("pr-view-auto-deleted", "pr-view-auto-added"),
     };
     let layer = |name: &'static str, color: gpui::Rgba| {
         icon(name, color.into())
@@ -1763,6 +1861,7 @@ fn deleted_bar(stripe: gpui::Rgba, row: gpui::Rgba) -> Div {
         )
 }
 
+/// Align each contiguous deletion/addition block without pairing across context.
 pub(super) fn split_pairs(
     lines: &[crate::git_review::Line],
 ) -> Vec<(Option<usize>, Option<usize>)> {

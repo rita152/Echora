@@ -157,7 +157,11 @@ impl PullRequestsView {
             overlays.push(self.popup("pr-description-actions", self.description_menu(cx)));
         }
         if self.review_options_open {
-            overlays.push(self.popup("pr-review-options", self.review_options_menu(cx)));
+            overlays.push(self.popup_at(
+                "pr-review-options",
+                gpui::point(px(-1.0), px(2.0)),
+                self.review_options_menu(cx),
+            ));
         }
         if self.scope_menu_open {
             overlays.push(self.popup("pr-review-tab-scope", self.scope_menu(cx)));

@@ -44,6 +44,34 @@ pub struct OpenPullRequestChat {
     pub thread_id: String,
 }
 
+/// The Code tab's diff layout, cycled by its view toggle.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub(super) enum DiffLayout {
+    #[default]
+    Unified,
+    Split,
+    /// Split for files with both additions and deletions, unified otherwise.
+    Auto,
+}
+
+impl DiffLayout {
+    fn next(self) -> Self {
+        match self {
+            Self::Unified => Self::Split,
+            Self::Split => Self::Auto,
+            Self::Auto => Self::Unified,
+        }
+    }
+
+    pub(super) fn splits(self, file: &FileDiff) -> bool {
+        match self {
+            Self::Unified => false,
+            Self::Split => true,
+            Self::Auto => file.additions > 0 && file.deletions > 0,
+        }
+    }
+}
+
 impl EventEmitter<OpenPullRequestChat> for PullRequestsView {}
 
 /// The reference opens a new conversation from the detail header with the pull
@@ -185,7 +213,7 @@ pub struct PullRequestsView {
     diff_loading: bool,
     diff_error: Option<String>,
     collapsed_files: HashSet<String>,
-    split: bool,
+    diff_layout: DiffLayout,
     wrap: bool,
     rich: bool,
     words: bool,
@@ -215,7 +243,9 @@ pub struct PullRequestsView {
     diff_viewport: diff::DiffViewport,
     /// Width available to diff code text, recomputed every frame so wrapped
     /// rows break exactly where the reference viewer breaks them.
+    /// Wrap widths of a full-width and of a half-width (split) code cell.
     code_width: f32,
+    split_code_width: f32,
     /// File contents fetched from the head commit so an `N unmodified lines`
     /// expander can render the lines it reveals.
     file_lines: std::collections::HashMap<String, Vec<String>>,
@@ -288,7 +318,9 @@ impl PullRequestsView {
             input
         });
         let tree_filter = cx.new(|cx| {
-            let mut input = PromptInput::inline_other(mode, "Filter files…", false, cx);
+            // The tree's filter uses the inbox search field's 14/18 type and
+            // tertiary placeholder.
+            let mut input = PromptInput::pull_request_search(mode, "Filter files…", cx);
             input.set_accessible_name("Filter files");
             input
         });
@@ -390,7 +422,7 @@ impl PullRequestsView {
             diff_loading: false,
             diff_error: None,
             collapsed_files: HashSet::new(),
-            split: false,
+            diff_layout: DiffLayout::Unified,
             // The reference diff view opens with word wrap on, which is why its
             // toolbar offers `Disable word wrap`.
             wrap: true,
@@ -416,6 +448,7 @@ impl PullRequestsView {
             diff_scroll: gpui::ScrollHandle::new(),
             diff_viewport: Default::default(),
             code_width: 500.0,
+            split_code_width: 250.0,
             file_lines: std::collections::HashMap::new(),
             file_lines_loading: HashSet::new(),
             file_errors: Default::default(),
@@ -552,12 +585,17 @@ impl PullRequestsView {
     }
 
     /// Code column width used by wrapped diff rows.
-    pub(super) fn set_code_width(&mut self, width: f32) {
-        self.code_width = width;
+    pub(super) fn set_code_width(&mut self, unified: f32, split: f32) {
+        self.code_width = unified;
+        self.split_code_width = split;
     }
 
-    pub(super) fn code_width(&self) -> f32 {
-        self.code_width
+    pub(super) fn code_width(&self, split: bool) -> f32 {
+        if split {
+            self.split_code_width
+        } else {
+            self.code_width
+        }
     }
 
     /// Capture diagnostics: the readiness inputs, printed by the screenshot
@@ -709,6 +747,19 @@ impl PullRequestsView {
     }
 
     fn apply_capture_intent(&mut self, cx: &mut Context<Self>) {
+        // The tab first: switching tabs dismisses open menus.
+        if let Some((tab, file_tree)) = self.capture_intent.take() {
+            if let Some(tab) = tab.as_deref() {
+                match tab {
+                    "code" => self.set_detail_tab(DetailTab::Code, cx),
+                    "review" => self.open_review_tab(cx),
+                    _ => self.set_detail_tab(DetailTab::Summary, cx),
+                }
+            }
+            if file_tree && !self.file_tree_open {
+                self.toggle_file_tree(cx);
+            }
+        }
         if let Some(action) = self.capture_action.take() {
             match action.as_str() {
                 "title-edit" => self.begin_title_edit(cx),
@@ -722,7 +773,8 @@ impl PullRequestsView {
                         self.comment_menu = Some(id);
                     }
                 }
-                "split" => self.split = true,
+                "split" => self.diff_layout = DiffLayout::Split,
+                "auto-layout" => self.diff_layout = DiffLayout::Auto,
                 "collapse-all" => {
                     let all: Vec<String> = self.diff.iter().map(|file| file.path.clone()).collect();
                     self.collapsed_files.extend(all);
@@ -751,19 +803,6 @@ impl PullRequestsView {
                 _ => {}
             }
             cx.notify();
-        }
-        let Some((tab, file_tree)) = self.capture_intent.take() else {
-            return;
-        };
-        if let Some(tab) = tab.as_deref() {
-            match tab {
-                "code" => self.set_detail_tab(DetailTab::Code, cx),
-                "review" => self.open_review_tab(cx),
-                _ => self.set_detail_tab(DetailTab::Summary, cx),
-            }
-        }
-        if file_tree && !self.file_tree_open {
-            self.toggle_file_tree(cx);
         }
     }
 
@@ -1712,9 +1751,15 @@ impl PullRequestsView {
         }
     }
 
+    /// The view toggle cycles unified → split → auto → unified.
     pub fn toggle_split(&mut self, cx: &mut Context<Self>) {
-        self.split = !self.split;
+        self.diff_layout = self.diff_layout.next();
         cx.notify();
+    }
+
+    /// Whether `file` renders side by side under the current layout.
+    pub(super) fn file_splits(&self, file: &FileDiff) -> bool {
+        self.diff_layout.splits(file)
     }
 
     pub fn toggle_wrap(&mut self, cx: &mut Context<Self>) {
@@ -1746,6 +1791,10 @@ impl PullRequestsView {
     pub fn toggle_file_tree(&mut self, cx: &mut Context<Self>) {
         self.file_tree_open = !self.file_tree_open;
         self.review_options_open = false;
+        // The tree opens with the file at the top of the diff selected.
+        if self.file_tree_open && self.selected_file.is_none() {
+            self.selected_file = self.top_diff_file();
+        }
         cx.notify();
     }
 

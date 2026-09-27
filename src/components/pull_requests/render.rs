@@ -27,6 +27,10 @@ impl gpui::Render for PullRequestsView {
         self.measure_code_width(window);
         self.take_capture_offset();
         self.prepare_diff_viewport(window, cx);
+        // A tree opened before the diff arrived selects its top file now.
+        if self.file_tree_open && self.selected_file.is_none() {
+            self.selected_file = self.top_diff_file();
+        }
         self.apply_capture_diff_offset(cx);
         self.apply_pending_file_scroll(cx);
         let fullscreen = self.fullscreen || (self.compact() && self.selected.is_some());

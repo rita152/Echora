@@ -200,8 +200,8 @@ impl LineLayout {
             glyph_ix: 0,
         };
         let mut last_boundary_x = px(0.);
-        let break_opportunities = unicode_linebreak::linebreaks(text)
-            .map(|(index, _)| index)
+        let break_opportunities = line_break_opportunities(text)
+            .into_iter()
             .collect::<std::collections::HashSet<_>>();
         let mut glyphs = self
             .runs
@@ -1018,6 +1018,46 @@ impl<'a> Borrow<dyn AsCacheKeyRef + 'a> for Arc<CacheKey> {
 impl AsCacheKeyRef for CacheKeyRef<'_> {
     fn as_cache_key_ref(&self) -> CacheKeyRef<'_> {
         *self
+    }
+}
+
+
+/// Line-break opportunities (byte offsets, the end included) as Blink finds
+/// them: UAX #14, except between two printable ASCII characters, where
+/// Blink's own pair table (`kAsciiLineBreakTable`) decides instead. That table
+/// breaks after `-` and `?` unless closing punctuation follows, and before an
+/// opening bracket after other punctuation; letters, digits, `/`, `.` and `_`
+/// never break against each other. A `-` before a digit may be a minus sign,
+/// so Blink breaks there only after an alphanumeric (`ABCD-1234`).
+pub fn line_break_opportunities(text: &str) -> Vec<usize> {
+    let bytes = text.as_bytes();
+    let printable = |byte: u8| (0x21..0x7f).contains(&byte);
+    let ascii_pair = |offset: usize| {
+        offset > 0 && offset < bytes.len() && printable(bytes[offset - 1]) && printable(bytes[offset])
+    };
+    let mut offsets = unicode_linebreak::linebreaks(text)
+        .map(|(offset, _)| offset)
+        .filter(|&offset| !ascii_pair(offset))
+        .chain((1..bytes.len()).filter(|&offset| {
+            ascii_pair(offset)
+                && blink_ascii_break(bytes[offset - 1], bytes[offset])
+                && !(bytes[offset - 1] == b'-'
+                    && bytes[offset].is_ascii_digit()
+                    && !(offset >= 2 && bytes[offset - 2].is_ascii_alphanumeric()))
+        }))
+        .collect::<Vec<_>>();
+    offsets.sort_unstable();
+    offsets.dedup();
+    offsets
+}
+
+fn blink_ascii_break(before: u8, after: u8) -> bool {
+    match before {
+        b'-' => !b"!$),./:;?]}".contains(&after),
+        b'?' => !b"!\"'),./:;?]}".contains(&after),
+        b'!' | b'"' | b'#' | b'%' | b'&' | b')' | b'*' | b'+' | b',' | b'.' | b':' | b';'
+        | b'=' | b'>' | b'\\' | b']' | b'|' | b'}' | b'~' => b"(<[{".contains(&after),
+        _ => false,
     }
 }
 

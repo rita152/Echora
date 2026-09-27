@@ -121,9 +121,11 @@ pub struct PrTheme {
     pub diff_context_text: Rgba,
     pub diff_expander_surface: Rgba,
     pub diff_header_surface: Rgba,
-    /// File-tree status accents: `M` badge (light `rgb(146,59,15)`,
-    /// dark `rgb(239,140,87)`) and `A` badge (light `rgb(72,160,77)`,
-    /// dark `rgb(107,198,127)`), measured from the reference tree rows.
+    /// File-tree git status accents (`--trees-git-*-color`) measured from the
+    /// reference rows: modified `#923b0f` / `#ff8549`, added `#00a240` /
+    /// `#40c977`.
+    /// The file tree panel's 0.5px ring.
+    pub tree_panel_ring: Rgba,
     pub status_modified: Rgba,
     pub status_added: Rgba,
     /// `+x` and `-y` counts.
@@ -244,8 +246,9 @@ impl PrTheme {
             diff_expander_surface: light(is_light, 0xf3f3f3ff, 0x2f2f2fff),
             // The reference file header sits on the pane surface.
             diff_header_surface: light(is_light, 0xffffffff, 0x181818ff),
-            status_modified: light(is_light, 0x923b0fff, 0xef8c57ff),
-            status_added: light(is_light, 0x48a04dff, 0x6bc67fff),
+            tree_panel_ring: light(is_light, 0x1a1c1f1e, 0xffffff28),
+            status_modified: light(is_light, 0x923b0fff, 0xff8549ff),
+            status_added: light(is_light, 0x00a240ff, 0x40c977ff),
             // Detail branch row, measured from the reference DOM:
             // light rgb(0,162,64) / rgb(186,38,35), dark rgb(64,201,119) / rgb(250,66,62).
             additions_text: light(is_light, 0x00a240ff, 0x40c977ff),

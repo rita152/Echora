@@ -109,7 +109,7 @@ struct RowsKey {
     filter: String,
     collapsed: std::collections::HashSet<String>,
     expanded: std::collections::HashSet<String>,
-    split: bool,
+    layout: super::super::DiffLayout,
     rich: bool,
     contexts: HashMap<String, usize>,
     errors: HashMap<String, String>,
@@ -201,7 +201,7 @@ impl PullRequestsView {
             filter: self.tree_filter.read(cx).text().trim().to_lowercase(),
             collapsed: self.collapsed_files.clone(),
             expanded: self.expanded_context.clone(),
-            split: self.split,
+            layout: self.diff_layout,
             rich: self.rich,
             contexts: self
                 .file_lines
@@ -384,7 +384,7 @@ impl PullRequestsView {
                         count: gap,
                     });
                 }
-                if key.split {
+                if key.layout.splits(file) {
                     for (left, right) in split_pairs(&hunk.lines) {
                         push(RowKind::Code {
                             hunk: hunk_index,
@@ -426,11 +426,6 @@ impl PullRequestsView {
     }
     fn diff_view_width(&self) -> f32 {
         (self.pane_width
-            - if self.file_tree_open {
-                self.tree_width()
-            } else {
-                0.0
-            }
             - if self.classic_scrollbars {
                 super::super::theme::SCROLLBAR_GUTTER
             } else {
@@ -443,7 +438,8 @@ impl PullRequestsView {
             return self.diff_view_width();
         }
         let cell = self.diff_viewport.max_line_width.unwrap_or(0.0);
-        (cell * if self.split { 2.0 } else { 1.0 } + if self.split { 1.0 } else { 0.0 })
+        let split = self.diff.iter().any(|file| self.file_splits(file));
+        (cell * if split { 2.0 } else { 1.0 } + if split { 1.0 } else { 0.0 })
             .max(self.diff_view_width())
     }
     /// Captures scroll the Code tab's diff to an exact pixel offset: every row
@@ -467,6 +463,17 @@ impl PullRequestsView {
             self.diff_viewport.scroll.scroll_by(px(remaining));
             cx.notify();
         }
+    }
+
+    /// The path of the file whose rows fill the top of the diff.
+    pub(in crate::components::pull_requests) fn top_diff_file(&self) -> Option<String> {
+        let top = self.diff_viewport.scroll.logical_scroll_top();
+        let row = self
+            .diff_viewport
+            .rows
+            .get(top.item_ix)
+            .or_else(|| self.diff_viewport.rows.first())?;
+        self.diff.get(row.file).map(|file| file.path.clone())
     }
 
     /// Whether the diff list sits at the capture's pixel offset.
@@ -517,17 +524,22 @@ impl PullRequestsView {
                 self.context_line(&format!("{}:{hunk}", file.path), number, text, cx)
                     .into_any_element()
             }
-            RowKind::Code { hunk, left, right } if self.split => {
+            RowKind::Code { hunk, left, right } if self.file_splits(file) => {
+                // The halves meet across a 2px surface gap: the old side's
+                // `border-right` and the new side's `border-left`, 1px each.
+                let surface = self.theme().surface;
                 let mut pair = div().w_full().flex().items_stretch();
                 for (line, old) in [(left, true), (right, false)] {
-                    let mut cell = div().flex_1().min_w(px(0.0));
+                    let mut cell = div()
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .border_color(surface)
+                        .when(old, |cell| cell.border_r(px(1.0)))
+                        .when(!old, |cell| cell.border_l(px(1.0)));
                     if let Some(line) = line {
                         cell = cell.child(self.diff_line(row.file, file, hunk, line, old, cx));
                     }
                     pair = pair.child(cell);
-                    if old {
-                        pair = pair.child(div().flex_none().w(px(1.0)).bg(self.theme().border));
-                    }
                 }
                 pair.into_any_element()
             }
@@ -631,7 +643,7 @@ mod tests {
         view.update(cx, |view, _| {
             view.diff = crate::git_review::parse_unified("diff --git a/a.rs b/a.rs\n--- a/a.rs\n+++ b/a.rs\n@@ -1 +1 @@\n-old\n+new\ndiff --git a/b.rs b/b.rs\n--- a/b.rs\n+++ b/b.rs\n@@ -4 +4 @@\n-before\n+after\n");
             let mut key = RowsKey {
-                generation: 1, count: 2, loading: false, filter: String::new(), collapsed: Default::default(), expanded: Default::default(), split: false,
+                generation: 1, count: 2, loading: false, filter: String::new(), collapsed: Default::default(), expanded: Default::default(), layout: Default::default(),
                 rich: false, contexts: Default::default(), errors: Default::default(), inline: None,
             };
             let rows = view.build_diff_rows(&key);
@@ -647,7 +659,7 @@ mod tests {
             key.collapsed.clear();
             key.expanded.insert("b.rs:0".into());
             view.file_lines.insert("b.rs".into(), vec!["one".into(), "two".into(), "three".into(), "after".into()]);
-            key.split = true;
+            key.layout = crate::components::pull_requests::DiffLayout::Split;
             let rows = view.build_diff_rows(&key);
             assert_eq!(rows.len(), 6);
             assert_eq!(rows[3].kind, RowKind::Context { hunk: 0, number: 3 });
