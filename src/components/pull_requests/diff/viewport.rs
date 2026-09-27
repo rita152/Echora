@@ -66,6 +66,11 @@ pub(super) enum RowKind {
         left: Option<usize>,
         right: Option<usize>,
     },
+    /// A file line a review tab's separator revealed above `hunk`.
+    Context {
+        hunk: usize,
+        number: u32,
+    },
     /// The end of a file's code: the reference's `overflow-x: scroll` code
     /// block keeps a 15px horizontal scroll bar track under classic scroll
     /// bars, even when lines wrap.
@@ -107,6 +112,9 @@ struct RowsKey {
     layout: super::super::DiffLayout,
     rich: bool,
     contexts: HashMap<String, usize>,
+    /// Lines revealed per gap (`path:hunk` → from its start, from its end);
+    /// only a review tab expands.
+    expanded: Option<HashMap<String, (u32, u32)>>,
     errors: HashMap<String, String>,
     inline: Option<InlineComment>,
 }
@@ -197,6 +205,10 @@ impl PullRequestsView {
             collapsed: self.collapsed_files.clone(),
             layout: self.diff_layout,
             rich: self.rich,
+            expanded: self
+                .review_tab
+                .is_some()
+                .then(|| self.expanded_gaps.clone()),
             contexts: self
                 .file_lines
                 .iter()
@@ -303,10 +315,22 @@ impl PullRequestsView {
                     );
                     maximum = maximum.max(f32::from(line.width()));
                 };
-                if let RowKind::Code { hunk, left, right } = row.kind {
-                    for index in [left, right].into_iter().flatten() {
-                        measure(&file.hunks[hunk].lines[index].text);
+                match row.kind {
+                    RowKind::Code { hunk, left, right } => {
+                        for index in [left, right].into_iter().flatten() {
+                            measure(&file.hunks[hunk].lines[index].text);
+                        }
                     }
+                    RowKind::Context { number, .. } => {
+                        if let Some(text) = self
+                            .file_lines
+                            .get(&file.path)
+                            .and_then(|lines| lines.get(number.saturating_sub(1) as usize))
+                        {
+                            measure(text);
+                        }
+                    }
+                    _ => {}
                 }
             }
             self.diff_viewport.max_line_width = Some(maximum + GUTTER_WIDTH + CELL_PADDING * 2.0);
@@ -348,13 +372,47 @@ impl PullRequestsView {
                 let gap = hunk_new_start(&hunk.header)
                     .unwrap_or(1)
                     .saturating_sub(start);
-                // `N unmodified lines`: the reference cannot load the file
-                // here, so the gap only reports its size.
-                if gap > 0 {
+                // `N unmodified lines`. The Code tab only reports the size;
+                // a review tab reveals lines from either end of the gap once
+                // the file's lines have loaded.
+                let (below, above) = key
+                    .expanded
+                    .as_ref()
+                    .and_then(|expanded| expanded.get(&format!("{}:{hunk_index}", file.path)))
+                    .copied()
+                    .unwrap_or((0, 0));
+                let lines = self
+                    .file_lines
+                    .get(&file.path)
+                    .map_or(0, |lines| lines.len() as u32);
+                let (below, above) = if lines == 0 {
+                    (0, 0)
+                } else {
+                    let below = if hunk_index == 0 { 0 } else { below.min(gap) };
+                    (below, above.min(gap - below))
+                };
+                for number in start..start + below {
+                    if number <= lines {
+                        push(RowKind::Context {
+                            hunk: hunk_index,
+                            number,
+                        });
+                    }
+                }
+                let remaining = gap - below - above;
+                if remaining > 0 {
                     push(RowKind::Gap {
                         hunk: hunk_index,
-                        count: gap,
+                        count: remaining,
                     });
+                }
+                for number in start + gap - above..start + gap {
+                    if number <= lines {
+                        push(RowKind::Context {
+                            hunk: hunk_index,
+                            number,
+                        });
+                    }
                 }
                 if key.layout.splits(file) {
                     for (left, right) in split_pairs(&hunk.lines) {
@@ -437,6 +495,57 @@ impl PullRequestsView {
         }
     }
 
+    /// How far below the diff's top the first code row of `hunk` sits.
+    pub(in crate::components::pull_requests) fn hunk_offset(
+        &self,
+        file: usize,
+        hunk: usize,
+    ) -> Option<f32> {
+        let list = &self.diff_viewport.scroll;
+        let index = self.first_hunk_row(file, hunk)?;
+        let bounds = list.bounds_for_item(index)?;
+        Some(f32::from(bounds.origin.y - list.viewport_bounds().origin.y))
+    }
+
+    fn first_hunk_row(&self, file: usize, hunk: usize) -> Option<usize> {
+        self.diff_viewport.rows.iter().position(|row| {
+            row.file == file
+                && matches!(row.kind, RowKind::Code { hunk: row_hunk, .. } if row_hunk == hunk)
+        })
+    }
+
+    /// Once lines revealed above a hunk are rows, scroll so the hunk stays
+    /// where it was, as the reference anchors an expansion.
+    pub(in crate::components::pull_requests) fn apply_expand_anchor(
+        &mut self,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        let Some((file, hunk, offset, frames)) = self.pending_expand_anchor else {
+            return;
+        };
+        let revealed = self.diff_viewport.rows.iter().any(|row| {
+            row.file == file
+                && matches!(row.kind, RowKind::Context { hunk: row_hunk, .. } if row_hunk == hunk)
+        });
+        if !revealed {
+            return;
+        }
+        // Scrolling up crosses rows still at the estimated height; repeat on
+        // the next frames, once they are measured.
+        self.pending_expand_anchor = (frames > 1).then_some((file, hunk, offset, frames - 1));
+        if self.pending_expand_anchor.is_some() {
+            cx.notify();
+        }
+        if let Some(index) = self.first_hunk_row(file, hunk) {
+            let list = &self.diff_viewport.scroll;
+            list.scroll_to(ListOffset {
+                item_ix: index,
+                offset_in_item: px(0.0),
+            });
+            list.scroll_by(px(-offset));
+        }
+    }
+
     /// The path of the file whose rows fill the top of the diff.
     pub(in crate::components::pull_requests) fn top_diff_file(&self) -> Option<String> {
         let top = self.diff_viewport.scroll.logical_scroll_top();
@@ -488,8 +597,17 @@ impl PullRequestsView {
                 .p(px(16.0))
                 .child("Binary file changed. Open file to view it on GitHub.")
                 .into_any_element(),
-            RowKind::Gap { hunk, count } => {
-                self.hunk_expander(file, hunk, count).into_any_element()
+            RowKind::Gap { hunk, count } => self
+                .hunk_expander(row.file, file, hunk, count, cx)
+                .into_any_element(),
+            RowKind::Context { number, .. } => {
+                let text = self
+                    .file_lines
+                    .get(&file.path)
+                    .and_then(|lines| lines.get(number.saturating_sub(1) as usize))
+                    .cloned()
+                    .unwrap_or_default();
+                self.context_line(file, number, &text).into_any_element()
             }
             RowKind::Code { hunk, left, right } if self.file_splits(file) => {
                 // The halves meet across a 2px surface gap: the old side's
@@ -611,7 +729,7 @@ mod tests {
             view.diff = crate::git_review::parse_unified("diff --git a/a.rs b/a.rs\n--- a/a.rs\n+++ b/a.rs\n@@ -1 +1 @@\n-old\n+new\ndiff --git a/b.rs b/b.rs\n--- a/b.rs\n+++ b/b.rs\n@@ -4 +4 @@\n-before\n+after\n");
             let mut key = RowsKey {
                 generation: 1, count: 2, loading: false, filter: String::new(), collapsed: Default::default(), layout: Default::default(),
-                rich: false, contexts: Default::default(), errors: Default::default(), inline: None,
+                rich: false, contexts: Default::default(), expanded: None, errors: Default::default(), inline: None,
             };
             let rows = view.build_diff_rows(&key);
             // Each file ends with its `End` row.
@@ -624,6 +742,15 @@ mod tests {
             key.collapsed.insert("b.rs".into());
             assert_eq!(view.build_diff_rows(&key), vec![Row { file: 1, kind: RowKind::Header }]);
             key.collapsed.clear();
+            // A review tab reveals lines from the end of the gap once the
+            // file has loaded, and the separator counts what is left.
+            view.file_lines.insert("b.rs".into(), vec!["one".into(), "two".into(), "three".into(), "after".into()]);
+            key.expanded = Some([("b.rs:0".to_string(), (0, 2))].into_iter().collect());
+            let rows = view.build_diff_rows(&key);
+            assert_eq!(rows[1].kind, RowKind::Gap { hunk: 0, count: 1 });
+            assert_eq!(rows[2].kind, RowKind::Context { hunk: 0, number: 2 });
+            assert_eq!(rows[3].kind, RowKind::Context { hunk: 0, number: 3 });
+            key.expanded = None;
             key.layout = crate::components::pull_requests::DiffLayout::Split;
             let rows = view.build_diff_rows(&key);
             assert_eq!(rows.len(), 4);

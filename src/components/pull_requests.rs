@@ -44,6 +44,11 @@ pub struct OpenPullRequestChat {
     pub thread_id: String,
 }
 
+/// Frames an expansion re-anchors its hunk while revealed rows are measured.
+const EXPAND_ANCHOR_FRAMES: u8 = 4;
+/// Lines one expand button reveals (the viewer's `expansionLineCount`).
+const REVIEW_EXPANSION_LINES: u32 = 100;
+
 /// How long the pointer rests on a file-tree row before its name tooltip.
 const TREE_TOOLTIP_DELAY: Duration = Duration::from_millis(500);
 
@@ -147,6 +152,15 @@ pub struct PullRequestsView {
     /// shows (after `TREE_TOOLTIP_DELAY`, or at once while one is open).
     tree_hover: Option<String>,
     tree_tooltip: Option<String>,
+    /// Lines a review tab revealed per gap (`path:hunk` → from its start,
+    /// from its end).
+    expanded_gaps: std::collections::HashMap<String, (u32, u32)>,
+    /// Capture helper: expand the first gap once the review diff arrives.
+    capture_expand_first_gap: bool,
+    /// After revealing lines above a hunk, keep that hunk where it was:
+    /// `(file, hunk, its first row's offset from the diff's top, frames)`.
+    /// The anchor is re-applied while the revealed rows get measured.
+    pending_expand_anchor: Option<(usize, usize, f32, u8)>,
     /// The Pull Requests page's own size, reported by the host every frame
     /// (the window minus the revealed sidebar and its hairline).
     page_width: f32,
@@ -377,6 +391,9 @@ impl PullRequestsView {
             classic_scrollbars: false,
             tree_hover: None,
             tree_tooltip: None,
+            expanded_gaps: Default::default(),
+            capture_expand_first_gap: false,
+            pending_expand_anchor: None,
             page_width: 0.0,
             page_height: 0.0,
             detail_ratio: None,
@@ -643,6 +660,13 @@ impl PullRequestsView {
         if self.capture_intent.is_some() || self.pending_detail_scroll.is_some() {
             return false;
         }
+        // Revealed review context waits for its file.
+        if !self.file_lines_loading.is_empty() {
+            return false;
+        }
+        if self.capture_expand_first_gap || self.pending_expand_anchor.is_some() {
+            return false;
+        }
         // A hovered tree row is still waiting for its tooltip.
         if self.tree_hover.is_some() && self.tree_tooltip.is_none() {
             return false;
@@ -792,6 +816,7 @@ impl PullRequestsView {
                 }
                 "review-options" => self.review_options_open = true,
                 "fullscreen" => self.fullscreen = true,
+                "expand-first-gap" => self.capture_expand_first_gap = true,
                 "expand-commits" => {
                     let groups: Vec<usize> = self
                         .detail
@@ -1271,6 +1296,7 @@ impl PullRequestsView {
         self.file_lines_loading.clear();
         self.file_errors.clear();
         self.collapsed_files.clear();
+        self.expanded_gaps.clear();
         self.selected_file = None;
         self.inline_comment = None;
         self.inline_editor = None;
@@ -1828,6 +1854,40 @@ impl PullRequestsView {
         cx.notify();
     }
 
+    /// A review tab separator's expand button: reveal `REVIEW_EXPANSION_LINES`
+    /// more lines of the gap above hunk `hunk`, from its start (just below the
+    /// previous hunk) or from its end (just above this one), loading the file
+    /// first when needed.
+    pub fn expand_gap(
+        &mut self,
+        file: usize,
+        hunk: usize,
+        from_start: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(path) = self.diff.get(file).map(|file| file.path.clone()) else {
+            return;
+        };
+        if !from_start {
+            self.pending_expand_anchor = self
+                .hunk_offset(file, hunk)
+                .map(|offset| (file, hunk, offset, EXPAND_ANCHOR_FRAMES));
+        }
+        let entry = self
+            .expanded_gaps
+            .entry(format!("{path}:{hunk}"))
+            .or_default();
+        if from_start {
+            entry.0 += REVIEW_EXPANSION_LINES;
+        } else {
+            entry.1 += REVIEW_EXPANSION_LINES;
+        }
+        if !self.file_lines.contains_key(&path) && !self.file_lines_loading.contains(&path) {
+            self.load_file_lines(path, cx);
+        }
+        cx.notify();
+    }
+
     /// Tracks the pointer over file-tree rows for their name tooltip.
     pub(super) fn set_tree_hover(&mut self, key: String, hovered: bool, cx: &mut Context<Self>) {
         if !hovered {
@@ -1864,12 +1924,13 @@ impl PullRequestsView {
         cx.notify();
     }
 
-    /// Lines fetched for a path, when the rich preview needs them.
+    /// Lines fetched for a path, for the rich preview and review expansion.
     pub(super) fn context_lines(&self, path: &str) -> Option<&Vec<String>> {
         self.file_lines.get(path)
     }
 
-    /// Loads one file's lines at the head commit for the rich preview.
+    /// Loads one file's lines at the head commit for the rich preview and a
+    /// review tab's expanded context.
     fn load_file_lines(&mut self, path: String, cx: &mut Context<Self>) {
         let Some(summary) = self.selected.clone() else {
             return;

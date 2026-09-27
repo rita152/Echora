@@ -35,6 +35,9 @@ impl PullRequestsView {
     }
 
     fn detail_header(&self, cx: &mut gpui::Context<Self>) -> gpui::AnyElement {
+        if self.review_tab.is_some() && self.selected.is_some() {
+            return self.review_tab_strip(cx).into_any_element();
+        }
         let theme = self.theme();
         let has_detail = self.selected.is_some();
         let mut tabs = div()
@@ -63,91 +66,6 @@ impl PullRequestsView {
                         view.update(cx, |view, cx| view.set_detail_tab(tab, cx));
                     })
                     .child(label),
-                );
-            }
-            if let Some(review) = self.review_tab.clone() {
-                let view = cx.entity();
-                let title = self
-                    .detail
-                    .as_ref()
-                    .map(|detail| detail.summary.title.clone())
-                    .unwrap_or_default();
-                let label = match &review.scope {
-                    ReviewScope::AllChanges => title.clone(),
-                    ReviewScope::Commit(_) => self.summary_scope_label(),
-                };
-                tabs = tabs.child(
-                    div()
-                        .id("pr-review-tab")
-                        .flex_1()
-                        .min_w(px(0.0))
-                        .overflow_hidden()
-                        .h(px(28.0))
-                        .px(px(8.0))
-                        .flex()
-                        .items_center()
-                        .gap(px(4.0))
-                        .rounded(px(12.5))
-                        .bg(theme.control)
-                        .text_color(theme.text)
-                        .text_size(px(13.0))
-                        .child(icon("panel-review", theme.text_muted.into()).size(px(14.0)))
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w(px(0.0))
-                                .max_w(px(220.0))
-                                .text_ellipsis()
-                                .overflow_hidden()
-                                .whitespace_nowrap()
-                                .child(label.clone()),
-                        )
-                        .child(
-                            div()
-                                .id("pr-review-tab-scope")
-                                .relative()
-                                .child(self.control_anchor("pr-review-tab-scope"))
-                                .size(px(18.0))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .rounded(px(9999.0))
-                                .cursor_pointer()
-                                .role(gpui::Role::Button)
-                                .aria_label("Pull request changes scope")
-                                .hover(move |style| style.bg(theme.control_hover))
-                                .on_click({
-                                    let view = view.clone();
-                                    move |_, _, cx| {
-                                        view.update(cx, |view, cx| view.toggle_scope_menu(cx));
-                                    }
-                                })
-                                .child(
-                                    icon("section-chevron", theme.text_muted.into()).size(px(12.0)),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .id("pr-review-tab-close")
-                                .size(px(18.0))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .rounded(px(9999.0))
-                                .cursor_pointer()
-                                .role(gpui::Role::Button)
-                                .aria_label(format!("Close {label} tab"))
-                                .hover(move |style| style.bg(theme.control_hover))
-                                .on_click({
-                                    let view = view.clone();
-                                    move |_, _, cx| {
-                                        view.update(cx, |view, cx| view.close_review_tab(cx));
-                                    }
-                                })
-                                .child(
-                                    icon("close-dialog", theme.text_muted.into()).size(px(12.0)),
-                                ),
-                        ),
                 );
             }
         }
@@ -337,6 +255,147 @@ impl PullRequestsView {
             .child(tabs)
             .child(actions)
             .into_any_element()
+    }
+
+    /// A review opens as an app-shell task tab: the 46px strip (`ps-2 pe-1.5`,
+    /// 6px gaps) holds its 240px tab (`rounded-lg`, 8% fill, 0.5px border)
+    /// with the review glyph, the title, and the close button, then the full
+    /// screen toggle. The pull request tabs and actions give way to it.
+    fn review_tab_strip(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
+        let theme = self.theme();
+        let view = cx.entity();
+        let title = match self.review_tab.as_ref().map(|tab| &tab.scope) {
+            Some(ReviewScope::Commit(_)) => self.summary_scope_label(),
+            _ => self
+                .detail
+                .as_ref()
+                .map(|detail| detail.summary.title.clone())
+                .unwrap_or_default(),
+        };
+        let close_view = view.clone();
+        let fullscreen = self.fullscreen;
+        // The tab's 8% fill over the surface, which the title fades into.
+        let tab_fill = {
+            let (base, over) = (theme.surface, theme.control_hover);
+            let mix = |b: f32, o: f32| b + (o - b) * over.a;
+            gpui::Rgba {
+                r: mix(base.r, over.r),
+                g: mix(base.g, over.g),
+                b: mix(base.b, over.b),
+                a: 1.0,
+            }
+        };
+        div()
+            .flex_none()
+            .h(px(TOOLBAR_HEIGHT))
+            .pl(px(8.0))
+            .pr(px(6.0))
+            .flex()
+            .items_center()
+            .gap(px(6.0))
+            .child(
+                div().flex_1().min_w(px(0.0)).flex().items_center().child(
+                    div()
+                        .id("pr-review-tab")
+                        .relative()
+                        .flex_none()
+                        .w(px(238.0))
+                        .h(px(32.0))
+                        .pl(px(10.0))
+                        .pr(px(27.0))
+                        .flex()
+                        .items_center()
+                        .gap(px(8.0))
+                        .rounded(px(12.5))
+                        .bg(theme.control_hover)
+                        .border(px(0.5))
+                        .border_color(theme.border)
+                        .role(gpui::Role::Tab)
+                        .aria_selected(true)
+                        .aria_label(SharedString::from(format!("{title} tab")))
+                        .text_size(px(13.0))
+                        .line_height(px(18.5714))
+                        .text_color(theme.text)
+                        .child(
+                            icon("panel-review", theme.text.into())
+                                .flex_none()
+                                .size(px(16.0)),
+                        )
+                        // `-ms-1 text-fade-truncate`: the title sits 4px from
+                        // the glyph and fades out instead of an ellipsis.
+                        .child(
+                            div()
+                                .relative()
+                                .flex_1()
+                                .min_w(px(0.0))
+                                .ml(px(-4.0))
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .child(title.clone())
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .top_0()
+                                        .bottom_0()
+                                        .right_0()
+                                        .w(px(24.0))
+                                        .bg(gpui::linear_gradient(
+                                            90.0,
+                                            gpui::linear_color_stop(
+                                                gpui::Rgba { a: 0.0, ..tab_fill },
+                                                0.0,
+                                            ),
+                                            gpui::linear_color_stop(tab_fill, 1.0),
+                                        )),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .id("pr-review-tab-close")
+                                .absolute()
+                                .right(px(7.0))
+                                .top(px(6.0))
+                                .size(px(20.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded(px(6.0))
+                                .cursor_pointer()
+                                .role(gpui::Role::Button)
+                                .aria_label(SharedString::from(format!("Close {title} tab")))
+                                .hover(move |style| style.bg(theme.control_hover))
+                                .on_click(move |_, _, cx| {
+                                    close_view.update(cx, |view, cx| view.close_review_tab(cx));
+                                })
+                                .child(icon("pr-close", theme.text_muted.into()).size(px(14.0))),
+                        ),
+                ),
+            )
+            .child(
+                Self::toolbar_button("pr-fullscreen", theme, false)
+                    .w(px(28.0))
+                    .px(px(0.0))
+                    .justify_center()
+                    .aria_label(if fullscreen {
+                        "Exit full screen"
+                    } else {
+                        "Enter full screen"
+                    })
+                    .on_click(move |_, _, cx| {
+                        view.update(cx, |view, cx| view.toggle_fullscreen(cx));
+                    })
+                    .child(
+                        icon(
+                            if fullscreen {
+                                "pr-exit-fullscreen"
+                            } else {
+                                "pr-fullscreen"
+                            },
+                            theme.text_muted.into(),
+                        )
+                        .size(px(16.0)),
+                    ),
+            )
     }
 
     /// The plain state glyph (`PullRequestStatusIcon`): draft and open in

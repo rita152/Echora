@@ -27,6 +27,12 @@ impl gpui::Render for PullRequestsView {
         self.measure_code_width(window);
         self.take_capture_offset();
         self.prepare_diff_viewport(window, cx);
+        // Expand once the list has placed the hunk, so the anchor holds.
+        if self.capture_expand_first_gap && self.hunk_offset(0, 0).is_some() {
+            self.capture_expand_first_gap = false;
+            self.expand_gap(0, 0, false, cx);
+        }
+        self.apply_expand_anchor(cx);
         // A tree opened before the diff arrived selects its top file now.
         if self.file_tree_open && self.selected_file.is_none() {
             self.selected_file = self.top_diff_file();

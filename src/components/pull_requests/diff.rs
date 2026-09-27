@@ -290,7 +290,11 @@ impl PullRequestsView {
             .h_full()
             .flex()
             .flex_col()
-            .child(self.diff_toolbar(cx))
+            .child(if self.review_tab.is_some() {
+                self.review_header(cx).into_any_element()
+            } else {
+                self.diff_toolbar(cx).into_any_element()
+            })
             .child(body);
         let _ = theme;
         surface
@@ -401,13 +405,170 @@ impl PullRequestsView {
             )
     }
 
+    /// The review tab's header (`py-2 ps-2 pe-2`, 48px): the scope pill with
+    /// its counts and chevron, and at the far end the `Review controls group`
+    /// pill of 28px round buttons. Both pills sit on the composer surface at
+    /// 96% with a 1px shadow ring.
+    fn review_header(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
+        let theme = self.theme();
+        let view = cx.entity();
+        let (additions, deletions) = self.diff.iter().fold((0, 0), |(a, d), file| {
+            (a + file.additions, d + file.deletions)
+        });
+        let pill = |element: gpui::Stateful<Div>| {
+            element
+                .rounded(px(9999.0))
+                .bg(gpui::Rgba {
+                    a: 0.96,
+                    ..theme.composer_surface
+                })
+                .shadow(vec![
+                    gpui::BoxShadow::new(px(0.0), px(0.0), gpui::rgba(0x0000000d).into())
+                        .spread_radius(px(1.0)),
+                    gpui::BoxShadow::new(px(0.0), px(4.0), gpui::rgba(0x0000000d).into())
+                        .blur_radius(px(16.0)),
+                ])
+        };
+        let all_collapsed = self
+            .diff
+            .iter()
+            .all(|file| self.collapsed_files.contains(&file.path));
+        let round = |button: gpui::Stateful<Div>| button.size(px(28.0)).rounded(px(14.0));
+        div()
+            .flex_none()
+            .h(px(48.0))
+            .p(px(8.0))
+            .flex()
+            .items_center()
+            .text_size(px(13.0))
+            .child(
+                pill(
+                    div()
+                        .id("pr-review-tab-scope")
+                        .relative()
+                        .child(self.control_anchor("pr-review-tab-scope"))
+                        .h(px(32.0))
+                        .pl(px(12.0))
+                        .pr(px(6.0))
+                        .min_w(px(0.0))
+                        .flex()
+                        .items_center()
+                        .gap(px(4.0))
+                        .cursor_pointer()
+                        .role(gpui::Role::Button)
+                        .aria_label("Pull request changes scope")
+                        .on_click(move |_, _, cx| {
+                            view.update(cx, |view, cx| view.toggle_scope_menu(cx));
+                        }),
+                )
+                .line_height(px(20.0))
+                .text_color(theme.text)
+                .child(
+                    div()
+                        .min_w(px(0.0))
+                        .flex()
+                        .items_center()
+                        .gap(px(12.0))
+                        .child(
+                            div()
+                                .min_w(px(0.0))
+                                .truncate()
+                                .child(self.summary_scope_label()),
+                        )
+                        .child(
+                            div()
+                                .flex_none()
+                                .mr(px(4.0))
+                                .flex()
+                                .items_center()
+                                .gap(px(4.0))
+                                .line_height(px(13.0))
+                                .font_features(super::list::stats_font_features())
+                                .child(div().text_color(theme.additions_text).child(format!(
+                                    "+{}",
+                                    crate::pull_requests::format_count(additions as u64)
+                                )))
+                                .child(div().text_color(theme.deletions_text).child(format!(
+                                    "-{}",
+                                    crate::pull_requests::format_count(deletions as u64)
+                                ))),
+                        ),
+                )
+                .child(
+                    icon("pr-tree-chevron", theme.text.into())
+                        .flex_none()
+                        .size(px(12.0)),
+                ),
+            )
+            .child(
+                div().ml_auto().flex_none().child(
+                    pill(div().id("pr-review-controls"))
+                        .role(gpui::Role::Group)
+                        .aria_label("Review controls group")
+                        .p(px(2.0))
+                        .flex()
+                        .items_center()
+                        .gap(px(6.0))
+                        .text_color(theme.text)
+                        .child(round(
+                            self.diff_toolbar_button(
+                                "pr-review-options",
+                                "Review options",
+                                icon("more-horizontal", theme.text.into())
+                                    .size(px(16.0))
+                                    .into_any_element(),
+                                cx,
+                            ),
+                        ))
+                        .child(round(
+                            self.diff_toolbar_button(
+                                "pr-collapse-all",
+                                if all_collapsed {
+                                    "Expand all diffs"
+                                } else {
+                                    "Collapse all diffs"
+                                },
+                                icon("review-collapse", theme.text.into())
+                                    .size(px(16.0))
+                                    .into_any_element(),
+                                cx,
+                            ),
+                        ))
+                        .child(round(self.diff_toolbar_button(
+                            "pr-split-toggle",
+                            match self.diff_layout {
+                                super::DiffLayout::Unified => "Switch to split diff",
+                                super::DiffLayout::Split => "Switch to Auto diff",
+                                super::DiffLayout::Auto => "Auto diff: switch to unified diff",
+                            },
+                            view_mode_glyph(self.diff_layout, theme).into_any_element(),
+                            cx,
+                        )))
+                        .child(round(
+                            self.diff_toolbar_button(
+                                "pr-file-tree",
+                                if self.file_tree_open {
+                                    "Hide file tree"
+                                } else {
+                                    "Show file tree"
+                                },
+                                icon("pr-file-tree", theme.text.into())
+                                    .size(px(16.0))
+                                    .into_any_element(),
+                                cx,
+                            ),
+                        )),
+                ),
+            )
+    }
+
     fn diff_toolbar_button(
         &self,
         id: &'static str,
         label: &'static str,
         glyph: gpui::AnyElement,
         cx: &mut gpui::Context<Self>,
-    ) -> impl IntoElement {
+    ) -> gpui::Stateful<Div> {
         let theme = self.theme();
         let view = cx.entity();
         // An open `Review options` menu leaves its trigger unfilled.
@@ -765,9 +926,19 @@ impl PullRequestsView {
     }
 
     /// A hunk separator: a 32px row whose `6px 8px 8px 6px` box, inset 2px,
-    /// reads `N unmodified lines` in 12px system type. The reference offers no
-    /// expansion here (it would need the full file), so the row is static.
-    fn hunk_expander(&self, file: &FileDiff, hunk_index: usize, gap: u32) -> gpui::Stateful<Div> {
+    /// reads `N unmodified lines` in 12px system type. The Code tab cannot
+    /// load the file there, so its row is static; a review tab puts 53px
+    /// expand buttons over the gutter: one above the first hunk, and between
+    /// hunks a top half (below the previous hunk) and a bottom half (above
+    /// this one).
+    fn hunk_expander(
+        &self,
+        file_index: usize,
+        file: &FileDiff,
+        hunk_index: usize,
+        gap: u32,
+        cx: &mut gpui::Context<Self>,
+    ) -> gpui::Stateful<Div> {
         let theme = self.theme();
         let key = format!("{}:{hunk_index}", file.path);
         let label = if gap == 1 {
@@ -775,9 +946,72 @@ impl PullRequestsView {
         } else {
             format!("{gap} unmodified lines")
         };
-        if self.file_splits(file) {
+        let review = self.review_tab.is_some();
+        if self.file_splits(file) && !review {
             return self.split_hunk_expander(key, label);
         }
+        let button = |id: String, from_start: bool, height: f32| {
+            let view = cx.entity();
+            let glyph = icon("pr-diff-expand", theme.diff_gutter_text.into()).size(px(16.0));
+            div()
+                .id(SharedString::from(id))
+                .w(px(53.0))
+                .h(px(height))
+                .flex()
+                .items_center()
+                .justify_center()
+                .overflow_hidden()
+                .bg(theme.diff_expander_surface)
+                .cursor_pointer()
+                .role(gpui::Role::Button)
+                .aria_label(if from_start {
+                    "Expand lines below"
+                } else {
+                    "Expand lines above"
+                })
+                .on_click(move |_, _, cx| {
+                    view.update(cx, |view, cx| {
+                        view.expand_gap(file_index, hunk_index, from_start, cx)
+                    });
+                })
+                .child(if from_start {
+                    glyph
+                } else {
+                    glyph.with_transformation(gpui::Transformation::rotate(gpui::radians(
+                        std::f32::consts::PI,
+                    )))
+                })
+        };
+        let buttons = review.then(|| {
+            if hunk_index == 0 {
+                div()
+                    .flex_none()
+                    .rounded_l(px(8.0))
+                    .overflow_hidden()
+                    .child(button(
+                        format!("pr-expand-above-{key}"),
+                        false,
+                        SEPARATOR_HEIGHT,
+                    ))
+            } else {
+                div()
+                    .flex_none()
+                    .flex()
+                    .flex_col()
+                    .rounded_l(px(8.0))
+                    .overflow_hidden()
+                    .child(button(
+                        format!("pr-expand-below-{key}"),
+                        true,
+                        SEPARATOR_HEIGHT / 2.0,
+                    ))
+                    .child(button(
+                        format!("pr-expand-above-{key}"),
+                        false,
+                        SEPARATOR_HEIGHT / 2.0,
+                    ))
+            }
+        });
         div()
             .id(SharedString::from(format!("pr-expander-{key}")))
             .h(px(SEPARATOR_HEIGHT))
@@ -785,6 +1019,7 @@ impl PullRequestsView {
             .flex()
             .bg(theme.surface)
             .aria_label(SharedString::from(label.clone()))
+            .children(buttons)
             .child(
                 div()
                     .flex_1()
@@ -792,13 +1027,40 @@ impl PullRequestsView {
                     .flex()
                     .items_center()
                     .px(px(7.6242))
-                    .rounded_l(px(6.0))
+                    .when(!review, |content| content.rounded_l(px(6.0)))
                     .rounded_r(px(8.0))
                     .bg(theme.diff_expander_surface)
                     .text_size(px(12.0))
                     .line_height(px(LINE_HEIGHT))
                     .text_color(theme.diff_gutter_text)
                     .child(div().truncate().child(label)),
+            )
+    }
+
+    /// A file line a review tab revealed, drawn like a context row.
+    fn context_line(&self, file: &FileDiff, number: u32, text: &str) -> Div {
+        let theme = self.theme();
+        let split = self.file_splits(file);
+        div()
+            .min_w(px(0.0))
+            .flex()
+            .items_stretch()
+            .bg(theme.surface)
+            .child(self.gutter_cell(LineKind::Context, Some(number)))
+            .child(
+                div()
+                    .min_w(px(0.0))
+                    .px(px(CELL_PADDING))
+                    .font_family(UI_MONOSPACE_FONT_FAMILY)
+                    .text_size(px(12.0))
+                    .text_color(theme.diff_context_text)
+                    .line_height(px(LINE_HEIGHT))
+                    .when(self.wrap, |code| {
+                        code.w(px(self.code_width(split) + CELL_PADDING * 2.0))
+                            .whitespace_normal()
+                    })
+                    .when(!self.wrap, |code| code.whitespace_nowrap())
+                    .child(self.code_text(text, Self::language_for(&file.path))),
             )
     }
 
