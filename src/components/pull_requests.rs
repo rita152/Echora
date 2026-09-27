@@ -33,6 +33,9 @@ use crate::{
     theme::ThemeMode,
 };
 
+/// Pause after the last keystroke before the search refetches.
+const SEARCH_DEBOUNCE_MS: u64 = 250;
+
 /// The reference opens a new conversation from the detail header with the pull
 /// request prefilled but not sent.
 #[derive(Clone, Debug)]
@@ -95,11 +98,26 @@ pub struct PullRequestsView {
     reviewers_error: Option<String>,
     pane_width: f32,
     list_width: f32,
+    compact_layout: bool,
+    /// The Pull Requests page's own size, reported by the host every frame
+    /// (the window minus the revealed sidebar and its hairline).
+    page_width: f32,
+    page_height: f32,
+    /// Stored `app-shell:right-panel-width` ratio; `None` uses the reference
+    /// default width.
+    detail_ratio: Option<f32>,
+    /// Width at the start of a separator drag, and the pointer x it began at.
+    detail_resize: Option<(f32, f32)>,
+    list_scroll: gpui::ScrollHandle,
+    /// Avatar URL → cached file (`None` while the download runs or failed).
+    avatars: std::collections::HashMap<String, Option<PathBuf>>,
     control_bounds: std::rc::Rc<
         std::cell::RefCell<std::collections::HashMap<String, gpui::Bounds<gpui::Pixels>>>,
     >,
 
     // List pane.
+    /// Bumped per keystroke; the search reloads once typing pauses.
+    search_serial: u64,
     tab: ListTab,
     filter: PullRequestFilter,
     repositories: Vec<String>,
@@ -108,6 +126,8 @@ pub struct PullRequestsView {
     list_error: Option<String>,
     query: String,
     search: Entity<PromptInput>,
+    /// Tab, filter, and search text of the rows on screen.
+    loaded_key: Option<(ListTab, PullRequestFilter, String)>,
     collapsed_groups: HashSet<GroupKind>,
     selected: Option<PullRequestSummary>,
     list_menu: Option<ListMenu>,
@@ -189,6 +209,40 @@ pub struct PullRequestsView {
     capture_action: Option<String>,
 }
 
+/// The app-shell detail panel width for a main area of `page` × `height`:
+/// `320 + ratio * (max - 320)` with `max = page - 352`, and without a stored
+/// ratio the reference default `max(320, min(1.6 * height, page - 500),
+/// min(640, page - 352))` clamped into the same range.
+pub(super) fn detail_panel_width(page: f32, height: f32, ratio: Option<f32>) -> f32 {
+    let maximum = (page - theme::DETAIL_MAX_INSET).max(theme::DETAIL_MIN_WIDTH);
+    let minimum = theme::DETAIL_MIN_WIDTH.min(maximum);
+    let width = match ratio {
+        Some(ratio) if ratio.is_finite() => minimum + ratio.clamp(0.0, 1.0) * (maximum - minimum),
+        _ => theme::DETAIL_MIN_WIDTH
+            .max((height * 1.6).min(page - 500.0))
+            .max(640.0_f32.min(page - theme::DETAIL_MAX_INSET)),
+    };
+    width.clamp(minimum, maximum)
+}
+
+/// The ratio a detail width stores (`L5e`).
+pub(super) fn detail_panel_ratio(page: f32, width: f32) -> f32 {
+    let maximum = (page - theme::DETAIL_MAX_INSET).max(theme::DETAIL_MIN_WIDTH);
+    let minimum = theme::DETAIL_MIN_WIDTH.min(maximum);
+    if maximum <= minimum {
+        return 0.0;
+    }
+    ((width.clamp(minimum, maximum) - minimum) / (maximum - minimum)).clamp(0.0, 1.0)
+}
+
+/// Emitted when the separator drag ends, so the host can persist the ratio.
+#[derive(Clone, Copy, Debug)]
+pub struct DetailPanelResized {
+    pub ratio: f32,
+}
+
+impl EventEmitter<DetailPanelResized> for PullRequestsView {}
+
 impl Focusable for PullRequestsView {
     fn focus_handle(&self, _: &gpui::App) -> FocusHandle {
         self.focus.clone()
@@ -202,7 +256,7 @@ impl PullRequestsView {
 
     fn build(mode: ThemeMode, cwd: Option<PathBuf>, load: bool, cx: &mut Context<Self>) -> Self {
         let search = cx.new(|cx| {
-            let mut input = PromptInput::inline_other(mode, "Search pull requests", false, cx);
+            let mut input = PromptInput::pull_request_search(mode, "Search pull requests", cx);
             input.set_accessible_name("Search pull requests");
             input
         });
@@ -227,8 +281,8 @@ impl PullRequestsView {
         cx.subscribe(
             &search,
             |this, input, _: &super::prompt_input::PromptChanged, cx| {
-                this.query = input.read(cx).text().to_string();
-                cx.notify();
+                let query = input.read(cx).text().to_string();
+                this.set_query(query, cx);
             },
         )
         .detach();
@@ -251,9 +305,17 @@ impl PullRequestsView {
             mutation_pending: false,
             reviewers_loading: false,
             reviewers_error: None,
-            pane_width: 646.0,
-            list_width: theme::LIST_PANE_WIDTH,
+            pane_width: 606.0,
+            list_width: 593.0,
+            compact_layout: false,
+            page_width: 0.0,
+            page_height: 0.0,
+            detail_ratio: None,
+            detail_resize: None,
+            list_scroll: gpui::ScrollHandle::new(),
+            avatars: Default::default(),
             control_bounds: Default::default(),
+            search_serial: 0,
             tab: ListTab::All,
             filter: PullRequestFilter::default(),
             repositories: Vec::new(),
@@ -262,6 +324,7 @@ impl PullRequestsView {
             list_error: None,
             query: String::new(),
             search,
+            loaded_key: None,
             collapsed_groups: HashSet::new(),
             selected: None,
             list_menu: None,
@@ -363,6 +426,75 @@ impl PullRequestsView {
 
     pub fn theme(&self) -> PrTheme {
         PrTheme::for_mode(self.mode)
+    }
+
+    /// The host reports the page's size each frame; it is not a render input
+    /// of its own, so no notify.
+    pub fn set_page_size(&mut self, width: f32, height: f32) {
+        self.page_width = width;
+        self.page_height = height;
+    }
+
+    pub fn set_detail_ratio(&mut self, ratio: Option<f32>, cx: &mut Context<Self>) {
+        if self.detail_ratio != ratio {
+            self.detail_ratio = ratio;
+            cx.notify();
+        }
+    }
+
+    pub(super) fn begin_detail_resize(&mut self, x: f32) {
+        self.detail_resize = Some((self.pane_width, x));
+    }
+
+    pub(super) fn drag_detail_resize(&mut self, x: f32, cx: &mut Context<Self>) {
+        let Some((start, origin)) = self.detail_resize else {
+            return;
+        };
+        let page = self.pane_width + self.list_width;
+        let width = start + (origin - x);
+        self.detail_ratio = Some(detail_panel_ratio(page, width));
+        cx.notify();
+    }
+
+    pub(super) fn end_detail_resize(&mut self, cx: &mut Context<Self>) {
+        if self.detail_resize.take().is_some()
+            && let Some(ratio) = self.detail_ratio
+        {
+            cx.emit(DetailPanelResized { ratio });
+        }
+    }
+
+    /// Starts downloads for avatars not yet cached; rows draw the reference's
+    /// white placeholder circle meanwhile.
+    fn request_avatars(&mut self, urls: Vec<String>, cx: &mut Context<Self>) {
+        for url in urls {
+            if self.avatars.contains_key(&url) {
+                continue;
+            }
+            if let Some(path) = crate::pull_requests::avatars::cached(&url) {
+                self.avatars.insert(url, Some(path));
+                continue;
+            }
+            self.avatars.insert(url.clone(), None);
+            cx.spawn(async move |this, cx| {
+                let fetch = url.clone();
+                let result = cx
+                    .background_executor()
+                    .spawn(async move { crate::pull_requests::avatars::fetch(&fetch) })
+                    .await;
+                if let Ok(path) = result {
+                    let _ = this.update(cx, |view, cx| {
+                        view.avatars.insert(url, Some(path));
+                        cx.notify();
+                    });
+                }
+            })
+            .detach();
+        }
+    }
+
+    pub(super) fn avatar_path(&self, url: &str) -> Option<&PathBuf> {
+        self.avatars.get(url).and_then(Option::as_ref)
     }
 
     /// Re-enters the page: refresh the list and the selected detail so the data
@@ -486,7 +618,7 @@ impl PullRequestsView {
             input.set_text_silently(query.to_string(), cx)
         });
         self.query = query.to_string();
-        cx.notify();
+        self.reload(cx);
     }
 
     /// Capture helper: collapses one grouping header (`Previously reviewed` or
@@ -591,12 +723,45 @@ impl PullRequestsView {
     // Data loading
     // ------------------------------------------------------------------
 
+    /// The search text is part of the GitHub query, as in the reference: each
+    /// pause in typing refetches every section.
+    fn set_query(&mut self, query: String, cx: &mut Context<Self>) {
+        if self.query == query {
+            return;
+        }
+        self.query = query;
+        self.search_serial += 1;
+        let serial = self.search_serial;
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(SEARCH_DEBOUNCE_MS))
+                .await;
+            let _ = this.update(cx, |view, cx| {
+                if view.search_serial == serial {
+                    view.reload(cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Fetches the list. A new tab, filter, or search text replaces the rows
+    /// with per-section skeletons (the reference's query key changed); the
+    /// same query refetches behind the loaded rows with the `Refreshing`
+    /// spinner.
     pub fn reload(&mut self, cx: &mut Context<Self>) {
         self.generation += 1;
         let generation = self.generation;
         let client = self.client.clone();
         let tab = self.tab;
         let filter = self.filter.clone();
+        let query = self.query.trim().to_string();
+        let key = (tab, filter.clone(), query.clone());
+        if self.loaded_key.as_ref() != Some(&key) {
+            self.groups.clear();
+            self.loaded_key = Some(key);
+        }
         self.list_loading = true;
         self.list_error = None;
         cx.notify();
@@ -605,7 +770,7 @@ impl PullRequestsView {
                 .background_executor()
                 .spawn(async move {
                     client
-                        .list(tab, &filter)
+                        .list(tab, &filter, &query)
                         .map_err(|error| format!("{error:#}"))
                 })
                 .await;
@@ -617,9 +782,16 @@ impl PullRequestsView {
                 view.filter_loading = false;
                 match result {
                     Ok(groups) => {
+                        let urls = groups
+                            .iter()
+                            .filter(|group| group.kind.shows_author_avatar())
+                            .flat_map(|group| &group.items)
+                            .filter_map(|item| item.author_avatar_url.clone())
+                            .collect();
                         view.groups = groups;
                         view.list_error = None;
                         view.reload_repositories();
+                        view.request_avatars(urls, cx);
                     }
                     Err(error) => {
                         view.groups = Vec::new();
@@ -782,8 +954,7 @@ impl PullRequestsView {
     pub fn clear_search(&mut self, cx: &mut Context<Self>) {
         self.search
             .update(cx, |input, cx| input.set_text_silently("", cx));
-        self.query.clear();
-        cx.notify();
+        self.set_query(String::new(), cx);
     }
 
     pub fn toggle_filter_menu(&mut self, cx: &mut Context<Self>) {
@@ -862,7 +1033,7 @@ impl PullRequestsView {
             }
         };
         let items: Vec<PullRequestSummary> =
-            crate::pull_requests::filter_groups(&self.groups, &self.filter, &self.query)
+            crate::pull_requests::filter_groups(&self.groups, &self.filter, "")
                 .into_iter()
                 .flat_map(|group| group.items)
                 .filter(|item| !item.repository.is_empty())
@@ -882,15 +1053,11 @@ impl PullRequestsView {
                                 return false;
                             }
                             let items: Vec<PullRequestSummary> =
-                                crate::pull_requests::filter_groups(
-                                    &view.groups,
-                                    &view.filter,
-                                    &view.query,
-                                )
-                                .into_iter()
-                                .flat_map(|group| group.items)
-                                .filter(|item| !item.repository.is_empty())
-                                .collect();
+                                crate::pull_requests::filter_groups(&view.groups, &view.filter, "")
+                                    .into_iter()
+                                    .flat_map(|group| group.items)
+                                    .filter(|item| !item.repository.is_empty())
+                                    .collect();
                             let summary = if let Some(needle) = needle.as_deref() {
                                 items
                                     .iter()

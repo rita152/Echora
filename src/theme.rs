@@ -1,11 +1,10 @@
-use gpui::{Font, FontFallbacks, FontWeight, Rgba, font, rgba};
+use gpui::{Font, FontWeight, Rgba, font, rgba};
 
 /// ChatGPT's computed CSS uses `-apple-system, system-ui, "Segoe UI", sans-serif`.
-/// On macOS CDP reports `.SF NS` for Latin glyphs and PingFang SC for Simplified
-/// Chinese. GPUI maps this special family to `.AppleSystemUIFont`; the explicit
-/// CJK fallback keeps mixed Chinese/English runs on the same platform stack.
+/// On macOS CDP reports `.SF NS` for Latin glyphs and `.PingFangUITextSC` for
+/// Simplified Chinese at body sizes. GPUI maps this special family to
+/// `.AppleSystemUIFont` and leaves CJK to the system cascade (see `ui_font`).
 pub const UI_FONT_FAMILY: &str = ".SystemUIFont";
-pub const UI_CJK_FALLBACK_FAMILY: &str = "PingFang SC";
 // CDP's platform-font probe resolves ChatGPT's `ui-monospace` stack to Menlo
 // (PostScript face Menlo-Regular) on macOS.
 pub const UI_MONOSPACE_FONT_FAMILY: &str = "Menlo";
@@ -15,12 +14,13 @@ pub const UI_BODY_FONT_WEIGHT: FontWeight = FontWeight(430.0);
 /// remains full width; messages and the floating composer use this gutter.
 pub const CHAT_CONTENT_HORIZONTAL_GUTTER: f32 = 24.0;
 
+/// The ChatGPT macOS UI font. CJK runs have no explicit fallback: like
+/// Chromium, CoreText's system cascade picks the hidden `.PingFang UI` face at
+/// the optical size of the text (0.992em ideographs below 20px), where naming
+/// the public `PingFang SC` would make them a full em wide.
 pub fn ui_font() -> Font {
     let mut font = font(UI_FONT_FAMILY);
     font.weight = UI_BODY_FONT_WEIGHT;
-    font.fallbacks = Some(FontFallbacks::from_fonts(vec![
-        UI_CJK_FALLBACK_FAMILY.to_owned(),
-    ]));
     font
 }
 
@@ -432,17 +432,15 @@ impl Theme {
 
 #[cfg(test)]
 mod tests {
-    use super::{Theme, ThemeMode, UI_CJK_FALLBACK_FAMILY, UI_FONT_FAMILY, ui_font};
+    use super::{Theme, ThemeMode, UI_FONT_FAMILY, ui_font};
 
     #[test]
     fn global_ui_font_uses_the_chatgpt_macos_stack() {
         let font = ui_font();
         assert_eq!(font.family.as_ref(), UI_FONT_FAMILY);
         assert_eq!(font.weight, super::UI_BODY_FONT_WEIGHT);
-        assert_eq!(
-            font.fallbacks.expect("CJK fallback").fallback_list(),
-            &[UI_CJK_FALLBACK_FAMILY.to_owned()]
-        );
+        // CJK goes through CoreText's system cascade, as in Chromium.
+        assert!(font.fallbacks.is_none());
     }
 
     #[test]

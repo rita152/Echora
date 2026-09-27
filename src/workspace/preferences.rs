@@ -41,7 +41,19 @@ pub struct UiPreferences {
     /// as the reference keeps its own `unread-thread-ids-by-host`.
     #[serde(default)]
     pub unread_thread_ids: BTreeSet<ThreadId>,
+    /// The Pull Requests detail panel's width ratio, as the reference stores
+    /// `app-shell:right-panel-width:v3`; absent until the separator is dragged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull_requests_detail_ratio: Option<PanelRatio>,
 }
+
+/// A resizable panel's position between its minimum (0) and maximum (1)
+/// width. Always finite, so equality is total.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PanelRatio(pub f32);
+
+impl Eq for PanelRatio {}
 
 /// The activity view's `Show` options. Defaults match the reference: the
 /// Priority section on, the Pinned section and scheduled task runs off.

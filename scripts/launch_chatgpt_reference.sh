@@ -29,6 +29,14 @@
 #   CHATGPT_REFERENCE_SOURCE_DATA profile to clone from
 #   CHATGPT_REFERENCE_LABEL       launchd label (default chatgpt-reference)
 #   CHATGPT_REFERENCE_LOG_DIR     where the instance log is written
+#   CHATGPT_REFERENCE_CODEX_HOME  optional CODEX_HOME clone for the instance. The
+#                                 app keeps its Appearance theme, persisted atoms
+#                                 (the last opened pull request route, read
+#                                 state, view toggles) in `~/.codex`, which the
+#                                 user's own ChatGPT reads; with a clone the
+#                                 reference can switch themes and select rows
+#                                 without touching it. Cloned from ~/.codex on
+#                                 first use; delete it to refresh.
 #   CHATGPT_REFERENCE_EXTRA_ARGS  extra Chromium switches; the default keeps a
 #                                 covered window rendering, because Chromium
 #                                 stops delivering input and frames to an
@@ -40,6 +48,7 @@ label="${CHATGPT_REFERENCE_LABEL:-chatgpt-reference}"
 user_data="${CHATGPT_REFERENCE_USER_DATA:-$HOME/Library/Application Support/gpui-chatgpt-reference/user-data}"
 source_data="${CHATGPT_REFERENCE_SOURCE_DATA:-$HOME/Library/Application Support/Codex}"
 log_dir="${CHATGPT_REFERENCE_LOG_DIR:-$HOME/Library/Logs/gpui-capture}"
+codex_home="${CHATGPT_REFERENCE_CODEX_HOME:-}"
 binary="/Applications/ChatGPT.app/Contents/MacOS/ChatGPT"
 extra_args="${CHATGPT_REFERENCE_EXTRA_ARGS:---disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling}"
 
@@ -75,17 +84,27 @@ for name in SingletonCookie SingletonLock SingletonSocket; do
   mv -f "$user_data/$name" "$user_data/$name.stale-from-clone"
 done
 
+codex_home_export=""
+if [ -n "$codex_home" ]; then
+  if [ ! -f "$codex_home/config.toml" ]; then
+    mkdir -p "$codex_home"
+    cp -Rc "$HOME/.codex/." "$codex_home/"
+  fi
+  codex_home_export="export CODEX_HOME='$codex_home';"
+fi
+
 mkdir -p "$log_dir"
 log="$log_dir/reference-instance-$port.log"
 
 launchctl submit -l "$label" -- /bin/sh -c \
-  "export HOME='$HOME'; export CODEX_ELECTRON_USER_DATA_PATH='$user_data'; exec '$binary' --user-data-dir='$user_data' --remote-debugging-port=$port $extra_args >>'$log' 2>&1"
+  "export HOME='$HOME'; export CODEX_ELECTRON_USER_DATA_PATH='$user_data'; $codex_home_export exec '$binary' --user-data-dir='$user_data' --remote-debugging-port=$port $extra_args >>'$log' 2>&1"
 
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
   sleep 1
   if curl -s --max-time 2 "http://127.0.0.1:$port/json/version" | grep -q Browser; then
     echo "launched $label on port $port"
     echo "profile: $user_data"
+    [ -z "$codex_home" ] || echo "codex home: $codex_home"
     echo "log: $log"
     exit 0
   fi

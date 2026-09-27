@@ -78,6 +78,10 @@ fn generate_feature_array(features: &FontFeatures) -> CFMutableArrayRef {
     unsafe {
         let feature_array = CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
         for (tag, value) in features.tag_value_list() {
+            // Letter spacing is applied as tracking by the line layout.
+            if tag == gpui::LETTER_SPACING_FEATURE {
+                continue;
+            }
             let keys = [kCTFontOpenTypeFeatureTag, kCTFontOpenTypeFeatureValue];
             let values = [
                 CFString::new(tag).as_CFTypeRef(),

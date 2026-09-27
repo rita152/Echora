@@ -36,6 +36,9 @@ pub enum PromptInputKind {
     /// The rename dialog's field: a 36px box with a 1px outline and 10px
     /// horizontal padding around 13px type.
     RenameChat,
+    /// The Pull Requests search field: an 18px box inside the reference's
+    /// pill, 14px type on an 18px line, `placeholder:text-tertiary`.
+    PullRequestSearch,
 }
 
 gpui::actions!(
@@ -119,6 +122,18 @@ impl PromptInput {
 
     pub fn set_accessible_name(&mut self, name: impl Into<SharedString>) {
         self.accessible_name = Some(name.into());
+    }
+
+    /// The Pull Requests inbox search field.
+    pub fn pull_request_search(
+        mode: ThemeMode,
+        placeholder: impl Into<SharedString>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut input = Self::new(mode, cx);
+        input.kind = PromptInputKind::PullRequestSearch;
+        input.placeholder = placeholder.into();
+        input
     }
 
     /// Borderless single-line field used by the chat search dialog.
@@ -916,7 +931,9 @@ impl PromptInput {
             PromptInputKind::MessageEdit => "message-edit-input",
             PromptInputKind::Composer => "prompt-input",
             PromptInputKind::RenameChat => "rename-chat-input",
+            PromptInputKind::PullRequestSearch => "pull-request-search-input",
         };
+        let pull_request_search = self.kind == PromptInputKind::PullRequestSearch;
         let height = match self.kind {
             PromptInputKind::InlineOther => 28.0,
             PromptInputKind::ChatSearch => 33.0,
@@ -925,6 +942,7 @@ impl PromptInput {
             // The dialog's 36px box already carries its own 1px outline; the
             // text is centred in the remaining 34px.
             PromptInputKind::RenameChat => 36.0,
+            PromptInputKind::PullRequestSearch => 18.0,
         };
         let horizontal_padding = match self.kind {
             PromptInputKind::InlineOther => 0.0,
@@ -932,12 +950,14 @@ impl PromptInput {
             PromptInputKind::MessageEdit => 0.0,
             PromptInputKind::Composer => 4.0,
             PromptInputKind::RenameChat => 10.0,
+            PromptInputKind::PullRequestSearch => 0.0,
         };
         let top_padding = match self.kind {
             PromptInputKind::InlineOther => 4.0,
             PromptInputKind::ChatSearch => 6.0,
             PromptInputKind::MessageEdit => 0.0,
             PromptInputKind::Composer => 1.0,
+            PromptInputKind::PullRequestSearch => 0.0,
             // (34 - 18.5714) / 2 measured from the reference's content box.
             PromptInputKind::RenameChat => (34.0 - RENAME_CHAT_LINE_HEIGHT) / 2.0,
         };
@@ -951,18 +971,22 @@ impl PromptInput {
         };
         let font_size = if inline {
             13.0
+        } else if pull_request_search {
+            14.0
         } else if self.kind == PromptInputKind::RenameChat {
             RENAME_CHAT_FONT_SIZE
         } else {
             PROMPT_FONT_SIZE
         };
-        let font_weight = if inline {
+        let font_weight = if inline || pull_request_search {
             FontWeight::NORMAL
         } else {
             crate::theme::UI_BODY_FONT_WEIGHT
         };
         let line_height = if chat_search {
             CHAT_SEARCH_LINE_HEIGHT
+        } else if pull_request_search {
+            18.0
         } else if self.kind == PromptInputKind::RenameChat {
             RENAME_CHAT_LINE_HEIGHT
         } else {
@@ -1035,6 +1059,12 @@ impl Render for PromptInput {
         } else if self.kind == PromptInputKind::RenameChat {
             // CDP: the dialog's field uses `placeholder:text-tertiary`.
             theme.text_tertiary
+        } else if self.kind == PromptInputKind::PullRequestSearch {
+            // CDP: `placeholder:text-tertiary`, rgba(255,255,255,0.498) in dark.
+            match self.mode {
+                ThemeMode::Light => rgba(0x1a1c1f7e),
+                ThemeMode::Dark => rgba(0xffffff7f),
+            }
         } else if self.kind == PromptInputKind::InlineOther {
             // The request-user-input control uses the card's captured
             // `text-secondary` token directly. The main Composer placeholder

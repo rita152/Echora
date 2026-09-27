@@ -94,10 +94,6 @@ impl Default for PullRequestFilter {
 }
 
 impl PullRequestFilter {
-    pub fn repository_label(&self) -> &str {
-        self.repository.as_deref().unwrap_or("All repositories")
-    }
-
     pub fn is_active(&self) -> bool {
         self.status != StatusFilter::initial() || self.repository.is_some()
     }
@@ -131,21 +127,138 @@ impl PullRequestStatus {
     }
 }
 
+/// Inbox sections, in the order the reference stacks them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum GroupKind {
-    ReviewRequested,
+    UserReviewRequested,
+    TeamReviewRequested,
     PreviouslyReviewed,
     Authored,
+    /// Text with an explicit relationship qualifier.
+    Results,
 }
 
 impl GroupKind {
     pub fn label(self) -> &'static str {
         match self {
-            Self::ReviewRequested => "Review requested",
+            Self::UserReviewRequested => "Needs my review",
+            Self::TeamReviewRequested => "Needs my team’s review",
             Self::PreviouslyReviewed => "Previously reviewed",
             Self::Authored => "Authored",
+            Self::Results => "Results",
         }
     }
+
+    /// The sections a tab stacks while it loads, in order.
+    pub fn loading_sections(tab: ListTab, text: &str) -> &'static [GroupKind] {
+        if super::gh::has_relationship_qualifier(text) {
+            return &[Self::Results];
+        }
+        match tab {
+            ListTab::All => &[
+                Self::UserReviewRequested,
+                Self::TeamReviewRequested,
+                Self::PreviouslyReviewed,
+                Self::Authored,
+            ],
+            ListTab::Reviewing => &[
+                Self::UserReviewRequested,
+                Self::TeamReviewRequested,
+                Self::PreviouslyReviewed,
+            ],
+            ListTab::Authored => &[Self::Authored],
+        }
+    }
+
+    /// Rows in every section but `Authored` show the author's avatar.
+    pub fn shows_author_avatar(self) -> bool {
+        self != Self::Authored
+    }
+}
+
+/// The reference's inbox reduction (`sAn`): a pull request appears once, in
+/// the first section that claims it. Team requests are the review requests not
+/// addressed to the user directly, previously reviewed drops anything still
+/// requested, and authored drops everything above it.
+pub fn dedupe_sections(
+    user_requested: Vec<PullRequestSummary>,
+    requested: Vec<PullRequestSummary>,
+    reviewed: Vec<PullRequestSummary>,
+    authored: Option<Vec<PullRequestSummary>>,
+) -> Vec<PullRequestGroup> {
+    fn key(item: &PullRequestSummary) -> (String, u64) {
+        (item.repository.to_lowercase(), item.number)
+    }
+    fn unique(items: Vec<PullRequestSummary>) -> Vec<PullRequestSummary> {
+        let mut seen = std::collections::HashSet::new();
+        items
+            .into_iter()
+            .filter(|item| seen.insert(key(item)))
+            .collect()
+    }
+    let user_requested = unique(user_requested);
+    let requested = unique(requested);
+    let direct: std::collections::HashSet<_> = user_requested.iter().map(key).collect();
+    let mut claimed = direct.clone();
+    claimed.extend(requested.iter().map(key));
+    let team: Vec<_> = requested
+        .into_iter()
+        .filter(|item| !direct.contains(&key(item)))
+        .collect();
+    let reviewed: Vec<_> = unique(reviewed)
+        .into_iter()
+        .filter(|item| !claimed.contains(&key(item)))
+        .collect();
+    claimed.extend(reviewed.iter().map(key));
+    let mut groups = Vec::new();
+    for (kind, items) in [
+        (GroupKind::UserReviewRequested, user_requested),
+        (GroupKind::TeamReviewRequested, team),
+        (GroupKind::PreviouslyReviewed, reviewed),
+    ] {
+        if !items.is_empty() {
+            groups.push(PullRequestGroup { kind, items });
+        }
+    }
+    if let Some(authored) = authored {
+        let authored: Vec<_> = unique(authored)
+            .into_iter()
+            .filter(|item| !claimed.contains(&key(item)))
+            .collect();
+        if !authored.is_empty() {
+            groups.push(PullRequestGroup {
+                kind: GroupKind::Authored,
+                items: authored,
+            });
+        }
+    }
+    groups
+}
+
+/// Combined status of the head commit's checks, as the reference reduces a
+/// pull request's check rollup.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CiStatus {
+    #[default]
+    None,
+    Pending,
+    Passing,
+    Failing,
+}
+
+/// The glyph a row or header shows for a pull request. Closed and merged pull
+/// requests show their state; open ones show their merge readiness, with the
+/// dot colour of `ready`/`successful` (green), `in_progress` (yellow), and
+/// `failing` (red).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StatusIcon {
+    Draft,
+    Merged,
+    Closed,
+    Failing,
+    InProgress,
+    Ready,
+    Successful,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -160,10 +273,37 @@ pub struct PullRequestSummary {
     pub status: PullRequestStatus,
     pub age: String,
     pub author: String,
+    /// `avatarUrl(size: 48)`, the image the reference rows draw at 16px.
+    pub author_avatar_url: Option<String>,
     pub url: String,
+    pub can_merge: bool,
+    pub has_conflicts: bool,
+    pub ci_status: CiStatus,
 }
 
 impl PullRequestSummary {
+    /// The reference's `pullRequestStatusIconState`: closed and merged keep
+    /// their state, drafts stay drafts, conflicts or failing checks win over
+    /// everything else, and passing checks without a merge path read as
+    /// `successful` rather than `ready`.
+    pub fn status_icon(&self) -> StatusIcon {
+        match self.status {
+            PullRequestStatus::Merged => StatusIcon::Merged,
+            PullRequestStatus::Closed => StatusIcon::Closed,
+            PullRequestStatus::Draft => StatusIcon::Draft,
+            PullRequestStatus::Open
+                if self.has_conflicts || self.ci_status == CiStatus::Failing =>
+            {
+                StatusIcon::Failing
+            }
+            PullRequestStatus::Open if self.ci_status == CiStatus::Passing && !self.can_merge => {
+                StatusIcon::Successful
+            }
+            PullRequestStatus::Open if self.can_merge => StatusIcon::Ready,
+            PullRequestStatus::Open => StatusIcon::InProgress,
+        }
+    }
+
     /// Matches the search box: title, repository, and branch names.
     pub fn matches_query(&self, query: &str) -> bool {
         let query = query.trim().to_lowercase();
@@ -340,37 +480,57 @@ impl PullRequestDetail {
     }
 }
 
-/// Formats a GitHub timestamp the way the reference app does: the largest
-/// single unit, with `w`/`d`/`h`/`m` suffixes and `now` for anything under a
-/// minute.
+/// Formats a GitHub timestamp the way the reference's compact relative time
+/// does: at least one minute, whole hours below a day, then calendar days in
+/// the local time zone bucketed into days, weeks (`/7`), months (`/30`), and
+/// years (`/365`).
 pub fn relative_age(updated: &str, now: chrono::DateTime<chrono::Utc>) -> String {
-    let parsed = chrono::DateTime::parse_from_rfc3339(updated)
-        .ok()
-        .map(|value| value.with_timezone(&chrono::Utc));
-    let Some(parsed) = parsed else {
+    relative_age_in(updated, now, &chrono::Local)
+}
+
+pub fn relative_age_in<Tz: chrono::TimeZone>(
+    updated: &str,
+    now: chrono::DateTime<chrono::Utc>,
+    zone: &Tz,
+) -> String {
+    let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(updated) else {
         return String::new();
     };
-    let seconds = (now - parsed).num_seconds().max(0);
-    let minutes = seconds / 60;
-    if minutes < 1 {
-        return "now".to_string();
-    }
-    let hours = minutes / 60;
-    if hours < 1 {
+    let parsed = parsed.with_timezone(&chrono::Utc);
+    let minutes = ((now - parsed).num_seconds().div_euclid(60)).max(1);
+    if minutes < 60 {
         return format!("{minutes}m");
     }
-    let days = hours / 24;
-    if days < 1 {
+    let hours = minutes / 60;
+    if hours < 24 {
         return format!("{hours}h");
     }
-    let weeks = days / 7;
-    if weeks < 1 {
-        return format!("{days}d");
+    let today = now.with_timezone(zone).date_naive();
+    let then = parsed.with_timezone(zone).date_naive();
+    let days = (today - then).num_days().max(1);
+    if days < 7 {
+        format!("{days}d")
+    } else if days < 30 {
+        format!("{}w", days / 7)
+    } else if days < 365 {
+        format!("{}mo", days / 30)
+    } else {
+        format!("{}y", days / 365)
     }
-    if weeks < 52 {
-        return format!("{weeks}w");
+}
+
+/// Groups thousands the way the reference's `Intl.NumberFormat` renders diff
+/// stats in English (`1,120`).
+pub fn format_count(value: u64) -> String {
+    let digits = value.to_string();
+    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index) % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(digit);
     }
-    format!("{}y", weeks / 52)
+    grouped
 }
 
 /// Applies the status filter, repository filter, and search query to a loaded
@@ -436,7 +596,11 @@ mod tests {
             status,
             age: "1w".to_string(),
             author: "rita152".to_string(),
+            author_avatar_url: None,
             url: "https://github.com/example/example/pull/1".to_string(),
+            can_merge: false,
+            has_conflicts: false,
+            ci_status: CiStatus::None,
         }
     }
 
@@ -499,15 +663,79 @@ mod tests {
     }
 
     #[test]
-    fn relative_age_uses_the_largest_unit() {
+    fn relative_age_matches_the_reference_buckets() {
         let now = chrono::DateTime::parse_from_rfc3339("2026-09-18T12:00:00Z")
             .unwrap()
             .with_timezone(&chrono::Utc);
-        assert_eq!(relative_age("2026-09-18T11:59:30Z", now), "now");
-        assert_eq!(relative_age("2026-09-18T11:42:00Z", now), "18m");
-        assert_eq!(relative_age("2026-09-18T06:00:00Z", now), "6h");
-        assert_eq!(relative_age("2026-09-15T12:00:00Z", now), "3d");
-        assert_eq!(relative_age("2026-09-11T09:59:07Z", now), "1w");
-        assert_eq!(relative_age("2025-01-01T00:00:00Z", now), "1y");
+        let zone = chrono::FixedOffset::east_opt(8 * 3600).unwrap();
+        let age = |at: &str| relative_age_in(at, now, &zone);
+        // Under a minute still reads as one minute.
+        assert_eq!(age("2026-09-18T11:59:30Z"), "1m");
+        assert_eq!(age("2026-09-18T11:42:00Z"), "18m");
+        assert_eq!(age("2026-09-18T06:00:00Z"), "6h");
+        // Days count calendar dates in the local zone (UTC+8 here), so 25
+        // hours across one local midnight is one day.
+        assert_eq!(age("2026-09-17T11:00:00Z"), "1d");
+        assert_eq!(age("2026-09-15T12:00:00Z"), "3d");
+        assert_eq!(age("2026-09-11T09:59:07Z"), "1w");
+        // 36 days is five weeks in GitHub's words but `1mo` in the reference.
+        assert_eq!(age("2026-08-13T12:00:00Z"), "1mo");
+        assert_eq!(age("2025-01-01T00:00:00Z"), "1y");
+    }
+
+    #[test]
+    fn sections_claim_each_pull_request_once() {
+        let item = |number: u64| {
+            let mut item = summary("t", "o/r", "b", PullRequestStatus::Open);
+            item.number = number;
+            item
+        };
+        let groups = dedupe_sections(
+            vec![item(1)],
+            vec![item(1), item(2)],
+            vec![item(2), item(3)],
+            Some(vec![item(3), item(4)]),
+        );
+        let numbers: Vec<(GroupKind, Vec<u64>)> = groups
+            .iter()
+            .map(|group| {
+                (
+                    group.kind,
+                    group.items.iter().map(|item| item.number).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            numbers,
+            vec![
+                (GroupKind::UserReviewRequested, vec![1]),
+                (GroupKind::TeamReviewRequested, vec![2]),
+                (GroupKind::PreviouslyReviewed, vec![3]),
+                (GroupKind::Authored, vec![4]),
+            ]
+        );
+    }
+
+    #[test]
+    fn counts_group_thousands() {
+        assert_eq!(format_count(0), "0");
+        assert_eq!(format_count(373), "373");
+        assert_eq!(format_count(1120), "1,120");
+        assert_eq!(format_count(1234567), "1,234,567");
+    }
+
+    #[test]
+    fn status_icons_follow_merge_readiness() {
+        let mut item = summary("t", "o/r", "b", PullRequestStatus::Open);
+        assert_eq!(item.status_icon(), StatusIcon::InProgress);
+        item.can_merge = true;
+        assert_eq!(item.status_icon(), StatusIcon::Ready);
+        item.ci_status = CiStatus::Failing;
+        assert_eq!(item.status_icon(), StatusIcon::Failing);
+        item.ci_status = CiStatus::Passing;
+        item.can_merge = false;
+        assert_eq!(item.status_icon(), StatusIcon::Successful);
+        item.status = PullRequestStatus::Merged;
+        assert_eq!(item.status_icon(), StatusIcon::Merged);
     }
 }

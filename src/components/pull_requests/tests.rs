@@ -55,7 +55,11 @@ fn summary(title: &str) -> crate::pull_requests::PullRequestSummary {
         status: crate::pull_requests::PullRequestStatus::Open,
         age: "now".into(),
         author: "test".into(),
+        author_avatar_url: None,
         url: "https://github.com/test/repository/pull/1".into(),
+        can_merge: false,
+        has_conflicts: false,
+        ci_status: crate::pull_requests::CiStatus::None,
     }
 }
 fn detail(title: &str) -> PullRequestDetail {

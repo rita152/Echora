@@ -23,7 +23,9 @@ use loaders::{
     load_all_projects, load_all_search_results, load_all_sections, load_all_threads,
     load_all_turns, receive,
 };
-pub use preferences::{ActivityPreferences, ReviewPreferences, UiPreferences, preferred_language};
+pub use preferences::{
+    ActivityPreferences, PanelRatio, ReviewPreferences, UiPreferences, preferred_language,
+};
 use preferences::{PreferenceStore, default_preferences_path};
 
 /// One row of the chat search dialog: the thread plus the match snippet the
@@ -1257,6 +1259,17 @@ impl WorkspaceStore {
             "projects" => snapshot.preferences.projects_collapsed = collapsed,
             "recent" => snapshot.preferences.recent_collapsed = collapsed,
             _ => {}
+        });
+        self.save_preferences();
+    }
+
+    pub fn set_pull_requests_detail_ratio(&self, ratio: f32) {
+        if !ratio.is_finite() {
+            return;
+        }
+        self.update(|snapshot| {
+            snapshot.preferences.pull_requests_detail_ratio =
+                Some(PanelRatio(ratio.clamp(0.0, 1.0)))
         });
         self.save_preferences();
     }

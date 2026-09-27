@@ -275,8 +275,21 @@ impl Render for ChatApp {
             .is_focused(window);
         let sidebar_reveal = self.sidebar_layout.reveal.clamp(0.0, 1.0);
         let revealed_sidebar_width = sidebar_width * sidebar_reveal;
-        let hairline = 1.0 / window.scale_factor();
+        // `_MainContentLeftBorder` is `var(--border-width-hairline)` (0.5px),
+        // which the reference's Chromium rounds up to one CSS pixel at every
+        // DPR (computed `1px`, two device pixels on Retina).
+        let hairline = 1.0;
         let main_left_border = !self.showing_settings && sidebar_reveal > 0.0;
+        if self.showing_pull_requests {
+            // The page sizes its panes from its own width, like the reference's
+            // app shell measuring the main content area.
+            let page_width = f32::from(window.viewport_size().width)
+                - revealed_sidebar_width
+                - if main_left_border { hairline } else { 0.0 };
+            let page_height = f32::from(window.viewport_size().height);
+            self.pull_requests
+                .update(cx, |view, _| view.set_page_size(page_width, page_height));
+        }
         let resumed_title = match &self.active_conversation {
             ConversationKey::Thread(id) if !self.showing_settings => {
                 self.workspace_store.snapshot().thread(id).map(|thread| {

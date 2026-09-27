@@ -11,15 +11,36 @@ use crate::theme::ThemeMode;
 
 /// Toolbar height shared by the list and detail panes (`h-toolbar`).
 pub const TOOLBAR_HEIGHT: f32 = 46.0;
-/// The list column width measured at a 1440 px window (276 → 793.92).
-pub const LIST_PANE_WIDTH: f32 = 518.0;
 /// `px-5` around list content and `px-5` in the detail scroll body.
 pub const PANE_PADDING: f32 = 20.0;
-/// The reference reserves a scrollbar gutter on the right of the list body, so
-/// rows end 11px before the pane edge (794 - 762.92 in the reference layout).
+/// The reference's `[scrollbar-gutter:stable]`: content ends 11px before the
+/// pane edge (592.84 → 581.84).
 pub const SCROLLBAR_GUTTER: f32 = 11.0;
-pub const ROW_HEIGHT: f32 = 62.0;
 pub const ROW_RADIUS: f32 = 15.0;
+/// The app-shell header toolbar sits 7px inside the list pane on the left and
+/// 8px on the right (241 → 248, 825.84 → 833.84).
+pub const LIST_TOOLBAR_INSET_LEFT: f32 = 7.0;
+pub const LIST_TOOLBAR_INSET_RIGHT: f32 = 8.0;
+/// `pt-panel pb-2` around the 32px search pill.
+pub const LIST_SEARCH_ROW_HEIGHT: f32 = 60.0;
+/// App-shell detail panel sizing (`app-shell:right-panel-width:v3`): the
+/// panel spans `320 + ratio * (max - 320)` where `max = main - 352`.
+pub const DETAIL_MIN_WIDTH: f32 = 320.0;
+pub const DETAIL_MAX_INSET: f32 = 352.0;
+/// Radix menu geometry (`contentWidth="menuNarrow"`, `app-menu-item`).
+pub const MENU_NARROW_WIDTH: f32 = 208.0;
+pub const MENU_SUBMENU_WIDTH: f32 = 180.0;
+pub const MENU_ROW_HEIGHT: f32 = 28.5625;
+pub const MENU_ICON_SIZE: f32 = 16.0;
+pub const MENU_CHEVRON_SIZE: f32 = 16.0;
+pub const MENU_TEXT_SIZE: f32 = 13.0;
+pub const MENU_LINE_HEIGHT: f32 = 18.5714;
+/// Classic scroller thumb: 6px wide, 2px from the edge, inset 3px/6px.
+pub const SCROLLBAR_THUMB_WIDTH: f32 = 6.0;
+pub const SCROLLBAR_THUMB_INSET_RIGHT: f32 = 2.0;
+pub const SCROLLBAR_TRACK_INSET_TOP: f32 = 3.0;
+pub const SCROLLBAR_TRACK_INSET_BOTTOM: f32 = 6.0;
+pub const SCROLLBAR_THUMB_MIN_LENGTH: f32 = 18.0;
 
 fn light(is_light: bool, light: u32, dark: u32) -> Rgba {
     let value = if is_light { light } else { dark };
@@ -40,8 +61,25 @@ pub struct PrTheme {
     pub control_hover: Rgba,
     /// `border-primary` outline (`rgba(26,28,31,0.08)` / `rgba(255,255,255,0.082)`).
     pub border: Rgba,
-    /// Row hover / selection fill (`rgba(26,28,31,0.047)`).
+    /// `hover:bg-primary-ghost-hover`: row and ghost-button hover
+    /// (`rgba(26,28,31,0.055)` / `rgba(255,255,255,0.08)`).
     pub row_hover: Rgba,
+    /// `bg-primary-soft-active`: the selected row (`rgba(26,28,31,0.047)` /
+    /// `rgba(255,255,255,0.05)`).
+    pub row_selected: Rgba,
+    /// `text-purple`, `text-chart-red/green/yellow`: pull request state glyphs.
+    pub purple: Rgba,
+    pub chart_red: Rgba,
+    pub chart_green: Rgba,
+    pub chart_yellow: Rgba,
+    /// The active filter's badge (`#0285FF` in both themes).
+    pub filter_badge: Rgba,
+    /// Loading skeleton bars.
+    pub skeleton: Rgba,
+    /// Menu chevrons (`text-tertiary`).
+    pub menu_icon: Rgba,
+    /// Classic scroller thumb, measured from the reference frame.
+    pub scrollbar_thumb: Rgba,
     /// Search-field fill and outline.
     pub field_surface: Rgba,
     pub field_border: Rgba,
@@ -124,10 +162,31 @@ impl PrTheme {
                 gpui::rgba(0xffffff15)
             },
             row_hover: if is_light {
+                gpui::rgba(0x1a1c1f0e)
+            } else {
+                gpui::rgba(0xffffff14)
+            },
+            row_selected: if is_light {
                 gpui::rgba(0x1a1c1f0c)
             } else {
-                gpui::rgba(0xdfdfdf0c)
+                gpui::rgba(0xffffff0d)
             },
+            purple: light(is_light, 0x924ff7ff, 0xad7bf9ff),
+            chart_red: light(is_light, 0xe02e2aff, 0xff6764ff),
+            chart_green: light(is_light, 0x00a240ff, 0x40c977ff),
+            chart_yellow: light(is_light, 0xffc300ff, 0xffd240ff),
+            filter_badge: gpui::rgba(0x0285ffff),
+            skeleton: if is_light {
+                gpui::rgba(0x1a1c1f0d)
+            } else {
+                gpui::rgba(0xffffff0d)
+            },
+            menu_icon: if is_light {
+                gpui::rgba(0x1a1c1f7e)
+            } else {
+                gpui::rgba(0xffffff7f)
+            },
+            scrollbar_thumb: light(is_light, 0xedededff, 0x2b2b2bff),
             field_surface: if is_light {
                 gpui::rgba(0xffffffdc)
             } else {
@@ -152,6 +211,7 @@ impl PrTheme {
             },
             popover_surface: light(is_light, 0xffffffff, 0x2d2d2dff),
             card_surface: light(is_light, 0xffffffff, 0x1f1f1fff),
+            // `data-highlighted`: rgba(26,28,31,0.055) / rgba(255,255,255,0.08).
             menu_hover: if is_light {
                 gpui::rgba(0x1a1c1f0e)
             } else {

@@ -1,6 +1,6 @@
 //! Page shell: pane layout, overlays, and the shared page background.
 
-use gpui::{Div, SharedString, div, prelude::*, px};
+use gpui::{AnimationExt, Div, SharedString, div, prelude::*, px};
 
 use super::{PullRequestsView, theme::*};
 use crate::components::icons::icon;
@@ -47,23 +47,42 @@ impl gpui::Render for PullRequestsView {
                 });
             });
         if let Some(detail) = detail {
-            // The reference layers its resize strip over the pane boundary, so the
-            // two panes sit flush: list 518 + detail 646 at a 1440px window.
             page = page.child(detail);
         }
+        let split = !fullscreen && !self.compact();
         if !self.compact() || self.selected.is_some() || self.fullscreen {
-            page = page.child(self.detail_pane(window, cx));
-        }
-        if !fullscreen && !self.compact() {
+            // The app-shell detail panel: `border-l border-default` on the
+            // surface, so its content starts one pixel in.
             page = page.child(
                 div()
-                    .absolute()
-                    .left(px(self.list_width - 0.5))
-                    .top(px(0.0))
-                    .w(px(1.0))
+                    .flex_none()
+                    .w(px(self.pane_width))
                     .h_full()
-                    .bg(theme.border),
+                    .flex()
+                    .when(split, |pane| {
+                        pane.border_l(px(1.0)).border_color(theme.border)
+                    })
+                    .child(self.detail_pane(window, cx)),
             );
+        }
+        if split {
+            page = page
+                // `shadow-[-8px_0_16px_-8px_rgb(0_0_0/0.18)]` on a 1px strip at
+                // the panel's leading edge, cast back over the list.
+                .child(
+                    div()
+                        .absolute()
+                        .left(px(self.list_width))
+                        .top_0()
+                        .w(px(1.0))
+                        .h_full()
+                        .shadow(vec![
+                            gpui::BoxShadow::new(px(-8.0), px(0.0), gpui::rgba(0x0000002e).into())
+                                .blur_radius(px(16.0))
+                                .spread_radius(px(-8.0)),
+                        ]),
+                )
+                .child(self.pane_separator(cx));
         }
         if !fullscreen {
             page = page.children(self.filter_overlays(cx));
@@ -113,7 +132,13 @@ impl PullRequestsView {
     fn filter_overlays(&self, cx: &mut gpui::Context<Self>) -> Vec<gpui::AnyElement> {
         let mut overlays = Vec::new();
         if self.list_menu.is_some() {
-            overlays.push(self.popup("pr-filter", self.filter_menu(cx)));
+            // Radix places the menu (`m-px`) 2px under the trigger, flush with
+            // its end edge.
+            overlays.push(self.popup_at(
+                "pr-filter",
+                gpui::point(px(-1.0), px(2.0)),
+                self.filter_menu(cx),
+            ));
             if let Some(submenu) = self.filter_submenu(cx) {
                 let key = match self.filter_submenu {
                     Some(super::FilterSubmenu::Status) => "pr-filter-Status",
@@ -124,7 +149,9 @@ impl PullRequestsView {
                     .snap_to_window_with_margin(px(8.0))
                     .child(submenu);
                 if let Some(bounds) = bounds {
-                    popup = popup.position(bounds.top_right());
+                    // The sub-content opens 5px beyond the menu edge (the row
+                    // sits 4px inside it), aligned with the menu's top.
+                    popup = popup.position(bounds.top_right() + gpui::point(px(9.0), px(-4.0)));
                 }
                 overlays.push(gpui::deferred(popup).into_any_element());
             }
@@ -132,8 +159,10 @@ impl PullRequestsView {
         overlays
     }
 
+    /// The reference keeps both panes while the list can hold 320px beside
+    /// the detail panel; below that the page shows one pane at a time.
     pub(super) fn compact(&self) -> bool {
-        self.pane_width + self.list_width < 850.0 && !self.fullscreen
+        !self.fullscreen && self.compact_layout
     }
 
     pub(super) fn control_anchor<K: Into<String>>(&self, key: K) -> impl IntoElement + use<K> {
@@ -147,6 +176,256 @@ impl PullRequestsView {
         )
         .absolute()
         .size_full()
+    }
+
+    /// `Resize workspace panes`: a 16px strip centred on the pane boundary.
+    /// Hovering shows its fading hairline; dragging resizes the detail panel
+    /// between 320px and `main - 352`, and the host stores the new ratio.
+    fn pane_separator(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
+        let theme = self.theme();
+        let resizing = self.detail_resize.is_some();
+        let start = cx.entity();
+        let drag = cx.entity();
+        let end = cx.entity();
+        let end_out = cx.entity();
+        let line = |alpha: f32| {
+            div()
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .left(px(7.5))
+                .w(px(1.0))
+                .flex()
+                .flex_col()
+                .child(div().flex_1().w_full().bg(gpui::linear_gradient(
+                    180.0,
+                    gpui::linear_color_stop(theme.text.alpha(0.0), 0.0),
+                    gpui::linear_color_stop(theme.text.alpha(alpha), 1.0),
+                )))
+                .child(div().flex_1().w_full().bg(gpui::linear_gradient(
+                    180.0,
+                    gpui::linear_color_stop(theme.text.alpha(alpha), 0.0),
+                    gpui::linear_color_stop(theme.text.alpha(0.0), 1.0),
+                )))
+        };
+        div()
+            .id("pr-pane-separator")
+            .group("pr-pane-separator")
+            .absolute()
+            .top_0()
+            .left(px(self.list_width - 8.0))
+            .w(px(16.0))
+            .h_full()
+            .cursor(gpui::CursorStyle::ResizeLeftRight)
+            .role(gpui::Role::Splitter)
+            .aria_label("Resize workspace panes")
+            .on_mouse_down(gpui::MouseButton::Left, move |event, _, cx| {
+                cx.stop_propagation();
+                start.update(cx, |view, _| {
+                    view.begin_detail_resize(f32::from(event.position.x))
+                });
+            })
+            .on_mouse_move(move |event, _, cx| {
+                if event.pressed_button == Some(gpui::MouseButton::Left) {
+                    drag.update(cx, |view, cx| {
+                        view.drag_detail_resize(f32::from(event.position.x), cx)
+                    });
+                }
+            })
+            .on_mouse_up(gpui::MouseButton::Left, move |_, _, cx| {
+                end.update(cx, |view, cx| view.end_detail_resize(cx));
+            })
+            .on_mouse_up_out(gpui::MouseButton::Left, move |_, _, cx| {
+                end_out.update(cx, |view, cx| view.end_detail_resize(cx));
+            })
+            .child(
+                line(0.25)
+                    .when(!resizing, |line| line.invisible())
+                    .group_hover("pr-pane-separator", |style| style.visible()),
+            )
+    }
+
+    /// The reference's `Button` at `size="toolbar"`: 28px tall, `px-2` inside
+    /// a transparent 1px border, 12.5px radius, 13/18 type. `secondary` sits on
+    /// the 5% soft fill (10% on hover); `ghost` is transparent with tertiary
+    /// text and the 8% ghost hover.
+    pub(super) fn toolbar_button(
+        id: impl Into<gpui::ElementId>,
+        theme: PrTheme,
+        secondary: bool,
+    ) -> gpui::Stateful<Div> {
+        div()
+            .id(id)
+            .role(gpui::Role::Button)
+            .flex_none()
+            .h(px(28.0))
+            .px(px(9.0))
+            .flex()
+            .items_center()
+            .gap(px(4.0))
+            .rounded(px(12.5))
+            .text_size(px(13.0))
+            .line_height(px(18.0))
+            .whitespace_nowrap()
+            .when(secondary, |button| {
+                button
+                    .bg(theme.control)
+                    .text_color(theme.text)
+                    .hover(move |style| style.bg(theme.control_hover))
+            })
+            .when(!secondary, |button| {
+                button
+                    .text_color(theme.text_muted)
+                    .hover(move |style| style.bg(theme.row_hover))
+            })
+    }
+
+    /// A small rotating spinner for status slots.
+    pub(super) fn spinner(color: gpui::Rgba, size: f32) -> impl IntoElement {
+        icon("pr-spinner", color.into())
+            .size(px(size))
+            .with_animation(
+                "pr-spinner",
+                gpui::Animation::new(std::time::Duration::from_millis(800)).repeat(),
+                |svg, delta| {
+                    svg.with_transformation(gpui::Transformation::rotate(gpui::percentage(delta)))
+                },
+            )
+    }
+
+    /// Radix menu surface: `p-1`, 20px radius, 90% surface, a doubled 0.5px
+    /// ring, and `0 8px 16px -4px` shadow.
+    pub(super) fn menu_surface(id: &'static str, theme: PrTheme) -> gpui::Stateful<Div> {
+        div()
+            .id(id)
+            .role(gpui::Role::Menu)
+            .p(px(4.0))
+            .flex()
+            .flex_col()
+            .rounded(px(20.0))
+            .bg(theme.menu_surface)
+            .shadow(vec![
+                gpui::BoxShadow::new(px(0.0), px(0.0), theme.border.into())
+                    .blur_radius(px(0.0))
+                    .spread_radius(px(0.5)),
+                gpui::BoxShadow::new(px(0.0), px(0.0), theme.border.into())
+                    .blur_radius(px(0.0))
+                    .spread_radius(px(0.5)),
+                gpui::BoxShadow::new(px(0.0), px(8.0), theme.menu_shadow.into())
+                    .blur_radius(px(16.0))
+                    .spread_radius(px(-4.0)),
+            ])
+            .text_size(px(MENU_TEXT_SIZE))
+            .line_height(px(MENU_LINE_HEIGHT))
+            .text_color(theme.text)
+    }
+
+    /// One menu item: 28.56px, `px-2 py-[5px]`, 15px radius, 6px gap.
+    /// `highlighted` keeps the fill of an open submenu's trigger.
+    pub(super) fn menu_row(
+        id: impl Into<gpui::ElementId>,
+        theme: PrTheme,
+        highlighted: bool,
+        disabled: bool,
+    ) -> gpui::Stateful<Div> {
+        div()
+            .id(id)
+            .group("pr-menu-row")
+            .role(gpui::Role::MenuItem)
+            .flex_none()
+            .h(px(MENU_ROW_HEIGHT))
+            .px(px(8.0))
+            .flex()
+            .items_center()
+            .gap(px(6.0))
+            .rounded(px(15.0))
+            .when(disabled, |row| row.opacity(0.5))
+            .when(highlighted, |row| row.bg(theme.menu_hover))
+            .when(!disabled, |row| {
+                row.hover(move |style| style.bg(theme.menu_hover))
+            })
+    }
+
+    /// A menu item's 16px leading glyph at `opacity-75`.
+    pub(super) fn menu_icon(name: &'static str, theme: PrTheme) -> impl IntoElement {
+        icon(name, theme.text.into())
+            .flex_none()
+            .size(px(MENU_ICON_SIZE))
+            .opacity(0.75)
+    }
+
+    /// A GitHub avatar at `size`: `rounded-full bg-white`, the cached image
+    /// once it has downloaded.
+    pub(super) fn avatar(&self, url: Option<&str>, size: f32) -> Div {
+        let path = url.and_then(|url| self.avatar_path(url)).cloned();
+        div()
+            .flex_none()
+            .size(px(size))
+            .rounded_full()
+            .overflow_hidden()
+            .bg(gpui::white())
+            .when_some(path, |avatar, path| {
+                avatar.child(
+                    gpui::img(path)
+                        .size(px(size))
+                        .rounded_full()
+                        .object_fit(gpui::ObjectFit::Cover),
+                )
+            })
+    }
+
+    /// A classic-scroller thumb for `scroll`, drawn when the system shows
+    /// scroll bars and the content overflows.
+    pub(super) fn scrollbar_thumb(
+        &self,
+        scroll: &gpui::ScrollHandle,
+        cx: &gpui::App,
+    ) -> Option<Div> {
+        if cx.should_auto_hide_scrollbars() {
+            return None;
+        }
+        let viewport = f32::from(scroll.bounds().size.height);
+        let max_offset = f32::from(scroll.max_offset().y).max(0.0);
+        if max_offset <= 0.5 || viewport <= 0.0 {
+            return None;
+        }
+        let track = (viewport - SCROLLBAR_TRACK_INSET_TOP - SCROLLBAR_TRACK_INSET_BOTTOM).max(0.0);
+        let thumb = (track * viewport / (viewport + max_offset))
+            .max(SCROLLBAR_THUMB_MIN_LENGTH)
+            .min(track);
+        let progress = (-f32::from(scroll.offset().y) / max_offset).clamp(0.0, 1.0);
+        Some(
+            div()
+                .absolute()
+                .top(px(SCROLLBAR_TRACK_INSET_TOP + (track - thumb) * progress))
+                .right(px(SCROLLBAR_THUMB_INSET_RIGHT))
+                .w(px(SCROLLBAR_THUMB_WIDTH))
+                .h(px(thumb))
+                .rounded_full()
+                .bg(self.theme().scrollbar_thumb),
+        )
+    }
+
+    /// A popover whose top-right corner sits at the control's bottom-right
+    /// plus `offset`.
+    pub(super) fn popup_at(
+        &self,
+        key: &str,
+        offset: gpui::Point<gpui::Pixels>,
+        menu: impl IntoElement,
+    ) -> gpui::AnyElement {
+        let mut popup = gpui::anchored()
+            .anchor(gpui::Anchor::TopRight)
+            .snap_to_window_with_margin(px(8.0))
+            .child(
+                div()
+                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .child(menu),
+            );
+        if let Some(bounds) = self.control_bounds.borrow().get(key) {
+            popup = popup.position(bounds.bottom_right() + offset);
+        }
+        gpui::deferred(popup).into_any_element()
     }
 
     pub(super) fn popup(&self, key: &str, menu: impl IntoElement) -> gpui::AnyElement {

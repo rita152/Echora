@@ -246,12 +246,22 @@ fn font_smoothing_allowed_by_user() -> bool {
 
 impl MacTextSystemState {
     /// Resolves (and caches) a hidden system UI face for `family`.
-    fn hidden_font(&mut self, family: &str, size: f32, weight: f32) -> Option<CTFont> {
-        let key = (family.to_owned(), size.to_bits(), weight.to_bits());
+    fn hidden_font(
+        &mut self,
+        family: &str,
+        cascade: &CTFont,
+        size: f32,
+        weight: f32,
+    ) -> Option<CTFont> {
+        let key = (
+            format!("{family}\u{0}{}", cascade.postscript_name()),
+            size.to_bits(),
+            weight.to_bits(),
+        );
         if let Some(font) = self.hidden_fonts.get(&key) {
             return Some(font.clone());
         }
-        let font = hidden_ui_font(family, size.into(), weight)?;
+        let font = hidden_ui_font(cascade, size.into(), weight)?;
         self.hidden_fonts.insert(key, font.clone());
         Some(font)
     }
@@ -723,13 +733,15 @@ impl MacTextSystemState {
                                 // `.AppleSymbols`, …) are not reachable through
                                 // the public family list, so re-selecting them
                                 // would fall back to a different public face.
-                                // `+[NSFont fontWithName:size:]` resolves them
-                                // exactly like Blink: for Simplified Chinese that
-                                // is `.PingFang UI Display SC` with 0.9587em
-                                // ideographs, matching the reference app's text
-                                // width instead of the 1em public `PingFang SC`.
+                                // Keep the face CoreText's cascade chose, which
+                                // carries Blink's optical size: for Simplified
+                                // Chinese `.PingFangUITextSC` (0.992em
+                                // ideographs) below 20px and the Display face
+                                // (0.952em) from 20px up. Only the weight is
+                                // re-applied.
                                 self.hidden_font(
                                     &family,
+                                    &fallback,
                                     f32::from(actual_font_size),
                                     request.weight.0,
                                 )
@@ -758,6 +770,16 @@ impl MacTextSystemState {
                         CFString::new("GPUIRequestedWeight").as_concrete_TypeRef(),
                         &CFNumber::from(request.weight.0),
                     );
+                    // CSS `letter-spacing`: CoreText's kern attribute adds the
+                    // same advance after every character of the run, trailing
+                    // one included, as Blink lays it out.
+                    if let Some(spacing) = request.features.letter_spacing() {
+                        string.set_attribute(
+                            cf_range,
+                            unsafe { core_text::string_attributes::kCTKernAttributeName },
+                            &CFNumber::from(spacing * f32::from(actual_font_size)),
+                        );
+                    }
                 }
                 break_ligature = !break_ligature;
             }
@@ -826,30 +848,19 @@ impl MacTextSystemState {
     }
 }
 
-/// Resolves a hidden system font family the way Blink does.
+/// Resolves a hidden system font face the way Blink does.
 ///
 /// `CTFontCreateWithName` refuses names that start with a dot (it returns Times
 /// New Roman), and font-kit only lists public families, so the system UI faces
-/// cannot be reached through either path. `+[NSFont fontWithName:size:]` does
-/// resolve them, including the Display optical size that Chromium uses for
-/// Chinese text.
-fn hidden_ui_font(family: &str, size: CGFloat, weight: f32) -> Option<CTFont> {
+/// cannot be reached by name. The face CoreText's cascade returned for the run
+/// (`cascade`) already has the optical size Blink uses (`+[NSFont
+/// fontWithName:size:]` would always pick the Display face); only its weight
+/// instance is re-selected.
+fn hidden_ui_font(cascade: &CTFont, size: CGFloat, weight: f32) -> Option<CTFont> {
     use core_text::font::CTFontRef;
     use core_text::font_descriptor::{kCTFontVariationAttribute, new_from_attributes};
-    use objc::{class, msg_send, sel, sel_impl};
 
-    let name = CFString::new(family);
-    let base = unsafe {
-        let font: *mut objc::runtime::Object = msg_send![
-            class!(NSFont),
-            fontWithName: name.as_concrete_TypeRef()
-            size: size
-        ];
-        if font.is_null() {
-            return None;
-        }
-        CTFont::wrap_under_get_rule(font as CTFontRef)
-    };
+    let base = cascade.clone_with_font_size(size);
     // The family exposes static faces at 400/500/600/700, and Blink's CSS font
     // matching picks the nearest one: 400 for 430, 500 for 500, 600 for bold
     // text. The plain face is already the 400 instance.

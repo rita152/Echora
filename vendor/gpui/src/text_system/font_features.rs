@@ -7,10 +7,39 @@ use schemars::{JsonSchema, json_schema};
 #[derive(Default, Clone, Eq, PartialEq, Hash)]
 pub struct FontFeatures(pub Arc<Vec<(String, u32)>>);
 
+/// Reserved pseudo-feature carrying CSS `letter-spacing` in thousandths of an
+/// em (the value is an `i32` stored in the `u32` slot). The text system
+/// applies it as tracking instead of passing it to the font.
+pub const LETTER_SPACING_FEATURE: &str = "gpui.letter-spacing";
+
 impl FontFeatures {
     /// Disables `calt`.
     pub fn disable_ligatures() -> Self {
         Self(Arc::new(vec![("calt".into(), 0)]))
+    }
+
+    /// Returns these features plus CSS `letter-spacing` of `em` (for example
+    /// `-0.025` for Tailwind's `tracking-tight`).
+    pub fn with_letter_spacing(&self, em: f32) -> Self {
+        let mut features: Vec<(String, u32)> = self
+            .0
+            .iter()
+            .filter(|(tag, _)| tag != LETTER_SPACING_FEATURE)
+            .cloned()
+            .collect();
+        features.push((
+            LETTER_SPACING_FEATURE.into(),
+            (em * 1000.0).round() as i32 as u32,
+        ));
+        Self(Arc::new(features))
+    }
+
+    /// The letter spacing requested with [`Self::with_letter_spacing`], in em.
+    pub fn letter_spacing(&self) -> Option<f32> {
+        self.0
+            .iter()
+            .find(|(tag, _)| tag == LETTER_SPACING_FEATURE)
+            .map(|(_, value)| *value as i32 as f32 / 1000.0)
     }
 
     /// Get the tag name list of the font OpenType features

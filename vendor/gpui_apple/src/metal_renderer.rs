@@ -164,6 +164,20 @@ impl MetalRenderer {
         #[cfg(any(test, feature = "test-support"))]
         layer.set_framebuffer_only(false);
         unsafe {
+            // Scene colors are sRGB. Declaring that lets Core Animation colour
+            // match the drawable to the display, as Chromium does for CSS
+            // colours; without a colorspace a wide-gamut display shows the raw
+            // values, visibly oversaturated next to the reference app.
+            #[cfg(target_os = "macos")]
+            if let Some(class) = objc::runtime::Class::get("NSColorSpace") {
+                let space: *mut objc::runtime::Object = msg_send![class, sRGBColorSpace];
+                if !space.is_null() {
+                    let cg_space: *mut std::ffi::c_void = msg_send![space, CGColorSpace];
+                    if !cg_space.is_null() {
+                        let _: () = msg_send![&*layer, setColorspace: cg_space];
+                    }
+                }
+            }
             let _: () = msg_send![&*layer, setAllowsNextDrawableTimeout: NO];
             let _: () = msg_send![&*layer, setNeedsDisplayOnBoundsChange: YES];
             let _: () = msg_send![

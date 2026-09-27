@@ -15,9 +15,9 @@ use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
 use super::model::{
-    Check, CheckState, Comment, Commit, GroupKind, ListTab, PullRequestDetail, PullRequestFilter,
-    PullRequestGroup, PullRequestStatus, PullRequestSummary, ReviewThread, TimelineEntry,
-    TimelineKind, User, relative_age,
+    Check, CheckState, CiStatus, Comment, Commit, GroupKind, ListTab, PullRequestDetail,
+    PullRequestFilter, PullRequestGroup, PullRequestStatus, PullRequestSummary, ReviewThread,
+    StatusFilter, TimelineEntry, TimelineKind, User, dedupe_sections, relative_age,
 };
 use crate::git_review::{FileDiff, process};
 
@@ -34,8 +34,11 @@ const SEARCH_FIELDS: &str = r#"
   headRefName
   baseRefName
   updatedAt
-  author { login }
+  author { login avatarUrl(size: 48) }
   repository { nameWithOwner }
+  mergeable
+  mergeStateStatus
+  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
 "#;
 
 fn gh(args: &[&str], input: Option<&[u8]>, cwd: Option<&Path>) -> Result<String> {
@@ -122,6 +125,17 @@ fn summary_from(node: &Value) -> PullRequestSummary {
         _ if draft => PullRequestStatus::Draft,
         _ => PullRequestStatus::Open,
     };
+    let author = node.get("author").unwrap_or(&Value::Null);
+    let ci_status = match node
+        .pointer("/commits/nodes/0/commit/statusCheckRollup/state")
+        .and_then(Value::as_str)
+    {
+        Some("SUCCESS") => CiStatus::Passing,
+        Some("FAILURE" | "ERROR") => CiStatus::Failing,
+        Some("PENDING" | "EXPECTED") => CiStatus::Pending,
+        _ => CiStatus::None,
+    };
+    let mergeable = text(node, "mergeable").unwrap_or_default();
     PullRequestSummary {
         number: u64_value(node, "number"),
         title: text(node, "title").unwrap_or_default(),
@@ -136,8 +150,13 @@ fn summary_from(node: &Value) -> PullRequestSummary {
         deletions: u64_value(node, "deletions"),
         status,
         age: relative_age(&text(node, "updatedAt").unwrap_or_default(), now()),
-        author: text(node.get("author").unwrap_or(&Value::Null), "login").unwrap_or_default(),
+        author: text(author, "login").unwrap_or_default(),
+        author_avatar_url: text(author, "avatarUrl"),
         url: text(node, "url").unwrap_or_default(),
+        can_merge: mergeable == "MERGEABLE"
+            && text(node, "mergeStateStatus").as_deref() == Some("CLEAN"),
+        has_conflicts: mergeable == "CONFLICTING",
+        ci_status,
     }
 }
 
@@ -179,19 +198,71 @@ fn search(query: &str) -> Result<Vec<PullRequestSummary>> {
     Ok(results)
 }
 
-fn query_for(_tab: ListTab, filter: &PullRequestFilter, relation: &str) -> String {
-    let mut query = format!("is:pr {relation} archived:false");
+/// Search qualifiers the reference treats as choosing the relationship or the
+/// lifecycle itself (`mvi`/`oAn`): typing them replaces the view's own.
+const RELATIONSHIP_QUALIFIERS: &[&str] = &[
+    "author",
+    "assignee",
+    "commenter",
+    "involves",
+    "mentions",
+    "review-requested",
+    "reviewed-by",
+    "team-review-requested",
+    "user-review-requested",
+];
+const LIFECYCLE_QUALIFIERS: &[&str] = &["is", "state"];
+
+fn qualifier_names(text: &str) -> Vec<String> {
+    text.split_whitespace()
+        .filter_map(|token| {
+            let token = token.trim_start_matches('-');
+            let (name, value) = token.split_once(':')?;
+            (!name.is_empty() && !value.is_empty()).then(|| name.to_ascii_lowercase())
+        })
+        .collect()
+}
+
+/// Whether the typed text picks its own relationship, so the inbox collapses
+/// into one `Results` section.
+pub fn has_relationship_qualifier(text: &str) -> bool {
+    qualifier_names(text)
+        .iter()
+        .any(|name| RELATIONSHIP_QUALIFIERS.contains(&name.as_str()))
+}
+
+/// `is:pr archived:false <text> <relationship> <lifecycle> <repo>`, the
+/// reference's search string, newest update first.
+fn query_for(filter: &PullRequestFilter, text: &str, relation: &str) -> String {
+    let text = text.trim();
+    let names = qualifier_names(text);
+    let mut parts = vec!["is:pr".to_string()];
+    if !names.iter().any(|name| name == "archived") {
+        parts.push("archived:false".into());
+    }
+    if !text.is_empty() {
+        parts.push(text.to_string());
+    }
+    if !relation.is_empty() {
+        parts.push(relation.to_string());
+    }
+    let explicit_lifecycle = names
+        .iter()
+        .any(|name| LIFECYCLE_QUALIFIERS.contains(&name.as_str()));
     let status = filter.status.query();
-    if !status.is_empty() {
-        query.push(' ');
-        query.push_str(status);
+    if !explicit_lifecycle && !status.is_empty() {
+        parts.push(status.to_string());
     }
-    if let Some(repository) = filter.repository.as_deref() {
-        query.push_str(" repo:");
-        query.push_str(repository);
+    let explicit_repository = names
+        .iter()
+        .any(|name| matches!(name.as_str(), "repo" | "org" | "user"));
+    if let Some(repository) = filter.repository.as_deref()
+        && !explicit_repository
+    {
+        parts.push(format!("repo:{repository}"));
     }
-    query.push_str(" sort:updated-desc");
-    query
+    parts.push("sort:updated-desc".into());
+    parts.join(" ")
 }
 
 /// Users available in the reviewer picker: assignable users of the repository,
@@ -221,56 +292,56 @@ impl GhClient {
         Self { cwd }
     }
 
-    /// Lists the groups the reference app renders for a tab.
-    pub fn list(&self, tab: ListTab, filter: &PullRequestFilter) -> Result<Vec<PullRequestGroup>> {
+    /// Lists the sections the reference inbox renders for a tab and search
+    /// text. `All` and `Reviewing` share the reference's reduction;
+    /// `Reviewing` always lists open pull requests, which is why its status
+    /// filter is disabled there. Text with its own relationship qualifier
+    /// searches once, into a single `Results` section.
+    pub fn list(
+        &self,
+        tab: ListTab,
+        filter: &PullRequestFilter,
+        text: &str,
+    ) -> Result<Vec<PullRequestGroup>> {
+        let single = |kind: GroupKind, items: Vec<PullRequestSummary>| {
+            if items.is_empty() {
+                Vec::new()
+            } else {
+                vec![PullRequestGroup { kind, items }]
+            }
+        };
+        if has_relationship_qualifier(text) {
+            return Ok(single(
+                GroupKind::Results,
+                search(&query_for(filter, text, ""))?,
+            ));
+        }
         match tab {
-            ListTab::All => {
-                let mut groups = Vec::new();
-                let requested = search(&query_for(tab, filter, "review-requested:@me"))?;
-                if !requested.is_empty() {
-                    groups.push(PullRequestGroup {
-                        kind: GroupKind::ReviewRequested,
-                        items: requested,
-                    });
+            ListTab::All | ListTab::Reviewing => {
+                let mut effective = filter.clone();
+                if tab == ListTab::Reviewing {
+                    effective.status = StatusFilter::Open;
                 }
-                let reviewed = search(&query_for(tab, filter, "reviewed-by:@me"))?;
-                if !reviewed.is_empty() {
-                    groups.push(PullRequestGroup {
-                        kind: GroupKind::PreviouslyReviewed,
-                        items: reviewed,
-                    });
-                }
-                let authored = search(&query_for(tab, filter, "author:@me"))?;
-                if !authored.is_empty() {
-                    groups.push(PullRequestGroup {
-                        kind: GroupKind::Authored,
-                        items: authored,
-                    });
-                }
-                Ok(groups)
-            }
-            ListTab::Reviewing => {
-                let items = search(&query_for(tab, filter, "review-requested:@me"))?;
-                Ok(if items.is_empty() {
-                    Vec::new()
+                let user_requested =
+                    search(&query_for(&effective, text, "user-review-requested:@me"))?;
+                let requested = search(&query_for(&effective, text, "review-requested:@me"))?;
+                let reviewed = search(&query_for(&effective, text, "reviewed-by:@me"))?;
+                let authored = if tab == ListTab::All {
+                    Some(search(&query_for(&effective, text, "author:@me"))?)
                 } else {
-                    vec![PullRequestGroup {
-                        kind: GroupKind::ReviewRequested,
-                        items,
-                    }]
-                })
+                    None
+                };
+                Ok(dedupe_sections(
+                    user_requested,
+                    requested,
+                    reviewed,
+                    authored,
+                ))
             }
-            ListTab::Authored => {
-                let items = search(&query_for(tab, filter, "author:@me"))?;
-                Ok(if items.is_empty() {
-                    Vec::new()
-                } else {
-                    vec![PullRequestGroup {
-                        kind: GroupKind::Authored,
-                        items,
-                    }]
-                })
-            }
+            ListTab::Authored => Ok(single(
+                GroupKind::Authored,
+                search(&query_for(filter, text, "author:@me"))?,
+            )),
         }
     }
 
@@ -933,5 +1004,23 @@ mod tests {
             url.query_pairs().collect::<Vec<_>>(),
             vec![("ref".into(), "topic/a&b".into())]
         );
+    }
+    #[test]
+    fn search_text_joins_the_reference_query() {
+        let filter = PullRequestFilter {
+            status: StatusFilter::Merged,
+            repository: Some("rita152/Echora".into()),
+        };
+        assert_eq!(
+            query_for(&filter, "  workspace ", "author:@me"),
+            "is:pr archived:false workspace author:@me is:merged repo:rita152/Echora sort:updated-desc"
+        );
+        // Explicit qualifiers replace the view's own lifecycle and repository.
+        assert_eq!(
+            query_for(&filter, "is:open repo:a/b", "author:@me"),
+            "is:pr archived:false is:open repo:a/b author:@me sort:updated-desc"
+        );
+        assert!(has_relationship_qualifier("fix author:octocat"));
+        assert!(!has_relationship_qualifier("fix: author"));
     }
 }

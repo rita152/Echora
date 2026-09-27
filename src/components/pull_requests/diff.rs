@@ -5,7 +5,7 @@ pub(super) use viewport::DiffViewport;
 
 use gpui::{Div, SharedString, div, prelude::*, px};
 
-use super::{DetailTab, PullRequestsView, ReviewScope, theme::LIST_PANE_WIDTH};
+use super::{DetailTab, PullRequestsView, ReviewScope, theme::DETAIL_MIN_WIDTH};
 use crate::components::icons::icon;
 use crate::git_review::{FileDiff, LineKind};
 use crate::theme::UI_MONOSPACE_FONT_FAMILY;
@@ -166,20 +166,30 @@ impl PullRequestsView {
         })
     }
 
-    /// The diff code column: pane width minus the file tree, the 53px gutter,
-    /// and the 14px padding on each side of the code.
+    /// Lays out the two panes for this frame, then the diff code column: pane
+    /// width minus the file tree, the 53px gutter, and the 14px padding on
+    /// each side of the code.
     pub(super) fn measure_code_width(&mut self, window: &gpui::Window) {
         let viewport = f32::from(window.viewport_size().width);
         let page = if self.is_fullscreen() {
             viewport
+        } else if self.page_width > 0.0 {
+            self.page_width
         } else {
             viewport - crate::components::sidebar::SIDEBAR_WIDTH
         };
-        let compact = page < 850.0;
+        let height = if self.page_height > 0.0 {
+            self.page_height
+        } else {
+            f32::from(window.viewport_size().height)
+        };
+        let detail = super::detail_panel_width(page, height, self.detail_ratio);
+        let compact = page - detail < DETAIL_MIN_WIDTH;
+        self.compact_layout = compact;
         self.list_width = if compact {
             if self.selected.is_none() { page } else { 0.0 }
         } else {
-            LIST_PANE_WIDTH.min(page * 0.445)
+            page - detail
         };
         self.pane_width = if self.fullscreen || (compact && self.selected.is_some()) {
             page

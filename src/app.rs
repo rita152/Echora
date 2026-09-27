@@ -238,6 +238,14 @@ impl ChatApp {
         .detach();
         cx.subscribe(
             &pull_requests,
+            |this, _, event: &crate::components::pull_requests::DetailPanelResized, _| {
+                this.workspace_store
+                    .set_pull_requests_detail_ratio(event.ratio);
+            },
+        )
+        .detach();
+        cx.subscribe(
+            &pull_requests,
             |this, _, event: &OpenChatForPullRequest, cx| {
                 let prompt = event.prompt.clone();
                 let cwd = this
@@ -753,8 +761,15 @@ impl ChatApp {
         self.showing_pull_requests = true;
         self.sidebar
             .update(cx, |sidebar, cx| sidebar.set_pull_requests_open(true, cx));
+        let ratio = self
+            .workspace_store
+            .snapshot()
+            .preferences
+            .pull_requests_detail_ratio
+            .map(|ratio| ratio.0);
         self.pull_requests.update(cx, |view, cx| {
             view.set_mode(self.mode, cx);
+            view.set_detail_ratio(ratio, cx);
             view.refresh(cx);
         });
         cx.notify();

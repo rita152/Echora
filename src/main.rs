@@ -457,21 +457,19 @@ fn schedule_pull_requests_screenshot(
                         // points across the whole frame and refuse to save a
                         // capture whose samples are all the same colour. A real
                         // page always differs between its panes.
+                        // A light page can be white at a handful of points,
+                        // so sample a dense grid: any text or rule breaks it.
                         let flat = {
-                            let mut samples = Vec::new();
-                            for (fx, fy) in
-                                [(0.1, 0.1), (0.3, 0.5), (0.5, 0.25), (0.7, 0.7), (0.9, 0.9)]
-                            {
-                                let x = ((image.width() as f32) * fx) as u32;
-                                let y = ((image.height() as f32) * fy) as u32;
-                                samples.push(image.get_pixel(
-                                    x.min(image.width() - 1),
-                                    y.min(image.height() - 1),
-                                ));
-                            }
-                            samples.windows(2).all(|pair| {
-                                (0..3)
-                                    .all(|channel| pair[0][channel].abs_diff(pair[1][channel]) <= 2)
+                            let first = *image.get_pixel(0, 0);
+                            let steps = 48u32;
+                            (0..steps).all(|row| {
+                                (0..steps).all(|column| {
+                                    let x = (image.width() - 1) * column / (steps - 1);
+                                    let y = (image.height() - 1) * row / (steps - 1);
+                                    let pixel = image.get_pixel(x, y);
+                                    (0..3)
+                                        .all(|channel| first[channel].abs_diff(pixel[channel]) <= 2)
+                                })
                             })
                         };
                         if flat {

@@ -283,10 +283,11 @@ impl LineWrapper {
                     "{truncation_affix}{}",
                     &line[line.ceil_char_boundary(truncate_ix + 1)..]
                 )),
+                // Blink's `text-overflow: ellipsis` keeps whatever fits,
+                // trailing spaces and punctuation included ("draft's …").
                 TruncateFrom::End => SharedString::from(format!(
                     "{}{truncation_affix}",
-                    line[..truncate_ix]
-                        .trim_end_matches(|c: char| c.is_whitespace() || c.is_ascii_punctuation())
+                    &line[..truncate_ix]
                 )),
                 TruncateFrom::Middle => unreachable!("Middle truncation is handled above"),
             };
