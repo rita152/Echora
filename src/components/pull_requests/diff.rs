@@ -585,6 +585,8 @@ impl PullRequestsView {
                     .text_size(px(14.0))
                     .line_height(px(21.0))
                     .bg(theme.diff_header_surface)
+                    // `hover:bg-primary-ghost-hover`
+                    .hover(move |style| style.bg(theme.control_hover))
                     .child(
                         div()
                             .flex_1()
@@ -763,25 +765,18 @@ impl PullRequestsView {
     }
 
     /// A hunk separator: a 32px row whose `6px 8px 8px 6px` box, inset 2px,
-    /// reads `N unmodified lines` in 12px system type.
-    fn hunk_expander(
-        &self,
-        file_index: usize,
-        file: &FileDiff,
-        hunk_index: usize,
-        gap: u32,
-        cx: &mut gpui::Context<Self>,
-    ) -> gpui::Stateful<Div> {
+    /// reads `N unmodified lines` in 12px system type. The reference offers no
+    /// expansion here (it would need the full file), so the row is static.
+    fn hunk_expander(&self, file: &FileDiff, hunk_index: usize, gap: u32) -> gpui::Stateful<Div> {
         let theme = self.theme();
         let key = format!("{}:{hunk_index}", file.path);
-        let view = cx.entity();
         let label = if gap == 1 {
             "1 unmodified line".to_owned()
         } else {
             format!("{gap} unmodified lines")
         };
         if self.file_splits(file) {
-            return self.split_hunk_expander(file_index, key, label, cx);
+            return self.split_hunk_expander(key, label);
         }
         div()
             .id(SharedString::from(format!("pr-expander-{key}")))
@@ -789,14 +784,7 @@ impl PullRequestsView {
             .px(px(2.0))
             .flex()
             .bg(theme.surface)
-            .cursor_pointer()
-            .role(gpui::Role::Button)
             .aria_label(SharedString::from(label.clone()))
-            .on_click(move |_, _, cx| {
-                view.update(cx, |view, cx| {
-                    view.expand_context(file_index, key.clone(), cx)
-                });
-            })
             .child(
                 div()
                     .flex_1()
@@ -817,28 +805,14 @@ impl PullRequestsView {
     /// A hunk separator in split view: each half is a filled band (the old
     /// side from the edge, the new side ending 8px short with 8px corners)
     /// across the 2px gap, and only the old side reads `N unmodified lines`.
-    fn split_hunk_expander(
-        &self,
-        file_index: usize,
-        key: String,
-        label: String,
-        cx: &mut gpui::Context<Self>,
-    ) -> gpui::Stateful<Div> {
+    fn split_hunk_expander(&self, key: String, label: String) -> gpui::Stateful<Div> {
         let theme = self.theme();
-        let view = cx.entity();
         div()
             .id(SharedString::from(format!("pr-expander-{key}")))
             .h(px(SEPARATOR_HEIGHT))
             .flex()
             .bg(theme.surface)
-            .cursor_pointer()
-            .role(gpui::Role::Button)
             .aria_label(SharedString::from(label.clone()))
-            .on_click(move |_, _, cx| {
-                view.update(cx, |view, cx| {
-                    view.expand_context(file_index, key.clone(), cx)
-                });
-            })
             .child(
                 div()
                     .flex_1()
@@ -915,35 +889,6 @@ impl PullRequestsView {
             })
     }
 
-    /// A real file line revealed by an expander.
-    fn context_line(
-        &self,
-        key: &str,
-        number: u32,
-        text: &str,
-        _cx: &mut gpui::Context<Self>,
-    ) -> gpui::Stateful<Div> {
-        let theme = self.theme();
-        div()
-            .id(SharedString::from(format!("pr-context-{key}-{number}")))
-            .flex()
-            .items_stretch()
-            .bg(theme.surface)
-            .child(self.gutter_cell(LineKind::Context, Some(number)))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .px(px(CELL_PADDING))
-                    .font_family(UI_MONOSPACE_FONT_FAMILY)
-                    .text_size(px(12.0))
-                    .line_height(px(LINE_HEIGHT))
-                    .text_color(theme.diff_context_text)
-                    .whitespace_nowrap()
-                    .child(self.code_text(text, Self::language_for(key))),
-            )
-    }
-
     fn diff_line(
         &self,
         file_index: usize,
@@ -1008,15 +953,17 @@ impl PullRequestsView {
                         "pr-line-add-{}-{hunk_index}-{line_index}-{old}",
                         file.path
                     )))
+                    // `[data-utility-button]`: a 1lh square in the text color
+                    // over the number cell, 29px from the gutter's edge.
                     .absolute()
-                    .left(px(2.0))
+                    .left(px(28.96875))
                     .top(px(0.0))
-                    .size(px(20.0))
+                    .size(px(LINE_HEIGHT))
                     .flex()
                     .items_center()
                     .justify_center()
-                    .rounded(px(6.0))
-                    .bg(theme.surface)
+                    .rounded(px(4.0))
+                    .bg(theme.text)
                     .cursor_pointer()
                     .opacity(0.0)
                     .group_hover("pr-line", |style| style.opacity(1.0))
@@ -1039,7 +986,7 @@ impl PullRequestsView {
                             });
                         }
                     })
-                    .child(icon("add", theme.text_muted.into()).size(px(14.0))),
+                    .child(icon("pr-diff-plus", theme.surface.into()).size(px(16.0))),
             )
             .when(selected, |container| {
                 container.child(self.inline_comment_box(cx))
@@ -1205,6 +1152,85 @@ impl PullRequestsView {
                     .font_weight(gpui::FontWeight::NORMAL)
                     .child(rows),
             )
+    }
+
+    /// A tree row (`[data-type=item]`): 29px, `px-[3px]`, 5px gaps, 6px radius,
+    /// indented 12.5px per level, filled while selected or hovered. A hovered
+    /// row reads in the default color and, after a rest, names itself in a
+    /// tooltip below it.
+    fn tree_row(
+        &self,
+        key: String,
+        name: String,
+        depth: usize,
+        selected: bool,
+        cx: &mut gpui::Context<Self>,
+    ) -> gpui::Stateful<Div> {
+        let theme = self.theme();
+        let view = cx.entity();
+        let hover_key = key.clone();
+        let tooltip = (self.tree_tooltip.as_deref() == Some(key.as_str()))
+            .then(|| self.tree_tooltip_overlay(&key, name));
+        div()
+            .id(SharedString::from(key.clone()))
+            .relative()
+            .flex_none()
+            .h(px(TREE_ROW_HEIGHT))
+            .px(px(3.0))
+            .flex()
+            .items_center()
+            .gap(px(5.0))
+            .rounded(px(TREE_ROW_RADIUS))
+            .cursor_pointer()
+            .role(gpui::Role::TreeItem)
+            .child(self.control_anchor(key))
+            .children(tooltip)
+            .when(depth > 0, |row| {
+                row.child(div().flex_none().w(px(depth as f32 * TREE_INDENT - 5.0)))
+            })
+            .when(selected, |row| row.bg(theme.row_selected))
+            // Hover fills 8% (`primary-ghost-hover`), selection 5%.
+            .hover(move |style| style.bg(theme.control_hover).text_color(theme.text))
+            .on_hover(move |hovered, _, cx| {
+                let key = hover_key.clone();
+                view.update(cx, |view, cx| view.set_tree_hover(key, *hovered, cx));
+            })
+    }
+
+    /// The tree row tooltip (`role=tooltip`, `data-side=bottom`): 13/18 type in
+    /// a 20px-radius popover 2px under the row's left edge.
+    fn tree_tooltip_overlay(&self, key: &str, name: String) -> gpui::AnyElement {
+        let theme = self.theme();
+        let mut anchored = gpui::anchored().snap_to_window_with_margin(px(8.0));
+        if let Some(bounds) = self.control_bounds.borrow().get(key) {
+            anchored = anchored.position(bounds.bottom_left() + gpui::point(px(0.0), px(2.0)));
+        }
+        gpui::deferred(
+            anchored.child(
+                div()
+                    .max_w(px(320.0))
+                    .px(px(12.0))
+                    .py(px(5.0))
+                    .rounded(px(20.0))
+                    .border(px(1.0))
+                    .border_color(gpui::Rgba {
+                        a: 0.05,
+                        ..theme.text
+                    })
+                    .bg(theme.popover_surface)
+                    .shadow(vec![
+                        gpui::BoxShadow::new(px(0.0), px(8.0), gpui::rgba(0x0f172a33).into())
+                            .blur_radius(px(18.0)),
+                    ])
+                    .text_size(px(13.0))
+                    .line_height(px(18.0))
+                    .font_weight(crate::theme::UI_BODY_FONT_WEIGHT)
+                    .text_color(theme.text)
+                    .child(name),
+            ),
+        )
+        .with_priority(2)
+        .into_any_element()
     }
 
     /// Scope dropdown of the review tab: all changes or a single commit.
@@ -1639,11 +1665,12 @@ impl PullRequestsView {
                 chevron
             };
             rows = rows.child(
-                tree_row(
-                    SharedString::from(format!("pr-tree-folder-{folder_path}")),
+                self.tree_row(
+                    format!("pr-tree-folder-{folder_path}"),
+                    label.clone(),
                     depth,
                     false,
-                    theme,
+                    cx,
                 )
                 .aria_label(SharedString::from(label.clone()))
                 .aria_expanded(!collapsed)
@@ -1698,11 +1725,12 @@ impl PullRequestsView {
                 _ => ("pr-tree-status-modified", theme.status_modified),
             };
             rows = rows.child(
-                tree_row(
-                    SharedString::from(format!("pr-tree-{}", file.path)),
+                self.tree_row(
+                    format!("pr-tree-{}", file.path),
+                    file_name(&file.path),
                     depth,
                     selected,
-                    theme,
+                    cx,
                 )
                 .aria_label(SharedString::from(file.path.clone()))
                 .aria_selected(selected)
@@ -1761,32 +1789,6 @@ const TREE_CHEVRON: gpui::Rgba = gpui::Rgba {
     b: 0x8a as f32 / 255.0,
     a: 1.0,
 };
-
-/// A tree row (`[data-type=item]`): 29px, `px-[3px]`, 5px gaps, 6px radius,
-/// indented 12.5px per level, filled while selected or hovered.
-fn tree_row(
-    id: SharedString,
-    depth: usize,
-    selected: bool,
-    theme: super::theme::PrTheme,
-) -> gpui::Stateful<Div> {
-    div()
-        .id(id)
-        .flex_none()
-        .h(px(TREE_ROW_HEIGHT))
-        .px(px(3.0))
-        .flex()
-        .items_center()
-        .gap(px(5.0))
-        .rounded(px(TREE_ROW_RADIUS))
-        .cursor_pointer()
-        .role(gpui::Role::TreeItem)
-        .when(depth > 0, |row| {
-            row.child(div().flex_none().w(px(depth as f32 * TREE_INDENT - 5.0)))
-        })
-        .when(selected, |row| row.bg(theme.row_selected))
-        .hover(move |style| style.bg(theme.row_selected))
-}
 
 /// A tree row's name: the stem truncates while a file keeps its extension.
 fn tree_label(name: &str, file: bool) -> Div {

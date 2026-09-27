@@ -61,10 +61,6 @@ pub(super) enum RowKind {
         hunk: usize,
         count: u32,
     },
-    Context {
-        hunk: usize,
-        number: u32,
-    },
     Code {
         hunk: usize,
         left: Option<usize>,
@@ -108,7 +104,6 @@ struct RowsKey {
     loading: bool,
     filter: String,
     collapsed: std::collections::HashSet<String>,
-    expanded: std::collections::HashSet<String>,
     layout: super::super::DiffLayout,
     rich: bool,
     contexts: HashMap<String, usize>,
@@ -200,7 +195,6 @@ impl PullRequestsView {
             loading: self.diff_loading,
             filter: self.tree_filter.read(cx).text().trim().to_lowercase(),
             collapsed: self.collapsed_files.clone(),
-            expanded: self.expanded_context.clone(),
             layout: self.diff_layout,
             rich: self.rich,
             contexts: self
@@ -309,22 +303,10 @@ impl PullRequestsView {
                     );
                     maximum = maximum.max(f32::from(line.width()));
                 };
-                match row.kind {
-                    RowKind::Code { hunk, left, right } => {
-                        for index in [left, right].into_iter().flatten() {
-                            measure(&file.hunks[hunk].lines[index].text);
-                        }
+                if let RowKind::Code { hunk, left, right } = row.kind {
+                    for index in [left, right].into_iter().flatten() {
+                        measure(&file.hunks[hunk].lines[index].text);
                     }
-                    RowKind::Context { number, .. } => {
-                        if let Some(text) = self
-                            .file_lines
-                            .get(&file.path)
-                            .and_then(|lines| lines.get(number.saturating_sub(1) as usize))
-                        {
-                            measure(text);
-                        }
-                    }
-                    _ => {}
                 }
             }
             self.diff_viewport.max_line_width = Some(maximum + GUTTER_WIDTH + CELL_PADDING * 2.0);
@@ -366,19 +348,9 @@ impl PullRequestsView {
                 let gap = hunk_new_start(&hunk.header)
                     .unwrap_or(1)
                     .saturating_sub(start);
-                let context_key = format!("{}:{hunk_index}", file.path);
-                if key.expanded.contains(&context_key) {
-                    if let Some(lines) = self.file_lines.get(&file.path) {
-                        for offset in 0..(gap as usize)
-                            .min(lines.len().saturating_sub(start.saturating_sub(1) as usize))
-                        {
-                            push(RowKind::Context {
-                                hunk: hunk_index,
-                                number: start + offset as u32,
-                            });
-                        }
-                    }
-                } else if gap > 0 {
+                // `N unmodified lines`: the reference cannot load the file
+                // here, so the gap only reports its size.
+                if gap > 0 {
                     push(RowKind::Gap {
                         hunk: hunk_index,
                         count: gap,
@@ -516,13 +488,8 @@ impl PullRequestsView {
                 .p(px(16.0))
                 .child("Binary file changed. Open file to view it on GitHub.")
                 .into_any_element(),
-            RowKind::Gap { hunk, count } => self
-                .hunk_expander(row.file, file, hunk, count, cx)
-                .into_any_element(),
-            RowKind::Context { hunk, number } => {
-                let text = &self.file_lines[&file.path][number.saturating_sub(1) as usize];
-                self.context_line(&format!("{}:{hunk}", file.path), number, text, cx)
-                    .into_any_element()
+            RowKind::Gap { hunk, count } => {
+                self.hunk_expander(file, hunk, count).into_any_element()
             }
             RowKind::Code { hunk, left, right } if self.file_splits(file) => {
                 // The halves meet across a 2px surface gap: the old side's
@@ -643,7 +610,7 @@ mod tests {
         view.update(cx, |view, _| {
             view.diff = crate::git_review::parse_unified("diff --git a/a.rs b/a.rs\n--- a/a.rs\n+++ b/a.rs\n@@ -1 +1 @@\n-old\n+new\ndiff --git a/b.rs b/b.rs\n--- a/b.rs\n+++ b/b.rs\n@@ -4 +4 @@\n-before\n+after\n");
             let mut key = RowsKey {
-                generation: 1, count: 2, loading: false, filter: String::new(), collapsed: Default::default(), expanded: Default::default(), layout: Default::default(),
+                generation: 1, count: 2, loading: false, filter: String::new(), collapsed: Default::default(), layout: Default::default(),
                 rich: false, contexts: Default::default(), errors: Default::default(), inline: None,
             };
             let rows = view.build_diff_rows(&key);
@@ -657,14 +624,12 @@ mod tests {
             key.collapsed.insert("b.rs".into());
             assert_eq!(view.build_diff_rows(&key), vec![Row { file: 1, kind: RowKind::Header }]);
             key.collapsed.clear();
-            key.expanded.insert("b.rs:0".into());
-            view.file_lines.insert("b.rs".into(), vec!["one".into(), "two".into(), "three".into(), "after".into()]);
             key.layout = crate::components::pull_requests::DiffLayout::Split;
             let rows = view.build_diff_rows(&key);
-            assert_eq!(rows.len(), 6);
-            assert_eq!(rows[3].kind, RowKind::Context { hunk: 0, number: 3 });
-            assert_eq!(rows[4].kind, RowKind::Code { hunk: 0, left: Some(0), right: Some(1) });
-            assert_eq!(rows[5].kind, RowKind::End);
+            assert_eq!(rows.len(), 4);
+            assert_eq!(rows[1].kind, RowKind::Gap { hunk: 0, count: 3 });
+            assert_eq!(rows[2].kind, RowKind::Code { hunk: 0, left: Some(0), right: Some(1) });
+            assert_eq!(rows[3].kind, RowKind::End);
         });
     }
 }

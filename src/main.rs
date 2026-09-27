@@ -405,6 +405,22 @@ fn retry_pull_requests_screenshot(
 }
 
 #[cfg(feature = "screenshot")]
+static CAPTURE_POINTER_SENT: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// The `--pointer=x,y` capture position, in window points.
+#[cfg(feature = "screenshot")]
+fn capture_pointer() -> Option<gpui::Point<gpui::Pixels>> {
+    let value =
+        std::env::args().find_map(|arg| arg.strip_prefix("--pointer=").map(str::to_owned))?;
+    let (x, y) = value.split_once(',')?;
+    Some(gpui::point(
+        gpui::px(x.trim().parse().ok()?),
+        gpui::px(y.trim().parse().ok()?),
+    ))
+}
+
+#[cfg(feature = "screenshot")]
 /// Waits until the Pull Requests page has finished loading, then saves the
 /// window and exits. Used for the reference/GPUI pixel comparisons so captures
 /// never depend on pointer position or timing.
@@ -447,6 +463,30 @@ fn schedule_pull_requests_screenshot(
         // an unpresented window renders the flat grey startup view, which the
         // probe refuses to save.
         if app.read(cx).pull_requests_capture_ready(cx) {
+            // `--pointer=x,y` hovers a point once the page is ready, so hover
+            // states can be captured; the remaining stable frames repaint it.
+            if let Some(position) = capture_pointer()
+                && !CAPTURE_POINTER_SENT.swap(true, std::sync::atomic::Ordering::Relaxed)
+            {
+                window.dispatch_event(
+                    gpui::PlatformInput::MouseMove(gpui::MouseMoveEvent {
+                        position,
+                        pressed_button: None,
+                        modifiers: gpui::Modifiers::default(),
+                    }),
+                    cx,
+                );
+                window.refresh();
+                schedule_pull_requests_screenshot(
+                    window,
+                    app,
+                    path,
+                    deadline,
+                    stable.max(3),
+                    frame + 1,
+                );
+                return;
+            }
             if stable == 0 {
                 match window.render_to_image() {
                     Ok(image) => {

@@ -44,6 +44,9 @@ pub struct OpenPullRequestChat {
     pub thread_id: String,
 }
 
+/// How long the pointer rests on a file-tree row before its name tooltip.
+const TREE_TOOLTIP_DELAY: Duration = Duration::from_millis(500);
+
 /// The Code tab's diff layout, cycled by its view toggle.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub(super) enum DiffLayout {
@@ -140,6 +143,10 @@ pub struct PullRequestsView {
     /// The system shows classic scroll bars, so the diff reserves their
     /// 11px gutter (`overflow-y-auto` without `scrollbar-gutter`).
     classic_scrollbars: bool,
+    /// The file-tree row under the pointer, and the one whose name tooltip
+    /// shows (after `TREE_TOOLTIP_DELAY`, or at once while one is open).
+    tree_hover: Option<String>,
+    tree_tooltip: Option<String>,
     /// The Pull Requests page's own size, reported by the host every frame
     /// (the window minus the revealed sidebar and its hairline).
     page_width: f32,
@@ -223,7 +230,6 @@ pub struct PullRequestsView {
     tree_filter: Entity<PromptInput>,
     collapsed_folders: HashSet<String>,
     selected_file: Option<String>,
-    expanded_context: HashSet<String>,
     inline_comment: Option<InlineComment>,
     inline_editor: Option<Entity<FileEditor>>,
     scrolled_to_file: Option<String>,
@@ -369,6 +375,8 @@ impl PullRequestsView {
             list_width: 593.0,
             compact_layout: false,
             classic_scrollbars: false,
+            tree_hover: None,
+            tree_tooltip: None,
             page_width: 0.0,
             page_height: 0.0,
             detail_ratio: None,
@@ -435,7 +443,6 @@ impl PullRequestsView {
             tree_filter,
             collapsed_folders: HashSet::new(),
             selected_file: None,
-            expanded_context: HashSet::new(),
             inline_comment: None,
             inline_editor: None,
             scrolled_to_file: None,
@@ -634,6 +641,10 @@ impl PullRequestsView {
             return false;
         }
         if self.capture_intent.is_some() || self.pending_detail_scroll.is_some() {
+            return false;
+        }
+        // A hovered tree row is still waiting for its tooltip.
+        if self.tree_hover.is_some() && self.tree_tooltip.is_none() {
             return false;
         }
         if self.capture_expect_selection && self.selected.is_none() {
@@ -1240,7 +1251,6 @@ impl PullRequestsView {
         self.file_lines_loading.clear();
         self.file_errors.clear();
         self.collapsed_files.clear();
-        self.expanded_context.clear();
         self.selected_file = None;
         self.inline_comment = None;
         self.inline_editor = None;
@@ -1798,6 +1808,35 @@ impl PullRequestsView {
         cx.notify();
     }
 
+    /// Tracks the pointer over file-tree rows for their name tooltip.
+    pub(super) fn set_tree_hover(&mut self, key: String, hovered: bool, cx: &mut Context<Self>) {
+        if !hovered {
+            if self.tree_hover.as_deref() == Some(key.as_str()) {
+                self.tree_hover = None;
+                self.tree_tooltip = None;
+                cx.notify();
+            }
+            return;
+        }
+        self.tree_hover = Some(key.clone());
+        // Moving between rows keeps the tooltip up, as Radix skips the delay.
+        if self.tree_tooltip.is_some() {
+            self.tree_tooltip = Some(key);
+            cx.notify();
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(TREE_TOOLTIP_DELAY).await;
+            let _ = this.update(cx, |view, cx| {
+                if view.tree_hover.as_deref() == Some(key.as_str()) {
+                    view.tree_tooltip = Some(key);
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
     pub fn toggle_folder(&mut self, path: String, cx: &mut Context<Self>) {
         if !self.collapsed_folders.remove(&path) {
             self.collapsed_folders.insert(path);
@@ -1805,28 +1844,12 @@ impl PullRequestsView {
         cx.notify();
     }
 
-    /// Expands an `N unmodified lines` bar: fetch the file at the head commit
-    /// (once per path) and then reveal the lines it hides.
-    pub fn expand_context(&mut self, file: usize, key: String, cx: &mut Context<Self>) {
-        let Some(path) = self.diff.get(file).map(|file| file.path.clone()) else {
-            return;
-        };
-        self.expanded_context.insert(key.clone());
-        if self.file_lines.contains_key(&path) || self.file_lines_loading.contains(&path) {
-            cx.notify();
-            return;
-        }
-        self.load_file_lines(path, cx);
-        cx.notify();
-    }
-
-    /// Lines fetched for a path, when an expander needs them.
+    /// Lines fetched for a path, when the rich preview needs them.
     pub(super) fn context_lines(&self, path: &str) -> Option<&Vec<String>> {
         self.file_lines.get(path)
     }
 
-    /// Loads one file's lines at the head commit (shared by the context
-    /// expanders and the activity code previews).
+    /// Loads one file's lines at the head commit for the rich preview.
     fn load_file_lines(&mut self, path: String, cx: &mut Context<Self>) {
         let Some(summary) = self.selected.clone() else {
             return;
@@ -1860,8 +1883,6 @@ impl PullRequestsView {
                     }
                     Err(error) => {
                         view.file_errors.insert(path.clone(), error.clone());
-                        view.expanded_context
-                            .retain(|key| !key.starts_with(&format!("{path}:")));
                         view.show_notice(error, cx);
                     }
                 }
