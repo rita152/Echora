@@ -28,6 +28,24 @@ impl gpui::Render for PullRequestsView {
         self.take_capture_offset();
         self.prepare_diff_viewport(window, cx);
         // Expand once the list has placed the hunk, so the anchor holds.
+        if self.capture_collapse_all && !self.diff.is_empty() {
+            self.capture_collapse_all = false;
+            self.collapse_all(cx);
+        }
+        if let Some(line) = self.capture_inline_comment
+            && let Some(file) = self.diff.first()
+        {
+            self.capture_inline_comment = None;
+            let path = file.path.clone();
+            let line = line
+                .or_else(|| {
+                    file.hunks
+                        .first()
+                        .and_then(|hunk| hunk.lines.iter().find_map(|line| line.new))
+                })
+                .unwrap_or(1);
+            self.begin_inline_comment(0, path, line, false, cx);
+        }
         if self.capture_expand_first_gap && self.hunk_offset(0, 0).is_some() {
             self.capture_expand_first_gap = false;
             self.expand_gap(0, 0, false, cx);
@@ -57,10 +75,12 @@ impl gpui::Render for PullRequestsView {
             .bg(theme.surface)
             .track_focus(&self.focus)
             .on_key_down(cx.listener(|view, event: &gpui::KeyDownEvent, _, cx| {
+                // Escape closes menus and tooltips; like the reference, it
+                // leaves an inline comment draft, full screen, the file tree,
+                // and the selection as they are.
                 if event.keystroke.key == "escape" {
                     view.dismiss_menus(cx);
                     view.dismiss_tooltip(cx);
-                    view.cancel_inline_comment(cx);
                     cx.stop_propagation();
                 }
             }))

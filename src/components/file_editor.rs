@@ -151,6 +151,9 @@ pub struct FileEditor {
     language: Option<String>,
     prose_label: Option<String>,
     placeholder: String,
+    /// `--composer-editor-placeholder-opacity`: 1 for form composers, 0.5
+    /// for the default ProseMirror placeholder.
+    placeholder_opacity: f32,
     /// Font size and line height overriding the prose defaults.
     metrics: Option<(f32, f32)>,
     composer: bool,
@@ -218,6 +221,7 @@ impl FileEditor {
             language,
             prose_label: None,
             placeholder: String::new(),
+            placeholder_opacity: 1.0,
             metrics: None,
             composer: false,
             read_only: false,
@@ -300,6 +304,10 @@ impl FileEditor {
     }
     pub fn set_placeholder(&mut self, placeholder: impl Into<String>, cx: &mut Context<Self>) {
         self.placeholder = placeholder.into();
+        cx.notify();
+    }
+    pub fn set_placeholder_opacity(&mut self, opacity: f32, cx: &mut Context<Self>) {
+        self.placeholder_opacity = opacity;
         cx.notify();
     }
     pub fn set_text_silently(&mut self, text: &str, cx: &mut Context<Self>) {
@@ -788,7 +796,11 @@ impl FileEditor {
             let placeholder = self.placeholder_text();
             let mut run = window.text_style().to_run(placeholder.len());
             run.font = ui_font();
-            run.color = theme.text_tertiary.into();
+            run.color = gpui::Rgba {
+                a: theme.text_tertiary.a * self.placeholder_opacity,
+                ..theme.text_tertiary
+            }
+            .into();
             let line = window.text_system().shape_line(
                 placeholder.to_owned().into(),
                 px(self.font_size()),
@@ -876,8 +888,10 @@ impl FileEditor {
                 ));
             }
         }
+        // A frame snapped to device pixels can sit a fraction under its
+        // lines; only real overflow shows the thumb.
         if !self.preview_collapsed
-            && self.rows.len() as f32 * self.line_height() > f32::from(bounds.size.height)
+            && self.rows.len() as f32 * self.line_height() > f32::from(bounds.size.height) + 0.5
         {
             let height = f32::from(bounds.size.height);
             let total = self.rows.len() as f32 * self.line_height() + 16.;

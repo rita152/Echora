@@ -351,9 +351,16 @@ impl PullRequestsView {
                             } else {
                                 "Collapse all diffs"
                             },
-                            icon("review-collapse", theme.text.into())
-                                .size(px(16.0))
-                                .into_any_element(),
+                            icon(
+                                if all_collapsed {
+                                    "review-expand"
+                                } else {
+                                    "review-collapse"
+                                },
+                                theme.text.into(),
+                            )
+                            .size(px(16.0))
+                            .into_any_element(),
                             cx,
                         ),
                     )
@@ -513,9 +520,16 @@ impl PullRequestsView {
                                 } else {
                                     "Collapse all diffs"
                                 },
-                                icon("review-collapse", theme.text.into())
-                                    .size(px(16.0))
-                                    .into_any_element(),
+                                icon(
+                                    if all_collapsed {
+                                        "review-expand"
+                                    } else {
+                                        "review-collapse"
+                                    },
+                                    theme.text.into(),
+                                )
+                                .size(px(16.0))
+                                .into_any_element(),
                                 cx,
                             ),
                         ))
@@ -1191,11 +1205,15 @@ impl PullRequestsView {
             .flex()
             .items_stretch()
             .bg(match line.kind {
+                _ if selected => theme.diff_selected_line,
                 LineKind::Added => theme.diff_added_surface,
                 LineKind::Deleted => theme.diff_deleted_surface,
                 LineKind::Context => theme.surface,
             })
-            .child(self.gutter_cell(line.kind, anchor))
+            .child(self.gutter_cell(line.kind, anchor).when(selected, |cell| {
+                cell.bg(theme.diff_selected_gutter)
+                    .text_color(theme.diff_selected_number)
+            }))
             .child(
                 // Wrapping needs a definite width on a block that directly
                 // holds the text; a flex child would be measured unconstrained.
@@ -1242,7 +1260,8 @@ impl PullRequestsView {
                     .rounded(px(4.0))
                     .bg(theme.text)
                     .cursor_pointer()
-                    .opacity(0.0)
+                    // It stays up on the line a comment is being written on.
+                    .opacity(if selected { 1.0 } else { 0.0 })
                     .group_hover("pr-line", |style| style.opacity(1.0))
                     .role(gpui::Role::Button)
                     .aria_label(SharedString::from(format!(
@@ -1263,7 +1282,7 @@ impl PullRequestsView {
                             });
                         }
                     })
-                    .child(icon("pr-diff-plus", theme.surface.into()).size(px(16.0))),
+                    .child(icon("pr-diff-plus", theme.diff_utility_glyph.into()).size(px(16.0))),
             )
             .when(selected, |container| {
                 container.child(self.inline_comment_box(cx))
@@ -1274,6 +1293,11 @@ impl PullRequestsView {
             )
     }
 
+    /// The inline comment draft under its line (`[data-line-annotation]`):
+    /// the selected gutter continues beside a `p-1.5`, `max-w-3xl` column
+    /// holding the comment card: the viewer's avatar and login with `Comment
+    /// on line R171` (`L` for the old side), the 14px editor, and 24px
+    /// `Cancel` and `Comment` buttons, the latter at 40% until there is text.
     fn inline_comment_box(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let theme = self.theme();
         let view = cx.entity();
@@ -1282,81 +1306,156 @@ impl PullRequestsView {
                 .inline_editor
                 .as_ref()
                 .is_some_and(|editor| !editor.read(cx).text().trim().is_empty());
+        let lines = self
+            .inline_editor
+            .as_ref()
+            .map_or(1, |editor| editor.read(cx).visual_line_count().clamp(1, 12));
+        let viewer = self
+            .detail
+            .as_ref()
+            .and_then(|detail| detail.viewer.as_ref());
+        let login = viewer
+            .map(|viewer| viewer.login.clone())
+            .unwrap_or_default();
+        let avatar = viewer.and_then(|viewer| viewer.avatar_url.clone());
+        let target = self
+            .inline_comment
+            .as_ref()
+            .map_or(String::new(), |inline| {
+                format!(
+                    "Comment on line {}{}",
+                    if inline.old { "L" } else { "R" },
+                    inline.line
+                )
+            });
+        let caption = |text: String| {
+            div()
+                .min_w(px(0.0))
+                .truncate()
+                .text_size(px(12.0))
+                .line_height(px(16.0))
+                .text_color(theme.text_muted)
+                .child(text)
+        };
+        let button = |id: &'static str, label: &'static str| {
+            div()
+                .id(id)
+                .flex_none()
+                .h(px(24.0))
+                .px(px(8.0))
+                .flex()
+                .items_center()
+                .rounded(px(12.5))
+                .border(px(1.0))
+                .border_color(gpui::transparent_black())
+                .text_size(px(12.0))
+                .line_height(px(16.0))
+                .role(gpui::Role::Button)
+                .aria_label(label)
+                .child(label)
+        };
         let cancel = view.clone();
-        div()
-            .p(px(8.0))
-            .pl(px(GUTTER_WIDTH))
-            .bg(theme.surface)
+        // `bg-primary-soft-alpha` over the surface, opaque: GPUI paints a box
+        // shadow under its box, where CSS clips it.
+        let fill = {
+            let (base, over) = (theme.surface, theme.soft_alpha);
+            let mix = |b: f32, o: f32| b + (o - b) * over.a;
+            gpui::Rgba {
+                r: mix(base.r, over.r),
+                g: mix(base.g, over.g),
+                b: mix(base.b, over.b),
+                a: 1.0,
+            }
+        };
+        let card = div()
+            .rounded(px(12.5))
+            .overflow_hidden()
+            .border(px(1.0))
+            .border_color(theme.border)
+            .bg(fill)
+            .shadow(vec![
+                gpui::BoxShadow::new(px(0.0), px(0.0), theme.field_border.into())
+                    .spread_radius(px(0.5)),
+                gpui::BoxShadow::new(px(0.0), px(3.0), gpui::rgba(0x0000000a).into())
+                    .blur_radius(px(7.5)),
+                gpui::BoxShadow::new(px(0.0), px(0.0), gpui::rgba(0x0000000d).into())
+                    .blur_radius(px(20.0)),
+            ])
+            .flex()
+            .flex_col()
+            .font(crate::theme::ui_font())
             .child(
                 div()
-                    .p(px(8.0))
-                    .rounded(px(16.0))
-                    .bg(theme.field_surface)
-                    .border(px(1.0))
-                    .border_color(theme.field_border)
+                    .h(px(34.0))
+                    .pt(px(8.0))
+                    .pb(px(2.0))
+                    .px(px(12.0))
                     .flex()
-                    .flex_col()
+                    .items_center()
+                    .justify_between()
                     .gap(px(8.0))
-                    .children(
-                        self.inline_editor.clone().map(|editor| {
-                            Self::editor_frame(editor, 120.0, "pr-inline-editor-frame")
-                        }),
-                    )
                     .child(
                         div()
+                            .min_w(px(0.0))
                             .flex()
-                            .justify_end()
-                            .gap(px(4.0))
-                            .child(
-                                div()
-                                    .id("pr-inline-cancel")
-                                    .h(px(28.0))
-                                    .px(px(8.0))
-                                    .flex()
-                                    .items_center()
-                                    .rounded(px(12.5))
-                                    .text_size(px(13.0))
-                                    .cursor_pointer()
-                                    .hover(move |style| style.bg(theme.control_hover))
-                                    .role(gpui::Role::Button)
-                                    .aria_label("Cancel")
-                                    .on_click(move |_, _, cx| {
-                                        cancel
-                                            .update(cx, |view, cx| view.cancel_inline_comment(cx));
-                                    })
-                                    .child("Cancel"),
-                            )
-                            .child(
-                                div()
-                                    .id("pr-inline-comment")
-                                    .h(px(28.0))
-                                    .px(px(8.0))
-                                    .flex()
-                                    .items_center()
-                                    .rounded(px(12.5))
-                                    .text_size(px(13.0))
-                                    .when(has_text, |button| {
-                                        button
-                                            .bg(theme.inverted_surface)
-                                            .text_color(theme.inverted_text)
-                                            .cursor_pointer()
-                                            .on_click(move |_, _, cx| {
-                                                view.update(cx, |view, cx| {
-                                                    view.submit_inline_comment(cx)
-                                                });
-                                            })
-                                    })
-                                    .when(!has_text, |button| {
-                                        button
-                                            .bg(theme.control)
-                                            .text_color(theme.text_muted)
-                                            .opacity(0.6)
-                                    })
-                                    .role(gpui::Role::Button)
-                                    .aria_label("Comment")
-                                    .child("Comment"),
-                            ),
+                            .items_center()
+                            .gap(px(10.0))
+                            .child(self.avatar(avatar.as_deref(), 24.0))
+                            .child(caption(login)),
+                    )
+                    .child(caption(target)),
+            )
+            .child(
+                div()
+                    .p(px(12.0))
+                    .children(self.inline_editor.clone().map(|editor| {
+                        Self::editor_frame(editor, 22.75 * lines as f32, "pr-inline-editor-frame")
+                    })),
+            )
+            .child(
+                div()
+                    .px(px(12.0))
+                    .py(px(8.0))
+                    .flex()
+                    .justify_end()
+                    .gap(px(8.0))
+                    .child(
+                        button("pr-inline-cancel", "Cancel")
+                            .text_color(theme.text_muted)
+                            .cursor_pointer()
+                            .hover(move |style| style.bg(theme.control_hover))
+                            .on_click(move |_, _, cx| {
+                                cancel.update(cx, |view, cx| view.cancel_inline_comment(cx));
+                            }),
+                    )
+                    .child(
+                        button("pr-inline-comment", "Comment")
+                            .bg(theme.inverted_surface)
+                            .border_color(theme.border)
+                            .text_color(theme.inverted_text)
+                            .when(!has_text, |button| button.opacity(0.4))
+                            .when(has_text, |button| {
+                                button.cursor_pointer().on_click(move |_, _, cx| {
+                                    view.update(cx, |view, cx| view.submit_inline_comment(cx));
+                                })
+                            }),
                     ),
+            );
+        div()
+            .flex()
+            .items_stretch()
+            .child(
+                div()
+                    .flex_none()
+                    .w(px(GUTTER_WIDTH))
+                    .bg(theme.diff_annotation_gutter),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .bg(theme.surface)
+                    .child(div().max_w(px(768.0)).p(px(6.0)).child(card)),
             )
     }
 

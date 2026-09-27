@@ -128,6 +128,15 @@ pub struct PrTheme {
     pub diff_deleted_text: Rgba,
     /// Word highlights (`[data-diff-span]`).
     pub diff_added_word: Rgba,
+    /// A line chosen for an inline comment (`[data-selected-line]`): its
+    /// number cell, number, and code cell, then the gutter beside the
+    /// comment card under it.
+    pub diff_selected_gutter: Rgba,
+    pub diff_selected_number: Rgba,
+    pub diff_selected_line: Rgba,
+    pub diff_annotation_gutter: Rgba,
+    /// The `+` glyph on the line utility button.
+    pub diff_utility_glyph: Rgba,
     pub diff_deleted_word: Rgba,
     pub diff_gutter_text: Rgba,
     pub diff_context_text: Rgba,
@@ -255,6 +264,11 @@ impl PrTheme {
             diff_deleted_text: light(is_light, 0xba2623ff, 0xfa423eff),
             // `rgb(from … / .15)` in light, `/ .2` in dark.
             diff_added_word: light(is_light, 0x00a24026, 0x40c97733),
+            diff_selected_gutter: light(is_light, 0xd5e6ffff, 0x3a4f6bff),
+            diff_selected_number: light(is_light, 0x20649eff, 0x96c4ffff),
+            diff_selected_line: light(is_light, 0xe1edffff, 0x2e3a4aff),
+            diff_annotation_gutter: light(is_light, 0xd2e3fdff, 0x3a506bff),
+            diff_utility_glyph: light(is_light, 0xf6f6f6ff, 0x141414ff),
             diff_deleted_word: light(is_light, 0xba262326, 0xfa423e33),
             diff_gutter_text: light(is_light, 0x585858ff, 0xa1a1a1ff),
             diff_context_text: light(is_light, 0x0d0d0dff, 0xfcfcfcff),

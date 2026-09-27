@@ -160,6 +160,11 @@ pub struct PullRequestsView {
     expanded_gaps: std::collections::HashMap<String, (u32, u32)>,
     /// Capture helper: expand the first gap once the review diff arrives.
     capture_expand_first_gap: bool,
+    /// Capture: collapse every file once the diff has loaded.
+    capture_collapse_all: bool,
+    /// Capture: open an inline comment draft (on this new-file line of the
+    /// first file, or its first line) once the diff has loaded.
+    capture_inline_comment: Option<Option<u32>>,
     /// After revealing lines above a hunk, keep that hunk where it was:
     /// `(file, hunk, its first row's offset from the diff's top, frames)`.
     /// The anchor is re-applied while the revealed rows get measured.
@@ -398,6 +403,8 @@ impl PullRequestsView {
             tooltip: None,
             expanded_gaps: Default::default(),
             capture_expand_first_gap: false,
+            capture_collapse_all: false,
+            capture_inline_comment: None,
             pending_expand_anchor: None,
             page_width: 0.0,
             page_height: 0.0,
@@ -670,7 +677,11 @@ impl PullRequestsView {
         if !self.file_lines_loading.is_empty() {
             return false;
         }
-        if self.capture_expand_first_gap || self.pending_expand_anchor.is_some() {
+        if self.capture_expand_first_gap
+            || self.capture_collapse_all
+            || self.capture_inline_comment.is_some()
+            || self.pending_expand_anchor.is_some()
+        {
             return false;
         }
         // A hovered tree row is still waiting for its tooltip.
@@ -829,10 +840,8 @@ impl PullRequestsView {
                 }
                 "split" => self.diff_layout = DiffLayout::Split,
                 "auto-layout" => self.diff_layout = DiffLayout::Auto,
-                "collapse-all" => {
-                    let all: Vec<String> = self.diff.iter().map(|file| file.path.clone()).collect();
-                    self.collapsed_files.extend(all);
-                }
+                // The diff loads after the detail, so collapse once it has.
+                "collapse-all" => self.capture_collapse_all = true,
                 "review-options" => self.review_options_open = true,
                 "scope-menu" => self.scope_menu_open = true,
                 "scope-commits" => {
@@ -882,16 +891,14 @@ impl PullRequestsView {
                     self.list_menu = Some(ListMenu::Filter);
                     self.filter_submenu = Some(FilterSubmenu::Repository);
                 }
-                "inline-comment" => {
-                    if let Some(file) = self.diff.first() {
-                        let path = file.path.clone();
-                        let line = file
-                            .hunks
-                            .first()
-                            .and_then(|hunk| hunk.lines.iter().find_map(|line| line.new))
-                            .unwrap_or(1);
-                        self.begin_inline_comment(0, path, line, false, cx);
-                    }
+                // `inline-comment[=N]`: a draft on new-file line N of the
+                // first file (its first line by default) once the diff loads.
+                action if action == "inline-comment" || action.starts_with("inline-comment=") => {
+                    self.capture_inline_comment = Some(
+                        action
+                            .strip_prefix("inline-comment=")
+                            .and_then(|line| line.parse().ok()),
+                    );
                 }
                 _ => {}
             }
@@ -2073,8 +2080,11 @@ impl PullRequestsView {
     ) {
         let mode = self.mode;
         let editor = cx.new(|cx| {
-            let mut editor = FileEditor::prose(mode, "Request change", cx);
-            editor.set_accessible_name("Request change");
+            let mut editor = FileEditor::prose(mode, "Add a comment…", cx);
+            editor.set_placeholder("Add a comment…", cx);
+            editor.set_placeholder_opacity(0.5, cx);
+            editor.set_accessible_name("Add a comment…");
+            editor.set_text_metrics(14.0, 22.75, cx);
             editor
         });
         cx.subscribe(&editor, |_, _, _: &super::file_editor::EditorEvent, cx| {
