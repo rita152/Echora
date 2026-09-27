@@ -1394,6 +1394,34 @@ pub fn project_id_for_thread(thread: &ThreadSummary, projects: &[Project]) -> Op
     best.map(|(_, project)| project.project_id.clone())
 }
 
+/// Name the home heading and the composer's project control give the project a
+/// conversation targets. The reference prefers the project's trimmed name,
+/// then the folder name of its root; a project the list no longer carries is
+/// named after the conversation's working directory. A projectless
+/// conversation has no name.
+pub fn project_label(project_id: Option<&str>, cwd: &Path, projects: &[Project]) -> Option<String> {
+    let project_id = project_id?;
+    let folder_name = |path: &Path| {
+        path.file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .filter(|name| !name.is_empty())
+    };
+    match projects
+        .iter()
+        .find(|project| project.project_id == project_id)
+    {
+        Some(project) => {
+            let name = project.name.trim();
+            if name.is_empty() {
+                project.roots.first().and_then(|root| folder_name(root))
+            } else {
+                Some(name.to_owned())
+            }
+        }
+        None => folder_name(cwd),
+    }
+}
+
 /// Repository a git worktree belongs to. A linked worktree carries a `.git`
 /// file that points at `<repository>/.git/worktrees/<name>`; the reference
 /// sidebar files tasks started in such a worktree under the project that owns

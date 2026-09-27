@@ -508,6 +508,36 @@ fn cwd_fallback_uses_normalized_deepest_component_root_and_never_overrides_proje
 }
 
 #[test]
+fn project_label_prefers_the_name_then_the_root_then_the_working_directory() {
+    let mut named = project("named", 0);
+    named.name = "  LAG_创新  ".to_owned();
+    named.roots = vec![PathBuf::from("/Users/zp/Desktop/LAG_创新")];
+    let mut unnamed = project("unnamed", 1);
+    unnamed.name = " ".to_owned();
+    unnamed.roots = vec![PathBuf::from("/Volumes/ExternalSSD/GPUI")];
+    let projects = vec![named, unnamed];
+    let cwd = Path::new("/tmp/elsewhere/checkout");
+
+    assert_eq!(
+        project_label(Some("named"), cwd, &projects).as_deref(),
+        Some("LAG_创新")
+    );
+    assert_eq!(
+        project_label(Some("unnamed"), cwd, &projects).as_deref(),
+        Some("GPUI")
+    );
+    assert_eq!(
+        project_label(Some("missing"), cwd, &projects).as_deref(),
+        Some("checkout")
+    );
+    assert_eq!(project_label(None, cwd, &projects), None);
+    assert_eq!(
+        project_label(Some("missing"), Path::new("/"), &projects),
+        None
+    );
+}
+
+#[test]
 fn a_git_worktree_thread_belongs_to_the_project_that_owns_the_repository() {
     let root = std::env::temp_dir().join(format!("gpui-sidebar-worktree-{}", std::process::id()));
     let repository = root.join("repository");

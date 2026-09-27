@@ -175,6 +175,41 @@ pub fn project_repo(root: &Path) -> Option<ProjectRepo> {
     (!label.trim().is_empty()).then_some(ProjectRepo { root: top, label })
 }
 
+/// What the working directory is checked out to. The reference home heading
+/// invites building only in a Git repository, and its composer shows the
+/// branch control only while `HEAD` names a branch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Checkout {
+    NotRepository,
+    Branch(String),
+    Detached,
+}
+
+impl Checkout {
+    pub fn is_repository(&self) -> bool {
+        !matches!(self, Self::NotRepository)
+    }
+
+    pub fn branch(&self) -> Option<&str> {
+        match self {
+            Self::Branch(branch) => Some(branch),
+            Self::NotRepository | Self::Detached => None,
+        }
+    }
+}
+
+/// Resolves the checkout that owns `cwd`. `symbolic-ref` also names the unborn
+/// branch of a repository without commits, where `rev-parse HEAD` fails.
+pub fn checkout(cwd: &Path) -> Checkout {
+    if git_output(cwd, &["rev-parse", "--is-inside-work-tree"]).as_deref() != Some("true") {
+        return Checkout::NotRepository;
+    }
+    match git_output(cwd, &["symbolic-ref", "--quiet", "--short", "HEAD"]) {
+        Some(branch) => Checkout::Branch(branch),
+        None => Checkout::Detached,
+    }
+}
+
 /// Normalizes a Git remote the way the reference client does: an scp-style
 /// `user@host:path`, any `scheme://` form, embedded credentials, query strings,
 /// and a trailing `.git` all reduce to the last two path segments.

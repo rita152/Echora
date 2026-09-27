@@ -240,6 +240,7 @@ Computer Use 只能驱动 macOS 视作用户应用的 bundle，而且驱动过�
 | `--typography-specimen --typography-display=N` | 字体样本与显示器选择，见 `src/typography.rs`。 |
 | `--pull-requests [--pull-requests-select=N \| --pull-requests-title=TEXT] [--pull-requests-tab=code\|review] [--pull-requests-list-tab=all\|reviewing\|authored] [--pull-requests-status=open\|merged\|closed\|all] [--pull-requests-search=TEXT] [--pull-requests-file-tree] [--pull-requests-scroll=px] [--pull-requests-action=...] [--pull-requests-comment-menu]` | Pull Requests 页面确定性状态：列表、标签、搜索、过滤、分组、详情分节、diff、文件树、Review 标签，以及 `scripts/capture_pull_requests_gpui.sh` 使用的交互状态。 |
 | `--project-hover-card=NAME` | 不依赖指针直接打开指定项目（按名称或稳定 id）的侧栏悬停卡片，用于悬停卡片截图的静态部分。 |
+| `--new-chat-project=NAME` | 待侧栏列出指定项目（按名称或稳定 id）后，走项目行“新对话”按钮的同一路径在该项目中新建对话，使首页标题与输入框上方的项目、分支控件显示该项目。 |
 | `--thread-hover-card=TITLE` | 不依赖指针直接打开指定任务（按标题或稳定 id）的侧栏悬停卡片，用于悬停卡片截图的静态部分。 |
 | `--thread-rename=TITLE` | 不依赖指针直接打开指定任务（按标题或稳定 id）的重命名面板，用于重命名面板截图的静态部分。 |
 | `--sidebar-width=PX` | 以持久化宽度渲染侧栏（限制在 240–480），对应参考端用户把侧栏从默认 275 px 拖到其他宽度的情况。 |

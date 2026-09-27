@@ -1136,6 +1136,10 @@ fn main() {
         arg.strip_prefix("--thread-hover-card=")
             .map(ToOwned::to_owned)
     });
+    let new_chat_project = args.iter().find_map(|arg| {
+        arg.strip_prefix("--new-chat-project=")
+            .map(ToOwned::to_owned)
+    });
     let thread_rename = args
         .iter()
         .find_map(|arg| arg.strip_prefix("--thread-rename=").map(ToOwned::to_owned));
@@ -1463,6 +1467,9 @@ fn main() {
                         }
                         if let Some(project) = project_hover_card.clone() {
                             app.open_project_hover_card_for_capture(&project, cx);
+                        }
+                        if let Some(project) = new_chat_project.clone() {
+                            app.start_new_conversation_for_capture(&project, cx);
                         }
                         if let Some(thread) = thread_hover_card.clone() {
                             app.open_thread_hover_card_for_capture(&thread, cx);

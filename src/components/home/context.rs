@@ -82,6 +82,9 @@ pub(super) struct MainConversationSnapshot {
     pub(super) list: ListState,
     /// The floating user-message rail for this frame, when it is on screen.
     pub(super) navigation: Option<super::navigation::RailRender>,
+    /// Empty-state heading for the conversation's workspace; `None` while the
+    /// project's checkout, which picks its copy, is still being read.
+    pub(super) hero: Option<super::landing::HeroHeading>,
 }
 
 pub(super) struct CurrentTurnRows<'a> {

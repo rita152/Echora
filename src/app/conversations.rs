@@ -2,13 +2,13 @@
 
 use std::path::PathBuf;
 
-use gpui::{Context, Entity, prelude::*};
+use gpui::{Context, Entity, SharedString, prelude::*};
 
 use super::{ChatApp, ConversationHost, ConversationKey, DraftId, state::RightPanelMode};
 use crate::{
-    agent::{ProjectId, ThreadId},
+    agent::{Project, ProjectId, ThreadId},
     components::composer::{ComposerView, ConversationChanged},
-    workspace::project_id_for_thread,
+    workspace::{project_id_for_thread, project_label},
 };
 
 impl ChatApp {
@@ -27,6 +27,7 @@ impl ChatApp {
         composer.update(cx, |composer, cx| {
             composer.set_workspace_context(cwd, project_id, thread_id, cx);
         });
+        self.sync_project_labels(&self.workspace_store.snapshot().projects, cx);
         self.deactivate_review(cx);
         self.deactivate_side_chat(cx);
         self.active_conversation = key;
@@ -58,6 +59,17 @@ impl ChatApp {
             .update(cx, |home, cx| home.set_composer(composer, cx));
         cx.notify();
     }
+    /// Names every conversation after the project it targets, so the home
+    /// heading and the composer's project control follow renames.
+    pub(super) fn sync_project_labels(&mut self, projects: &[Project], cx: &mut Context<Self>) {
+        for host in self.conversation_hosts.values() {
+            let label = project_label(host.project_id.as_deref(), &host.cwd, projects)
+                .map(SharedString::from);
+            host.composer
+                .update(cx, |composer, cx| composer.set_project_label(label, cx));
+        }
+    }
+
     pub(super) fn start_draft(
         &mut self,
         project_id: Option<ProjectId>,

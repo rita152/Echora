@@ -854,6 +854,8 @@ pub struct SidebarView {
     project_repos_pending: HashSet<ProjectId>,
     /// Capture request that arrived before the workspace listed its projects.
     pending_project_hover_card: Option<String>,
+    /// New-chat capture request waiting for the workspace to list its projects.
+    pending_new_conversation: Option<String>,
     /// Capture request that arrived before the workspace listed the task.
     pending_thread_hover_card: Option<String>,
     hovered_section_id: Option<&'static str>,
@@ -936,6 +938,9 @@ impl SidebarView {
                         this.pending_project_hover_card = None;
                         this.open_project_hover_card_for_capture(&project, cx);
                     }
+                    if let Some(project) = this.pending_new_conversation.take() {
+                        this.start_new_conversation_for_capture(&project, cx);
+                    }
                     if let Some(thread) = this.pending_thread_hover_card.clone() {
                         this.pending_thread_hover_card = None;
                         this.open_thread_hover_card_for_capture(&thread, cx);
@@ -970,6 +975,7 @@ impl SidebarView {
             project_repos: HashMap::new(),
             project_repos_pending: HashSet::new(),
             pending_project_hover_card: None,
+            pending_new_conversation: None,
             pending_thread_hover_card: None,
             hovered_section_id: None,
             marquee_started_at: None,
@@ -1131,6 +1137,23 @@ impl SidebarView {
         self.project_hover_card = Some(project_id.clone());
         self.ensure_project_repo(project_id, cx);
         cx.notify();
+    }
+
+    /// Starts a chat in `project` (its name, then its stable id) through the
+    /// same path as the project row's new-chat button, for the screenshot path.
+    pub fn start_new_conversation_for_capture(&mut self, project: &str, cx: &mut Context<Self>) {
+        let target = self
+            .snapshot
+            .projects
+            .iter()
+            .find(|candidate| candidate.name == project || candidate.project_id == project)
+            .cloned();
+        let Some(target) = target else {
+            // The workspace may not have listed its projects yet.
+            self.pending_new_conversation = Some(project.to_owned());
+            return;
+        };
+        self.new_conversation(Some(&target), cx);
     }
 
     #[cfg(test)]

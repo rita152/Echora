@@ -446,6 +446,36 @@ fn project_repo_reads_the_origin_remote_like_the_reference_client() {
 }
 
 #[test]
+fn checkout_names_the_branch_the_composer_shows() {
+    let r = Repo::new();
+    // An unborn branch is still a branch: `symbolic-ref` names it before the
+    // first commit exists.
+    assert_eq!(checkout(&r.0), Checkout::Branch("main".into()));
+    r.write("file", b"fixture");
+    r.commit();
+    git(&r.0, &["checkout", "-b", "codex/s3-training-orchestration"]).unwrap();
+    let nested = r.0.join("nested");
+    std::fs::create_dir_all(&nested).unwrap();
+    assert_eq!(
+        checkout(&nested),
+        Checkout::Branch("codex/s3-training-orchestration".into())
+    );
+    git(&r.0, &["checkout", "--detach"]).unwrap();
+    assert_eq!(checkout(&r.0), Checkout::Detached);
+    assert!(checkout(&r.0).is_repository());
+    assert_eq!(checkout(&r.0).branch(), None);
+
+    let outside = std::env::temp_dir().join(format!(
+        "gpui-checkout-outside-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&outside).unwrap();
+    assert_eq!(checkout(&outside), Checkout::NotRepository);
+    let _ = std::fs::remove_dir_all(&outside);
+}
+
+#[test]
 fn origin_labels_follow_the_reference_normalization() {
     for (remote, expected) in [
         ("https://github.com/rita152/Echora.git", "rita152/Echora"),

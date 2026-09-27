@@ -278,6 +278,12 @@ impl ChatApp {
             sidebar.open_project_hover_card_for_capture(project, cx)
         });
     }
+    /// Starts a chat in a sidebar project for the screenshot path.
+    pub fn start_new_conversation_for_capture(&mut self, project: &str, cx: &mut Context<Self>) {
+        self.sidebar.update(cx, |sidebar, cx| {
+            sidebar.start_new_conversation_for_capture(project, cx)
+        });
+    }
     /// Opens the sidebar task hover card for the screenshot path.
     pub fn open_thread_hover_card_for_capture(&mut self, thread: &str, cx: &mut Context<Self>) {
         self.sidebar.update(cx, |sidebar, cx| {
