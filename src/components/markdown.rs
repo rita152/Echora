@@ -637,6 +637,9 @@ struct MarkdownRenderStyle {
     line_clamp: Option<MarkdownLineClamp>,
     /// Lines a plain paragraph shows before its ellipsis.
     paragraph_lines: Option<usize>,
+    /// Root prose keeps the chat's readable measure, centered; pull request
+    /// prose fills its column.
+    centered_measure: bool,
 }
 
 impl MarkdownRenderStyle {
@@ -647,6 +650,7 @@ impl MarkdownRenderStyle {
             layout: CHATGPT_MARKDOWN_LAYOUT,
             line_clamp: None,
             paragraph_lines: None,
+            centered_measure: true,
             palette: MarkdownPalette {
                 text: theme.markdown_text,
                 link: theme.markdown_link,
@@ -721,6 +725,7 @@ pub fn render_pull_request_markdown(source: &str, theme: Theme, scope: &str) -> 
     style.layout.base_line_height = PULL_REQUEST_BODY_LINE_HEIGHT;
     // `p { margin-bottom: var(--markdown-space) }` before a list or code.
     style.layout.paragraph_space = style.layout.markdown_space;
+    style.centered_measure = false;
     style.body_weight = PULL_REQUEST_BODY_WEIGHT;
     style.layout.quote_line_height = PULL_REQUEST_BODY_LINE_HEIGHT;
     render_block_sequence(
@@ -753,6 +758,7 @@ pub fn render_pull_request_comment_markdown(
     let document = parse_markdown(&source);
     let mut style = MarkdownRenderStyle::new(theme);
     style.line_clamp = line_clamp;
+    style.centered_measure = false;
     // Every block metric derives from the 13px `--markdown-space` (3.25px)
     // and `--markdown-line-height` (1.625em).
     let space = PULL_REQUEST_COMMENT_SIZE / 4.0;
@@ -939,7 +945,8 @@ fn render_block_sequence(
                 // Prose keeps its readable measure while root tables can use
                 // the surrounding conversation width, as in the desktop app.
                 .when(
-                    matches!(context, SequenceContext::Root)
+                    style.centered_measure
+                        && matches!(context, SequenceContext::Root)
                         && !matches!(block, MarkdownBlock::Table { .. }),
                     |element| element.max_w(px(style.layout.table_min_width)).mx_auto(),
                 )

@@ -791,6 +791,7 @@ impl PullRequestsView {
                     self.collapsed_files.extend(all);
                 }
                 "review-options" => self.review_options_open = true,
+                "fullscreen" => self.fullscreen = true,
                 "expand-commits" => {
                     let groups: Vec<usize> = self
                         .detail

@@ -172,9 +172,9 @@ impl PullRequestsView {
     /// each side of the code.
     pub(super) fn measure_code_width(&mut self, window: &gpui::Window) {
         let viewport = f32::from(window.viewport_size().width);
-        let page = if self.is_fullscreen() {
-            viewport
-        } else if self.page_width > 0.0 {
+        // Full screen still leaves the sidebar: the detail covers the main
+        // area, whose width the host reports.
+        let page = if self.page_width > 0.0 {
             self.page_width
         } else {
             viewport - crate::components::sidebar::SIDEBAR_WIDTH

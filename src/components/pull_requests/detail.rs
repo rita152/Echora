@@ -34,7 +34,7 @@ impl PullRequestsView {
             .children(self.detail_overlays(cx))
     }
 
-    fn detail_header(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
+    fn detail_header(&self, cx: &mut gpui::Context<Self>) -> gpui::AnyElement {
         let theme = self.theme();
         let has_detail = self.selected.is_some();
         let mut tabs = div()
@@ -256,6 +256,55 @@ impl PullRequestsView {
             );
         }
 
+        // `grid h-toolbar grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-3`:
+        // a detail panel 900px or wider (full screen, say) centers the tabs
+        // between the state glyph with the truncated title and the actions.
+        if has_detail && !self.compact() && self.pane_width >= DETAIL_WIDE_HEADER {
+            let title = self
+                .detail
+                .as_ref()
+                .map(|detail| detail.summary.title.clone())
+                .or_else(|| self.selected.as_ref().map(|pr| pr.title.clone()))
+                .unwrap_or_default();
+            return div()
+                .flex_none()
+                .h(px(TOOLBAR_HEIGHT))
+                .px(px(16.0))
+                .flex()
+                .items_center()
+                .gap(px(12.0))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .flex()
+                        .items_center()
+                        .gap(px(8.0))
+                        .when_some(status, |left, status| {
+                            left.child(Self::state_glyph(status, theme, 18.0))
+                        })
+                        .child(
+                            div()
+                                .min_w(px(0.0))
+                                .max_w(px(200.0))
+                                .truncate()
+                                .text_size(px(13.0))
+                                .line_height(px(18.5714))
+                                .text_color(theme.text)
+                                .child(title),
+                        ),
+                )
+                .child(tabs.flex_none())
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .flex()
+                        .justify_end()
+                        .child(actions),
+                )
+                .into_any_element();
+        }
         // `grid h-toolbar px-toolbar`: at this panel width the state glyph,
         // the tab list, and the actions sit in one row 4px apart.
         div()
@@ -287,6 +336,7 @@ impl PullRequestsView {
             })
             .child(tabs)
             .child(actions)
+            .into_any_element()
     }
 
     /// The plain state glyph (`PullRequestStatusIcon`): draft and open in
@@ -392,12 +442,13 @@ impl PullRequestsView {
             Theme::for_mode(self.mode),
             "pull-request-description",
         );
-        // `main.px-5.pb-5` with the stable 11px scrollbar gutter, then the
-        // page column (`gap-[var(--detail-page-section-gap)]`, 24px).
+        // The page column (`mx-auto max-w-[var(--thread-content-max-width)]`,
+        // 768px, `gap-[var(--detail-page-section-gap)]` 24px) inside
+        // `main.px-5.pb-5` with the 11px scrollbar gutter.
         let mut column = div()
-            .pl(px(PANE_PADDING))
-            .pr(px(PANE_PADDING + SCROLLBAR_GUTTER))
-            .pb(px(PANE_PADDING))
+            .w_full()
+            .max_w(px(DETAIL_CONTENT_MAX_WIDTH))
+            .mx_auto()
             .flex()
             .flex_col()
             .gap(px(24.0))
@@ -462,6 +513,9 @@ impl PullRequestsView {
                     .when_some(capture_offset, |wrapper, offset| {
                         wrapper.relative().top(px(-offset))
                     })
+                    .pl(px(PANE_PADDING))
+                    .pr(px(PANE_PADDING + SCROLLBAR_GUTTER))
+                    .pb(px(PANE_PADDING))
                     .child(column),
             )
             .into_any_element()

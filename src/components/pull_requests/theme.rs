@@ -25,6 +25,11 @@ pub const LIST_TOOLBAR_INSET_RIGHT: f32 = 8.0;
 pub const LIST_SEARCH_ROW_HEIGHT: f32 = 60.0;
 /// App-shell detail panel sizing (`app-shell:right-panel-width:v3`): the
 /// panel spans `320 + ratio * (max - 320)` where `max = main - 352`.
+/// The detail page column (`--thread-content-max-width`).
+pub const DETAIL_CONTENT_MAX_WIDTH: f32 = 768.0;
+/// From this detail width the header centers its tabs between the title and
+/// the actions (`@container/app-shell-detail-panel (min-width: 900px)`).
+pub const DETAIL_WIDE_HEADER: f32 = 900.0;
 pub const DETAIL_MIN_WIDTH: f32 = 320.0;
 pub const DETAIL_MAX_INSET: f32 = 352.0;
 /// Radix menu geometry (`contentWidth="menuNarrow"`, `app-menu-item`).
