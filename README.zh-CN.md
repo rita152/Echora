@@ -300,7 +300,7 @@ python3 scripts/compare_typography.py \
 
 `cargo test live_conversation_stream_timings -- --ignored --nocapture` 测量 500 次实时会话更新与 GPUI 布局耗时，并验证向上滚动后继续输出不会移动阅读位置。
 
-`cargo test streaming_reply` 与 `cargo test streaming::tests fade::tests repair::tests` 覆盖流式回复的节奏揭示（节拍、完成时补齐、减少动态效果）、淡入所依赖的分词、时间线与缓动曲线，以及未写完 Markdown 尾部的修复。
+`cargo test streaming_reply` 与 `cargo test -- streaming::tests fade::tests repair::tests` 覆盖流式回复的节奏揭示（节拍、完成时补齐、减少动态效果）、淡入所依赖的分词、时间线与缓动曲线，以及未写完 Markdown 尾部的修复。
 
 `cargo test streaming_highlight_timings -- --ignored --nocapture` 对比 500 次逐步增长的 Rust 代码更新在增量高亮与完整解析下的耗时，并校验高亮区间完全相等。
 

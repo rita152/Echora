@@ -300,7 +300,7 @@ python3 scripts/compare_typography.py \
 
 `cargo test live_conversation_stream_timings -- --ignored --nocapture` measures 500 live conversation updates plus GPUI layout and verifies that scrolling up stays anchored during subsequent output.
 
-`cargo test streaming_reply` and `cargo test streaming::tests fade::tests repair::tests` cover the paced reveal of a streaming reply (cadence, catch-up on completion, reduced motion), the word segmentation, fade timeline, and easing behind the fade-in, and the repair of an unfinished Markdown tail.
+`cargo test streaming_reply` and `cargo test -- streaming::tests fade::tests repair::tests` cover the paced reveal of a streaming reply (cadence, catch-up on completion, reduced motion), the word segmentation, fade timeline, and easing behind the fade-in, and the repair of an unfinished Markdown tail.
 
 `cargo test streaming_highlight_timings -- --ignored --nocapture` compares incremental syntax highlighting with a full parse for 500 growing Rust-code updates and checks exact span equality.
 
