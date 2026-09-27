@@ -1771,6 +1771,7 @@ impl Render for HomeView {
                     activities: conversation_activity,
                     list: self.conversation_list.clone(),
                     navigation: navigation_rail,
+                    hero: landing::hero_heading(self.composer.read(cx).workspace_presentation()),
                 },
             ),
             HomePresentation::Subagent => subagent_conversation(
@@ -1894,6 +1895,8 @@ impl Render for HomeView {
     }
 }
 
+#[cfg(test)]
+mod landing_tests;
 #[cfg(test)]
 mod resume_activity_regression_tests;
 #[cfg(test)]

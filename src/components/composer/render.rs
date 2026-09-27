@@ -1,12 +1,13 @@
 //! Render behavior and presentation for the prompt composer.
 
 use gpui::{
-    BoxShadow, Context, Div, MouseButton, Render, Window, deferred, div, hsla, prelude::*, px, rgba,
+    Bounds, BoxShadow, ContentMask, Context, Div, Hsla, MouseButton, Pixels, Render, SharedString,
+    TextAlign, TextRun, Window, canvas, deferred, div, hsla, point, prelude::*, px, rgba, size,
 };
 
 use super::{
     COMPOSER_CORNER_RADIUS, ComposerView, DictationState, MODEL_PICKER_TRIGGER_GAP,
-    MODEL_PICKER_WIDTH,
+    MODEL_PICKER_WIDTH, WorkspacePresentation,
 };
 use crate::{
     components::icons::icon,
@@ -112,7 +113,7 @@ impl ComposerView {
             .flex_col()
             .gap(px(0.0))
             .when(!conversation_started && !self.side_chat, |composer| {
-                composer.child(context_toolbar(theme))
+                composer.child(context_toolbar(&self.workspace, theme))
             })
             .child(self.submission_feedback(theme, cx))
             .child(
@@ -543,12 +544,28 @@ pub(super) fn utility(
         .child(label)
 }
 
-pub(super) fn project_utility(theme: Theme) -> impl IntoElement {
+/// The reference's `max-w-40` on the branch value in the home placement.
+const BRANCH_VALUE_MAX_WIDTH: f32 = 160.0;
+/// `mask-image: linear-gradient(90deg, #000 calc(100% - 1rem), transparent)`,
+/// applied only while the value overflows.
+const BRANCH_VALUE_FADE: f32 = 16.0;
+
+/// Project control on the home utility bar. A projectless conversation shows
+/// the reference's `Choose project` value in the tertiary foreground and has
+/// no project to clear.
+pub(super) fn project_utility(label: Option<SharedString>, theme: Theme) -> impl IntoElement {
     let group = "composer-project-hover";
     let hover_fill = theme.text.alpha(0.05);
+    let has_project = label.is_some();
+    let foreground = if has_project {
+        theme.text
+    } else {
+        theme.text_tertiary
+    };
 
     div()
         .id("composer-project")
+        .debug_selector(|| "composer-project".to_owned())
         .group(group)
         .relative()
         .h(px(28.0))
@@ -565,47 +582,173 @@ pub(super) fn project_utility(theme: Theme) -> impl IntoElement {
                 .text_size(px(13.0))
                 .line_height(px(18.0))
                 .font_weight(gpui::FontWeight::NORMAL)
-                .text_color(theme.text)
+                .text_color(foreground)
                 .cursor_pointer()
                 .group_hover(group, move |style| style.bg(hover_fill))
                 .child(
-                    icon("utility-folder", theme.text.into())
+                    icon("utility-folder", foreground.into())
                         .size(px(16.0))
-                        .group_hover(group, |style| style.invisible()),
+                        .when(has_project, |folder| {
+                            folder.group_hover(group, |style| style.invisible())
+                        }),
                 )
-                .child("coda"),
+                .child(label.unwrap_or_else(|| crate::i18n::text("选择项目").into())),
         )
         // The reference overlays a 28px clear-project control on the leading
         // edge and swaps it with the folder whenever the project trigger is
         // hovered. Only this nested control promotes tertiary -> primary.
+        .when(has_project, |project| {
+            project.child(
+                div()
+                    .id("composer-clear-project")
+                    .debug_selector(|| "composer-clear-project".to_owned())
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size(px(28.0))
+                    .group("composer-clear-project-icon")
+                    .invisible()
+                    .group_hover(group, |style| style.visible())
+                    .rounded_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_color(theme.text_tertiary)
+                    .cursor_pointer()
+                    .hover(move |style| style.bg(hover_fill).text_color(theme.text))
+                    .child(
+                        icon("clear-project", theme.text_tertiary.into())
+                            .size(px(16.0))
+                            .group_hover("composer-clear-project-icon", move |style| {
+                                style.text_color(theme.text)
+                            }),
+                    ),
+            )
+        })
+}
+
+/// Branch control on the home utility bar. The reference renders it only while
+/// the working directory's `HEAD` names a branch.
+fn branch_utility(branch: SharedString, theme: Theme) -> impl IntoElement {
+    let hover_fill = theme.text.alpha(0.05);
+
+    div()
+        .id("composer-branch")
+        .debug_selector(|| "composer-branch".to_owned())
+        .h(px(28.0))
+        .px(px(8.0))
+        .rounded_full()
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(px(4.0))
+        .text_size(px(13.0))
+        .line_height(px(18.0))
+        .font_weight(gpui::FontWeight::NORMAL)
+        .text_color(theme.text)
+        .cursor_pointer()
+        .hover(move |style| style.bg(hover_fill))
+        .child(icon("branch", theme.text.into()).size(px(16.0)))
+        .child(faded_value(branch, theme.text.into()))
+}
+
+/// A single-line value clipped to the branch value's width. GPUI has no
+/// `mask-image`, so an overflowing value paints its last 16px as 1px slices of
+/// falling opacity, the way the sidebar fades its task titles. The invisible
+/// copy gives the box the text's own width up to the clamp.
+fn faded_value(text: SharedString, color: Hsla) -> impl IntoElement {
+    div()
+        .relative()
+        .min_w(px(0.0))
+        .max_w(px(BRANCH_VALUE_MAX_WIDTH))
+        .overflow_hidden()
+        .whitespace_nowrap()
+        .child(div().invisible().child(text.clone()))
         .child(
-            div()
-                .id("composer-clear-project")
-                .absolute()
-                .top_0()
-                .left_0()
-                .size(px(28.0))
-                .group("composer-clear-project-icon")
-                .invisible()
-                .group_hover(group, |style| style.visible())
-                .rounded_full()
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_color(theme.text_tertiary)
-                .cursor_pointer()
-                .hover(move |style| style.bg(hover_fill).text_color(theme.text))
-                .child(
-                    icon("clear-project", theme.text_tertiary.into())
-                        .size(px(16.0))
-                        .group_hover("composer-clear-project-icon", move |style| {
-                            style.text_color(theme.text)
-                        }),
-                ),
+            canvas(
+                move |bounds, window, _| {
+                    let style = window.text_style();
+                    let font_size = style.font_size.to_pixels(window.rem_size());
+                    let line_height = style.line_height_in_pixels(window.rem_size());
+                    let font = style.font();
+                    let shape = |alpha: f32| {
+                        window.text_system().shape_line(
+                            text.clone(),
+                            font_size,
+                            &[TextRun {
+                                len: text.len(),
+                                font: font.clone(),
+                                color: color.alpha(color.a * alpha),
+                                background_color: None,
+                                underline: None,
+                                strikethrough: None,
+                            }],
+                            None,
+                        )
+                    };
+                    let opaque = shape(1.0);
+                    let fade = (opaque.width > bounds.size.width).then(|| {
+                        (0..BRANCH_VALUE_FADE as usize)
+                            .map(|index| shape(1.0 - (index as f32 + 0.5) / BRANCH_VALUE_FADE))
+                            .collect::<Vec<_>>()
+                    });
+                    (opaque, fade, line_height)
+                },
+                move |bounds, (opaque, fade, line_height), window, cx| {
+                    let paint = |line: &gpui::ShapedLine,
+                                 mask: Bounds<Pixels>,
+                                 window: &mut Window,
+                                 cx: &mut gpui::App| {
+                        window.with_content_mask(Some(ContentMask { bounds: mask }), |window| {
+                            line.paint(
+                                bounds.origin,
+                                line_height,
+                                TextAlign::Left,
+                                None,
+                                window,
+                                cx,
+                            )
+                            .expect("branch value glyphs should paint")
+                        });
+                    };
+                    let Some(fade) = fade else {
+                        paint(&opaque, bounds, window, cx);
+                        return;
+                    };
+                    let fade_start = bounds.right() - px(BRANCH_VALUE_FADE);
+                    paint(
+                        &opaque,
+                        Bounds::from_corners(bounds.origin, point(fade_start, bounds.bottom())),
+                        window,
+                        cx,
+                    );
+                    for (index, line) in fade.iter().enumerate() {
+                        let x = fade_start + px(index as f32);
+                        paint(
+                            line,
+                            Bounds::new(
+                                point(x, bounds.origin.y),
+                                size(px(1.0), bounds.size.height),
+                            ),
+                            window,
+                            cx,
+                        );
+                    }
+                },
+            )
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full(),
         )
 }
 
-pub(super) fn context_toolbar(theme: Theme) -> Div {
+pub(super) fn context_toolbar(workspace: &WorkspacePresentation, theme: Theme) -> Div {
+    let branch = workspace
+        .checkout
+        .as_ref()
+        .and_then(|checkout| checkout.branch())
+        .map(|branch| SharedString::from(branch.to_owned()));
     div()
         .relative()
         .h(px(38.0))
@@ -633,7 +776,7 @@ pub(super) fn context_toolbar(theme: Theme) -> Div {
                 .flex()
                 .items_center()
                 .gap(px(4.0))
-                .child(project_utility(theme))
+                .child(project_utility(workspace.project_label.clone(), theme))
                 .child(utility(
                     "composer-location",
                     crate::i18n::text("本地"),
@@ -645,7 +788,9 @@ pub(super) fn context_toolbar(theme: Theme) -> Div {
                 // home-placement `px-2` rule is emitted later in the bundled
                 // stylesheet and wins the cascade. The computed button has
                 // 8px inline padding on both sides.
-                .child(utility("composer-branch", "main", "branch", 8.0, theme)),
+                .when_some(branch, |toolbar, branch| {
+                    toolbar.child(branch_utility(branch, theme))
+                }),
         )
 }
 

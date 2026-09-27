@@ -225,7 +225,6 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "你在 Slack 上告诉 Sarah，会在周五前发送 Q3 预算。最新版在 Google Sheets 中，你在 Google Docs 中的会议记录列出两个待确认的数字：招聘和差旅。" => {
             "You told Sarah on Slack you would send the Q3 budget by Friday. The latest version is in Google Sheets, and your meeting notes in Google Docs list two figures to confirm: hiring and travel."
         }
-        "你想让我们在 coda 中构建什么？" => "What would you like to build in coda?",
         "你最近的 20 段录音会保存在此设备上" => {
             "Your 20 most recent recordings are saved on this device"
         }
@@ -929,6 +928,7 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
             "Show a pointer cursor over interactive elements"
         }
         "成功" => "Succeeded",
+        "我们要构建什么？" => "What should we build?",
         "截取应用快照，向 ChatGPT 展示你最前端的窗口" => {
             "Take an appshot to show ChatGPT your frontmost window"
         }

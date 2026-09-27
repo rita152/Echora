@@ -408,12 +408,18 @@ impl ChatApp {
         .detach();
         #[cfg(not(test))]
         cx.spawn(async move |this, cx| {
+            // Keeps listening after startup: a renamed or newly listed project
+            // renames the conversations that target it.
             while let Ok(snapshot) = workspace_receiver.recv().await {
-                if startup_sidebar_resolved(&snapshot) {
-                    let _ = this.update(cx, |this, cx| {
+                let resolved = startup_sidebar_resolved(&snapshot);
+                let updated = this.update(cx, |this, cx| {
+                    if resolved && !this.startup_sidebar_resolved {
                         this.startup_sidebar_resolved = true;
                         cx.notify();
-                    });
+                    }
+                    this.sync_project_labels(&snapshot.projects, cx);
+                });
+                if updated.is_err() {
                     break;
                 }
             }

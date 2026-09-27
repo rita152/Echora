@@ -12,6 +12,9 @@ mod requests;
 mod runtime;
 mod side_chat;
 mod submissions;
+mod workspace;
+
+pub use workspace::WorkspacePresentation;
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -189,6 +192,8 @@ pub struct ComposerView {
     permission_menu_keyboard_focus: bool,
     permission_menu_open: bool,
     approval_resolved_capture: bool,
+    workspace: WorkspacePresentation,
+    checkout_cycle: u64,
 }
 
 impl ComposerView {
@@ -361,6 +366,8 @@ impl ComposerView {
             permission_menu_keyboard_focus: false,
             permission_menu_open: false,
             approval_resolved_capture: false,
+            workspace: WorkspacePresentation::default(),
+            checkout_cycle: 0,
         };
         view.consume_connection_events(connection_events, cx);
         #[cfg(not(test))]
@@ -491,12 +498,14 @@ impl ComposerView {
             self.permission_confirmation_selection = None;
         }
         let changed_cwd = self.conversation.cwd != cwd;
+        let changed_project = self.conversation.project_id != project_id;
         self.conversation
             .set_workspace_context(cwd, project_id, thread_id);
         if changed_cwd {
             self.permission_config = None;
             self.load_permission_catalog(cx);
         }
+        self.refresh_checkout(changed_cwd || changed_project, cx);
         cx.notify();
     }
 
