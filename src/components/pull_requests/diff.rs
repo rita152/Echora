@@ -1,6 +1,9 @@
 //! `Code` and review tabs: toolbar, file headers, hunks, and the file tree.
 
+mod file_icons;
+mod syntax;
 mod viewport;
+mod words;
 pub(super) use viewport::DiffViewport;
 
 use gpui::{Div, SharedString, div, prelude::*, px};
@@ -10,11 +13,21 @@ use crate::components::icons::icon;
 use crate::git_review::{FileDiff, LineKind};
 use crate::theme::UI_MONOSPACE_FONT_FAMILY;
 
-const GUTTER_WIDTH: f32 = 53.0;
-/// Row height of a single diff line, and the line box inside it (the reference
-/// viewer uses a 21.5px line box, so a two-line row measures 43px).
-const LINE_HEIGHT: f32 = 22.0;
-const CODE_LINE_HEIGHT: f32 = 21.5;
+/// The reference number column: `ps` 2ch, a 3ch-minimum cell that measures
+/// 28.9px, `pe` 1ch, and a 2px surface border, where 1ch is 7.22461px of 12px
+/// Menlo.
+const GUTTER_WIDTH: f32 = 52.5625;
+const CELL_PADDING: f32 = 7.22461;
+/// The diff line box, `calc(12px * 1.8)`. Rows take it from their text rather
+/// than an authored height, which layout would snap to 21.5px and drift.
+pub(super) const LINE_HEIGHT: f32 = 21.6;
+/// The sticky file header block: the 32px header and 2px below it.
+const STICKY_HEADER_HEIGHT: f32 = 34.0;
+/// A hunk separator row (`[data-separator="line-info"]`).
+const SEPARATOR_HEIGHT: f32 = 32.0;
+/// The deleted-line bar: `linear-gradient(0deg, <row> 50%, <red> 50%)` tiled
+/// every 1.96364px, a red stripe over each tile's top half.
+const DELETED_BAR_TILE: f32 = 1.96364;
 /// The reference file tree panel: x 1080 → 1440 at a 1440px window, i.e. a
 /// 360px column that reflows the diff into the remaining 286px.
 const TREE_WIDTH: f32 = 360.0;
@@ -63,21 +76,7 @@ impl PullRequestsView {
         language: Option<&'static str>,
     ) -> std::rc::Rc<Vec<gpui::TextRun>> {
         self.diff_viewport.syntax_runs(text, language, None, || {
-            let theme = self.theme();
-            let mut base = crate::theme::Theme::for_mode(self.mode);
-            base.file_editor_text = theme.syntax_plain;
-            base.markdown_syntax_comment = theme.syntax_comment;
-            base.markdown_syntax_keyword = theme.syntax_keyword;
-            base.markdown_syntax_literal = theme.syntax_type;
-            base.markdown_syntax_string = theme.syntax_string;
-            base.markdown_syntax_variable = theme.syntax_type;
-            base.markdown_syntax_attribute = theme.syntax_operator;
-            base.markdown_syntax_name = theme.syntax_name;
-            base.markdown_syntax_error = theme.syntax_error;
-            crate::components::markdown::file_editor_runs(text, language, base)
-                .into_iter()
-                .map(|(_, run)| run)
-                .collect()
+            syntax::code_runs(text, language, self.mode)
         })
     }
 
@@ -102,41 +101,49 @@ impl PullRequestsView {
         let Some(pair) = pair else {
             return self.code_text(&line.text, language);
         };
-        let span = changed_span(&line.text, &file.hunks[hunk].lines[pair].text);
         let deleted = line.kind == LineKind::Deleted;
+        let partner = &file.hunks[hunk].lines[pair].text;
+        let (old_spans, new_spans) = if deleted {
+            words::changed_spans(&line.text, partner)
+        } else {
+            words::changed_spans(partner, &line.text)
+        };
+        let spans = if deleted { old_spans } else { new_spans };
+        if spans.is_empty() {
+            return self.code_text(&line.text, language);
+        }
         let theme = self.theme();
         let color = if deleted {
-            theme.diff_deleted_emphasis
+            theme.diff_deleted_word
         } else {
-            theme.diff_added_emphasis
+            theme.diff_added_word
         };
         let runs = self.diff_viewport.syntax_runs(
             &line.text,
             language,
-            Some((span.start, span.end, deleted)),
+            Some((partner.clone(), deleted)),
             || {
+                let mut cuts: Vec<usize> = spans
+                    .iter()
+                    .flat_map(|span| [span.start, span.end])
+                    .collect();
                 let mut runs = Vec::new();
-                for (range, run) in crate::components::markdown::file_editor_runs(
-                    &line.text,
-                    language,
-                    crate::theme::Theme::for_mode(self.mode),
-                ) {
-                    let mut cuts = vec![range.start, range.end];
-                    cuts.extend(
-                        [span.start, span.end]
-                            .into_iter()
-                            .filter(|cut| *cut > range.start && *cut < range.end),
-                    );
-                    cuts.sort_unstable();
-                    cuts.dedup();
-                    for cut in cuts.windows(2) {
+                let mut start = 0;
+                for run in syntax::code_runs(&line.text, language, self.mode) {
+                    let end = start + run.len;
+                    cuts.retain(|cut| *cut > start);
+                    let mut pieces = vec![start];
+                    pieces.extend(cuts.iter().copied().filter(|cut| *cut < end));
+                    pieces.push(end);
+                    for piece in pieces.windows(2) {
                         let mut run = run.clone();
-                        run.len = cut[1] - cut[0];
-                        if span.contains(&cut[0]) {
+                        run.len = piece[1] - piece[0];
+                        if spans.iter().any(|span| span.contains(&piece[0])) {
                             run.background_color = Some(color.into());
                         }
                         runs.push(run);
                     }
+                    start = end;
                 }
                 runs
             },
@@ -201,8 +208,13 @@ impl PullRequestsView {
         } else {
             0.0
         };
-        let cell = (self.pane_width - tree) / if self.split { 2.0 } else { 1.0 };
-        self.set_code_width((cell - GUTTER_WIDTH).max(40.0));
+        let gutter = if self.classic_scrollbars {
+            super::theme::SCROLLBAR_GUTTER
+        } else {
+            0.0
+        };
+        let cell = (self.pane_width - tree - gutter) / if self.split { 2.0 } else { 1.0 };
+        self.set_code_width((cell - GUTTER_WIDTH - CELL_PADDING * 2.0).max(40.0));
     }
 
     fn tree_width(&self) -> f32 {
@@ -241,6 +253,7 @@ impl PullRequestsView {
         // The diff toolbar spans the whole pane; the file tree sits beside the
         // scrolling diff, not below it, so opening it narrows the diff column.
         let diff_column = div()
+            .relative()
             .flex_1()
             .min_w(px(0.0))
             .min_h(px(0.0))
@@ -256,7 +269,17 @@ impl PullRequestsView {
                     .overflow_x_scroll()
                     .track_scroll(&self.diff_scroll)
                     .children(self.diff_body(cx)),
-            );
+            )
+            .children(self.sticky_file_header(cx))
+            .children({
+                let list = &self.diff_viewport.scroll;
+                self.scrollbar_thumb_for(
+                    f32::from(list.viewport_bounds().size.height),
+                    f32::from(list.max_offset_for_scrollbar().y),
+                    -f32::from(list.scroll_px_offset_for_scrollbar().y),
+                    cx,
+                )
+            });
         let mut body = div()
             .flex_1()
             .min_h(px(0.0))
@@ -279,6 +302,10 @@ impl PullRequestsView {
         surface
     }
 
+    /// The Code tab toolbar (`h-toolbar-pane px-2`, 40px over a rule): the
+    /// `head › base` breadcrumb in 13px tertiary type, then `Review options`,
+    /// `Collapse all diffs` and the view toggle as 32px round buttons and
+    /// `Show file tree` as a 28px tertiary one.
     fn diff_toolbar(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let theme = self.theme();
         let (head, base) = self
@@ -291,105 +318,121 @@ impl PullRequestsView {
                 )
             })
             .unwrap_or_default();
+        let all_collapsed = self
+            .diff
+            .iter()
+            .all(|file| self.collapsed_files.contains(&file.path));
         div()
             .flex_none()
-            .h(px(40.0))
-            .px(px(16.0))
+            .h(px(41.0))
+            .px(px(8.0))
             .flex()
             .items_center()
+            .justify_between()
             .gap(px(8.0))
+            .overflow_hidden()
             .border_b(px(1.0))
             .border_color(theme.border)
             .child(
                 div()
-                    .flex_1()
                     .min_w(px(0.0))
                     .flex()
                     .items_center()
-                    .gap(px(6.0))
+                    .gap(px(8.0))
                     .text_size(px(13.0))
+                    .line_height(px(18.5714))
                     .text_color(theme.text_muted)
+                    .child(div().min_w(px(0.0)).truncate().child(head))
                     .child(
-                        div()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_ellipsis_middle()
-                            .child(head),
+                        icon("pr-chevron-right", theme.text_muted.into())
+                            .flex_none()
+                            .size(px(14.0)),
                     )
-                    .child(">")
+                    .child(div().min_w(px(0.0)).truncate().child(base)),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
                     .child(
-                        div()
-                            .max_w(px(120.0))
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .child(base),
+                        self.diff_toolbar_button(
+                            "pr-review-options",
+                            "Review options",
+                            icon("more-horizontal", theme.text.into())
+                                .size(px(16.0))
+                                .into_any_element(),
+                            cx,
+                        ),
+                    )
+                    .child(
+                        self.diff_toolbar_button(
+                            "pr-collapse-all",
+                            if all_collapsed {
+                                "Expand all diffs"
+                            } else {
+                                "Collapse all diffs"
+                            },
+                            icon("review-collapse", theme.text.into())
+                                .size(px(16.0))
+                                .into_any_element(),
+                            cx,
+                        ),
+                    )
+                    .child(self.diff_toolbar_button(
+                        "pr-split-toggle",
+                        if self.split {
+                            "Switch to unified diff"
+                        } else {
+                            "Switch to split diff"
+                        },
+                        view_mode_glyph(self.split, theme).into_any_element(),
+                        cx,
+                    ))
+                    .child(
+                        self.diff_toolbar_button(
+                            "pr-file-tree",
+                            if self.file_tree_open {
+                                "Hide file tree"
+                            } else {
+                                "Show file tree"
+                            },
+                            icon("pr-file-tree", theme.text_muted.into())
+                                .size(px(16.0))
+                                .into_any_element(),
+                            cx,
+                        ),
                     ),
             )
-            .child(self.diff_toolbar_button(
-                "pr-review-options",
-                "more-horizontal",
-                "Review options",
-                cx,
-            ))
-            .child(self.diff_toolbar_button(
-                "pr-split-toggle",
-                "pr-split-diff",
-                if self.split {
-                    "Switch to unified diff"
-                } else {
-                    "Switch to split diff"
-                },
-                cx,
-            ))
-            .child(
-                self.diff_toolbar_button(
-                    "pr-collapse-all",
-                    "review-collapse",
-                    if self
-                        .diff
-                        .iter()
-                        .all(|file| self.collapsed_files.contains(&file.path))
-                    {
-                        "Expand all diffs"
-                    } else {
-                        "Collapse all diffs"
-                    },
-                    cx,
-                ),
-            )
-            .child(self.diff_toolbar_button(
-                "pr-file-tree",
-                "pr-file-tree",
-                if self.file_tree_open {
-                    "Hide file tree"
-                } else {
-                    "Show file tree"
-                },
-                cx,
-            ))
     }
 
     fn diff_toolbar_button(
         &self,
         id: &'static str,
-        glyph: &'static str,
         label: &'static str,
+        glyph: gpui::AnyElement,
         cx: &mut gpui::Context<Self>,
     ) -> impl IntoElement {
         let theme = self.theme();
         let view = cx.entity();
         let open = (id == "pr-review-options" && self.review_options_open)
             || (id == "pr-file-tree" && self.file_tree_open);
+        let (size, radius) = if id == "pr-file-tree" {
+            (28.0, 12.5)
+        } else {
+            (32.0, 16.0)
+        };
         div()
             .id(id)
             .relative()
             .child(self.control_anchor(id))
             .flex_none()
-            .size(px(28.0))
+            .size(px(size))
             .flex()
             .items_center()
             .justify_center()
-            .rounded(px(12.5))
+            .rounded(px(radius))
             .cursor_pointer()
             .when(open, |button| button.bg(theme.control_hover))
             .hover(move |style| style.bg(theme.control_hover))
@@ -402,7 +445,36 @@ impl PullRequestsView {
                 "pr-file-tree" => view.update(cx, |view, cx| view.toggle_file_tree(cx)),
                 _ => {}
             })
-            .child(icon(glyph, theme.text.into()).size(px(18.0)))
+            .child(glyph)
+    }
+
+    /// The header of the file whose rows fill the top of the diff, pinned
+    /// there (`sticky top-0`) and pushed up by the next file's header.
+    fn sticky_file_header(&self, cx: &mut gpui::Context<Self>) -> Option<Div> {
+        let list = &self.diff_viewport.scroll;
+        let top = list.logical_scroll_top();
+        let row = self.diff_viewport.rows.get(top.item_ix)?;
+        if row.kind == viewport::RowKind::Header && top.offset_in_item <= px(0.0) {
+            return None;
+        }
+        let file = self.diff.get(row.file)?;
+        let viewport_top = list.viewport_bounds().origin.y;
+        let push = self
+            .diff
+            .get(row.file + 1)
+            .and_then(|_| self.diff_viewport.file_row(row.file + 1))
+            .and_then(|next| list.bounds_for_item(next))
+            .map_or(0.0, |next| {
+                (f32::from(next.origin.y - viewport_top) - STICKY_HEADER_HEIGHT).min(0.0)
+            });
+        Some(
+            div()
+                .absolute()
+                .left_0()
+                .right_0()
+                .top(px(push))
+                .child(self.file_header(row.file, file, true, cx)),
+        )
     }
 
     /// Loading/error/empty states remain regular elements; actual diff rows
@@ -470,71 +542,127 @@ impl PullRequestsView {
         vec![self.virtual_diff_list(cx)]
     }
 
-    fn file_header(&self, index: usize, file: &FileDiff, cx: &mut gpui::Context<Self>) -> Div {
+    /// A file's header row (`group/diff-header`, 32px, `py-1 ps-3 pe-2`, 14/21):
+    /// the file-type glyph, the path with its directory in tertiary type,
+    /// the `+x -y` counts, and the hover-only `Copy path`, `Toggle file diff`
+    /// and `Open file` buttons right after them.
+    /// `sticky` renders the copy pinned over the top of the diff, with its
+    /// own element ids and without the gap above the file.
+    pub(super) fn file_header(
+        &self,
+        index: usize,
+        file: &FileDiff,
+        sticky: bool,
+        cx: &mut gpui::Context<Self>,
+    ) -> Div {
+        let prefix = if sticky { "pr-sticky" } else { "pr" };
         let theme = self.theme();
         let collapsed = self.collapsed_files.contains(&file.path);
         let selected = self.selected_file.as_deref() == Some(file.path.as_str());
         let path = file.path.clone();
         let view = cx.entity();
-        div().flex_none().flex().flex_col().child(
-            div()
-                .id(SharedString::from(format!("pr-file-{}", file.path)))
-                .group("pr-file-header")
-                .h(px(34.0))
-                .px(px(14.0))
-                .flex()
-                .items_center()
-                .gap(px(6.0))
-                .bg(theme.diff_header_surface)
-                .when(selected, |header| header.bg(theme.control))
-                .child(
-                    div()
-                        .id(SharedString::from(format!("pr-file-name-{}", file.path)))
-                        .h_full()
-                        .flex_1()
-                        .min_w(px(0.0))
-                        .flex()
-                        .items_center()
-                        .gap(px(6.0))
-                        .cursor_pointer()
-                        .role(gpui::Role::Button)
-                        .aria_label(SharedString::from(file.path.clone()))
-                        .on_click({
-                            let view = view.clone();
-                            let path = path.clone();
-                            move |_, _, cx| {
-                                view.update(cx, |view, cx| view.toggle_file(path.clone(), cx));
-                            }
-                        })
-                        .child(icon("pr-open-file", theme.text_muted.into()).size(px(16.0)))
-                        .child(
-                            div()
-                                .overflow_hidden()
-                                .whitespace_nowrap()
-                                .text_size(px(13.0))
-                                .text_color(theme.text)
-                                .child(file.path.clone()),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(4.0))
-                                .text_size(px(12.0))
-                                .child(
-                                    div()
-                                        .text_color(theme.additions_text)
-                                        .child(format!("+{}", file.additions)),
-                                )
-                                .child(
-                                    div()
-                                        .text_color(theme.deletions_text)
-                                        .child(format!("-{}", file.deletions)),
-                                ),
-                        ),
-                )
-                .child(self.file_header_actions(index, &path, collapsed, cx)),
-        )
+        let (asset, glyph_color) = file_icons::file_icon(&file.path, self.mode);
+        let split = file.path.rfind('/').map_or(0, |slash| slash + 1);
+        let label = gpui::StyledText::new(file.path.clone()).with_highlights([(
+            0..split,
+            gpui::HighlightStyle {
+                color: Some(theme.text_muted.into()),
+                ..Default::default()
+            },
+        )]);
+        // The sticky header block is 34px (the 32px header and 2px below it),
+        // and every file after the first follows the previous file's `pb-0.5`.
+        div()
+            .flex_none()
+            .flex()
+            .flex_col()
+            .when(index > 0 && !sticky, |block| block.pt(px(2.0)))
+            .pb(px(2.0))
+            .bg(theme.diff_header_surface)
+            .child(
+                div()
+                    .id(SharedString::from(format!("{prefix}-file-{}", file.path)))
+                    .group("pr-file-header")
+                    .h(px(32.0))
+                    .pl(px(12.0))
+                    .pr(px(8.0))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .text_size(px(14.0))
+                    .line_height(px(21.0))
+                    .bg(theme.diff_header_surface)
+                    .when(selected, |header| header.bg(theme.control))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.0))
+                            .flex()
+                            .items_center()
+                            .gap(px(2.0))
+                            .child(
+                                div()
+                                    .id(SharedString::from(format!(
+                                        "{prefix}-file-name-{}",
+                                        file.path
+                                    )))
+                                    .min_w(px(0.0))
+                                    .pl(px(4.0))
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(8.0))
+                                    .cursor_pointer()
+                                    .role(gpui::Role::Button)
+                                    .aria_label(SharedString::from(file.path.clone()))
+                                    .on_click({
+                                        let view = view.clone();
+                                        let path = path.clone();
+                                        move |_, _, cx| {
+                                            view.update(cx, |view, cx| {
+                                                view.toggle_file(path.clone(), cx)
+                                            });
+                                        }
+                                    })
+                                    .child(
+                                        gpui::svg()
+                                            .path(format!("icons/{asset}.svg"))
+                                            .flex_none()
+                                            .size(px(16.0))
+                                            .text_color(glyph_color),
+                                    )
+                                    .child(
+                                        div()
+                                            .min_w(px(0.0))
+                                            .overflow_hidden()
+                                            .whitespace_nowrap()
+                                            .text_ellipsis_start()
+                                            .text_color(theme.text)
+                                            .child(label),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .mx(px(4.0))
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(4.0))
+                                    .line_height(px(14.0))
+                                    .font_features(super::list::stats_font_features())
+                                    .child(
+                                        div()
+                                            .text_color(theme.additions_text)
+                                            .child(format!("+{}", file.additions)),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_color(theme.deletions_text)
+                                            .child(format!("-{}", file.deletions)),
+                                    ),
+                            )
+                            .child(self.file_header_actions(prefix, &path, collapsed, cx)),
+                    ),
+            )
     }
 
     fn file_preview(&self, file: &FileDiff, cx: &mut gpui::Context<Self>) -> Div {
@@ -583,35 +711,47 @@ impl PullRequestsView {
     /// header is hovered.
     fn file_header_actions(
         &self,
-        _index: usize,
+        prefix: &str,
         path: &str,
-        _collapsed: bool,
+        collapsed: bool,
         cx: &mut gpui::Context<Self>,
     ) -> impl IntoElement {
         let theme = self.theme();
         let view = cx.entity();
-        let mut row = div()
-            .flex()
-            .items_center()
-            .gap(px(2.0))
-            .opacity(0.0)
-            .group_hover("pr-file-header", |style| style.opacity(1.0));
-        for (id, glyph, label) in [
-            ("pr-copy-path", "pr-copy-path", "Copy path"),
-            ("pr-toggle-file", "pr-toggle-file", "Toggle file diff"),
-            ("pr-open-file", "pr-open-file", "Open file"),
+        let mut row = div().flex_none().flex().items_center().gap(px(2.0));
+        // `Copy path` is 24px, the others 20px; all show on header hover with
+        // 14px (`icon-2xs`) tertiary glyphs.
+        for (id, glyph, label, size) in [
+            ("pr-copy-path", "pr-copy-path", "Copy path", 24.0),
+            ("pr-toggle-file", "pr-toggle-file", "Toggle file diff", 20.0),
+            ("pr-open-file", "pr-open-file", "Open file", 20.0),
         ] {
             let path = path.to_string();
             let view = view.clone();
+            let glyph = icon(glyph, theme.text_muted.into()).size(px(14.0));
+            let glyph = if id == "pr-toggle-file" && !collapsed {
+                glyph.with_transformation(gpui::Transformation::rotate(gpui::radians(
+                    std::f32::consts::FRAC_PI_2,
+                )))
+            } else {
+                glyph
+            };
             row = row.child(
                 div()
-                    .id(SharedString::from(format!("{id}-{path}")))
-                    .size(px(22.0))
+                    .id(SharedString::from(if prefix == "pr" {
+                        format!("{id}-{path}")
+                    } else {
+                        format!("{prefix}-{id}-{path}")
+                    }))
+                    .flex_none()
+                    .size(px(size))
                     .flex()
                     .items_center()
                     .justify_center()
-                    .rounded(px(11.0))
+                    .rounded(px(10.0))
                     .cursor_pointer()
+                    .opacity(0.0)
+                    .group_hover("pr-file-header", |style| style.opacity(1.0))
                     .hover(move |style| style.bg(theme.control_hover))
                     .role(gpui::Role::Button)
                     .aria_label(SharedString::from(label.to_string()))
@@ -624,12 +764,14 @@ impl PullRequestsView {
                         }
                         _ => view.update(cx, |view, cx| view.open_file(path.clone(), None, cx)),
                     })
-                    .child(icon(glyph, theme.text_muted.into()).size(px(16.0))),
+                    .child(glyph),
             );
         }
         row
     }
 
+    /// A hunk separator: a 32px row whose `6px 8px 8px 6px` box, inset 2px,
+    /// reads `N unmodified lines` in 12px system type.
     fn hunk_expander(
         &self,
         file_index: usize,
@@ -641,28 +783,85 @@ impl PullRequestsView {
         let theme = self.theme();
         let key = format!("{}:{hunk_index}", file.path);
         let view = cx.entity();
+        let label = if gap == 1 {
+            "1 unmodified line".to_owned()
+        } else {
+            format!("{gap} unmodified lines")
+        };
         div()
             .id(SharedString::from(format!("pr-expander-{key}")))
-            .h(px(32.0))
+            .h(px(SEPARATOR_HEIGHT))
+            .px(px(2.0))
             .flex()
-            .items_center()
+            .bg(theme.surface)
             .cursor_pointer()
-            .bg(theme.diff_expander_surface)
             .role(gpui::Role::Button)
-            .aria_label(SharedString::from(format!("{gap} unmodified lines")))
+            .aria_label(SharedString::from(label.clone()))
             .on_click(move |_, _, cx| {
                 view.update(cx, |view, cx| {
                     view.expand_context(file_index, key.clone(), cx)
                 });
             })
-            .child(div().w(px(GUTTER_WIDTH)).flex_none())
             .child(
                 div()
-                    .pl(px(14.0))
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .flex()
+                    .items_center()
+                    .px(px(7.6242))
+                    .rounded_l(px(6.0))
+                    .rounded_r(px(8.0))
+                    .bg(theme.diff_expander_surface)
                     .text_size(px(12.0))
+                    .line_height(px(LINE_HEIGHT))
                     .text_color(theme.diff_gutter_text)
-                    .child(format!("{gap} unmodified lines")),
+                    .child(div().truncate().child(label)),
             )
+    }
+
+    /// The number cell of a diff row: right-aligned in `pe` 1ch, beside a 2px
+    /// surface border, with the 4px change bar of changed rows at its edge.
+    fn gutter_cell(&self, kind: LineKind, number: Option<u32>) -> Div {
+        let theme = self.theme();
+        let (surface, color) = match kind {
+            LineKind::Added => (theme.diff_added_gutter, theme.diff_added_text),
+            LineKind::Deleted => (theme.diff_deleted_gutter, theme.diff_deleted_text),
+            LineKind::Context => (theme.surface, theme.diff_gutter_text),
+        };
+        div()
+            .relative()
+            .w(px(GUTTER_WIDTH))
+            .flex_none()
+            .flex()
+            .justify_end()
+            .pr(px(CELL_PADDING))
+            .border_r(px(2.0))
+            .border_color(theme.surface)
+            .bg(surface)
+            .text_size(px(12.0))
+            .line_height(px(LINE_HEIGHT))
+            .font_family(UI_MONOSPACE_FONT_FAMILY)
+            .text_color(color)
+            .when(kind == LineKind::Added, |cell| {
+                cell.child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .top_0()
+                        .bottom_0()
+                        .w(px(4.0))
+                        .bg(theme.diff_added_text),
+                )
+            })
+            .when(kind == LineKind::Deleted, |cell| {
+                cell.child(deleted_bar(
+                    theme.diff_deleted_text,
+                    theme.diff_deleted_surface,
+                ))
+            })
+            .when_some(number, |cell, number| {
+                cell.child(div().child(number.to_string()))
+            })
     }
 
     /// A real file line revealed by an expander.
@@ -676,33 +875,20 @@ impl PullRequestsView {
         let theme = self.theme();
         div()
             .id(SharedString::from(format!("pr-context-{key}-{number}")))
-            .h(px(LINE_HEIGHT))
             .flex()
-            .items_center()
+            .items_stretch()
             .bg(theme.surface)
-            .child(
-                div()
-                    .w(px(GUTTER_WIDTH))
-                    .flex_none()
-                    .flex()
-                    .justify_end()
-                    .pr(px(10.0))
-                    .text_size(px(12.0))
-                    .font_family(UI_MONOSPACE_FONT_FAMILY)
-                    .text_color(theme.diff_gutter_text)
-                    .child(number.to_string()),
-            )
+            .child(self.gutter_cell(LineKind::Context, Some(number)))
             .child(
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .px(px(14.0))
-                    .flex()
-                    .items_center()
+                    .px(px(CELL_PADDING))
                     .font_family(UI_MONOSPACE_FONT_FAMILY)
                     .text_size(px(12.0))
-                    .line_height(px(CODE_LINE_HEIGHT))
+                    .line_height(px(LINE_HEIGHT))
                     .text_color(theme.diff_context_text)
+                    .whitespace_nowrap()
                     .child(self.code_text(text, Self::language_for(key))),
             )
     }
@@ -729,60 +915,33 @@ impl PullRequestsView {
         // for deletions; a row without either number offers no comment button.
         let anchor = if old { line.old } else { line.new };
         let line_number = anchor.unwrap_or(0);
-        let row =
-            div()
-                .min_h(px(LINE_HEIGHT))
-                .min_w(px(0.0))
-                .flex()
-                .items_stretch()
-                .bg(match line.kind {
-                    LineKind::Added => theme.diff_added_surface,
-                    LineKind::Deleted => theme.diff_deleted_surface,
-                    LineKind::Context => theme.surface,
-                })
-                .child(
-                    div()
-                        .w(px(GUTTER_WIDTH))
-                        .flex_none()
-                        .flex()
-                        .justify_end()
-                        .pr(px(10.0))
-                        .bg(match line.kind {
-                            LineKind::Added => theme.diff_added_emphasis,
-                            LineKind::Deleted => theme.diff_deleted_emphasis,
-                            LineKind::Context => theme.surface,
-                        })
-                        .text_size(px(12.0))
-                        .font_family(UI_MONOSPACE_FONT_FAMILY)
-                        .text_color(match line.kind {
-                            LineKind::Added => theme.diff_added_text,
-                            LineKind::Deleted => theme.diff_deleted_text,
-                            LineKind::Context => theme.diff_gutter_text,
-                        })
-                        .when(anchor.is_some(), |gutter| {
-                            gutter.child(
-                                div().h(px(LINE_HEIGHT)).flex().items_center().child(
-                                    anchor.map(|number| number.to_string()).unwrap_or_default(),
-                                ),
-                            )
-                        }),
-                )
-                .child(
-                    // Wrapping needs a definite width on a block that directly
-                    // holds the text; a flex child would be measured unconstrained.
-                    div()
-                        .min_w(px(0.0))
-                        .px(px(14.0))
-                        .font_family(UI_MONOSPACE_FONT_FAMILY)
-                        .text_size(px(12.0))
-                        .text_color(theme.diff_context_text)
-                        .line_height(px(CODE_LINE_HEIGHT))
-                        .when(self.wrap, |code| {
-                            code.w(px(self.code_width())).whitespace_normal()
-                        })
-                        .when(!self.wrap, |code| code.whitespace_nowrap())
-                        .child(self.highlighted_line(file_index, file, hunk_index, line_index)),
-                );
+        let row = div()
+            .min_w(px(0.0))
+            .flex()
+            .items_stretch()
+            .bg(match line.kind {
+                LineKind::Added => theme.diff_added_surface,
+                LineKind::Deleted => theme.diff_deleted_surface,
+                LineKind::Context => theme.surface,
+            })
+            .child(self.gutter_cell(line.kind, anchor))
+            .child(
+                // Wrapping needs a definite width on a block that directly
+                // holds the text; a flex child would be measured unconstrained.
+                div()
+                    .min_w(px(0.0))
+                    .px(px(CELL_PADDING))
+                    .font_family(UI_MONOSPACE_FONT_FAMILY)
+                    .text_size(px(12.0))
+                    .text_color(theme.diff_context_text)
+                    .line_height(px(LINE_HEIGHT))
+                    .when(self.wrap, |code| {
+                        code.w(px(self.code_width() + CELL_PADDING * 2.0))
+                            .whitespace_normal()
+                    })
+                    .when(!self.wrap, |code| code.whitespace_nowrap())
+                    .child(self.highlighted_line(file_index, file, hunk_index, line_index)),
+            );
         div()
             .relative()
             .group("pr-line")
@@ -1548,6 +1707,62 @@ impl PullRequestsView {
 }
 
 /// Align each contiguous deletion/addition block without pairing across context.
+/// The view toggle's glyph: the current layout (`rectangle-view-unified` or
+/// `…-split`), its frame in the text color and its two panes in the fixed
+/// `#F84E63` / `#36D958` at half opacity.
+fn view_mode_glyph(split: bool, theme: super::theme::PrTheme) -> Div {
+    let (deleted, added) = if split {
+        ("pr-view-split-deleted", "pr-view-split-added")
+    } else {
+        ("pr-view-unified-deleted", "pr-view-unified-added")
+    };
+    let layer = |name: &'static str, color: gpui::Rgba| {
+        icon(name, color.into())
+            .absolute()
+            .top_0()
+            .left_0()
+            .size(px(16.0))
+    };
+    div()
+        .relative()
+        .size(px(16.0))
+        .child(layer("pr-view-frame", theme.text))
+        .child(layer(deleted, gpui::rgb(0xf84e63)))
+        .child(layer(added, gpui::rgb(0x36d958)))
+}
+
+/// The deleted-line change bar: red stripes over the row color.
+fn deleted_bar(stripe: gpui::Rgba, row: gpui::Rgba) -> Div {
+    div()
+        .absolute()
+        .left_0()
+        .top_0()
+        .bottom_0()
+        .w(px(4.0))
+        .child(
+            gpui::canvas(
+                |_, _, _| {},
+                move |bounds, _, window, _| {
+                    window.paint_quad(gpui::fill(bounds, row));
+                    let height = f32::from(bounds.size.height);
+                    let mut top = 0.0;
+                    while top < height {
+                        let stripe_bounds = gpui::Bounds::new(
+                            gpui::point(bounds.origin.x, bounds.origin.y + px(top)),
+                            gpui::size(
+                                bounds.size.width,
+                                px((DELETED_BAR_TILE / 2.0).min(height - top)),
+                            ),
+                        );
+                        window.paint_quad(gpui::fill(stripe_bounds, stripe));
+                        top += DELETED_BAR_TILE;
+                    }
+                },
+            )
+            .size_full(),
+        )
+}
+
 pub(super) fn split_pairs(
     lines: &[crate::git_review::Line],
 ) -> Vec<(Option<usize>, Option<usize>)> {
@@ -1575,21 +1790,4 @@ pub(super) fn split_pairs(
         }
     }
     rows
-}
-
-pub(super) fn changed_span(a: &str, b: &str) -> std::ops::Range<usize> {
-    let prefix: usize = a
-        .chars()
-        .zip(b.chars())
-        .take_while(|(a, b)| a == b)
-        .map(|(a, _)| a.len_utf8())
-        .sum();
-    let suffix: usize = a[prefix..]
-        .chars()
-        .rev()
-        .zip(b[prefix..].chars().rev())
-        .take_while(|(a, b)| a == b)
-        .map(|(a, _)| a.len_utf8())
-        .sum();
-    prefix..a.len() - suffix
 }

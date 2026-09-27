@@ -2436,6 +2436,41 @@ fn highlighted_code_text(
 }
 
 // Share the same syntax classifier and semantic palette with the native file editor.
+/// The scope stack of every region of `code` (one parse, no cache), for
+/// callers that style code from a TextMate theme instead of the app palette.
+pub(crate) fn code_scope_regions(
+    code: &str,
+    language: Option<&str>,
+) -> Option<Vec<(Range<usize>, ScopeStack)>> {
+    if code.len() > MAX_HIGHLIGHTED_CODE_BYTES {
+        return None;
+    }
+    let syntax = code_syntax(language)?;
+    let mut parse_state = ParseState::new(syntax);
+    let mut scope_stack = ScopeStack::new();
+    let mut regions = Vec::new();
+    let mut line_base = 0;
+    for line in LinesWithEndings::from(code) {
+        if line.len() > MAX_HIGHLIGHTED_LINE_BYTES {
+            return None;
+        }
+        let operations = parse_state.parse_line(line, code_syntax_set()).ok()?;
+        let mut cursor = 0;
+        for (segment, operation) in ScopeRegionIterator::new(&operations, line) {
+            scope_stack.apply(operation).ok()?;
+            if !segment.is_empty() {
+                regions.push((
+                    line_base + cursor..line_base + cursor + segment.len(),
+                    scope_stack.clone(),
+                ));
+            }
+            cursor += segment.len();
+        }
+        line_base += line.len();
+    }
+    Some(regions)
+}
+
 pub fn file_editor_runs(
     code: &str,
     language: Option<&str>,

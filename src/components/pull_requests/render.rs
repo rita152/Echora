@@ -23,9 +23,11 @@ impl gpui::Render for PullRequestsView {
         cx: &mut gpui::Context<Self>,
     ) -> impl IntoElement {
         let theme = self.theme();
+        self.classic_scrollbars = !cx.should_auto_hide_scrollbars();
         self.measure_code_width(window);
         self.take_capture_offset();
         self.prepare_diff_viewport(window, cx);
+        self.apply_capture_diff_offset(cx);
         self.apply_pending_file_scroll(cx);
         let fullscreen = self.fullscreen || (self.compact() && self.selected.is_some());
         let detail = if fullscreen {
@@ -398,11 +400,27 @@ impl PullRequestsView {
         scroll: &gpui::ScrollHandle,
         cx: &gpui::App,
     ) -> Option<Div> {
+        self.scrollbar_thumb_for(
+            f32::from(scroll.bounds().size.height),
+            f32::from(scroll.max_offset().y),
+            -f32::from(scroll.offset().y),
+            cx,
+        )
+    }
+
+    /// The classic-scroller thumb for a `viewport` tall scroller scrolled
+    /// `offset` of `max_offset`.
+    pub(super) fn scrollbar_thumb_for(
+        &self,
+        viewport: f32,
+        max_offset: f32,
+        offset: f32,
+        cx: &gpui::App,
+    ) -> Option<Div> {
         if cx.should_auto_hide_scrollbars() {
             return None;
         }
-        let viewport = f32::from(scroll.bounds().size.height);
-        let max_offset = f32::from(scroll.max_offset().y).max(0.0);
+        let max_offset = max_offset.max(0.0);
         if max_offset <= 0.5 || viewport <= 0.0 {
             return None;
         }
@@ -410,7 +428,7 @@ impl PullRequestsView {
         let thumb = (track * viewport / (viewport + max_offset))
             .max(SCROLLBAR_THUMB_MIN_LENGTH)
             .min(track);
-        let progress = (-f32::from(scroll.offset().y) / max_offset).clamp(0.0, 1.0);
+        let progress = (offset / max_offset).clamp(0.0, 1.0);
         Some(
             div()
                 .absolute()

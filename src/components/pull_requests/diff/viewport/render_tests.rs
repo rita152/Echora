@@ -44,9 +44,9 @@ fn a_large_hunk_only_highlights_the_viewport_and_reuses_warm_runs(cx: &mut TestA
     let mut visual = VisualTestContext::from_window(handle.into(), cx);
     visual.update(|window, cx| window.draw(cx).clear(cx));
     let warm = inner.update(&mut visual, |view, _| {
-        assert_eq!(view.diff_viewport.rows.len(), 10004);
+        assert_eq!(view.diff_viewport.rows.len(), 10006);
         assert_eq!(view.diff_viewport.partner(0, 0, 0), Some(5000));
-        assert_eq!(view.diff_viewport.file_row(1), Some(10001));
+        assert_eq!(view.diff_viewport.file_row(1), Some(10002));
         let cache = view.diff_viewport.syntax.borrow();
         assert!(
             !cache.entries.is_empty(),
@@ -116,7 +116,7 @@ fn a_large_hunk_only_highlights_the_viewport_and_reuses_warm_runs(cx: &mut TestA
         view.apply_pending_file_scroll(cx);
         assert_eq!(
             view.diff_viewport.scroll.logical_scroll_top().item_ix,
-            10001
+            10002
         );
         assert!(view.scrolled_to_file.is_none());
         view.reset_diff(cx);

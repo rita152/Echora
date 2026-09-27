@@ -109,6 +109,9 @@ pub struct PullRequestsView {
     pane_width: f32,
     list_width: f32,
     compact_layout: bool,
+    /// The system shows classic scroll bars, so the diff reserves their
+    /// 11px gutter (`overflow-y-auto` without `scrollbar-gutter`).
+    classic_scrollbars: bool,
     /// The Pull Requests page's own size, reported by the host every frame
     /// (the window minus the revealed sidebar and its hairline).
     page_width: f32,
@@ -333,6 +336,7 @@ impl PullRequestsView {
             pane_width: 606.0,
             list_width: 593.0,
             compact_layout: false,
+            classic_scrollbars: false,
             page_width: 0.0,
             page_height: 0.0,
             detail_ratio: None,
@@ -391,7 +395,8 @@ impl PullRequestsView {
             // toolbar offers `Disable word wrap`.
             wrap: true,
             rich: false,
-            words: false,
+            // Word highlights are on too (`Disable word diffs`).
+            words: true,
             review_options_open: false,
             scope_menu_open: false,
             file_tree_open: false,
@@ -603,7 +608,7 @@ impl PullRequestsView {
             return false;
         }
         if self.detail_tab == DetailTab::Code || self.review_tab.is_some() {
-            return !self.diff.is_empty();
+            return !self.diff.is_empty() && self.diff_capture_offset_settled();
         }
         true
     }

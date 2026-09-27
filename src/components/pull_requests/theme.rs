@@ -105,13 +105,18 @@ pub struct PrTheme {
     pub popover_surface: Rgba,
     pub menu_hover: Rgba,
     pub menu_shadow: Rgba,
-    /// Diff colors measured from the reference diff viewer.
+    /// Diff colors: the computed styles of the reference diff viewer's rows
+    /// (`[data-line-type]` code and number cells), converted from `lab()`.
     pub diff_added_surface: Rgba,
     pub diff_deleted_surface: Rgba,
-    pub diff_added_emphasis: Rgba,
-    pub diff_deleted_emphasis: Rgba,
+    pub diff_added_gutter: Rgba,
+    pub diff_deleted_gutter: Rgba,
+    /// Line numbers and the 4px change bars of changed rows.
     pub diff_added_text: Rgba,
     pub diff_deleted_text: Rgba,
+    /// Word highlights (`[data-diff-span]`).
+    pub diff_added_word: Rgba,
+    pub diff_deleted_word: Rgba,
     pub diff_gutter_text: Rgba,
     pub diff_context_text: Rgba,
     pub diff_expander_surface: Rgba,
@@ -124,16 +129,6 @@ pub struct PrTheme {
     /// `+x` and `-y` counts.
     pub additions_text: Rgba,
     pub deletions_text: Rgba,
-    /// Syntax colors of the reference diff viewer, measured from its rendered
-    /// tokens (`scripts/audit_pull_requests_colors.py` records the probe).
-    pub syntax_plain: Rgba,
-    pub syntax_keyword: Rgba,
-    pub syntax_type: Rgba,
-    pub syntax_name: Rgba,
-    pub syntax_string: Rgba,
-    pub syntax_operator: Rgba,
-    pub syntax_comment: Rgba,
-    pub syntax_error: Rgba,
     /// Focus ring used by text fields and editors.
     pub focus_ring: Rgba,
     /// Warning copy (failed loads and destructive outcomes).
@@ -234,18 +229,19 @@ impl PrTheme {
                 gpui::rgba(0xffffff14)
             },
             menu_shadow: gpui::rgba(0x0000001f),
-            // Measured from the reference diff viewer (light: #e9f4e8 / #f8e7e3
-            // rows with #eff7ee / #faedea number cells; dark: the same tones on
-            // the dark surface).
-            diff_added_surface: light(is_light, 0xe9f4e8ff, 0x233125ff),
-            diff_deleted_surface: light(is_light, 0xf8e7e3ff, 0x38201cff),
-            diff_added_emphasis: light(is_light, 0xeff7eeff, 0x162017ff),
-            diff_deleted_emphasis: light(is_light, 0xfaedeaff, 0x25140fff),
-            diff_added_text: light(is_light, 0x00a240ff, 0x00c853ff),
-            diff_deleted_text: light(is_light, 0xba2623ff, 0xff6b63ff),
+            // The reference `lab()` row colors in sRGB (light / dark).
+            diff_added_surface: light(is_light, 0xe7f4e7ff, 0x1f3124ff),
+            diff_deleted_surface: light(is_light, 0xfce6e2ff, 0x3b1f1aff),
+            diff_added_gutter: light(is_light, 0xedf7edff, 0x132017ff),
+            diff_deleted_gutter: light(is_light, 0xfdece9ff, 0x28130eff),
+            diff_added_text: light(is_light, 0x00a240ff, 0x40c977ff),
+            diff_deleted_text: light(is_light, 0xba2623ff, 0xfa423eff),
+            // `rgb(from … / .15)` in light, `/ .2` in dark.
+            diff_added_word: light(is_light, 0x00a24026, 0x40c97733),
+            diff_deleted_word: light(is_light, 0xba262326, 0xfa423e33),
             diff_gutter_text: light(is_light, 0x585858ff, 0xa1a1a1ff),
             diff_context_text: light(is_light, 0x0d0d0dff, 0xfcfcfcff),
-            diff_expander_surface: light(is_light, 0xf4f4f4ff, 0x2f2f2fff),
+            diff_expander_surface: light(is_light, 0xf3f3f3ff, 0x2f2f2fff),
             // The reference file header sits on the pane surface.
             diff_header_surface: light(is_light, 0xffffffff, 0x181818ff),
             status_modified: light(is_light, 0x923b0fff, 0xef8c57ff),
@@ -254,17 +250,6 @@ impl PrTheme {
             // light rgb(0,162,64) / rgb(186,38,35), dark rgb(64,201,119) / rgb(250,66,62).
             additions_text: light(is_light, 0x00a240ff, 0x40c977ff),
             deletions_text: light(is_light, 0xba2623ff, 0xfa423eff),
-            // Measured token colors of the reference diff viewer. Light values
-            // are the rendered `rgb(...)` of its tokens; dark values are the
-            // same tokens with the app switched to dark.
-            syntax_plain: light(is_light, 0x0d0d0dff, 0xfcfcfcff),
-            syntax_keyword: light(is_light, 0xd53538ff, 0xf67576ff),
-            syntax_type: light(is_light, 0xbd5800ff, 0xfa994cff),
-            syntax_name: light(is_light, 0x751ed9ff, 0xb06dffff),
-            syntax_string: light(is_light, 0x008809ff, 0x85df7bff),
-            syntax_operator: light(is_light, 0x0071eaff, 0x6dcbf4ff),
-            syntax_comment: light(is_light, 0x666666ff, 0x999999ff),
-            syntax_error: light(is_light, 0xba2623ff, 0xff6b63ff),
             focus_ring: light(is_light, 0x0a84ffff, 0x3b9effff),
             warning: light(is_light, 0xba2623ff, 0xff8583ff),
         }

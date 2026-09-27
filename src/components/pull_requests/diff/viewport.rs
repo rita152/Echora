@@ -9,7 +9,11 @@ use std::{cell::RefCell, collections::HashMap, collections::VecDeque, rc::Rc};
 
 const SYNTAX_BYTES: usize = 4 * 1024 * 1024;
 const SYNTAX_LINES: usize = 1024;
-type SyntaxKey = (String, Option<&'static str>, Option<(usize, usize, bool)>);
+/// The classic horizontal scroll bar track under a file's code block.
+const CODE_SCROLLBAR_TRACK: f32 = 15.0;
+/// Line text, language, and for a word-highlighted line its partner's text
+/// and whether it is the deleted side.
+type SyntaxKey = (String, Option<&'static str>, Option<(String, bool)>);
 
 #[derive(Default)]
 struct SyntaxCache {
@@ -66,6 +70,10 @@ pub(super) enum RowKind {
         left: Option<usize>,
         right: Option<usize>,
     },
+    /// The end of a file's code: the reference's `overflow-x: scroll` code
+    /// block keeps a 15px horizontal scroll bar track under classic scroll
+    /// bars, even when lines wrap.
+    End,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Row {
@@ -119,6 +127,8 @@ pub(in crate::components::pull_requests) struct DiffViewport {
     width: f32,
     wrap: bool,
     max_line_width: Option<f32>,
+    /// A capture switched the list to measuring every row.
+    measured_all: bool,
 }
 impl Default for DiffViewport {
     fn default() -> Self {
@@ -133,6 +143,7 @@ impl Default for DiffViewport {
             width: 0.0,
             wrap: true,
             max_line_width: None,
+            measured_all: false,
         }
     }
 }
@@ -141,7 +152,7 @@ impl DiffViewport {
         &self,
         text: &str,
         language: Option<&'static str>,
-        emphasis: Option<(usize, usize, bool)>,
+        emphasis: Option<(String, bool)>,
         build: impl FnOnce() -> Vec<TextRun>,
     ) -> Rc<Vec<TextRun>> {
         self.syntax
@@ -316,7 +327,7 @@ impl PullRequestsView {
                     _ => {}
                 }
             }
-            self.diff_viewport.max_line_width = Some(maximum + GUTTER_WIDTH + 28.0);
+            self.diff_viewport.max_line_width = Some(maximum + GUTTER_WIDTH + CELL_PADDING * 2.0);
         }
     }
 
@@ -392,6 +403,7 @@ impl PullRequestsView {
                     }
                 }
             }
+            push(RowKind::End);
         }
         rows
     }
@@ -418,6 +430,11 @@ impl PullRequestsView {
                 self.tree_width()
             } else {
                 0.0
+            }
+            - if self.classic_scrollbars {
+                super::super::theme::SCROLLBAR_GUTTER
+            } else {
+                0.0
             })
         .max(1.0)
     }
@@ -429,6 +446,39 @@ impl PullRequestsView {
         (cell * if self.split { 2.0 } else { 1.0 } + if self.split { 1.0 } else { 0.0 })
             .max(self.diff_view_width())
     }
+    /// Captures scroll the Code tab's diff to an exact pixel offset: every row
+    /// is measured once, then the list moves by the remaining distance each
+    /// frame until it lands.
+    pub(in crate::components::pull_requests) fn apply_capture_diff_offset(
+        &mut self,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        let on_code = self.detail_tab == super::super::DetailTab::Code;
+        if self.capture_offset <= 0.0 || !on_code || self.diff_viewport.rows.is_empty() {
+            return;
+        }
+        if !self.diff_viewport.measured_all {
+            self.diff_viewport.measured_all = true;
+            self.diff_viewport.scroll = self.diff_viewport.scroll.clone().measure_all();
+        }
+        let current = -f32::from(self.diff_viewport.scroll.scroll_px_offset_for_scrollbar().y);
+        let remaining = self.capture_offset - current;
+        if remaining.abs() > 0.5 {
+            self.diff_viewport.scroll.scroll_by(px(remaining));
+            cx.notify();
+        }
+    }
+
+    /// Whether the diff list sits at the capture's pixel offset.
+    #[cfg(feature = "screenshot")]
+    pub(in crate::components::pull_requests) fn diff_capture_offset_settled(&self) -> bool {
+        self.capture_offset <= 0.0
+            || (self.capture_offset
+                + f32::from(self.diff_viewport.scroll.scroll_px_offset_for_scrollbar().y))
+            .abs()
+                <= 0.5
+    }
+
     pub(super) fn virtual_diff_list(&self, cx: &mut gpui::Context<Self>) -> gpui::AnyElement {
         let view = cx.entity();
         gpui::list(self.diff_viewport.scroll.clone(), move |index, _, cx| {
@@ -444,8 +494,17 @@ impl PullRequestsView {
         };
         let file = &self.diff[row.file];
         let element = match row.kind {
-            RowKind::Header => self.file_header(row.file, file, cx).into_any_element(),
+            RowKind::Header => self
+                .file_header(row.file, file, false, cx)
+                .into_any_element(),
             RowKind::Preview => self.file_preview(file, cx).into_any_element(),
+            RowKind::End => div()
+                .h(px(if self.classic_scrollbars {
+                    CODE_SCROLLBAR_TRACK
+                } else {
+                    0.0
+                }))
+                .into_any_element(),
             RowKind::Binary => div()
                 .p(px(16.0))
                 .child("Binary file changed. Open file to view it on GitHub.")
@@ -576,9 +635,11 @@ mod tests {
                 rich: false, contexts: Default::default(), errors: Default::default(), inline: None,
             };
             let rows = view.build_diff_rows(&key);
-            assert_eq!(rows.len(), 7);
-            assert_eq!(rows[3], Row { file: 1, kind: RowKind::Header });
-            assert_eq!(rows[4].kind, RowKind::Gap { hunk: 0, count: 3 });
+            // Each file ends with its `End` row.
+            assert_eq!(rows.len(), 9);
+            assert_eq!(rows[3], Row { file: 0, kind: RowKind::End });
+            assert_eq!(rows[4], Row { file: 1, kind: RowKind::Header });
+            assert_eq!(rows[5].kind, RowKind::Gap { hunk: 0, count: 3 });
             key.filter = "b.rs".into();
             assert_eq!(view.build_diff_rows(&key)[0].file, 1);
             key.collapsed.insert("b.rs".into());
@@ -588,9 +649,10 @@ mod tests {
             view.file_lines.insert("b.rs".into(), vec!["one".into(), "two".into(), "three".into(), "after".into()]);
             key.split = true;
             let rows = view.build_diff_rows(&key);
-            assert_eq!(rows.len(), 5);
+            assert_eq!(rows.len(), 6);
             assert_eq!(rows[3].kind, RowKind::Context { hunk: 0, number: 3 });
             assert_eq!(rows[4].kind, RowKind::Code { hunk: 0, left: Some(0), right: Some(1) });
+            assert_eq!(rows[5].kind, RowKind::End);
         });
     }
 }

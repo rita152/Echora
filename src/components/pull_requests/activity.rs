@@ -692,12 +692,12 @@ impl PullRequestsView {
             let (surface, gutter_surface, number_color) = match line.kind {
                 PreviewKind::Added => (
                     theme.diff_added_surface,
-                    theme.diff_added_emphasis,
+                    theme.diff_added_gutter,
                     theme.diff_added_text,
                 ),
                 PreviewKind::Deleted => (
                     theme.diff_deleted_surface,
-                    theme.diff_deleted_emphasis,
+                    theme.diff_deleted_gutter,
                     theme.diff_deleted_text,
                 ),
                 PreviewKind::Context => (theme.surface, theme.surface, theme.diff_gutter_text),

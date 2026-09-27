@@ -31,18 +31,6 @@ fn split_diff_pairs_replacements_without_crossing_context() {
     );
 }
 
-#[test]
-fn word_highlights_keep_unicode_boundaries() {
-    for (before, after, changed) in [
-        ("let 名 = 1;", "let 名 = 2;", "1"),
-        ("a😀c", "a🦀c", "😀"),
-        ("same", "same", ""),
-        ("abc", "ab", "c"),
-    ] {
-        assert_eq!(&before[diff::changed_span(before, after)], changed);
-    }
-}
-
 fn summary(title: &str) -> crate::pull_requests::PullRequestSummary {
     crate::pull_requests::PullRequestSummary {
         number: 1,
