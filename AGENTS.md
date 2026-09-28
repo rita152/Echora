@@ -33,4 +33,5 @@ Echora 是基于 Rust 与 GPUI 的独立原生桌面 Agent 应用，GUI 完全�
 - Computer Use 先枚举应用并连接 `GPUI Capture`，再通过可访问性树和截图定位，复现修复前行为并验证修复结果。交互问题须检查完整命中区域及相关点击、滚动、拖动、键盘、悬停或文本选择路径。
 - 前后使用相同主题、窗口尺寸、DPR、线程、内容及滚动位置；不得缩放或平移截图提高对比分数。
 - ChatGPT 参考采集使用专用调试实例及新建端口；不占用其他任务的调试端口，不操作用户正在运行的 ChatGPT 或 GPUI 实例。
+- 参考实例一律显示旧版布局：侧栏直接铺在窗口背景上，最左侧没有图标栏，侧栏和内容区也不嵌在灰色圆角框里，与 Echora 一致。即使用户自己的 ChatGPT 已显示新版图标栏，也不以新版为参考。布局由每次启动都重新拉取的 Statsig gate `3085093835` 决定，只能在内存中固定。`scripts/launch_chatgpt_reference.sh` 与 `scripts/p0/launch_reference_instance.sh` 启动后会自动固定，固定失败时停掉实例并以非零状态退出。页面重载后，采集前运行 `node scripts/cdp_pin_reference_layout.mjs --layout=legacy --wait=60`，输出不是 `"renderedLayout": "legacy"` 时不得采集。固定不写 profile 或 `~/.codex`。
 - 结束后只关闭本次专用实例；运行与改动相称的格式、测试和编译检查，交付时说明实际验证范围与结果。原始截图、日志和对比数据保存在 `artifacts/`；README 展示图片保存在 `docs/images/`。
