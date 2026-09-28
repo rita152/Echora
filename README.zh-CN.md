@@ -221,7 +221,7 @@ Computer Use 只能驱动 macOS 视作用户应用的 bundle，而且驱动过�
 
 自动恢复会话截图可追加 `--resume-thread=THREAD_ID --screenshot="$PWD/artifacts/resumed-thread.png"`。ID 接受原始 UUID 或 `local:<uuid>`。可选 `--resume-scroll-from-bottom=3200` 指定距底部的滚动距离，省略则停在底部。应用等待历史、侧栏、模型目录与三个稳定绘制帧后截图退出，失败或超时返回非零状态。请选择未被其他活动写入进程占用的线程。
 
-窗口尺寸为逻辑像素，PNG 分辨率取决于显示器 DPR。对照使用相同主题、内容、窗口尺寸、DPR 与滚动位置，不得缩放或平移图片。旧 `scripts/compare_all.sh` 会缩放截图，不作为像素验收入口。原始截图、日志和对比数据留在 `artifacts/`，README 展示图片放在 `docs/images/`。
+窗口尺寸为逻辑像素，PNG 分辨率取决于显示器 DPR。对照使用相同主题、内容、窗口尺寸、DPR 与滚动位置，不得缩放或平移图片。原始截图、日志和对比数据留在 `artifacts/`，README 展示图片放在 `docs/images/`。
 
 <details>
 <summary>更多截图与专项验证入口</summary>
@@ -257,7 +257,7 @@ Computer Use 只能驱动 macOS 视作用户应用的 bundle，而且驱动过�
 
 `--approval-replay=/absolute/fixture.json` 通过生产解析与响应路径回放离线 JSON-RPC。fixture 包含从 `turn/started` 到 item 和审批请求的 `events` 数组，可选 `cwd`、`userMessage`、`assistantMessage` 与 `failWrites`。响应写入相邻 `.responses.jsonl`；回放不执行命令，也不修改被审批文件。
 
-Pull Requests 页面由 `scripts/capture_pull_requests_reference.sh`（参考端，逐主题切换应用外观）和 `scripts/capture_pull_requests_gpui.sh both full`（本机端）采集，再用 `scripts/compare_pull_requests_suite.py` 逐组件打分；`scripts/verify_pull_requests_ux_reference.mjs` 驱动参考端执行验收序列。原始截图、日志与分数保留在 `artifacts/`。
+Pull Requests 页面由 `scripts/capture_pull_requests_reference.sh`（参考端，逐主题切换应用外观）和 `scripts/capture_pull_requests_gpui.sh both full`（本机端）采集，再用 `scripts/compare_pull_requests_suite.py` 逐组件打分；`scripts/verify_pull_requests_ux_reference.mjs` 驱动参考端执行验收序列，`scripts/extract_pull_request_icons.mjs` 从参考端 DOM 重新提取页面的内联 SVG 图标到 `assets/icons/`。原始截图、日志与分数保留在 `artifacts/`。
 
 视觉脚本需要 Python 3、Pillow、NumPy 和 websocket-client。CDP 脚本需要支持全局 WebSocket 的 Node.js。设置验证另需 Electron（`npm ci`）和 `jq`。ChatGPT 参考截图只使用专用调试实例，并分配新端口：
 
@@ -280,7 +280,7 @@ node scripts/cdp_pin_reference_layout.mjs --layout=legacy --wait=60
 | 审查 / 侧边聊天 | `node scripts/cdp_capture_review.mjs artifacts/review-reference`；`node scripts/cdp_capture_side_chat.mjs artifacts/side-chat reference` |
 | 审查弹层 | `node scripts/cdp_capture_review_menus.mjs --output=artifacts/review-menus` 采集比较范围、查看选项与分支选择三个弹层，双主题并附带计算样式；`python3 scripts/compare_review_menus.py --reference DIR --gpui DIR --output DIR --scale 2` 逐像素比对两侧截图，输出裁切图、差异图与报告 |
 | 账户菜单、退出登录 | `node scripts/cdp_capture_account.mjs --output artifacts/account-phase/chatgpt-reference --theme=light`；`scripts/capture_account_gpui.sh`；`python3 scripts/compare_account_phase.py` |
-| 设置矩阵 | `./node_modules/.bin/electron scripts/verify_chatgpt_settings.cjs`；`REFRESH_SETTINGS_REFERENCES=1 scripts/capture_settings_matrix.sh`；`python3 scripts/verify_settings_matrix.py` |
+| 设置矩阵 | `CHATGPT_CDP_HTTP="$CHATGPT_CDP_HTTP" node scripts/extract_chatgpt_settings.cjs` 把参考端 18 个设置页（简体中文界面）保存为 `chat-reference/settings/` 下的 HTML 快照，供后续步骤读取；`./node_modules/.bin/electron scripts/verify_chatgpt_settings.cjs`；`REFRESH_SETTINGS_REFERENCES=1 scripts/capture_settings_matrix.sh`；`python3 scripts/verify_settings_matrix.py` |
 | 已合并 Phase 1–4 局部组件门禁 | `python3 scripts/stage4/compare_merge_gate.py`（需要 `artifacts/merge-four-worktrees/` 下的专用 ChatGPT/GPUI 截图；每个局部组件阈值为 99%） |
 | 侧栏项目悬停卡片 | `CHATGPT_CDP_HTTP="$CHATGPT_CDP_HTTP" node scripts/cdp_capture_project_hover.mjs --output=artifacts/project-hover/reference` 悬停真实行后采集参考卡片（几何、计算样式、图标与截图）；`--project-hover-card=NAME --screenshot=artifacts/project-hover/gpui/light-card.png` 采集本机卡片；`python3 scripts/compare_project_hover.py --reference artifacts/project-hover/reference --gpui artifacts/project-hover/gpui --output artifacts/project-hover/compare` 逐主题打分。`cargo test project_hover` 走与真实悬停相同的指针路径（延迟出现、停留在卡片上保持打开、移开后关闭）。 |
 | 侧栏任务悬停卡片 | `scripts/capture_thread_hover_gpui.sh both` 在设置了 `CHATGPT_CDP_HTTP` 时刷新参考采集，用 `--thread-hover-card=TITLE` 采集两个主题，再由 `scripts/compare_thread_hover.py` 逐主题打分：报告 `pixelConsistency`、`pixelsWithin2`、`pixelsWithin12`、仓库统一的 `toleranceAdjustedSimilarity` 以及卡片的纵向锚点偏差。卡片在指针进入项目任务行 240 ms 后出现，指针停留在卡片上时保持打开，与参考一致地对不属于任何项目的“最近”行不显示卡片；`cargo test thread_hover` 走同一指针路径。 |

@@ -1,14 +1,8 @@
 {
-  "name": "gpui",
+  "name": "echora-verification",
   "version": "1.0.0",
-  "description": "这是一个纯 GPUI、组件化的 Codex 首页复刻。界面没有嵌入 HTML/WebView；light/dark 颜色集中在 `Theme` 语义 token 中。",
-  "main": "scripts/electron_reference.cjs",
-  "scripts": {
-    "reference": "zsh scripts/capture_references.sh",
-    "compare": "zsh scripts/compare_all.sh"
-  },
-  "keywords": [],
-  "author": "",
+  "private": true,
+  "description": "Development-only verification tooling for Echora: Electron for the settings reference captures. The native app does not need it.",
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
