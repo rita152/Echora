@@ -160,6 +160,13 @@ const SUBAGENT_PANEL_HEADER_HEIGHT: f32 = 48.0;
 // centered on y=23px. The 28px leading titlebar controls share that axis.
 pub(crate) const TRAFFIC_LIGHT_INSET: f32 = 16.0;
 const LEADING_TITLEBAR_CONTROLS_TOP: f32 = 9.0;
+// ChatGPT 26.924's leading titlebar controls (`jln`) start at x=88 with 6px
+// gaps: Back, Forward, then the sidebar trigger. With the sidebar closed the
+// legacy layout drops Back and Forward, so the trigger sits one gap in at x=94
+// and the header's leading area (`me-1.5`) ends at x=128.
+const LEADING_TITLEBAR_CONTROLS_LEFT: f32 = 88.0;
+const LEADING_TITLEBAR_CONTROL_SIZE: f32 = 28.0;
+const LEADING_TITLEBAR_CONTROLS_GAP: f32 = 6.0;
 const STARTUP_LOADING_LOGO_SIZE: f32 = 48.0;
 const STARTUP_LOADING_BLINK_DURATION: Duration = Duration::from_millis(1_200);
 const STARTUP_LOADING_MINIMUM_DURATION: Duration = Duration::from_secs(1);

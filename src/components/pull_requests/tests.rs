@@ -246,6 +246,60 @@ fn description_and_comment_editors_have_visible_layout_height(cx: &mut gpui::Tes
     );
 }
 
+/// Left edges of the list's `All` tab and of the review task tab on a
+/// 1440×900 page that the titlebar reaches `inset` px into.
+fn titlebar_layout(
+    cx: &mut gpui::TestAppContext,
+    inset: f32,
+    fullscreen: bool,
+) -> (Option<gpui::Pixels>, gpui::Pixels) {
+    use gpui::{VisualTestContext, px, size};
+    let handle = cx.open_window(size(px(1440.0), px(900.0)), move |_, cx| {
+        let mut view = PullRequestsView::build(ThemeMode::Light, None, false, cx);
+        view.set_page_size(1440.0, 900.0);
+        view.set_titlebar_inset(inset);
+        view.list_loading = false;
+        view.selected = Some(summary("Titlebar"));
+        view.detail = Some(detail("Titlebar"));
+        view.diff_loading = true;
+        view.fullscreen = fullscreen;
+        view.review_tab = Some(ReviewTab {
+            scope: ReviewScope::AllChanges,
+            commits: vec![],
+        });
+        view
+    });
+    let mut visual = VisualTestContext::from_window(handle.into(), cx);
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    (
+        visual
+            .debug_bounds("pr-tab-All")
+            .map(|bounds| bounds.left()),
+        visual.debug_bounds("pr-review-tab").unwrap().left(),
+    )
+}
+
+#[gpui::test]
+fn headers_start_after_the_titlebar_once_the_sidebar_closes(cx: &mut gpui::TestAppContext) {
+    use gpui::px;
+    // Sidebar open: the trigger ends at x=190, left of a page that starts
+    // past the 240px sidebar and its hairline, so the tabs keep the header's
+    // 15px inset.
+    let (all, review) = titlebar_layout(cx, 190.0 - 241.0, false);
+    assert_eq!(all, Some(px(15.0)));
+    // Sidebar closed (ChatGPT 26.924 at 1470px: the header starts at x=128,
+    // `px-2` twice): the tabs move past the traffic lights and the trigger.
+    let (all, split_review) = titlebar_layout(cx, 128.0, false);
+    assert_eq!(all, Some(px(144.0)));
+    // The split detail panel sits right of the list and stays put.
+    assert_eq!(split_review, review);
+    // Full screen spans the page, so the task tab strip leads with a
+    // `headerLeftWidth` spacer: 8 + 128 + 6.
+    let (all, review) = titlebar_layout(cx, 128.0, true);
+    assert_eq!(all, None);
+    assert_eq!(review, px(142.0));
+}
+
 /// The review scope menu, with the detail pane taking `ratio` of a 1440px
 /// window and one commit titled `subject`, its `Commits` flyout open:
 /// (row, flyout) bounds.

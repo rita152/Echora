@@ -24,13 +24,18 @@ use crate::{
 };
 
 use super::{
-    ChatApp, ConversationKey, DismissPermissionUi, LEADING_TITLEBAR_CONTROLS_TOP, OpenFiles,
-    OpenSideChat, RIGHT_PANEL_MIN_WIDTH, STARTUP_LOADING_BLINK_DURATION, STARTUP_LOADING_LOGO_SIZE,
-    ToggleReview, ToggleTerminal,
+    ChatApp, ConversationKey, DismissPermissionUi, LEADING_TITLEBAR_CONTROLS_GAP,
+    LEADING_TITLEBAR_CONTROLS_LEFT, LEADING_TITLEBAR_CONTROLS_TOP, OpenFiles, OpenSideChat,
+    RIGHT_PANEL_MIN_WIDTH, STARTUP_LOADING_BLINK_DURATION, STARTUP_LOADING_LOGO_SIZE, ToggleReview,
+    ToggleTerminal,
+    sidebar::{conversation_titlebar_leading_edge, sidebar_trigger_left, titlebar_leading_edge},
 };
 
 /// `_MainContentTopFade`: `h-4`, from `--color-surface` to transparent.
 const MAIN_CONTENT_TOP_FADE: f32 = 16.0;
+/// From the header's leading edge to the thread title's text: the reference's
+/// 0.5px hairline, the toolbar's `ps-2`, and the title's `-ms-0.5 px-1.5`.
+const RESUMED_TITLE_INSET: f32 = 0.5 + 8.0 - 2.0 + 6.0;
 
 pub(super) fn panel_resize_handle(
     id: &'static str,
@@ -283,25 +288,28 @@ impl Render for ChatApp {
         if self.showing_pull_requests {
             // The page sizes its panes from its own width, like the reference's
             // app shell measuring the main content area.
-            let page_width = f32::from(window.viewport_size().width)
-                - revealed_sidebar_width
-                - if main_left_border { hairline } else { 0.0 };
+            let page_left = revealed_sidebar_width + if main_left_border { hairline } else { 0.0 };
+            let page_width = f32::from(window.viewport_size().width) - page_left;
             let page_height = f32::from(window.viewport_size().height);
-            self.pull_requests
-                .update(cx, |view, _| view.set_page_size(page_width, page_height));
+            // Once the sidebar no longer covers them, the traffic lights and the
+            // sidebar trigger overlap the page's top-left corner; its headers
+            // start after them, like the reference's `headerLeftWidth`.
+            let titlebar_inset = titlebar_leading_edge(sidebar_reveal) - page_left;
+            self.pull_requests.update(cx, |view, _| {
+                view.set_page_size(page_width, page_height);
+                view.set_titlebar_inset(titlebar_inset);
+            });
         }
+        // Settings and the Pull Requests page own the whole window or content
+        // area and draw their own headers over the active conversation.
         let resumed_title = match &self.active_conversation {
-            ConversationKey::Thread(id) if !self.showing_settings => {
-                self.workspace_store.snapshot().thread(id).map(|thread| {
-                    (
-                        thread.title.clone(),
-                        crate::workspace::project_id_for_thread(
-                            thread,
-                            &self.workspace_store.snapshot().projects,
-                        )
-                        .is_some(),
-                    )
-                })
+            ConversationKey::Thread(id)
+                if !self.showing_settings && !self.showing_pull_requests =>
+            {
+                self.workspace_store
+                    .snapshot()
+                    .thread(id)
+                    .map(|thread| thread.title.clone())
             }
             _ => None,
         };
@@ -323,6 +331,9 @@ impl Render for ChatApp {
                 Some(RightPanelMode::Review | RightPanelMode::SideChat)
             )
             && self.right_panel.fullscreen;
+        // `Rsa` belongs to the conversation page's header, which a full-screen
+        // side panel replaces.
+        let conversation_new_chat = resumed_title.is_some() && !review_fullscreen;
         let right_panel_width = if review_fullscreen {
             px(viewport_width - revealed_sidebar_width)
         } else {
@@ -728,7 +739,7 @@ impl Render for ChatApp {
                     cx,
                 ))
             })
-            .when_some(resumed_title.filter(|_| !review_fullscreen), |shell, (title, in_project)| {
+            .when_some(resumed_title.clone().filter(|_| !review_fullscreen), |shell, title| {
                 // The reference's thread header is transparent: the transcript
                 // scrolls on under the title, and only a 16px fade from the
                 // surface colour (`_MainContentTopFade`) softens its top edge.
@@ -736,6 +747,13 @@ impl Render for ChatApp {
                 // lays the pane out below its toolbar, so the header stays
                 // opaque there.
                 let transparent = !self.right_panel.open;
+                // The toolbar (`ps-2`) starts past the sidebar or past the
+                // titlebar's leading area, whichever ends later, and the
+                // title's `-ms-0.5 px-1.5` puts its text 12px further in:
+                // x=252.5 with the sidebar open, 174.5 after `New chat` with
+                // it closed (each 0.5px past the reference's hairline).
+                let header_start = revealed_sidebar_width
+                    .max(conversation_titlebar_leading_edge(sidebar_reveal));
                 shell
                     .when(transparent, |shell| {
                         shell.child(
@@ -758,11 +776,10 @@ impl Render for ChatApp {
                     .right(if self.right_panel.open { right_panel_width } else { px(0.0) })
                     .h(px(46.0))
                     .when(!transparent, |header| header.bg(theme.surface).border_b_1().border_color(theme.border))
-                    .pl(px(if sidebar_reveal < 0.5 { 184.0 } else { 14.0 })).pr(px(100.0))
-                    .flex().items_center().gap(px(12.0))
+                    .pl(px(header_start - revealed_sidebar_width + RESUMED_TITLE_INSET)).pr(px(100.0))
+                    .flex().items_center()
                         .text_size(px(14.0)).line_height(px(20.0)).font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(theme.text)
-                    .when(in_project, |header| header.child(icon("folder", theme.text.into()).size(px(16.0)).flex_none()))
                     .child(div().min_w(px(0.0)).truncate().child(title)))
             })
             .when(main_left_border, |shell| {
@@ -788,24 +805,72 @@ impl Render for ChatApp {
             .child(titlebar_interaction_area())
             .when(!self.showing_settings, |shell| {
                 shell
+                    // Back and Forward belong to the open sidebar: they fade
+                    // with it while the trigger slides over to x=94.
+                    .when(sidebar_reveal > 0.0, |shell| {
+                        shell.child(
+                            div()
+                                .absolute()
+                                .top(px(LEADING_TITLEBAR_CONTROLS_TOP))
+                                .left(px(LEADING_TITLEBAR_CONTROLS_LEFT))
+                                .flex()
+                                .gap(px(LEADING_TITLEBAR_CONTROLS_GAP))
+                                .when(sidebar_reveal < 1.0, |controls| {
+                                    controls.opacity(sidebar_reveal)
+                                })
+                                .child(titlebar_icon_button("back", false, false, theme))
+                                // The captured reference has no forward history, so this
+                                // control is intentionally disabled and 40% opaque.
+                                .child(titlebar_icon_button("forward", true, false, theme)),
+                        )
+                    })
+                    // A conversation offers `New chat` after the trigger once
+                    // the sidebar, and its own New chat row, are out of view.
+                    .when(conversation_new_chat && sidebar_reveal < 1.0, |shell| {
+                        shell.child(
+                            div()
+                                .absolute()
+                                .top(px(LEADING_TITLEBAR_CONTROLS_TOP))
+                                .left(px(titlebar_leading_edge(sidebar_reveal)))
+                                .when(sidebar_reveal > 0.0, |slot| {
+                                    slot.opacity(1.0 - sidebar_reveal)
+                                })
+                                .child(
+                                    // `Ji` ghost toolbar button: `rounded-button-toolbar`.
+                                    titlebar_icon_button("new-chat", false, false, theme)
+                                        .rounded(px(12.5))
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.sidebar.update(cx, |sidebar, cx| {
+                                                sidebar.start_new_conversation(cx)
+                                            });
+                                        })),
+                                ),
+                        )
+                    })
                     .child(
                         div()
                             .absolute()
                             .top(px(LEADING_TITLEBAR_CONTROLS_TOP))
-                            .left(px(88.0))
-                            .flex()
-                            .gap(px(4.0))
+                            .left(px(sidebar_trigger_left(sidebar_reveal)))
                             .child(
-                                titlebar_icon_button("sidebar-toggle", false, false, theme).on_click(
+                                // `Show sidebar` draws its own glyph: a short bar
+                                // inside the frame instead of the full divider.
+                                titlebar_icon_button(
+                                    if self.sidebar_layout.collapsed {
+                                        "sidebar-toggle-closed"
+                                    } else {
+                                        "sidebar-toggle"
+                                    },
+                                    false,
+                                    false,
+                                    theme,
+                                )
+                                .on_click(
                                     cx.listener(|this, _, window, cx| {
                                         this.toggle_sidebar(window, cx);
                                     }),
                                 ),
-                            )
-                            .child(titlebar_icon_button("back", false, false, theme))
-                            // The captured reference has no forward history, so this
-                            // control is intentionally disabled and 40% opaque.
-                            .child(titlebar_icon_button("forward", true, false, theme)),
+                            ),
                     )
                     .child(
                         div()

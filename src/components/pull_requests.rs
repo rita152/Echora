@@ -173,6 +173,10 @@ pub struct PullRequestsView {
     /// (the window minus the revealed sidebar and its hairline).
     page_width: f32,
     page_height: f32,
+    /// How far the titlebar's traffic lights and sidebar trigger reach past
+    /// the page's left edge: 128px with the sidebar closed, negative while
+    /// the open sidebar keeps them clear. Reported by the host every frame.
+    titlebar_inset: f32,
     /// Stored `app-shell:right-panel-width` ratio; `None` uses the reference
     /// default width.
     detail_ratio: Option<f32>,
@@ -408,6 +412,7 @@ impl PullRequestsView {
             pending_expand_anchor: None,
             page_width: 0.0,
             page_height: 0.0,
+            titlebar_inset: 0.0,
             detail_ratio: None,
             detail_resize: None,
             list_scroll: gpui::ScrollHandle::new(),
@@ -536,6 +541,12 @@ impl PullRequestsView {
     pub fn set_page_size(&mut self, width: f32, height: f32) {
         self.page_width = width;
         self.page_height = height;
+    }
+
+    /// Reported with the page size, and for the same reason not a render
+    /// input of its own.
+    pub fn set_titlebar_inset(&mut self, inset: f32) {
+        self.titlebar_inset = inset;
     }
 
     pub fn set_detail_ratio(&mut self, ratio: Option<f32>, cx: &mut Context<Self>) {

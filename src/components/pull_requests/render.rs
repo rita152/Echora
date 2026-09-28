@@ -57,7 +57,7 @@ impl gpui::Render for PullRequestsView {
         }
         self.apply_capture_diff_offset(cx);
         self.apply_pending_file_scroll(cx);
-        let fullscreen = self.fullscreen || (self.compact() && self.selected.is_some());
+        let fullscreen = self.detail_spans_page();
         let detail = if fullscreen {
             None
         } else {
@@ -206,6 +206,20 @@ impl PullRequestsView {
     /// the detail panel; below that the page shows one pane at a time.
     pub(super) fn compact(&self) -> bool {
         !self.fullscreen && self.compact_layout
+    }
+
+    /// Full screen, or a compact page showing its selection: the detail
+    /// panel takes the list's place at the page's left edge.
+    pub(super) fn detail_spans_page(&self) -> bool {
+        self.fullscreen || (self.compact() && self.selected.is_some())
+    }
+
+    /// `pointer-events-none h-full shrink-0` sized to `headerLeftWidth`: a
+    /// detail header that spans the page, with the sidebar closed, starts
+    /// after the traffic lights and the sidebar trigger.
+    pub(super) fn titlebar_spacer(&self) -> Option<Div> {
+        (self.detail_spans_page() && self.titlebar_inset > 0.0)
+            .then(|| div().flex_none().w(px(self.titlebar_inset)).h_full())
     }
 
     pub(super) fn control_anchor<K: Into<String>>(&self, key: K) -> impl IntoElement + use<K> {
@@ -582,6 +596,16 @@ impl PullRequestsView {
 
     /// A classic-scroller thumb for `scroll`, drawn when the system shows
     /// scroll bars and the content overflows.
+    /// The width a scroller keeps for its scrollbar: `SCROLLBAR_GUTTER` with
+    /// classic scrollers, nothing with overlay ones.
+    pub(super) fn scrollbar_gutter(&self) -> f32 {
+        if self.classic_scrollbars {
+            SCROLLBAR_GUTTER
+        } else {
+            0.0
+        }
+    }
+
     pub(super) fn scrollbar_thumb(
         &self,
         scroll: &gpui::ScrollHandle,

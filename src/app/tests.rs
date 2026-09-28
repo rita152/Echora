@@ -201,7 +201,7 @@ fn startup_loading_screen_waits_for_catalog_sidebar_and_one_second_minimum() {
     });
     window.draw();
 
-    let sidebar_toggle_center = point(px(102.0), px(25.0));
+    let sidebar_toggle_center = point(px(170.0), px(23.0));
     window.simulate_click(sidebar_toggle_center, MouseButton::Left);
     assert!(!window.read(|chat, _| chat.sidebar_layout.collapsed));
 
@@ -232,7 +232,7 @@ fn startup_loading_screen_waits_for_catalog_sidebar_and_one_second_minimum() {
 }
 
 #[test]
-fn sidebar_toggle_collapses_and_restores_without_moving_the_titlebar_control() {
+fn sidebar_toggle_moves_between_the_reference_titlebar_positions() {
     let mut app = TestApp::new();
     let mut window = app.open_window_with_options(
         WindowOptions {
@@ -248,9 +248,11 @@ fn sidebar_toggle_collapses_and_restores_without_moving_the_titlebar_control() {
     window.draw();
     assert!(!window.read(|app, _| app.sidebar_layout.collapsed));
 
-    // The control remains at left: 88px, centered at y=25px in both states.
-    let toggle_center = point(px(102.0), px(25.0));
-    window.simulate_click(toggle_center, MouseButton::Left);
+    // ChatGPT 26.924: after Back and Forward (x=156) while the sidebar is
+    // open, alone at x=94 once it is closed; centered on the traffic lights.
+    let open_center = point(px(170.0), px(23.0));
+    let closed_center = point(px(108.0), px(23.0));
+    window.simulate_click(open_center, MouseButton::Left);
     assert!(window.read(|app, _| app.sidebar_layout.collapsed));
     assert!(window.read(|app, _| app.sidebar_layout.animation_running));
 
@@ -263,13 +265,82 @@ fn sidebar_toggle_collapses_and_restores_without_moving_the_titlebar_control() {
     assert!(!window.read(|app, _| app.sidebar_layout.animation_running));
 
     window.draw();
-    window.simulate_click(toggle_center, MouseButton::Left);
+    // Back and Forward are gone, so nothing answers where the trigger was.
+    window.simulate_click(open_center, MouseButton::Left);
+    assert!(window.read(|app, _| app.sidebar_layout.collapsed));
+    window.simulate_click(closed_center, MouseButton::Left);
     assert!(!window.read(|app, _| app.sidebar_layout.collapsed));
     assert!(window.read(|app, _| app.sidebar_layout.animation_running));
 
     simulate_next_frame(&mut app, &window, 400);
     assert_eq!(window.read(|app, _| app.sidebar_layout.reveal), 1.0);
     assert!(!window.read(|app, _| app.sidebar_layout.animation_running));
+}
+
+#[test]
+fn titlebar_leading_area_matches_the_reference_geometry() {
+    use super::sidebar::{
+        conversation_titlebar_leading_edge, sidebar_trigger_left, titlebar_leading_edge,
+    };
+    // ChatGPT 26.924 at 1470px: Back 88, Forward 122, trigger 156 while the
+    // sidebar is open; trigger 94 and `New chat` 128 once it is closed.
+    assert_eq!(sidebar_trigger_left(1.0), 156.0);
+    assert_eq!(sidebar_trigger_left(0.0), 94.0);
+    assert_eq!(titlebar_leading_edge(0.0), 128.0);
+    assert_eq!(conversation_titlebar_leading_edge(0.0), 162.0);
+    assert_eq!(conversation_titlebar_leading_edge(1.0), 190.0);
+}
+
+#[test]
+fn collapsed_conversation_titlebar_starts_a_new_chat() {
+    let mut app = TestApp::new();
+    let mut window = app.open_window_with_options(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: point(px(0.0), px(0.0)),
+                size: size(px(900.0), px(700.0)),
+            })),
+            ..Default::default()
+        },
+        |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
+    );
+    let composer = window.update(|chat, _, cx| {
+        chat.complete_startup_for_capture(cx);
+        chat.conversation_hosts[&chat.active_conversation]
+            .composer
+            .clone()
+    });
+    app.update(|cx| {
+        composer.update(cx, |composer, cx| {
+            composer.set_workspace_context(
+                PathBuf::from("/tmp/project"),
+                None,
+                Some("thread-header".to_owned()),
+                cx,
+            );
+        });
+    });
+    window.update(|chat, _, cx| {
+        let mut thread = history_fixture("thread-header", "hello").thread;
+        thread.title = "Header".to_owned();
+        chat.workspace_store.insert_thread_for_test(thread);
+        chat.rekey_created_thread("thread-header".to_owned(), cx);
+    });
+    let thread_key = ConversationKey::Thread("thread-header".to_owned());
+    window.draw();
+
+    // With the sidebar open, x=142 is the disabled Forward button.
+    let new_chat_center = point(px(142.0), px(23.0));
+    window.simulate_click(new_chat_center, MouseButton::Left);
+    assert_eq!(
+        window.read(|chat, _| chat.active_conversation.clone()),
+        thread_key
+    );
+
+    window.update(|chat, _, cx| chat.collapse_sidebar_for_capture(cx));
+    window.draw();
+    window.simulate_click(new_chat_center, MouseButton::Left);
+    assert!(window.read(|chat, _| matches!(chat.active_conversation, ConversationKey::Draft(_))));
 }
 
 #[test]

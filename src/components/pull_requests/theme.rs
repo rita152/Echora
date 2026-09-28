@@ -13,8 +13,9 @@ use crate::theme::ThemeMode;
 pub const TOOLBAR_HEIGHT: f32 = 46.0;
 /// `px-5` around list content and `px-5` in the detail scroll body.
 pub const PANE_PADDING: f32 = 20.0;
-/// The reference's `[scrollbar-gutter:stable]`: content ends 11px before the
-/// pane edge (592.84 → 581.84).
+/// The reference's `[scrollbar-gutter:stable]` with classic scrollers: content
+/// ends 11px before the pane edge (592.84 → 581.84). Overlay scrollers reserve
+/// nothing (the list's content spans its full 606.77px).
 pub const SCROLLBAR_GUTTER: f32 = 11.0;
 pub const ROW_RADIUS: f32 = 15.0;
 /// The app-shell header toolbar sits 7px inside the list pane on the left and

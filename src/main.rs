@@ -1164,6 +1164,7 @@ fn main() {
         .find_map(|arg| arg.strip_prefix("--window-height=")?.parse::<f32>().ok())
         .unwrap_or(900.0);
     let sidebar_bottom = args.iter().any(|arg| arg == "--sidebar-bottom");
+    let sidebar_collapsed = args.iter().any(|arg| arg == "--sidebar-collapsed");
     let sidebar_width = args
         .iter()
         .find_map(|arg| arg.strip_prefix("--sidebar-width=")?.parse::<f32>().ok());
@@ -1518,6 +1519,9 @@ fn main() {
                         }
                         if let Some(width) = sidebar_width {
                             app.set_sidebar_width_for_capture(width, cx);
+                        }
+                        if sidebar_collapsed {
+                            app.collapse_sidebar_for_capture(cx);
                         }
                         if projects_menu_open {
                             app.open_projects_section_menu(cx);

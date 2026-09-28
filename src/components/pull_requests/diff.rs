@@ -178,12 +178,7 @@ impl PullRequestsView {
         };
         // The file tree floats over the diff, which keeps its width.
         let tree = 0.0;
-        let gutter = if self.classic_scrollbars {
-            super::theme::SCROLLBAR_GUTTER
-        } else {
-            0.0
-        };
-        let cell = self.pane_width - tree - gutter;
+        let cell = self.pane_width - tree - self.scrollbar_gutter();
         let code = |cell: f32| (cell - GUTTER_WIDTH - CELL_PADDING * 2.0).max(40.0);
         // A split half gives 1px to the 2px gap between the halves.
         self.set_code_width(code(cell), code(cell / 2.0 - 1.0));

@@ -207,6 +207,7 @@ impl PullRequestsView {
                         .flex()
                         .items_center()
                         .gap(px(8.0))
+                        .children(self.titlebar_spacer())
                         .when_some(status, |left, status| {
                             left.child(Self::state_glyph(status, theme, 18.0))
                         })
@@ -241,6 +242,8 @@ impl PullRequestsView {
             .flex()
             .items_center()
             .gap(px(4.0))
+            // The leading column keeps its own `gap-2` after the spacer.
+            .children(self.titlebar_spacer().map(|spacer| spacer.mr(px(4.0))))
             .when_some(status.filter(|_| has_detail), |header, status| {
                 header.child(Self::state_glyph(status, theme, 18.0))
             })
@@ -303,10 +306,12 @@ impl PullRequestsView {
             .flex()
             .items_center()
             .gap(px(6.0))
+            .children(self.titlebar_spacer())
             .child(
                 div().flex_1().min_w(px(0.0)).flex().items_center().child(
                     div()
                         .id("pr-review-tab")
+                        .debug_selector(|| "pr-review-tab".into())
                         .relative()
                         .flex_none()
                         .w(px(238.0))
@@ -613,7 +618,7 @@ impl PullRequestsView {
                         wrapper.relative().top(px(-offset))
                     })
                     .pl(px(PANE_PADDING))
-                    .pr(px(PANE_PADDING + SCROLLBAR_GUTTER))
+                    .pr(px(PANE_PADDING + self.scrollbar_gutter()))
                     .pb(px(PANE_PADDING))
                     .child(column),
             )

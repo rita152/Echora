@@ -1387,6 +1387,22 @@ impl SidebarView {
         cx.notify();
     }
 
+    /// Starts a chat in the selected project: the header's `New chat` row,
+    /// and the titlebar's `New chat` button while the sidebar is closed.
+    pub fn start_new_conversation(&mut self, cx: &mut Context<Self>) {
+        let project = self
+            .selected_project_id
+            .as_deref()
+            .and_then(|project_id| {
+                self.snapshot
+                    .projects
+                    .iter()
+                    .find(|project| project.project_id == project_id)
+            })
+            .cloned();
+        self.new_conversation(project.as_ref(), cx);
+    }
+
     fn new_conversation(&mut self, project: Option<&Project>, cx: &mut Context<Self>) {
         let (project_id, cwd) = new_conversation_target(project);
         self.selected_project_id = project_id.clone();
@@ -3694,16 +3710,6 @@ impl SidebarView {
             .snapshot
             .capabilities
             .supports(AgentCapability::ThreadSearch);
-        let new_project = self
-            .selected_project_id
-            .as_deref()
-            .and_then(|project_id| {
-                self.snapshot
-                    .projects
-                    .iter()
-                    .find(|project| project.project_id == project_id)
-            })
-            .cloned();
         let new_conversation = div()
             .id("sidebar-new-conversation")
             .h(px(ROW_HEIGHT))
@@ -3719,9 +3725,7 @@ impl SidebarView {
             .hover(move |style| style.bg(theme.sidebar_hover))
             .child(icon("sidebar-new-chat", theme.sidebar_text.into()).size(px(16.0)))
             .child(sidebar_row_label(crate::i18n::text("新对话")))
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.new_conversation(new_project.as_ref(), cx);
-            }));
+            .on_click(cx.listener(|this, _, _, cx| this.start_new_conversation(cx)));
         let search = Self::nav_icon_button("sidebar-search", "search", theme)
             .when(!can_search, |button| button.opacity(0.4).cursor_default())
             .when(can_search, |button| {

@@ -1174,6 +1174,13 @@ impl WorkspaceStore {
         });
     }
 
+    /// Lists `thread` as if the backend had returned it, for shell tests that
+    /// cannot reach an app-server.
+    #[cfg(test)]
+    pub(crate) fn insert_thread_for_test(&self, thread: ThreadSummary) {
+        self.update(|snapshot| upsert_thread_everywhere(snapshot, thread));
+    }
+
     /// The main area now shows `thread_id` (or no chat). Showing a chat reads
     /// it, like opening it in the reference.
     pub fn set_viewed_thread(&self, thread_id: Option<ThreadId>) {

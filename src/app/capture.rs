@@ -272,6 +272,18 @@ impl ChatApp {
         self.sidebar
             .update(cx, |sidebar, cx| sidebar.set_width(width, cx));
     }
+    /// Starts with the sidebar closed and its transition settled, as after a
+    /// click on the titlebar trigger.
+    pub fn collapse_sidebar_for_capture(&mut self, cx: &mut Context<Self>) {
+        let layout = &mut self.sidebar_layout;
+        layout.collapsed = true;
+        layout.reveal = 0.0;
+        layout.animation_from = 0.0;
+        layout.animation_to = 0.0;
+        layout.animation_started_at = None;
+        layout.animation_running = false;
+        cx.notify();
+    }
     /// Opens the sidebar project hover card for the screenshot path.
     pub fn open_project_hover_card_for_capture(&mut self, project: &str, cx: &mut Context<Self>) {
         self.sidebar.update(cx, |sidebar, cx| {

@@ -29,6 +29,8 @@ impl PullRequestsView {
 
     /// The app-shell header row: the toolbar sits 7px inside the pane with
     /// `px-2`, so the `All`/`Reviewing`/`Authored` switch starts 15px in.
+    /// With the sidebar closed the header starts after the titlebar's
+    /// leading area instead, `px-2` past it (tabs at x=144).
     fn list_toolbar(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let theme = self.theme();
         let mut tabs = div()
@@ -48,6 +50,7 @@ impl PullRequestsView {
                     selected,
                 )
                 .aria_label(SharedString::from(tab.label()))
+                .debug_selector(move || format!("pr-tab-{}", tab.label()))
                 .on_click(move |_, _, cx| {
                     view.update(cx, |view, cx| view.select_tab(tab, cx));
                 })
@@ -57,7 +60,7 @@ impl PullRequestsView {
         div()
             .flex_none()
             .h(px(TOOLBAR_HEIGHT))
-            .ml(px(LIST_TOOLBAR_INSET_LEFT))
+            .ml(px(LIST_TOOLBAR_INSET_LEFT.max(self.titlebar_inset + 8.0)))
             .mr(px(LIST_TOOLBAR_INSET_RIGHT))
             .px(px(8.0))
             .flex()
@@ -85,7 +88,8 @@ impl PullRequestsView {
     }
 
     /// One scroll container for the sticky search row and the sections, with
-    /// the reference's `[scrollbar-gutter:stable]` 11px gutter on the right.
+    /// the reference's `[scrollbar-gutter:stable]` on the right (11px with
+    /// classic scrollers, none with overlay ones).
     fn list_scroll_area(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let theme = self.theme();
         div()
@@ -101,7 +105,7 @@ impl PullRequestsView {
                     .track_scroll(&self.list_scroll)
                     .child(
                         div()
-                            .w(px((self.list_width - SCROLLBAR_GUTTER).max(0.0)))
+                            .w(px((self.list_width - self.scrollbar_gutter()).max(0.0)))
                             .min_h_full()
                             .flex()
                             .flex_col()
@@ -117,7 +121,7 @@ impl PullRequestsView {
                     .absolute()
                     .top(px(LIST_SEARCH_ROW_HEIGHT))
                     .left_0()
-                    .w(px((self.list_width - SCROLLBAR_GUTTER).max(0.0)))
+                    .w(px((self.list_width - self.scrollbar_gutter()).max(0.0)))
                     .h(px(32.0))
                     .bg(gpui::linear_gradient(
                         180.0,
@@ -130,7 +134,7 @@ impl PullRequestsView {
                     .absolute()
                     .top_0()
                     .left_0()
-                    .w(px((self.list_width - SCROLLBAR_GUTTER).max(0.0)))
+                    .w(px((self.list_width - self.scrollbar_gutter()).max(0.0)))
                     .bg(theme.surface)
                     .child(self.list_search_row(cx)),
             )

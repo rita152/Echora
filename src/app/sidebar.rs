@@ -8,8 +8,9 @@ use gpui::{
 };
 
 use super::{
-    ChatApp, RIGHT_PANEL_MAIN_MIN_WIDTH, RIGHT_PANEL_MIN_WIDTH, SIDEBAR_MAX_WIDTH,
-    SIDEBAR_MIN_WIDTH, SIDEBAR_TRANSITION_DURATION, render::panel_resize_handle,
+    ChatApp, LEADING_TITLEBAR_CONTROL_SIZE, LEADING_TITLEBAR_CONTROLS_GAP,
+    LEADING_TITLEBAR_CONTROLS_LEFT, RIGHT_PANEL_MAIN_MIN_WIDTH, RIGHT_PANEL_MIN_WIDTH,
+    SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, SIDEBAR_TRANSITION_DURATION, render::panel_resize_handle,
 };
 use crate::theme::Theme;
 
@@ -204,4 +205,31 @@ pub(super) fn sidebar_transition_ease(progress: f32) -> f32 {
         }
     }
     bezier((lower + upper) * 0.5, 1.0, 1.0)
+}
+
+/// The sidebar trigger's left edge: past Back and Forward while the sidebar is
+/// open, one gap in once it is closed. It slides between the two with the
+/// sidebar, as the reference's `sidebar-trigger` view transition does.
+pub(super) fn sidebar_trigger_left(reveal: f32) -> f32 {
+    let step = LEADING_TITLEBAR_CONTROL_SIZE + LEADING_TITLEBAR_CONTROLS_GAP;
+    let closed = LEADING_TITLEBAR_CONTROLS_LEFT + LEADING_TITLEBAR_CONTROLS_GAP;
+    let open = LEADING_TITLEBAR_CONTROLS_LEFT + 2.0 * step;
+    closed + (open - closed) * reveal.clamp(0.0, 1.0)
+}
+
+/// Where the titlebar's leading area ends in window coordinates: the trigger
+/// plus its `me-1.5` margin (x=128 with the sidebar closed). Page headers
+/// that reach under the titlebar start after it, and a conversation's
+/// `New chat` button sits there.
+pub(super) fn titlebar_leading_edge(reveal: f32) -> f32 {
+    sidebar_trigger_left(reveal) + LEADING_TITLEBAR_CONTROL_SIZE + LEADING_TITLEBAR_CONTROLS_GAP
+}
+
+/// A conversation adds `New chat` after the trigger while the sidebar is
+/// closed (`Rsa`), so its leading area ends one control further, at x=162.
+/// The button fades in as the sidebar collapses and the area grows with it.
+pub(super) fn conversation_titlebar_leading_edge(reveal: f32) -> f32 {
+    titlebar_leading_edge(reveal)
+        + (LEADING_TITLEBAR_CONTROL_SIZE + LEADING_TITLEBAR_CONTROLS_GAP)
+            * (1.0 - reveal.clamp(0.0, 1.0))
 }
