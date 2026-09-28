@@ -11,6 +11,10 @@
 # the running window instead of starting. The launcher therefore clones the
 # profile once (APFS clonefile, no extra disk use) and points the instance at
 # the copy, so the user's profile is only ever read.
+#
+# Like `scripts/launch_chatgpt_reference.sh`, it pins the legacy sidebar Echora
+# recreates once the window is up (ChatGPT fetches the navigation-rail gate
+# anew at every launch) and stops the instance when that fails.
 set -eu
 
 port="${P0_REFERENCE_PORT:-9333}"
@@ -20,6 +24,7 @@ shim_dir="$root/artifacts/p0-stage/wire-shims/reference"
 user_data="${P0_REFERENCE_USER_DATA:-$root/artifacts/p0-stage/reference-user-data}"
 source_data="${P0_REFERENCE_SOURCE_USER_DATA:-$HOME/Library/Application Support/Codex}"
 
+command -v node >/dev/null 2>&1 || { echo "node is required to pin the legacy sidebar" >&2; exit 2; }
 if lsof -nP -i ":$port" >/dev/null 2>&1; then
   echo "port $port is already in use; refusing to reuse another task's instance" >&2
   exit 2
@@ -45,4 +50,17 @@ open -n \
   /Applications/ChatGPT.app \
   --args --user-data-dir="$user_data" --remote-debugging-port="$port"
 
-echo "launched ChatGPT reference instance on port $port; logs in $log_dir"
+layout_report="$log_dir/reference-layout.json"
+if ! CHATGPT_CDP_HTTP="http://127.0.0.1:$port" node "$root/scripts/cdp_pin_reference_layout.mjs" --layout=legacy --wait=90 >"$layout_report" 2>&1; then
+  echo "the reference did not render the legacy sidebar; stopping it" >&2
+  cat "$layout_report" >&2 || true
+  for pid in $(pgrep -f "ChatGPT --user-data-dir=$user_data" 2>/dev/null || true); do
+    for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+      kill "$child" 2>/dev/null || true
+    done
+    kill "$pid" 2>/dev/null || true
+  done
+  exit 3
+fi
+
+echo "launched ChatGPT reference instance on port $port with the legacy sidebar pinned; logs in $log_dir"

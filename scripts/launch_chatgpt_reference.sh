@@ -19,6 +19,12 @@
 #     a launchd-submitted process is denied access to this repository's
 #     external volume, and a redirected log on that volume makes the job exit
 #     before the app starts.
+#   * the legacy sidebar is pinned once the window is up: ChatGPT picks it or
+#     the navigation rail with a Statsig gate fetched anew at every launch, and
+#     Echora recreates the legacy sidebar. `cdp_pin_reference_layout.mjs` only
+#     overrides the gate in the page's memory, so the launch fails (and stops
+#     the instance) unless the sidebar renders as `legacy`. A reload of the
+#     page drops the pin; rerun that script before capturing again.
 #
 # Usage:
 #   scripts/launch_chatgpt_reference.sh [--stop]
@@ -52,7 +58,9 @@ codex_home="${CHATGPT_REFERENCE_CODEX_HOME:-}"
 binary="/Applications/ChatGPT.app/Contents/MacOS/ChatGPT"
 extra_args="${CHATGPT_REFERENCE_EXTRA_ARGS:---disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling}"
 
-if [ "${1:-}" = "--stop" ]; then
+pin_script="$(cd "$(dirname "$0")" && pwd)/cdp_pin_reference_layout.mjs"
+
+stop_instance() {
   launchctl remove "$label" 2>/dev/null || true
   for pid in $(pgrep -f "ChatGPT --user-data-dir=$user_data" 2>/dev/null || true); do
     for child in $(pgrep -P "$pid" 2>/dev/null || true); do
@@ -60,11 +68,16 @@ if [ "${1:-}" = "--stop" ]; then
     done
     kill "$pid" 2>/dev/null || true
   done
+}
+
+if [ "${1:-}" = "--stop" ]; then
+  stop_instance
   echo "stopped $label"
   exit 0
 fi
 
 [ -x "$binary" ] || { echo "missing $binary" >&2; exit 2; }
+command -v node >/dev/null 2>&1 || { echo "node is required to pin the legacy sidebar" >&2; exit 2; }
 if lsof -nP -i ":$port" >/dev/null 2>&1; then
   echo "port $port is already in use; refusing to reuse another task's instance" >&2
   exit 2
@@ -99,16 +112,32 @@ log="$log_dir/reference-instance-$port.log"
 launchctl submit -l "$label" -- /bin/sh -c \
   "export HOME='$HOME'; export CODEX_ELECTRON_USER_DATA_PATH='$user_data'; $codex_home_export exec '$binary' --user-data-dir='$user_data' --remote-debugging-port=$port $extra_args >>'$log' 2>&1"
 
+endpoint_ready=""
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
   sleep 1
   if curl -s --max-time 2 "http://127.0.0.1:$port/json/version" | grep -q Browser; then
-    echo "launched $label on port $port"
-    echo "profile: $user_data"
-    [ -z "$codex_home" ] || echo "codex home: $codex_home"
-    echo "log: $log"
-    exit 0
+    endpoint_ready=1
+    break
   fi
 done
-echo "no debugging endpoint on port $port yet; check $log" >&2
-tail -20 "$log" >&2 || true
-exit 2
+if [ -z "$endpoint_ready" ]; then
+  echo "no debugging endpoint on port $port yet; check $log" >&2
+  tail -20 "$log" >&2 || true
+  exit 2
+fi
+
+# The main window, its Statsig client and the sidebar mount a few seconds
+# after the endpoint answers; the pin script retries until the sidebar renders.
+layout_report="$log_dir/reference-instance-$port-layout.json"
+if ! CHATGPT_CDP_HTTP="http://127.0.0.1:$port" node "$pin_script" --layout=legacy --wait=60 >"$layout_report" 2>&1; then
+  echo "the reference did not render the legacy sidebar; stopping $label" >&2
+  cat "$layout_report" >&2 || true
+  stop_instance
+  exit 3
+fi
+
+echo "launched $label on port $port"
+echo "profile: $user_data"
+[ -z "$codex_home" ] || echo "codex home: $codex_home"
+echo "layout: legacy sidebar pinned in memory ($(grep -o '"networkValue": [a-z]*' "$layout_report" | sed 's/.*: //;s/true/network value: rail/;s/false/network value: legacy/'))"
+echo "log: $log"
