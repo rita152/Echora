@@ -30,19 +30,45 @@ pub(crate) struct UserSubmission {
     pub initial: bool,
 }
 
+/// A fresh clientUserMessageId, unique within this process.
+pub(crate) fn new_client_message_id() -> String {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    format!(
+        "gpui-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    )
+}
+
 impl ConversationState {
+    /// Records a steer that reuses an existing clientUserMessageId (a queued
+    /// message sent now), so its userMessage correlates with that id.
+    pub(crate) fn record_submission_with_id(
+        &mut self,
+        id: String,
+        draft: SubmissionDraft,
+        message: String,
+    ) {
+        self.submissions.push(UserSubmission {
+            id,
+            cycle: self.cycle,
+            target: self.turn_identity.clone(),
+            draft,
+            message,
+            status: SubmissionStatus::Sending,
+            acknowledgement_error: None,
+            item_id: None,
+            initial: false,
+        });
+    }
+
     pub(crate) fn record_submission(
         &mut self,
         draft: SubmissionDraft,
         message: String,
         initial: bool,
     ) -> String {
-        static NEXT: AtomicU64 = AtomicU64::new(1);
-        let id = format!(
-            "gpui-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        );
+        let id = new_client_message_id();
         self.submissions.push(UserSubmission {
             id: id.clone(),
             cycle: self.cycle,
@@ -207,9 +233,13 @@ impl ConversationState {
             submission.status = SubmissionStatus::Accepted;
             submission.initial
         } else {
-            client_id.is_none()
+            // A server-started turn (queue advance) carries the queued
+            // submission's clientUserMessageId; its first user item is the
+            // turn's request even though no local submission names it.
+            (client_id.is_none() || self.external_turn)
                 && first_item
                 && self.submissions.iter().all(|s| s.cycle != self.cycle)
+                && !self.user_message_goal
         };
         if initial {
             self.user_message = Some(text);

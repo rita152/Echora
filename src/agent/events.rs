@@ -98,6 +98,33 @@ pub enum AgentConnectionEvent {
     /// A standalone MCP elicitation for one thread. It is not turn-scoped and
     /// stays answerable while no turn is active, so it is published on the
     /// connection hub instead of a turn event channel.
+    /// A turn this client did not start with `turn/start` began: an active
+    /// goal continuing, the server advancing the follow-up queue, or
+    /// `thread/queue/start`. Transient: it carries the live event stream.
+    TurnStarted {
+        generation: u64,
+        thread_id: ThreadId,
+        turn_id: String,
+        run: super::backend::AgentExternalTurn,
+    },
+    /// Latest goal of one thread. `turn_id` names the turn that produced the
+    /// update, when there is one.
+    ThreadGoalUpdated {
+        generation: u64,
+        thread_id: ThreadId,
+        turn_id: Option<String>,
+        goal: super::goal::AgentThreadGoal,
+    },
+    ThreadGoalCleared {
+        generation: u64,
+        thread_id: ThreadId,
+    },
+    /// The thread's server-side queue changed. Invalidation only: the queue is
+    /// re-read with `thread/queue/list`.
+    ThreadQueueChanged {
+        generation: u64,
+        thread_id: ThreadId,
+    },
     McpElicitationRequested {
         request: AgentMcpElicitationRequest,
         responder: AgentMcpElicitationHandle,

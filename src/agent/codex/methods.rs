@@ -98,6 +98,9 @@ pub(super) fn is_defined_server_method(method: &str) -> bool {
             | "app/list/updated"
             | "externalAgentConfig/import/progress"
             | "externalAgentConfig/import/completed"
+            | "thread/goal/updated"
+            | "thread/goal/cleared"
+            | "thread/queue/changed"
     )
 }
 
@@ -149,6 +152,10 @@ pub(super) fn ensure_server_method_is_defined(message: &Value) -> Result<()> {
             super::file_search::parse_session_completed(message).map(|_| ())
         }
         "thread/tokenUsage/updated" => parse_thread_token_usage_updated(message).map(|_| ()),
+        "thread/goal/updated" | "thread/goal/cleared" => {
+            super::goal::parse_notification(message).map(|_| ())
+        }
+        "thread/queue/changed" => super::queue::parse_changed(message).map(|_| ()),
         // Account notifications are connection-scoped: the manager reduces them
         // into the generation's account snapshot, so validation here keeps the
         // same strictness as every other decoded payload.

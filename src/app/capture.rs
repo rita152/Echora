@@ -551,6 +551,27 @@ impl ChatApp {
             .update(cx, |view, cx| view.set_runtime_for_capture(state, cx));
         cx.notify();
     }
+    /// `--queue-ui-state`, `--goal-ui-state`, `--auto-review-denial-state`.
+    #[cfg(feature = "screenshot")]
+    pub fn set_batch1_for_capture(&mut self, kind: &str, state: &str, cx: &mut Context<Self>) {
+        let composer = self.home.read(cx).composer_entity();
+        composer.update(cx, |composer, cx| match kind {
+            "queue" => composer.set_queue_for_capture(state, cx),
+            "goal" => composer.set_goal_for_capture(state, cx),
+            "slash" => composer.set_slash_menu_for_capture(state, cx),
+            _ => composer.set_auto_review_denial_for_capture(state, cx),
+        });
+        if kind == "goal"
+            && state == "edit-tab"
+            && let Some(goal) = composer.read(cx).capture_goal()
+        {
+            let text = goal.objective.clone();
+            self.open_goal_editor(goal, text, cx);
+        }
+        self.home
+            .update(cx, |home, cx| home.refresh_conversation_for_capture(cx));
+        cx.notify();
+    }
     pub fn set_streaming_reply_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
         self.home.update(cx, |view, cx| {
             view.set_streaming_reply_for_capture(state, cx)

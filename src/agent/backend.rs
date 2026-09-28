@@ -232,6 +232,38 @@ impl AgentRun {
     }
 }
 
+/// The event stream of a turn the server started on its own (goal
+/// continuation, queue advance, `thread/queue/start`). Published once on the
+/// connection hub; the conversation showing that thread takes the run, every
+/// other subscriber leaves it alone. Dropping it never interrupts the turn.
+#[derive(Clone)]
+pub struct AgentExternalTurn(Arc<std::sync::Mutex<Option<AgentRun>>>);
+
+impl AgentExternalTurn {
+    pub(crate) fn new(run: AgentRun) -> Self {
+        Self(Arc::new(std::sync::Mutex::new(Some(run))))
+    }
+
+    /// Takes the run; only the first caller receives it.
+    pub fn take(&self) -> Option<AgentRun> {
+        self.0.lock().ok().and_then(|mut run| run.take())
+    }
+}
+
+impl PartialEq for AgentExternalTurn {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for AgentExternalTurn {}
+
+impl fmt::Debug for AgentExternalTurn {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("AgentExternalTurn")
+    }
+}
+
 /// Boundary between the application and a concrete coding-agent protocol.
 pub trait AgentBackend: Send + Sync {
     fn capabilities(&self) -> AgentCapabilities {
@@ -744,6 +776,93 @@ pub trait AgentBackend: Send + Sync {
         _before_thread_id: Option<ThreadId>,
     ) -> Receiver<WorkspaceResult<()>> {
         unsupported_receiver(AgentCapability::ThreadSectionMove)
+    }
+
+    /// Collaboration mode presets of the current connection generation.
+    fn load_collaboration_modes(&self) -> Receiver<Result<super::AgentCollaborationModes, String>> {
+        unsupported_account_receiver(crate::i18n::text("协作模式"))
+    }
+
+    fn read_thread_goal(
+        &self,
+        _thread_id: ThreadId,
+    ) -> Receiver<Result<super::AgentThreadGoalRead, String>> {
+        unsupported_account_receiver(crate::i18n::text("线程目标"))
+    }
+
+    fn update_thread_goal(
+        &self,
+        _update: super::AgentThreadGoalUpdate,
+    ) -> Receiver<Result<super::AgentThreadGoalRead, String>> {
+        unsupported_account_receiver(crate::i18n::text("线程目标"))
+    }
+
+    fn clear_thread_goal(
+        &self,
+        _thread_id: ThreadId,
+        _generation: u64,
+    ) -> Receiver<Result<bool, String>> {
+        unsupported_account_receiver(crate::i18n::text("线程目标"))
+    }
+
+    fn list_thread_queue(
+        &self,
+        _thread_id: ThreadId,
+    ) -> Receiver<Result<super::AgentThreadQueue, String>> {
+        unsupported_account_receiver(crate::i18n::text("消息排队"))
+    }
+
+    fn add_queued_submission(
+        &self,
+        _request: super::AgentQueueAddRequest,
+    ) -> Receiver<Result<super::AgentQueuedSubmission, String>> {
+        unsupported_account_receiver(crate::i18n::text("消息排队"))
+    }
+
+    fn update_queued_submission(
+        &self,
+        _request: super::AgentQueueUpdateRequest,
+    ) -> Receiver<Result<super::AgentQueuedSubmission, String>> {
+        unsupported_account_receiver(crate::i18n::text("消息排队"))
+    }
+
+    fn delete_queued_submission(
+        &self,
+        _target: super::AgentQueueTarget,
+    ) -> Receiver<Result<bool, String>> {
+        unsupported_account_receiver(crate::i18n::text("消息排队"))
+    }
+
+    fn reorder_queued_submissions(
+        &self,
+        _request: super::AgentQueueReorderRequest,
+    ) -> Receiver<Result<(), String>> {
+        unsupported_account_receiver(crate::i18n::text("消息排队"))
+    }
+
+    /// Starts a queued submission on an idle thread; the turn itself arrives as
+    /// a server-started turn. Returns the started turn id.
+    fn start_queued_submission(
+        &self,
+        _target: super::AgentQueueTarget,
+    ) -> Receiver<Result<String, String>> {
+        unsupported_account_receiver(crate::i18n::text("消息排队"))
+    }
+
+    /// Records the user's approval of one auto-review denial so the agent may
+    /// retry it once. It never runs the action itself.
+    fn approve_auto_review_denial(
+        &self,
+        _request: super::AgentAutoReviewApproval,
+    ) -> Receiver<Result<(), String>> {
+        unsupported_account_receiver(crate::i18n::text("批准自动审核拒绝"))
+    }
+
+    /// A still-running turn the server started for this thread that no view
+    /// claimed when it began, with its turn id; its events replay from the
+    /// start of the turn.
+    fn take_server_turn(&self, _thread_id: &str) -> Option<(String, AgentRun)> {
+        None
     }
 
     fn steer_turn(&self, _request: AgentSteerRequest) -> Receiver<Result<(), String>> {

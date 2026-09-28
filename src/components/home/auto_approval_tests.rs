@@ -26,9 +26,11 @@ fn review(id: &str, target: Option<&str>, status: Status) -> ConversationActivit
             started_at_ms: 1,
             completed_at_ms: (status != Status::InProgress).then_some(2),
             decision_source: (status != Status::InProgress).then(|| "agent".into()),
+            source: serde_json::json!({}),
         },
         closed_locally: false,
         attached_to_item: false,
+        approval: Default::default(),
     }))
 }
 fn command() -> ConversationActivity {
@@ -181,6 +183,7 @@ fn guardian_warning_without_a_prompt_has_no_fabricated_user_bubble() {
             assistant_message_time: None,
             conversation_activity: &activities,
             resumed_turn: None,
+            goal: Default::default(),
         },
         &HashSet::new(),
     );

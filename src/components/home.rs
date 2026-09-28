@@ -82,6 +82,9 @@ use timeline::{
 use tools::ToolGroupDisclosureTransition;
 
 pub struct HomeView {
+    /// Capture fixtures show review blocks expanded.
+    #[cfg(feature = "screenshot")]
+    expand_reviews_for_capture: bool,
     mode: ThemeMode,
     presentation: HomePresentation,
     composer: Entity<ComposerView>,
@@ -376,7 +379,21 @@ impl HomeView {
                     view
                 })
             });
-        view.update(cx, |view, cx| view.sync(review.clone(), self.mode, cx));
+        let composer = self.composer.downgrade();
+        #[cfg(feature = "screenshot")]
+        let expand = self.expand_reviews_for_capture;
+        view.update(cx, |view, cx| {
+            #[cfg(feature = "screenshot")]
+            if expand {
+                view.expanded = true;
+            }
+            view.on_approve(crate::components::callback::UiCallback::new(
+                move |key: crate::agent::AgentAutoApprovalReviewKey, _, cx| {
+                    let _ = composer.update(cx, |composer, cx| composer.approve_review(key, cx));
+                },
+            ));
+            view.sync(review.clone(), self.mode, cx)
+        });
     }
 
     fn with_composer(
@@ -438,6 +455,8 @@ impl HomeView {
             command_scroll_handles: HashMap::new(),
             expanded_collaborations: HashSet::new(),
             auto_review_views: HashMap::new(),
+            #[cfg(feature = "screenshot")]
+            expand_reviews_for_capture: false,
             approval_focus: cx.focus_handle(),
             approval_previews: HashMap::new(),
             focused_approval_request: None,
@@ -472,6 +491,7 @@ impl HomeView {
                 assistant_message_time,
                 conversation_activity: &conversation_activity,
                 resumed_turn: self.composer.read(cx).resumed_turn(),
+                goal: self.composer.read(cx).current_goal_marks(),
             },
             &self.expanded_resumed_turns,
         );
@@ -2090,6 +2110,13 @@ impl HomeView {
     pub fn set_runtime_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
         self.composer
             .update(cx, |view, cx| view.set_runtime_for_capture(state, cx));
+        cx.notify();
+    }
+    #[cfg(feature = "screenshot")]
+    pub fn refresh_conversation_for_capture(&mut self, cx: &mut Context<Self>) {
+        self.expand_reviews_for_capture = true;
+        self.conversation_list.remeasure();
+        self.conversation_cache_dirty = true;
         cx.notify();
     }
     pub fn set_streaming_reply_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {

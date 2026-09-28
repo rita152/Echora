@@ -1303,6 +1303,8 @@ impl ComposerView {
 }
 
 #[cfg(feature = "screenshot")]
+mod batch1;
+#[cfg(feature = "screenshot")]
 mod progress;
 #[cfg(feature = "screenshot")]
 mod runtime;

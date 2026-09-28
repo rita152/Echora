@@ -108,7 +108,7 @@ impl CodexAppServerManager {
                 if connection.generation != generation {
                     bail!("连接已变化，请重新读取权限配置");
                 }
-                manager.ensure_thread_loaded(&connection, Some(&thread_id), None, false)?;
+                manager.ensure_thread_loaded(&connection, Some(&thread_id), None)?;
                 let settings = connection
                     .state
                     .lock()
@@ -182,7 +182,7 @@ impl CodexAppServerManager {
             bail!("权限配置的连接已变化，请重新读取权限列表后再试");
         }
         self.validate_temporary_thread(&connection, &request.thread_id)?;
-        self.ensure_thread_loaded(&connection, Some(&request.thread_id), None, false)?;
+        self.ensure_thread_loaded(&connection, Some(&request.thread_id), None)?;
         let params = if request.mode == AgentPermissionMode::Custom {
             self.resolve_default_permission_params(&connection, &request.cwd, &request.thread_id)?
         } else {

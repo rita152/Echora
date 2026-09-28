@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use gpui::{Context, Entity, SharedString, prelude::*};
+use gpui::{Context, Entity, SharedString};
 
 use super::{ChatApp, ConversationHost, ConversationKey, DraftId, state::RightPanelMode};
 use crate::{
@@ -78,8 +78,7 @@ impl ChatApp {
     ) {
         let draft_id = DraftId(self.next_draft_id);
         self.next_draft_id = self.next_draft_id.wrapping_add(1).max(1);
-        let backend = self.agent_backend.clone();
-        let composer = cx.new(|cx| ComposerView::new_with_backend(self.mode, backend, cx));
+        let composer = self.new_host_composer(cx);
         composer.update(cx, |composer, cx| {
             composer.set_workspace_context(cwd.clone(), project_id.clone(), None, cx);
         });
@@ -136,8 +135,7 @@ impl ChatApp {
         let project_id = summary
             .as_ref()
             .and_then(|thread| project_id_for_thread(thread, &snapshot.projects));
-        let backend = self.agent_backend.clone();
-        let composer = cx.new(|cx| ComposerView::new_with_backend(self.mode, backend, cx));
+        let composer = self.new_host_composer(cx);
         composer.update(cx, |composer, cx| {
             composer.set_workspace_context(
                 cwd.clone(),

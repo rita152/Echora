@@ -78,6 +78,17 @@ pub(crate) struct ConversationState {
     pub(crate) effective_permissions: Option<AgentEffectivePermissions>,
     pub(crate) permission_change: Option<super::PermissionChange>,
     pub(crate) permission_error: Option<String>,
+    /// The current turn was started by the server, not by a local prompt.
+    pub(crate) external_turn: bool,
+    /// The current user message is a goal objective ("Sent as goal").
+    pub(crate) user_message_goal: bool,
+    /// The goal was achieved in the current turn, after this much time.
+    pub(crate) goal_achieved_seconds: Option<i64>,
+    pub(crate) goal: super::goal::ConversationGoal,
+    pub(crate) queue: super::queue::ConversationQueue,
+    /// Denied reviews this conversation approved, and the one in flight.
+    pub(crate) approved_reviews: std::collections::HashSet<String>,
+    pub(crate) approving_review: Option<String>,
 }
 
 impl Default for ConversationState {
@@ -138,6 +149,13 @@ impl Default for ConversationState {
             effective_permissions: None,
             permission_change: None,
             permission_error: None,
+            external_turn: false,
+            user_message_goal: false,
+            goal_achieved_seconds: None,
+            goal: Default::default(),
+            queue: Default::default(),
+            approved_reviews: Default::default(),
+            approving_review: None,
         }
     }
 }

@@ -223,6 +223,18 @@ impl Render for ChatApp {
         } else {
             None
         };
+        let toasts = self
+            .conversation_hosts
+            .get(&self.active_conversation)
+            .map(|host| host.composer.clone())
+            .and_then(|composer| composer.update(cx, |composer, cx| composer.render_toasts(cx)));
+        let composer_overlay = self
+            .conversation_hosts
+            .get(&self.active_conversation)
+            .map(|host| host.composer.clone())
+            .and_then(|composer| {
+                composer.update(cx, |composer, cx| composer.render_overlay(window, cx))
+            });
         if self.terminal_return_focus_pending {
             if let Some(host) = self.conversation_hosts.get(&self.active_conversation) {
                 host.composer
@@ -567,6 +579,7 @@ impl Render for ChatApp {
                                             // windows because HomeView still centers it internally.
                                             .px(px(CHAT_CONTENT_HORIZONTAL_GUTTER))
                                             .bg(theme.surface)
+                                            .relative()
                                             .child(
                                                 if self.home.read(cx).needs_live_interaction_render(cx) {
                                                     // Interactive activity focus, AX nodes and text selection
@@ -577,7 +590,8 @@ impl Render for ChatApp {
                                                         StyleRefinement::default().size_full(),
                                                     ).into_any_element()
                                                 },
-                                            ),
+                                            )
+                                            .when_some(toasts, |main, toasts| main.child(toasts)),
                                     ))
                                     .when(self.right_panel.open, |row| {
                                         row.child(self.right_panel(
@@ -591,6 +605,7 @@ impl Render for ChatApp {
             })
             .when_some(review_overlay,|shell,overlay|shell.child(overlay))
             .when_some(side_chat_overlay,|shell,overlay|shell.child(overlay))
+            .when_some(composer_overlay,|shell,overlay|shell.child(overlay))
             .when(self.permission_confirmation_open, |shell| {
                 shell.child(
                     div()

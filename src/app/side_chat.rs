@@ -2,12 +2,41 @@
 
 use super::ChatApp;
 use crate::{
-    components::side_chat::{SideChatDestination, SideChatEvent, SideChatPanel},
+    components::{
+        composer::{ComposerView, OpenQueuedInSideChat},
+        side_chat::{SideChatDestination, SideChatEvent, SideChatPanel},
+    },
     media::read_image_dimensions,
 };
-use gpui::{Context, prelude::*};
+use gpui::{Context, Entity, prelude::*};
 
 impl ChatApp {
+    /// "Open in side chat" on a queued message: a new side chat sends it as
+    /// its first message; without one the message goes back to the queue.
+    pub(super) fn open_queued_in_side_chat(
+        &mut self,
+        parent: Entity<ComposerView>,
+        event: &OpenQueuedInSideChat,
+        cx: &mut Context<Self>,
+    ) {
+        self.right_panel.open = true;
+        // Selecting the side chat item starts a new side chat tab.
+        self.select_right_panel_item(0, cx);
+        let composer = self
+            .side_chat_panels
+            .get(&self.active_conversation)
+            .and_then(|panel| panel.read(cx).active_composer());
+        match composer {
+            Some(composer) => composer.update(cx, |composer, cx| {
+                composer.send_moved_queued_message(event.draft.clone(), event.prompt.clone(), cx)
+            }),
+            None => parent.update(cx, |parent, cx| {
+                parent.restore_queued_from_side_chat(event.removed.clone(), cx)
+            }),
+        }
+        cx.notify();
+    }
+
     pub(super) fn deactivate_side_chat(&mut self, cx: &mut Context<Self>) {
         if let Some(panel) = self.side_chat_panels.get(&self.active_conversation) {
             panel.update(cx, |panel, cx| panel.set_visible(false, cx));

@@ -46,7 +46,13 @@ fn steer_parameters_share_input_encoding_and_exclude_turn_overrides() {
     let params = super::super::steer::build_steer_params(&request).unwrap();
     let mut start = super::request(&request.prompt, Some("t"));
     start.context = request.context.clone();
-    let start = super::super::turn::build_turn_start_params(&start, "t", false).unwrap();
+    let plan = [crate::agent::AgentCollaborationModePreset {
+        name: "Plan".into(),
+        mode: crate::agent::AgentCollaborationModeKind::Plan,
+        model: None,
+        reasoning_effort: None,
+    }];
+    let start = super::super::turn::build_turn_start_params(&start, "t", false, &plan).unwrap();
     assert_eq!(params["input"], start["input"]);
     assert_eq!(params.as_object().unwrap().len(), 4);
     assert_eq!(params["clientUserMessageId"], "client-1");

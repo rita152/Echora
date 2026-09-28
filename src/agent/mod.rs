@@ -8,12 +8,16 @@ mod auto_approval;
 mod backend;
 mod catalog;
 mod codex;
+mod collaboration;
 mod config;
 mod events;
 mod file_search;
+mod goal;
+mod goal_objective;
 mod mcp;
 mod message;
 mod plugins;
+mod queue;
 mod requests;
 mod runtime;
 mod skills;
@@ -53,13 +57,14 @@ pub use apps::{
 };
 pub use auto_approval::{
     AgentAutoApprovalReview, AgentAutoApprovalReviewAction, AgentAutoApprovalReviewKey,
-    AgentAutoApprovalReviewStatus, AgentGuardianWarning, AgentStrictReviewRequirement,
+    AgentAutoApprovalReviewStatus, AgentAutoReviewApproval, AgentGuardianWarning,
+    AgentStrictReviewRequirement,
 };
 pub(crate) use backend::AgentInterruptControl;
 pub use backend::{
-    AgentBackend, AgentCapabilities, AgentCapability, AgentInputFile, AgentInterruptHandle,
-    AgentInterruptOutcome, AgentPromptContext, AgentRequest, AgentRun, AgentSteerRequest,
-    AgentTurnIdentity, SideConversationRequest, WorkspaceError, WorkspaceResult,
+    AgentBackend, AgentCapabilities, AgentCapability, AgentExternalTurn, AgentInputFile,
+    AgentInterruptHandle, AgentInterruptOutcome, AgentPromptContext, AgentRequest, AgentRun,
+    AgentSteerRequest, AgentTurnIdentity, SideConversationRequest, WorkspaceError, WorkspaceResult,
 };
 pub use catalog::{
     AgentActivePermissionProfile, AgentEffectivePermissions, AgentModel, AgentModelCatalog,
@@ -68,6 +73,9 @@ pub use catalog::{
     AgentThreadSettingsSnapshot,
 };
 pub use codex::{CodexAppServerBackend, CodexAppServerManager};
+pub use collaboration::{
+    AgentCollaborationModeKind, AgentCollaborationModePreset, AgentCollaborationModes,
+};
 pub use config::{
     AgentConfigChoiceSet, AgentConfigEdit, AgentConfigError, AgentConfigErrorKind,
     AgentConfigLayer, AgentConfigReceipt, AgentConfigRequirements, AgentConfigSaveResult,
@@ -78,6 +86,12 @@ pub(crate) use file_search::AgentFileSearchSessionControl;
 pub use file_search::{
     AgentFileMatchType, AgentFileSearchRequest, AgentFileSearchResult, AgentFileSearchSession,
     AgentFileSearchSessionCompleted, AgentFileSearchSessionEvent, AgentFileSearchSessionUpdate,
+};
+pub use goal::{
+    AgentThreadGoal, AgentThreadGoalRead, AgentThreadGoalStatus, AgentThreadGoalUpdate,
+};
+pub use goal_objective::{
+    GOAL_OBJECTIVE_LIMIT, codex_home, load_objective, objective_file, prepare_objective,
 };
 pub use mcp::{
     AgentMcpAuthStatus, AgentMcpError, AgentMcpErrorKind, AgentMcpOauthClientRegistration,
@@ -111,6 +125,10 @@ pub use plugins::{
     AgentPluginSkillContent, AgentPluginSkillReadRequest, AgentPluginSkillSummary,
     AgentPluginSource, AgentPluginSummary, AgentPluginUninstallRequest, AgentPluginUninstallResult,
     AgentPluginsError, AgentPluginsErrorKind,
+};
+pub use queue::{
+    AgentQueueAddRequest, AgentQueueReorderRequest, AgentQueueTarget, AgentQueueUpdateRequest,
+    AgentQueuedSubmission, AgentThreadQueue,
 };
 pub use requests::{
     AgentAdditionalFileSystemPermissions, AgentAdditionalNetworkPermissions, AgentApprovalHandle,

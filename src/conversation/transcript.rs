@@ -42,6 +42,15 @@ pub(crate) struct ConversationTranscriptTurn {
     pub assistant_message_time: Option<String>,
     pub activities: Vec<ConversationActivity>,
     pub resumed: Option<ResumedTurnPresentation>,
+    pub goal: TurnGoalMarks,
+}
+
+/// The reference's goal marks on one turn: the request was "Sent as goal",
+/// and the goal was achieved in this turn after the given time.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct TurnGoalMarks {
+    pub sent_as_goal: bool,
+    pub achieved_seconds: Option<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -542,6 +551,7 @@ impl ConversationState {
                         duration_ms: turn.duration_ms,
                         final_message_ids,
                     }),
+                    goal: TurnGoalMarks::default(),
                 }
             })
             .collect();
@@ -593,6 +603,10 @@ impl ConversationState {
             assistant_message_time: self.assistant_message_time.take(),
             activities: std::mem::take(&mut self.activities),
             resumed: self.resumed_turn.take(),
+            goal: TurnGoalMarks {
+                sent_as_goal: std::mem::take(&mut self.user_message_goal),
+                achieved_seconds: self.goal_achieved_seconds.take(),
+            },
         });
         self.activities = pending_elicitations;
     }

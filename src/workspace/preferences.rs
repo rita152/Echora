@@ -45,6 +45,30 @@ pub struct UiPreferences {
     /// `app-shell:right-panel-width:v3`; absent until the separator is dragged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pull_requests_detail_ratio: Option<PanelRatio>,
+    /// What a message sent while a turn runs does. Kept locally: the reference
+    /// stores its own copy in the Codex config's desktop section, which is the
+    /// desktop app's setting, not app-server state this client should write.
+    #[serde(default)]
+    pub follow_up_mode: FollowUpMode,
+}
+
+/// Follow-up behavior while a turn runs. `Steer` is the default because the
+/// reference instance read `steer` for this account; ⌘⏎ inverts it per message.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FollowUpMode {
+    Queue,
+    #[default]
+    Steer,
+}
+
+impl FollowUpMode {
+    pub fn inverted(self) -> Self {
+        match self {
+            Self::Queue => Self::Steer,
+            Self::Steer => Self::Queue,
+        }
+    }
 }
 
 /// A resizable panel's position between its minimum (0) and maximum (1)

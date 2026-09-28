@@ -428,7 +428,7 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "前景" => "Foreground",
         "前进" => "Forward",
         "剩余 " => "Remaining ",
-        "加入队列" => "Queue",
+        "排队" => "Queue",
         "加载 workspace 分页" => "Load workspace page",
         "加载会话分区" => "Load conversation sections",
         "加载完整文件" => "Load full files",
@@ -539,8 +539,8 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "在 ChatGPT 运行任务时，让电脑保持唤醒状态" => {
             "Keep your computer awake while ChatGPT runs tasks"
         }
-        "在 ChatGPT 运行时将后续消息加入队列，或调整当前运行的方向。按 ⌘⏎ 可对单条消息执行相反操作" => {
-            "Queue follow-up messages or steer the current run while ChatGPT is working. Press ⌘⏎ to use the other action for one message."
+        "在 ChatGPT 运行时将后续消息加入队列，或引导当前运行。按 ⌘⏎ 可对单条消息执行相反操作" => {
+            "Queue follow-ups while ChatGPT runs or steer the current run. Press ⌘⏎ to do the opposite for one message"
         }
         "在 Finder 中显示" => "Reveal in Finder",
         "在 GitHub 上打开 PR" => "Open PR on GitHub",
@@ -1751,7 +1751,7 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
             "Adjust the base font size of the ChatGPT interface"
         }
         "调整提示方向" => "Steer prompt",
-        "调整方向" => "Steer",
+        "引导" => "Steer",
         "调整聊天和差异视图中代码使用的基础字号" => {
             "Adjust the base code font size in chats and diffs"
         }

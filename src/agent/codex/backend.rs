@@ -426,6 +426,87 @@ impl AgentBackend for CodexAppServerBackend {
             .move_thread_to_section(thread_id, section_id, before_thread_id)
     }
 
+    fn load_collaboration_modes(
+        &self,
+    ) -> Receiver<Result<crate::agent::AgentCollaborationModes, String>> {
+        self.manager.load_collaboration_modes()
+    }
+
+    fn read_thread_goal(
+        &self,
+        thread_id: ThreadId,
+    ) -> Receiver<Result<crate::agent::AgentThreadGoalRead, String>> {
+        self.manager.read_thread_goal(thread_id)
+    }
+
+    fn update_thread_goal(
+        &self,
+        update: crate::agent::AgentThreadGoalUpdate,
+    ) -> Receiver<Result<crate::agent::AgentThreadGoalRead, String>> {
+        self.manager.update_thread_goal(update)
+    }
+
+    fn clear_thread_goal(
+        &self,
+        thread_id: ThreadId,
+        generation: u64,
+    ) -> Receiver<Result<bool, String>> {
+        self.manager.clear_thread_goal(thread_id, generation)
+    }
+
+    fn list_thread_queue(
+        &self,
+        thread_id: ThreadId,
+    ) -> Receiver<Result<crate::agent::AgentThreadQueue, String>> {
+        self.manager.list_thread_queue(thread_id)
+    }
+
+    fn add_queued_submission(
+        &self,
+        request: crate::agent::AgentQueueAddRequest,
+    ) -> Receiver<Result<crate::agent::AgentQueuedSubmission, String>> {
+        self.manager.add_queued_submission(request)
+    }
+
+    fn update_queued_submission(
+        &self,
+        request: crate::agent::AgentQueueUpdateRequest,
+    ) -> Receiver<Result<crate::agent::AgentQueuedSubmission, String>> {
+        self.manager.update_queued_submission(request)
+    }
+
+    fn delete_queued_submission(
+        &self,
+        target: crate::agent::AgentQueueTarget,
+    ) -> Receiver<Result<bool, String>> {
+        self.manager.delete_queued_submission(target)
+    }
+
+    fn reorder_queued_submissions(
+        &self,
+        request: crate::agent::AgentQueueReorderRequest,
+    ) -> Receiver<Result<(), String>> {
+        self.manager.reorder_queued_submissions(request)
+    }
+
+    fn start_queued_submission(
+        &self,
+        target: crate::agent::AgentQueueTarget,
+    ) -> Receiver<Result<String, String>> {
+        self.manager.start_queued_submission(target)
+    }
+
+    fn take_server_turn(&self, thread_id: &str) -> Option<(String, AgentRun)> {
+        self.manager.take_server_turn(thread_id)
+    }
+
+    fn approve_auto_review_denial(
+        &self,
+        request: crate::agent::AgentAutoReviewApproval,
+    ) -> Receiver<Result<(), String>> {
+        self.manager.approve_auto_review_denial(request)
+    }
+
     fn steer_turn(&self, request: crate::agent::AgentSteerRequest) -> Receiver<Result<(), String>> {
         self.manager.steer_turn(request)
     }

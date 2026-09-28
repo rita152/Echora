@@ -22,6 +22,7 @@ gpui::actions!(
     file_editor,
     [
         EditorCopy,
+        EditorSubmitInverted,
         EditorCut,
         EditorPaste,
         EditorSelectAll,
@@ -49,6 +50,7 @@ pub fn init(cx: &mut App) {
         gpui::KeyBinding::new("backspace", EditorBackspace, Some("FileEditor")),
         gpui::KeyBinding::new("delete", EditorDelete, Some("FileEditor")),
         gpui::KeyBinding::new("enter", EditorEnter, Some("FileEditor")),
+        gpui::KeyBinding::new("cmd-enter", EditorSubmitInverted, Some("FileEditor")),
         gpui::KeyBinding::new("shift-enter", EditorLineBreak, Some("FileEditor")),
         gpui::KeyBinding::new("tab", EditorTab, Some("FileEditor")),
     ]);
@@ -144,6 +146,8 @@ pub enum EditorEvent {
     Changed,
     Save,
     Submit,
+    /// ⌘⏎ in a composer: send with the opposite follow-up behavior.
+    SubmitInverted,
 }
 pub struct FileEditor {
     pub buffer: Buffer,
@@ -312,6 +316,24 @@ impl FileEditor {
     }
     pub fn set_text_silently(&mut self, text: &str, cx: &mut Context<Self>) {
         self.reload(text.into(), cx);
+    }
+    /// The caret's byte offset.
+    pub fn cursor(&self) -> usize {
+        self.buffer.cursor
+    }
+    /// Replaces a byte range as one undoable edit, leaving the caret after
+    /// the new text.
+    pub fn replace_range(&mut self, range: Range<usize>, text: &str, cx: &mut Context<Self>) {
+        if self.read_only
+            || range.end > self.buffer.text.len()
+            || !self.buffer.text.is_char_boundary(range.start)
+            || !self.buffer.text.is_char_boundary(range.end)
+        {
+            return;
+        }
+        self.marked = None;
+        self.buffer.replace(range, text, true);
+        self.changed(cx);
     }
     fn line_height(&self) -> f32 {
         if let Some((_, line_height)) = self.metrics {
@@ -972,6 +994,16 @@ impl Render for FileEditor {
             }))
             .on_action(cx.listener(|s, _: &EditorDelete, _, cx| {
                 s.delete(false, cx);
+                cx.stop_propagation();
+            }))
+            .on_action(cx.listener(|s, _: &EditorSubmitInverted, _, cx| {
+                if !s.composer {
+                    cx.propagate();
+                    return;
+                }
+                if !s.composing() {
+                    cx.emit(EditorEvent::SubmitInverted);
+                }
                 cx.stop_propagation();
             }))
             .on_action(cx.listener(|s, _: &EditorEnter, _, cx| {

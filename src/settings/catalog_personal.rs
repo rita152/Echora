@@ -71,8 +71,10 @@ const GENERAL_EDITOR_ROWS: &[RowSpec] = &[
     ),
     RowSpec::new(
         "跟进处理方式",
-        "在 ChatGPT 运行时将后续消息加入队列，或调整当前运行的方向。按 ⌘⏎ 可对单条消息执行相反操作",
-        ControlSpec::Segmented(&["加入队列", "调整方向"], 0),
+        "在 ChatGPT 运行时将后续消息加入队列，或引导当前运行。按 ⌘⏎ 可对单条消息执行相反操作",
+        // The live selection comes from the UI preference (SettingsView);
+        // the index here is only the static fallback, the reference default.
+        ControlSpec::Segmented(&["排队", "引导"], 1),
     ),
 ];
 

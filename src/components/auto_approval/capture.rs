@@ -28,6 +28,7 @@ fn review(status: Status, rationale: String) -> AgentAutoApprovalReview {
         started_at_ms: 1788854400000,
         completed_at_ms: (status != Status::InProgress).then_some(1788854401500),
         decision_source: (status != Status::InProgress).then(|| "agent".into()),
+        source: serde_json::json!({}),
     }
 }
 
@@ -239,6 +240,7 @@ pub(crate) fn capture_auto_approval(args: &[String]) -> bool {
                             review: review(Status::InProgress, rationale.clone()),
                             closed_locally: false,
                             attached_to_item: false,
+                            approval: Default::default(),
                         };
                         let view = cx.new(|cx| AutoApprovalReviewView::new(model, mode, cx));
                         let focus = cx.focus_handle();

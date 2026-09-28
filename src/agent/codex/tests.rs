@@ -866,106 +866,6 @@ fn existing_thread_resumes_before_turn_start() {
 }
 
 #[test]
-fn resume_goal_cleared_requires_a_matching_string_thread_id() {
-    for (params, expected_error) in [
-        (json!({}), "缺少字符串字段 params.threadId"),
-        (json!({"threadId": 7}), "必须是字符串"),
-        (
-            json!({"threadId": "thr_other"}),
-            "与当前 resume thread `thr_existing` 不一致",
-        ),
-    ] {
-        let input = format!(
-            "{}\n{}\n{}\n",
-            json!({"id": 1, "result": {}}),
-            json!({"method": "thread/goal/cleared", "params": params}),
-            json!({"id": 2, "result": {"thread": {"id": "thr_existing"}}}),
-        );
-        let mut reader = Cursor::new(input.into_bytes());
-        let session = Arc::new(CodexTurnSession::new(Vec::new(), None));
-        let (tx, rx) = async_channel::unbounded();
-
-        let error = drive_session(
-            &mut reader,
-            &session,
-            &AgentRequest {
-                client_message_id: None,
-                prompt: "继续对话".into(),
-                cwd: PathBuf::from("/tmp/project"),
-                project_id: None,
-                thread_id: Some("thr_existing".into()),
-                model: "gpt-test".into(),
-                effort: "medium".into(),
-                service_tier: None,
-                permission_mode: AgentPermissionMode::Full,
-                context: Default::default(),
-            },
-            &tx,
-        )
-        .unwrap_err();
-        let error = format!("{error:#}");
-
-        assert!(error.contains("thread/goal/cleared"), "{error}");
-        assert!(error.contains(expected_error), "{error}");
-        let sent_methods: Vec<_> = String::from_utf8(take_session_output(&session))
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str::<Value>(line).unwrap())
-            .filter_map(|message| {
-                message
-                    .get("method")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            })
-            .collect();
-        assert_eq!(
-            sent_methods,
-            vec!["initialize", "initialized", "thread/resume"]
-        );
-        assert!(rx.try_recv().is_err());
-    }
-}
-
-#[test]
-fn goal_cleared_after_resumed_turn_start_fails_fast() {
-    let input = concat!(
-        "{\"id\":1,\"result\":{}}\n",
-        "{\"id\":2,\"result\":{\"thread\":{\"id\":\"thr_existing\"}}}\n",
-        "{\"id\":3,\"result\":{\"turn\":{\"id\":\"turn_next\"}}}\n",
-        "{\"method\":\"thread/goal/cleared\",\"params\":{\"threadId\":\"thr_existing\"}}\n"
-    );
-    let mut reader = Cursor::new(input.as_bytes());
-    let session = Arc::new(CodexTurnSession::new(Vec::new(), None));
-    let (tx, rx) = async_channel::unbounded();
-
-    let error = drive_session(
-        &mut reader,
-        &session,
-        &AgentRequest {
-            client_message_id: None,
-            prompt: "继续对话".into(),
-            cwd: PathBuf::from("/tmp/project"),
-            project_id: None,
-            thread_id: Some("thr_existing".into()),
-            model: "gpt-test".into(),
-            effort: "medium".into(),
-            service_tier: None,
-            permission_mode: AgentPermissionMode::Full,
-            context: Default::default(),
-        },
-        &tx,
-    )
-    .unwrap_err();
-    let error = format!("{error:#}");
-
-    assert!(error.contains("未定义"), "{error}");
-    assert!(error.contains("thread/goal/cleared"), "{error}");
-    let sent = String::from_utf8(take_session_output(&session)).unwrap();
-    assert!(sent.contains("\"method\":\"turn/start\""));
-    assert!(rx.try_recv().is_err());
-}
-
-#[test]
 fn thread_started_must_match_the_canonical_thread_id_in_either_order() {
     let cases = [
         (
@@ -2112,10 +2012,12 @@ fn account_rate_limits_updated_decodes_a_sparse_single_bucket_patch() {
 
 #[test]
 fn unintegrated_notifications_remain_fail_fast() {
+    // Goal and queue notifications are integrated now: still schema-checked,
+    // so a malformed payload fails loudly, but never as an undefined method.
     for method in [
         "thread/goal/updated",
         "thread/goal/cleared",
-        "protocol/arbitraryFutureNotification",
+        "thread/queue/changed",
     ] {
         let error = ensure_server_method_is_defined(&json!({
             "method": method,
@@ -2123,9 +2025,18 @@ fn unintegrated_notifications_remain_fail_fast() {
         }))
         .unwrap_err()
         .to_string();
-        assert!(error.contains("未定义"), "{method}: {error}");
-        assert!(error.contains(method), "{method}: {error}");
+        assert!(!error.contains("未定义"), "{method}: {error}");
+        assert!(error.contains("threadId"), "{method}: {error}");
     }
+    let method = "protocol/arbitraryFutureNotification";
+    let error = ensure_server_method_is_defined(&json!({
+        "method": method,
+        "params": { "probe": true }
+    }))
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("未定义"), "{method}: {error}");
+    assert!(error.contains(method), "{method}: {error}");
 }
 
 #[test]

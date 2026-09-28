@@ -42,7 +42,9 @@ fn all_schema_actions_statuses_nullable_targets_and_sparse_fields_decode() {
                     .unwrap()
                     .remove("targetItemId");
                 sparse["params"]["review"] = json!({"status":status});
-                assert_eq!(parse_review(&sparse).unwrap(), review);
+                let mut expected = review.clone();
+                expected.source = sparse["params"].clone();
+                assert_eq!(parse_review(&sparse).unwrap(), expected);
             }
         }
     }
@@ -125,4 +127,110 @@ fn strict_review_and_guardian_warning_keep_their_schema_scopes() {
         parse_strict_review(&json!({"params":{"threadId":"a","turnId":"b","startedAtMs":null}}))
             .is_err()
     );
+}
+
+/// The params of the reference's real `item/autoApprovalReview/completed`
+/// (artifacts/batch1-autoreview-*/wire/review-approved-git-push.jsonl), with
+/// the status flipped to denied, since no denial could be provoked live.
+fn captured_denial() -> Value {
+    json!({
+        "threadId": "01a0e77e-708c-7ad1-8cad-f89572e757d2",
+        "turnId": "01a0e791-4103-7311-ba5c-0da9815a5987",
+        "startedAtMs": 1790591456920i64,
+        "completedAtMs": 1790591472248i64,
+        "reviewId": "982925af-d936-4329-8b23-b655deb0fa9e",
+        "targetItemId": "call_00_TabCFRFxIfIVoWY2RFlp7363",
+        "decisionSource": "agent",
+        "review": {
+            "status": "denied",
+            "riskLevel": "high",
+            "userAuthorization": "high",
+            "rationale": "Force-pushing to the default `main` branch is intrinsically destructive."
+        },
+        "action": {
+            "type": "command",
+            "source": "unifiedExec",
+            "command": "/opt/homebrew/bin/zsh -lc 'git push --force origin main'",
+            "cwd": "/tmp/fixture-project"
+        }
+    })
+}
+
+#[test]
+fn denial_event_is_derived_from_the_original_params_like_the_reference() {
+    let params = captured_denial();
+    let review =
+        parse_review(&json!({"method": REVIEW_METHODS[1], "params": params.clone()})).unwrap();
+    // The domain keeps the params verbatim; the event is derived from them.
+    assert_eq!(review.source, params);
+    assert_eq!(
+        denial_event(&review.source).unwrap(),
+        json!({
+            "id": "982925af-d936-4329-8b23-b655deb0fa9e",
+            "target_item_id": "call_00_TabCFRFxIfIVoWY2RFlp7363",
+            "turn_id": "01a0e791-4103-7311-ba5c-0da9815a5987",
+            "status": "denied",
+            "risk_level": "high",
+            "user_authorization": "high",
+            "rationale": "Force-pushing to the default `main` branch is intrinsically destructive.",
+            "decision_source": "agent",
+            "action": {
+                "type": "command",
+                "source": "unified_exec",
+                "command": "/opt/homebrew/bin/zsh -lc 'git push --force origin main'",
+                "cwd": "/tmp/fixture-project"
+            }
+        })
+    );
+}
+
+#[test]
+fn denial_event_keeps_absent_and_null_fields_apart_and_maps_every_action() {
+    let mut params = captured_denial();
+    params.as_object_mut().unwrap().remove("targetItemId");
+    params.as_object_mut().unwrap().remove("decisionSource");
+    params["review"]["rationale"] = Value::Null;
+    let event = denial_event(&params).unwrap();
+    assert!(event.get("target_item_id").is_none(), "absent stays absent");
+    assert_eq!(
+        event["decision_source"],
+        Value::Null,
+        "reference sends null"
+    );
+    assert_eq!(event["rationale"], Value::Null, "null stays null");
+    let expected = [
+        json!({"type":"command","source":"shell","command":"pwd","cwd":"/tmp"}),
+        json!({"type":"execve","source":"unified_exec","program":"/bin/ls","argv":["ls","a b"],"cwd":"/tmp"}),
+        json!({"type":"write_stdin","approval_id":"child","process_id":"process","stdin":"answer\n","cwd":"legacy/relative"}),
+        json!({"type":"apply_patch","cwd":"/tmp","files":["/tmp/a","/tmp/b"]}),
+        json!({"type":"network_access","protocol":"socks5_udp","target":"example.com:65535","host":"example.com","port":65535}),
+        json!({"type":"mcp_tool_call","server":"s","tool_name":"t","connector_id":null,"connector_name":null,"tool_title":null}),
+        json!({"type":"request_permissions","reason":"read test fixture","permissions":{"network":{"enabled":false},"file_system":{"read":null,"write":["/tmp/a"],"globScanMaxDepth":2,"entries":[{"access":"deny","path":{"type":"glob_pattern","pattern":"**/*.key"}},{"access":"read","path":{"type":"special","value":{"kind":"project_roots","subpath":null}}}]}}}),
+    ];
+    for (action, expected) in actions().into_iter().zip(expected) {
+        params["action"] = action;
+        assert_eq!(denial_event(&params).unwrap()["action"], expected);
+    }
+}
+
+#[test]
+fn only_denied_reviews_produce_an_approval_event() {
+    let mut params = captured_denial();
+    for status in ["inProgress", "approved", "timedOut", "aborted"] {
+        params["review"]["status"] = json!(status);
+        assert!(denial_event(&params).is_err(), "{status}");
+    }
+    params["review"]["status"] = json!("denied");
+    params["action"]["type"] = json!("teleport");
+    assert!(denial_event(&params).is_err());
+}
+
+/// The live denial from the baseline CLI (scripts/batch1_app_server_probe.py
+/// `--scenario guardian_live`, artifacts/batch1-autoreview-20260928/live-probe):
+/// the server accepted exactly this derived event and let the retry through.
+#[test]
+fn denial_event_matches_the_event_the_baseline_server_accepted_live() {
+    let params: Value = serde_json::from_str(r#"{"threadId": "01a0e83c-190e-7411-9f1d-62524b7e3cc4", "turnId": "01a0e83c-1929-7a82-98b0-a8ad9a1a8bd5", "startedAtMs": 1790602647891, "completedAtMs": 1790602648184, "reviewId": "699b5ae3-eb2c-40d2-b5c0-2fb6c778775d", "targetItemId": "call_resp_1", "decisionSource": "agent", "review": {"status": "denied", "riskLevel": "high", "userAuthorization": "low", "rationale": "Probe: escalated command denied by the fake reviewer."}, "action": {"type": "command", "source": "unifiedExec", "command": "/opt/homebrew/bin/zsh -lc 'echo probe-escalated'", "cwd": "$TMPDIR/batch1-guardian_live-pmff74q6/project"}}"#).unwrap();
+    let accepted: Value = serde_json::from_str(r#"{"id": "699b5ae3-eb2c-40d2-b5c0-2fb6c778775d", "target_item_id": "call_resp_1", "turn_id": "01a0e83c-1929-7a82-98b0-a8ad9a1a8bd5", "status": "denied", "risk_level": "high", "user_authorization": "low", "rationale": "Probe: escalated command denied by the fake reviewer.", "decision_source": "agent", "action": {"type": "command", "command": "/opt/homebrew/bin/zsh -lc 'echo probe-escalated'", "cwd": "$TMPDIR/batch1-guardian_live-pmff74q6/project", "source": "unified_exec"}}"#).unwrap();
+    assert_eq!(denial_event(&params).unwrap(), accepted);
 }

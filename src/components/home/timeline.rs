@@ -70,11 +70,13 @@ pub(super) enum ConversationListRow {
         message: String,
         images: Vec<crate::agent::UserMessageAttachment>,
         time: Option<String>,
+        goal: bool,
     },
     CurrentUser {
         message: String,
         images: Vec<crate::agent::UserMessageAttachment>,
         time: String,
+        goal: bool,
     },
     /// The newest user message replaced by the reference's inline rewrite form.
     MessageEdit {
@@ -94,6 +96,7 @@ pub(super) enum ConversationListRow {
         message: String,
         completed_at: Option<String>,
         hooks: Vec<crate::agent::AgentHookRun>,
+        goal_achieved: Option<i64>,
     },
 }
 
@@ -781,6 +784,7 @@ pub(super) fn conversation_list_rows(
         assistant_message_time,
         conversation_activity,
         resumed_turn,
+        goal,
     } = current;
     let has_active_reasoning = conversation_activity.iter().any(|activity| {
         matches!(activity, ConversationActivity::Reasoning(reasoning) if reasoning.is_active())
@@ -794,6 +798,7 @@ pub(super) fn conversation_list_rows(
                 message: turn.user_message,
                 images: turn.user_images,
                 time: turn.user_message_time,
+                goal: turn.goal.sent_as_goal,
             });
         }
         if turn.activities.is_empty() {
@@ -833,6 +838,7 @@ pub(super) fn conversation_list_rows(
                     message: turn.assistant_message,
                     completed_at: turn.assistant_message_time,
                     hooks: super::runtime::hook_runs(&turn.activities),
+                    goal_achieved: turn.goal.achieved_seconds,
                 });
             }
         }
@@ -854,6 +860,7 @@ pub(super) fn conversation_list_rows(
             message: user_message,
             images: user_images,
             time: user_message_time,
+            goal: goal.sent_as_goal,
         });
     }
     if conversation_activity.is_empty() {
@@ -892,6 +899,7 @@ pub(super) fn conversation_list_rows(
                 message: assistant_message,
                 completed_at: assistant_message_time,
                 hooks: super::runtime::hook_runs(conversation_activity),
+                goal_achieved: goal.achieved_seconds,
             });
         }
     }

@@ -824,6 +824,7 @@ mod tests {
             message: format!("prompt {turn_index}"),
             images: Vec::new(),
             time: None,
+            goal: false,
         };
         let answer = |id: &str| ConversationListRow::AssistantMarkdown {
             id: id.to_owned(),
@@ -860,6 +861,7 @@ mod tests {
                 assistant_message_time: None,
                 activities,
                 resumed: None,
+                goal: Default::default(),
             }
         };
         let transcript = vec![

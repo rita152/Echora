@@ -8,6 +8,9 @@ use crate::{
     theme::{Theme, ThemeMode},
 };
 
+/// General → Editor → Follow-up behavior.
+const FOLLOW_UP_ROW: (&str, usize, usize) = ("general-settings", 2, 3);
+
 impl SettingsView {
     pub(super) fn agent_select(
         &self,
@@ -112,6 +115,83 @@ impl SettingsView {
             .hover(move |style| style.bg(theme.settings_switch_off))
             .child(crate::i18n::text(label))
     }
+    /// Follow-up behavior: a real two-option control backed by the local UI
+    /// preference, pressed state exposed like the reference's toggle buttons.
+    fn follow_up_control(
+        &self,
+        labels: &'static [&'static str],
+        theme: Theme,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        use crate::workspace::FollowUpMode;
+        let selected = match self.follow_up_mode {
+            FollowUpMode::Queue => 0,
+            FollowUpMode::Steer => 1,
+        };
+        let mut group = div()
+            .id("follow-up-mode")
+            .role(gpui::Role::Group)
+            .aria_label(crate::i18n::text("跟进处理方式"))
+            .flex()
+            .items_center()
+            .gap(px(2.0));
+        for (index, label) in labels.iter().enumerate() {
+            let mode = if index == 0 {
+                FollowUpMode::Queue
+            } else {
+                FollowUpMode::Steer
+            };
+            group = group.child(
+                div()
+                    .id(("follow-up-mode-option", index))
+                    .role(gpui::Role::Button)
+                    .aria_label(crate::i18n::text(label))
+                    .aria_toggled(if index == selected {
+                        gpui::Toggled::True
+                    } else {
+                        gpui::Toggled::False
+                    })
+                    .focusable()
+                    .tab_stop(true)
+                    .px(px(8.0))
+                    .py(px(3.0))
+                    .rounded_full()
+                    .text_size(px(13.0))
+                    .cursor_pointer()
+                    .text_color(if index == selected {
+                        theme.text
+                    } else {
+                        theme.text_tertiary
+                    })
+                    .when(index == selected, |item| item.bg(theme.settings_button))
+                    .hover(move |item| item.text_color(theme.text))
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.choose_follow_up_mode(mode, cx)),
+                    )
+                    .on_key_down(cx.listener(move |this, event: &gpui::KeyDownEvent, _, cx| {
+                        if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                            this.choose_follow_up_mode(mode, cx);
+                            cx.stop_propagation();
+                        }
+                    }))
+                    .child(crate::i18n::text(label)),
+            );
+        }
+        group.into_any_element()
+    }
+
+    fn choose_follow_up_mode(
+        &mut self,
+        mode: crate::workspace::FollowUpMode,
+        cx: &mut Context<Self>,
+    ) {
+        if self.follow_up_mode != mode {
+            self.follow_up_mode = mode;
+            cx.emit(super::ChangeFollowUpMode(mode));
+            cx.notify();
+        }
+    }
+
     pub(super) fn control(
         &self,
         control: ControlSpec,
@@ -122,6 +202,9 @@ impl SettingsView {
         match control {
             ControlSpec::Select(_) if key == ("general-settings", 1, 2) => {
                 self.language_control(theme, cx)
+            }
+            ControlSpec::Segmented(labels, _) if key == FOLLOW_UP_ROW => {
+                self.follow_up_control(labels, theme, cx)
             }
             ControlSpec::None => div().into_any_element(),
             ControlSpec::Switch(checked) => div()

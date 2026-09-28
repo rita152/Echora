@@ -20,6 +20,9 @@ impl ConversationState {
         self.history_loading = false;
         self.history_error = None;
         self.user_message = Some(normalize_user_message_for_display(prompt));
+        self.user_message_goal = false;
+        self.goal_achieved_seconds = None;
+        self.external_turn = false;
         self.user_message_time = Some(current_local_time_label());
         self.assistant_message.clear();
         // Elicitation cards belong to the connection, not to the turn that
@@ -37,6 +40,80 @@ impl ConversationState {
         self.phase = ConversationPhase::Starting;
         self.cycle = self.cycle.wrapping_add(1);
         self.cycle
+    }
+
+    /// A turn the server started on its own (goal continuation, queue
+    /// advance, `thread/queue/start`). The previous turn is committed like for
+    /// a prompt; the user message, if the turn has one, arrives as its item.
+    /// `goal_objective` shows a goal's objective as the turn's request, as the
+    /// reference inserts `/goal <objective>` for the turn it starts.
+    pub(crate) fn begin_external_turn(&mut self, goal_objective: Option<String>) -> u64 {
+        let cycle = self.begin_prompt("");
+        // An empty message still commits the turn later; the view shows no
+        // bubble for it, as it does for restored turns without a user item.
+        self.user_message_goal = goal_objective.is_some();
+        if goal_objective.is_none() {
+            self.user_message_time = None;
+        }
+        self.user_message = Some(goal_objective.unwrap_or_default());
+        self.external_turn = true;
+        cycle
+    }
+
+    /// Marks the turn that completed the goal ("Goal achieved in …"): the
+    /// named turn, or the newest one when the update names none.
+    pub(crate) fn mark_goal_achieved(&mut self, turn_id: Option<&str>, seconds: i64) {
+        let current = turn_id.is_none_or(|id| self.turn_id.as_deref() == Some(id));
+        if current {
+            self.goal_achieved_seconds = Some(seconds);
+        } else if let Some(turn) = self
+            .transcript
+            .iter_mut()
+            .rev()
+            .find(|turn| turn.turn_id.as_deref() == turn_id)
+        {
+            turn.goal.achieved_seconds = Some(seconds);
+        }
+    }
+
+    pub(crate) fn clear_goal_achieved_marks(&mut self) {
+        self.goal_achieved_seconds = None;
+        for turn in &mut self.transcript {
+            turn.goal.achieved_seconds = None;
+        }
+    }
+
+    /// Removes a history turn that is still running on the server, so its
+    /// live stream (replayed from the start) rebuilds it without a duplicate.
+    pub(crate) fn drop_history_turn(&mut self, turn_id: &str) {
+        self.transcript
+            .retain(|turn| turn.turn_id.as_deref() != Some(turn_id));
+        if self.turn_id.as_deref() != Some(turn_id) {
+            return;
+        }
+        if let Some(last) = self.transcript.pop() {
+            self.turn_id = last.turn_id;
+            self.phase = last.phase;
+            self.user_message = Some(last.user_message);
+            self.user_images = last.user_images;
+            self.user_message_time = last.user_message_time;
+            self.assistant_message = last.assistant_message;
+            self.assistant_message_time = last.assistant_message_time;
+            self.activities = last.activities;
+            self.resumed_turn = last.resumed;
+            self.user_message_goal = last.goal.sent_as_goal;
+            self.goal_achieved_seconds = last.goal.achieved_seconds;
+        } else {
+            self.turn_id = None;
+            self.phase = super::transcript::ConversationPhase::Empty;
+            self.user_message = None;
+            self.user_images.clear();
+            self.user_message_time = None;
+            self.assistant_message.clear();
+            self.assistant_message_time = None;
+            self.activities.clear();
+            self.resumed_turn = None;
+        }
     }
 
     pub(crate) fn stop_generation(&mut self) -> bool {

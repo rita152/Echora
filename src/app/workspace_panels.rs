@@ -110,6 +110,7 @@ impl ChatApp {
                 }
             })
             .detach();
+            self.watch_goal_saves(&panel, cx);
             self.file_panels.insert(key.clone(), panel);
         }
         self.file_panels[&key].update(cx, |p, cx| p.focus(cx));

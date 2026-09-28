@@ -104,7 +104,9 @@ Cargo 包和可执行文件目前仍名为 `gpui-chat-clone`，现有构建与�
 | 打开侧边聊天 | 右侧面板菜单；`Option+Cmd+S` |
 | 打开设置 | 账户菜单 → 设置；`Cmd+,` |
 | 登录 / 退出登录 | 账户菜单 → 登录行（后端要求 OpenAI 认证时显示），或在应用内确认后 `退出登录`；`Esc` 关闭菜单 |
-| 发送 / 向活动轮次追加输入 | `Enter`；`Shift+Enter` 换行 |
+| 发送 / 向活动轮次追加输入 | `Enter`；`Shift+Enter` 换行；`Cmd+Enter` 对单条消息使用相反的跟进处理方式 |
+| 斜杠命令 | 在行首或空格后输入 `/`；`Up`/`Down`（或 `Ctrl+N`/`Ctrl+P`）移动，`Enter` 执行，`Esc` 关闭 |
+| 编辑最后一条排队消息 / 撤销或重做排队消息的删除或编辑 | 空输入框中按 `Up` / 输入框没有可撤销或重做的文本编辑时按 `Cmd+Z`、`Cmd+Shift+Z` |
 | 立即保存文件 | `Cmd+S` |
 | 终端清屏 | `Cmd+K` |
 | 切换 / 关闭侧边聊天标签 | `Ctrl+Tab`、`Ctrl+Shift+Tab`；`Cmd+W` |
@@ -112,13 +114,16 @@ Cargo 包和可执行文件目前仍名为 `gpui-chat-clone`，现有构建与�
 <details>
 <summary>行为细节与当前边界</summary>
 
-- **运行中追加输入：** 使用 `turn/steer` 立即发送到活动轮次，不提供服务端消息队列。失败输入可连同附件与审查评论恢复，不覆盖后续新草稿，也不自动改发为新轮次。
+- **运行中追加输入：** 设置 → 常规 →「跟进处理方式」在引导（`turn/steer`，默认）与排队（`thread/queue/add`）之间选择，`Cmd+Enter` 对单条消息取反，选择保存在 UI 偏好中。排队的消息显示在输入框上方的托盘里，每行可以立即发送（运行中引导进当前轮次并移出队列，空闲时直接开始）、编辑、在新的侧边聊天中打开、删除或拖动排序。与 ChatGPT 一致，编辑会先把消息移出队列，重新提交时排回原位置（没有运行中的轮次也没有其他排队消息时直接发送）；`Cmd+Z` 可在一分钟内恢复删除的消息、30 分钟内恢复编辑中的消息，`Cmd+Shift+Z` 重做。轮次结束后由服务端自行开始下一条；用户停止轮次后队列暂停，直到继续，此时发送新消息会先询问是否清空队列。侧边聊天始终引导。失败输入可连同附件与审查评论恢复，不覆盖后续新草稿，也不自动改发为新轮次。
+- **目标：** 斜杠菜单的「目标」（或输入 `/goal`）打开输入框的「目标」标记，`/goal <目标>` 直接设置。之后服务端会在聊天空闲时自行推进，这些轮次与普通轮次一样流式显示，请求下方显示「设为目标」。托盘显示目标状态与已用时间，提供清除、暂停／恢复和编辑；编辑在右侧面板打开「编辑目标」标签，提供「还原」和「保存」（保存会同时恢复已暂停的目标）。替换已保存的目标前会先确认。停止轮次时先暂停进行中的目标再中断；目标达成后立即离开托盘并自动清除，达成目标的轮次显示「已在 … 内达成目标」，直到开始新的目标。超过 4000 个字符的目标与 ChatGPT 一样保存到 `$CODEX_HOME/attachments` 下的文件，以指针发送。
+- **斜杠菜单：** 在行首或空格后输入 `/` 会在输入框上方打开菜单，提供「目标」「压缩」「计划模式」（服务端提供时）和「批准」（存在可批准的自动复核拒绝时）；输入的查询按模糊匹配排序，ChatGPT 的其他命令尚未实现。
+- **协作模式：** 计划与默认模式来自连接的 `collaborationMode/list` 预设，每个连接读取一次；服务端列出计划模式时才提供该选项，模型与推理强度始终使用你的选择。
 - **实时输出与历史：** 实时与恢复后的已完成轮次共用最终答复选择、工作过程折叠、答复操作与文件汇总。文本增量保留 item 身份，完成消息快照校正显示内容；相邻增量以 8 ms 窗口批处理，代码高亮复用已完成行，仅重解析未结束行。已完成轮次折叠最终答复之前的过程消息，追加的用户消息保留原有位置与附件。文件变更按路径汇总并保留原始 patch。历史由 app-server 提供，不伪造缺失的时间、计划步骤快照或自动复核历史。
 - **审批：** 并发请求依次显示，提交后等待服务端释放。响应失败可见且不可重复提交。可查看原始请求补丁，展开和复制长命令。使用 Tab / 方向键导航、Enter 激活、Esc 关闭或拒绝；文件审批的 `Shift+Esc` 拒绝并停止轮次。
 - **权限：** 读取服务端 profile 全部页面，展示禁用选项及原因。菜单隐藏内置 `:read-only` profile，不显示后续轮次提示和手动重新读取入口。已有线程等待 RPC 成功与匹配的设置通知后才显示生效，更新影响后续轮次。完整访问权限需要应用内确认，侧边聊天独立管理权限。线程被另一个 app-server 占用时，警告卡片固定在输入框上方，不随会话滚动。
 - **账户：** 账户菜单与登录流程都由连接级账户快照驱动。缺失的套餐显示为未知而不是杜撰，登录保留服务端返回的 `loginId` 直到完成通知到达，退出登录先确认再发请求。只提供 Codex 管理的 ChatGPT 登录，API key、外部 token 与 Bedrock 变体返回明确错误。具体协议覆盖见接入总表。
 - **配置：** 使用带版本的 `config/batchWrite` 保存并回读，项目层与受管层只读。冲突保留草稿，结果未知时不自动重试。保存的模型、推理强度、服务等级与个性默认值用于后续线程，不热更新已打开的线程。
-- **活动：** 计划支持流式更新、步骤进度、复制、显式下载和只读文件标签；搜索保留查询与结果，等待保留时长与状态。Hook 反馈只读。自动复核详情支持键盘操作和文字选择，遵循减少动态效果设置。认证恢复与弃用提示的展示边界见接入总表。
+- **活动：** 计划支持流式更新、步骤进度、复制、显式下载和只读文件标签；搜索保留查询与结果，等待保留时长与状态。Hook 反馈只读。被拒绝的自动复核会显示「被拒绝的原因」和「批准后允许的操作」，并提供文字链接「批准」，通过 `thread/approveGuardianDeniedAction` 记录一次重试授权，不会执行该操作；斜杠菜单的「批准」列出最新 10 条可批准的拒绝。自动复核详情支持键盘操作和文字选择，遵循减少动态效果设置。认证恢复与弃用提示的展示边界见接入总表。
 - **文件编辑：** 停止输入约 400 ms 后自动保存，撤销 / 重做也写回磁盘。保留 UTF-8 BOM、CRLF 和权限，保存前检查外部修改。文本上限 2 MiB，单行上限 64 KiB；仅访问本机文件。
 - **Git 审查：** 范围包括上一轮、未提交、未暂存、已暂存、已提交和分支，分支使用 merge-base。支持统一 / 拆分差异、文字差异、上下文展开和逐行评论。写入前校验 worktree 与 index；还原新增文件时，在 worktree Git 目录的 `gpui-discarded/` 下保留备份。
 - **Pull requests：** 页面通过已认证的 `gh` 读写 GitHub。筛选、审阅者搜索、摘要、活动、检查与提交范围均使用 GitHub 数据。差异在统一、分栏与自动（仅对同时有增删的文件分栏）布局间切换，支持词级高亮、Markdown 预览、浮层文件树及行内评论；文件链接打开 GitHub 上所选提交的内容。Code 标签只标注 hunk 之间未改动的行数；从变更统计打开的 Review 标签会读取所显示文件的全文，每次展开 100 行，统计最后一个 hunk 之后的行数，并可在 `Commits` 菜单中把差异范围切换为全部改动或单个提交。写入失败保留草稿，提交中防止重复请求，成功后从 GitHub 刷新。“Draft description in chat” 打开预填的会话，发送前可检查内容。窄窗口在列表与详情之间切换，提供返回按钮。收起侧栏后，列表头部以及占满页面的详情或 Review 标签从红绿灯与侧栏按钮之后开始，与 ChatGPT 一致。列表与详情正文只在经典滚动条下预留滚动条槽位，macOS 叠加滚动条下不预留。
@@ -126,7 +131,7 @@ Cargo 包和可执行文件目前仍名为 `gpui-chat-clone`，现有构建与�
 - **活动视图：** 进行中与待处理状态来自 Echora 自身 app-server 连接上的 `thread/status/changed`，因此在其他客户端（例如 ChatGPT 应用）中运行的聊天不会在这里显示为进行中。app-server 没有已读状态：聊天不在主区域显示时，若轮次结束或请求批准／输入，由 Echora 自己记为未读并随 UI 偏好保存；打开该聊天或使用“全部标为已读”后恢复为已读。“定时任务”选项会保存，但目前没有线程来源能识别定时任务运行，因此不影响列表；参考实现的一次性引导气泡与 `⌘1`–`⌘9` 行快捷键尚未实现。
 - **聊天搜索：** 弹窗先列出置顶聊天，再按最近顺序补足，最多九行；输入后经 app-server `thread/search` 检索。参考实现还会通过自身的检索服务合并 ChatGPT 云端会话，app-server 不提供该数据，因此命中较多时结果集合与排序可能不同。`Search files`（或 `⌘P`）把同一弹窗切到文件搜索：为当前会话工作目录打开一个 `fuzzyFileSearch` 会话，边输入边接收 `sessionUpdated` 结果，按服务端返回的下标高亮命中，选中后在文件面板打开。服务端不支持会话时回退到一次性 `fuzzyFileSearch` 请求。
 - **改写消息：** 最新一条用户消息的悬停操作里提供编辑入口。提交改写后的文本会以该轮作为 `beforeTurnId` 调用 `thread/revert`，把持久化历史替换为该轮之前的前缀，随后发起新的 `turn/start`。只改会话历史，不动本地文件；轮次仍按既有分页路径重载。
-- **压缩上下文：** 在 composer 输入 `/compact` 会执行 `thread/compact/start`。压缩按不可 steer 的轮次运行，期间追加输入会如实展示服务端结论，压缩结果沿用既有 contextCompaction 条目展示。
+- **压缩上下文：** 斜杠菜单的「压缩」或输入 `/compact` 会执行 `thread/compact/start`；轮次运行中会提示无法压缩。压缩按不可 steer 的轮次运行，期间追加输入会如实展示服务端结论，压缩结果沿用既有 contextCompaction 条目展示。
 
 </details>
 
@@ -239,6 +244,10 @@ Computer Use 只能驱动 macOS 视作用户应用的 bundle，而且驱动过�
 | `--image-generation-ui-state=running/completed/failed/load-error` | 固定图像生成状态；完成态另传 `--image-generation-path=/absolute/image.png`。 |
 | `--auto-approval-ui-state=inProgress/approved/denied/timedOut/aborted/strict/warning` | 自动复核，支持 `--auto-approval-expanded`、`--auto-approval-details-expanded` 与 `--reduce-motion`；长说明和动态采样使用 `--auto-approval-rationale-file`、`--auto-approval-motion-output`。 |
 | `--runtime-ui-state=completed/running/turnless/auth-started/auth-completed/interrupted/disconnected/history/long/deprecation` | 确定性 Hook、hookPrompt、认证与应用提示，不执行 Hook 或模型请求；`GPUI_RUNTIME_AUDIT_OUTPUT` 输出原始状态与本地收束原因。 |
+| `--queue-ui-state=queued/paused/confirm/menu/failed/sending/editing/restored` | 跟进队列托盘：运行中的排队行、停止后的暂停横幅、暂停时发送的确认框、行菜单、发送失败或发送中的行、移出队列正在编辑的消息，以及恢复提示；不发送队列或模型请求。 |
+| `--goal-ui-state=active/paused/blocked/usage-limited/budget-limited/chip/replace/complete/edit-tab` | 各状态的目标摘要、输入框的「目标」标记、替换确认、完成目标的轮次（「设为目标」「已在 3s 内达成目标」）以及「编辑目标」标签；不发送目标或模型请求。 |
+| `--slash-menu-state=menu/query/approve/compact-busy` | 列出全部可用命令的斜杠菜单、输入 `/go` 后的查询结果、含两条拒绝的「批准」子菜单，以及轮次运行中选择「压缩」时的危险提示。 |
+| `--auto-review-denial-state=denied/approving/approved/failed` | 被拒绝的自动复核及其批准区域的各个状态；不发送批准请求。 |
 | `--progress-ui-state=running/streaming/completed/interrupted` | 计划、搜索与等待归约；streaming 定时产生更新和完成，running 可中断。 |
 | `--streaming-reply-ui-state=streaming/completed` | 通过归约器按定时 token 突发喂入一段固定回复，配合 `--screenshot-delay-ms=`（开始计帧前按真实时间等待）可截到流式中途的节奏揭示与逐词淡入；completed 会补上完成快照，`--reduce-motion` 则按原样逐条显示、不做节奏与淡入。 |
 | `--typography-specimen --typography-display=N` | 字体样本与显示器选择，见 `src/typography.rs`。 |
@@ -288,6 +297,7 @@ node scripts/cdp_pin_reference_layout.mjs --layout=legacy --wait=60
 | 侧栏活动视图 | `CHATGPT_CDP_HTTP="$CHATGPT_CDP_HTTP" node scripts/cdp_capture_activity_view.mjs --output=artifacts/activity-view-26917/reference` 点击参考应用的铃铛、悬停任务行与铃铛、打开 `…` 菜单并用滚轮滚动（仅在专用实例上设置 `data-theme` 读取浅色与深色，视口模拟为 1470×924），记录截图与各地标几何；`scripts/capture_activity_view_gpui.sh` 以 `--activity-open`、`--activity-hover=TITLE`、`--activity-tooltip=bell`、`--activity-options-open` 与 `--activity-scroll=PX` 基于真实 app-server 数据采集相同状态，`python3 scripts/compare_activity_view.py --reference … --gpui … --output …` 逐地标报告偏移。`cargo test activity` 以真实点击与状态事件驱动铃铛、任务行、菜单与“清除已读聊天”，并经按键绑定验证 `Option+Cmd+U`。 |
 | 任务重命名面板 | `scripts/capture_thread_rename_gpui.sh both` 先采集原生侧（参考实例会给打开过的任务留下写者），再按相同设备像素比通过 CDP 重采参考，最后由 `scripts/compare_thread_rename.py` 逐主题打分。脚本按参考期望发出两次点击，记录面板几何、计算样式、真实 DOM 与截图，并用真实任务驱动取消、关闭按钮、蒙层、Esc、Enter 与保存（含 59 字符加省略号的截断）；`cargo test rename_panel` 覆盖同一契约。 |
 | 会话用户消息导航轨 | `scripts/capture_user_message_rail_gpui.sh both` 先采集原生侧的静止态与单条悬停态，再以同一视口通过 CDP 重采参考，最后用 `scripts/compare_user_message_rail.py` 逐主题打分。参考侧脚本（`scripts/cdp_capture_user_message_rail.mjs`）通过应用自身的 Appearance 控件切换主题，并用真实指针悬停与点击记录轨道几何、计算样式、各标记宽度、提示卡延迟、预览 DOM 与截图；对比报告给出轨道的 `pixelsWithin2`、悬停态的 `toleranceAdjustedSimilarity`、卡片表面相似度以及两个锚点偏差。`cargo test navigation` 固定标记递减宽度、当前标记规则与预览卡截断点，并用窗口事件与模拟时钟驱动提示轨，固定悬停、关闭宽限、拖动浏览与跳转的时序。动效方面，`scripts/cdp_probe_user_message_rail_motion.mjs` 以固定的指针脚本逐帧记录参考；采集构建用 `--resume-thread=… --user-message-navigation-jump=1 --user-message-rail-motion --screenshot=PATH` 回放同一脚本（写出 `PATH.motion.json`）；`scripts/compare_user_message_rail_motion.py` 对比预览的打开与关闭时间、跳过延迟后的重新打开、标记过渡完成时间、平滑滚动时长、气泡闪烁、拖动浏览时的 `aria-current` 序列、每个标记的预览高度、Alt+方向键的落点以及滚轮路由。 |
+| 跟进队列、目标与自动复核批准 | `python3 scripts/batch1_app_server_probe.py --output artifacts/batch1-baseline-<日期>` 以隔离的 `CODEX_HOME` 和本地假 Responses 端点运行本机 `codex app-server`，记录基线下队列、目标、协作模式与批准的行为，不发模型请求；`--scenario guardian_live` 让假审核拒绝一次提权的 `echo` 再批准该拒绝，在真实的 0.154 服务端上观察批准路径。原生侧用 `--queue-ui-state`、`--goal-ui-state`、`--slash-menu-state`、`--auto-review-denial-state` 采集，`python3 scripts/compare_batch1_captures.py OUT ref.png:echora.png:x0,y0,x1,y1[:name] …` 以同一矩形裁剪两侧（不缩放、不平移）并给出相似度。`cargo test followup_tests`、`cargo test goal_tab` 与 `cargo test batch1` 用脚本化后端驱动输入框、「编辑目标」标签与 manager 流程。 |
 | 图像生成 | `python3 scripts/compare_image_generation_component.py --help`，传入实测等尺寸裁切范围和 DPR。 |
 | 历史诊断 | `python3 scripts/audit_resume_rendering.py --help`；rollout 仅用于离线诊断。 |
 

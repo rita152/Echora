@@ -9,18 +9,13 @@ use crate::agent::{
     AgentHookPromptFragment, AgentHookRun, AgentHookStatus, AgentRuntimeObservation,
 };
 
-/// No goals, server-side queue, or moderation-metadata product exists in this
-/// client. Context compaction is driven by its item, not the deprecated
-/// duplicate notification. `skills/changed` and `app/list/updated` are not
-/// opted out: the settings surfaces consume both as cache invalidation
-/// signals. Never apply this policy to requests.
-pub(super) const OPT_OUT_NOTIFICATION_METHODS: &[&str] = &[
-    "thread/goal/updated",
-    "thread/goal/cleared",
-    "thread/queue/changed",
-    "turn/moderationMetadata",
-    "thread/compacted",
-];
+/// No moderation-metadata product exists in this client, and context
+/// compaction is driven by its item, not the deprecated duplicate
+/// notification. Goal and queue notifications are consumed; `skills/changed`
+/// and `app/list/updated` are cache invalidation signals for the settings
+/// surfaces. Never apply this policy to requests.
+pub(super) const OPT_OUT_NOTIFICATION_METHODS: &[&str] =
+    &["turn/moderationMetadata", "thread/compacted"];
 
 pub(super) const RUNTIME_METHODS: &[&str] = &[
     "modelProvider/authRecoveryStarted",

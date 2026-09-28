@@ -2,7 +2,7 @@
 //! from routing.
 
 use anyhow::{Context as _, Result, bail};
-use serde_json::Value;
+use serde_json::{Map, Value, json};
 
 use super::requests::parse_permission_request_profile;
 use crate::agent::{
@@ -191,7 +191,135 @@ pub(super) fn parse_review(message: &Value) -> Result<AgentAutoApprovalReview> {
         started_at_ms: integer(params, "startedAtMs")?,
         completed_at_ms,
         decision_source,
+        source: params.clone(),
     })
+}
+
+/// Copies `from[field]` to `to[key]` keeping the JS semantics the reference
+/// relies on: an absent field stays absent, an explicit null stays null.
+fn copy_field(to: &mut Map<String, Value>, key: &str, from: &Value, field: &str) {
+    if let Some(value) = from.get(field) {
+        to.insert(key.to_owned(), value.clone());
+    }
+}
+
+fn mapped(value: &Value, field: &str, table: &[(&str, &str)]) -> Result<Value> {
+    let raw = string(value, field)?;
+    table
+        .iter()
+        .find(|(wire, _)| *wire == raw)
+        .map(|(_, core)| json!(core))
+        .with_context(|| format!("auto approval 未知 {field}: {raw}"))
+}
+
+const SOURCES: &[(&str, &str)] = &[("shell", "shell"), ("unifiedExec", "unified_exec")];
+const PROTOCOLS: &[(&str, &str)] = &[
+    ("http", "http"),
+    ("https", "https"),
+    ("socks5Tcp", "socks5_tcp"),
+    ("socks5Udp", "socks5_udp"),
+];
+const STATUSES: &[(&str, &str)] = &[
+    ("aborted", "aborted"),
+    ("approved", "approved"),
+    ("denied", "denied"),
+    ("inProgress", "in_progress"),
+    ("timedOut", "timed_out"),
+];
+
+fn denial_action(action: &Value) -> Result<Value> {
+    let mut out = Map::new();
+    let kind = string(action, "type")?;
+    let (core, fields): (&str, &[(&str, &str)]) = match kind.as_str() {
+        "command" => ("command", &[("command", "command"), ("cwd", "cwd")]),
+        "execve" => (
+            "execve",
+            &[("program", "program"), ("argv", "argv"), ("cwd", "cwd")],
+        ),
+        "writeStdin" => (
+            "write_stdin",
+            &[
+                ("approval_id", "approvalId"),
+                ("process_id", "processId"),
+                ("stdin", "stdin"),
+                ("cwd", "cwd"),
+            ],
+        ),
+        "applyPatch" => ("apply_patch", &[("cwd", "cwd"), ("files", "files")]),
+        "networkAccess" => (
+            "network_access",
+            &[("target", "target"), ("host", "host"), ("port", "port")],
+        ),
+        "mcpToolCall" => (
+            "mcp_tool_call",
+            &[
+                ("server", "server"),
+                ("tool_name", "toolName"),
+                ("connector_id", "connectorId"),
+                ("connector_name", "connectorName"),
+                ("tool_title", "toolTitle"),
+            ],
+        ),
+        "requestPermissions" => ("request_permissions", &[("reason", "reason")]),
+        other => bail!("auto approval 未知动作 {other}"),
+    };
+    out.insert("type".into(), json!(core));
+    if matches!(kind.as_str(), "command" | "execve") {
+        out.insert("source".into(), mapped(action, "source", SOURCES)?);
+    }
+    if kind == "networkAccess" {
+        out.insert("protocol".into(), mapped(action, "protocol", PROTOCOLS)?);
+    }
+    for (key, field) in fields {
+        copy_field(&mut out, key, action, field);
+    }
+    if kind == "requestPermissions" {
+        let permissions = action
+            .get("permissions")
+            .context("action.permissions 缺失")?;
+        let mut mapped = Map::new();
+        copy_field(&mut mapped, "network", permissions, "network");
+        copy_field(&mut mapped, "file_system", permissions, "fileSystem");
+        out.insert("permissions".into(), Value::Object(mapped));
+    }
+    Ok(Value::Object(out))
+}
+
+/// The `event` of `thread/approveGuardianDeniedAction`: the serialized core
+/// GuardianAssessmentEvent, derived field by field from the original review
+/// notification params exactly as the reference derives it. Only a denied
+/// review can be approved; the server itself does not check the status.
+pub(super) fn denial_event(source: &Value) -> Result<Value> {
+    let review = source.get("review").context("auto approval 缺少 review")?;
+    let status = mapped(review, "status", STATUSES)?;
+    if status != json!("denied") {
+        bail!("只有被拒绝的自动审核可以批准");
+    }
+    let mut event = Map::new();
+    copy_field(&mut event, "id", source, "reviewId");
+    copy_field(&mut event, "target_item_id", source, "targetItemId");
+    copy_field(&mut event, "turn_id", source, "turnId");
+    event.insert("status".into(), status);
+    copy_field(&mut event, "risk_level", review, "riskLevel");
+    copy_field(
+        &mut event,
+        "user_authorization",
+        review,
+        "userAuthorization",
+    );
+    copy_field(&mut event, "rationale", review, "rationale");
+    event.insert(
+        "decision_source".into(),
+        source.get("decisionSource").cloned().unwrap_or(Value::Null),
+    );
+    event.insert(
+        "action".into(),
+        denial_action(source.get("action").context("auto approval 缺少 action")?)?,
+    );
+    if !event.contains_key("id") {
+        bail!("auto approval 缺少 reviewId");
+    }
+    Ok(Value::Object(event))
 }
 
 pub(super) fn parse_strict_review(message: &Value) -> Result<AgentStrictReviewRequirement> {

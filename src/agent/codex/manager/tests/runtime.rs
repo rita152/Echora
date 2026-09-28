@@ -23,8 +23,11 @@ fn runtime_notifications_before_start_and_after_completion_do_not_steal_or_end_t
     let opt_out = initialize["params"]["capabilities"]["optOutNotificationMethods"]
         .as_array()
         .unwrap();
-    assert_eq!(opt_out.len(), 5);
-    assert!(opt_out.contains(&json!("thread/goal/cleared")));
+    assert_eq!(
+        opt_out,
+        &vec![json!("turn/moderationMetadata"), json!("thread/compacted")]
+    );
+    assert!(!opt_out.contains(&json!("thread/goal/cleared")));
     // Skills and app-catalog invalidation are both consumed by the settings
     // surfaces, so neither is opted out.
     assert!(!opt_out.contains(&json!("skills/changed")));

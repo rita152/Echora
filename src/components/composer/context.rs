@@ -265,35 +265,37 @@ impl ComposerView {
                         },
                     )),
                 )
-                .child(
-                    item(
-                        "side-chat-plan-mode",
-                        crate::i18n::text("计划模式"),
-                        "panel-review",
+                .when(self.plan_mode_available(), |menu| {
+                    menu.child(
+                        item(
+                            "side-chat-plan-mode",
+                            crate::i18n::text("计划模式"),
+                            "panel-review",
+                        )
+                        .child(div().flex_1())
+                        .when(self.prompt_context.plan_mode == Some(true), |d| {
+                            d.child(icon("check", theme.text.into()).size(px(14.0)))
+                        })
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.prompt_context.plan_mode =
+                                Some(this.prompt_context.plan_mode != Some(true));
+                            this.context_menu_open = false;
+                            cx.notify();
+                            cx.stop_propagation();
+                        }))
+                        .on_key_down(cx.listener(
+                            |this, e: &KeyDownEvent, _, cx| {
+                                if matches!(e.keystroke.key.as_str(), "enter" | "space") {
+                                    this.prompt_context.plan_mode =
+                                        Some(this.prompt_context.plan_mode != Some(true));
+                                    this.context_menu_open = false;
+                                    cx.notify();
+                                    cx.stop_propagation();
+                                }
+                            },
+                        )),
                     )
-                    .child(div().flex_1())
-                    .when(self.prompt_context.plan_mode == Some(true), |d| {
-                        d.child(icon("check", theme.text.into()).size(px(14.0)))
-                    })
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.prompt_context.plan_mode =
-                            Some(this.prompt_context.plan_mode != Some(true));
-                        this.context_menu_open = false;
-                        cx.notify();
-                        cx.stop_propagation();
-                    }))
-                    .on_key_down(cx.listener(
-                        |this, e: &KeyDownEvent, _, cx| {
-                            if matches!(e.keystroke.key.as_str(), "enter" | "space") {
-                                this.prompt_context.plan_mode =
-                                    Some(this.prompt_context.plan_mode != Some(true));
-                                this.context_menu_open = false;
-                                cx.notify();
-                                cx.stop_propagation();
-                            }
-                        },
-                    )),
-                ),
+                }),
         )
         .with_priority(20)
     }

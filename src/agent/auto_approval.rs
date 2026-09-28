@@ -72,6 +72,17 @@ pub struct AgentAutoApprovalReview {
     pub started_at_ms: i64,
     pub completed_at_ms: Option<i64>,
     pub decision_source: Option<String>,
+    /// The notification params exactly as received. Approving a denial sends
+    /// an event derived from these, never one rebuilt from display fields.
+    pub source: serde_json::Value,
+}
+
+/// A request to approve one denied auto-review, bound to the generation and
+/// thread that reported it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AgentAutoReviewApproval {
+    pub generation: u64,
+    pub review: AgentAutoApprovalReview,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

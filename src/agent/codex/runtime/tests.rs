@@ -294,8 +294,19 @@ fn runtime_deprecation_nullability_and_exact_notification_policy() {
             .iter()
             .collect::<std::collections::HashSet<_>>()
             .len(),
-        5
+        2
     );
+    assert_eq!(
+        OPT_OUT_NOTIFICATION_METHODS,
+        ["turn/moderationMetadata", "thread/compacted"]
+    );
+    for consumed in [
+        "thread/goal/updated",
+        "thread/goal/cleared",
+        "thread/queue/changed",
+    ] {
+        assert!(!OPT_OUT_NOTIFICATION_METHODS.contains(&consumed));
+    }
     // The skills and app catalogs are consumed by the settings surfaces, so
     // neither is opted out any more.
     assert!(!OPT_OUT_NOTIFICATION_METHODS.contains(&"skills/changed"));

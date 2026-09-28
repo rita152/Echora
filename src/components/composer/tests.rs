@@ -2381,14 +2381,12 @@ fn connection_events_are_scoped_and_buffered_until_the_canonical_thread_is_known
 
     app.update_entity(&composer, |composer, _| {
         composer.conversation.thread_id = Some("thr_current".into());
-        assert!(
-            !composer.apply_connection_event(AgentConnectionEvent::ThreadStatusChanged(
-                AgentThreadStatus {
-                    thread_id: "thr_other".into(),
-                    state: AgentThreadStatusState::Idle,
-                }
-            ))
-        );
+        assert!(!composer.apply_scoped_connection_event(
+            AgentConnectionEvent::ThreadStatusChanged(AgentThreadStatus {
+                thread_id: "thr_other".into(),
+                state: AgentThreadStatusState::Idle,
+            })
+        ));
         assert!(
             !composer
                 .conversation
@@ -2397,16 +2395,14 @@ fn connection_events_are_scoped_and_buffered_until_the_canonical_thread_is_known
         );
 
         composer.conversation.thread_id = None;
-        assert!(
-            !composer.apply_connection_event(AgentConnectionEvent::ThreadStatusChanged(
-                AgentThreadStatus {
-                    thread_id: "thr_new".into(),
-                    state: AgentThreadStatusState::Active {
-                        active_flags: vec![AgentThreadActiveFlag::WaitingOnUserInput],
-                    },
-                }
-            ))
-        );
+        assert!(!composer.apply_scoped_connection_event(
+            AgentConnectionEvent::ThreadStatusChanged(AgentThreadStatus {
+                thread_id: "thr_new".into(),
+                state: AgentThreadStatusState::Active {
+                    active_flags: vec![AgentThreadActiveFlag::WaitingOnUserInput],
+                },
+            })
+        ));
         assert!(
             !composer
                 .conversation
@@ -2546,7 +2542,7 @@ fn account_connection_events_stay_out_of_a_running_conversation() {
     app.update_entity(&composer, |composer, _| {
         composer.conversation.phase = ConversationPhase::Thinking;
         for event in events {
-            assert!(!composer.apply_connection_event(event));
+            assert!(!composer.apply_scoped_connection_event(event));
         }
     });
     assert!(app.read_entity(&composer, |composer, _| {
@@ -3426,14 +3422,14 @@ fn generation_rebuild_rejects_stale_permission_selection_before_catalog_reload()
         seed_permission_catalog(composer);
         composer.conversation.thread_id = Some("main".into());
         composer.permission_mode = PermissionMode::Request;
-        composer.apply_connection_event(AgentConnectionEvent::Runtime(
+        composer.apply_scoped_connection_event(AgentConnectionEvent::Runtime(
             crate::agent::AgentRuntimeEvent {
                 generation: 2,
                 observation: crate::agent::AgentRuntimeObservation::GenerationStarted,
             },
         ));
-        assert!(
-            !composer.apply_connection_event(AgentConnectionEvent::ThreadSettingsUpdated {
+        assert!(!composer.apply_scoped_connection_event(
+            AgentConnectionEvent::ThreadSettingsUpdated {
                 thread_id: "main".into(),
                 generation: 1,
                 settings: crate::agent::AgentThreadSettings {
@@ -3453,8 +3449,8 @@ fn generation_rebuild_rejects_stale_permission_selection_before_catalog_reload()
                         ),
                     }),
                 },
-            })
-        );
+            }
+        ));
         assert_eq!(composer.permission_mode, PermissionMode::Request);
     });
 }

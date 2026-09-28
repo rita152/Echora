@@ -196,6 +196,7 @@ fn identical_resumed_answers_have_distinct_footer_scopes() {
                 duration_ms: None,
                 final_message_ids: vec![],
             }),
+            goal: Default::default(),
         })
         .collect();
     let rows = super::timeline::conversation_list_rows(
@@ -210,6 +211,7 @@ fn identical_resumed_answers_have_distinct_footer_scopes() {
             assistant_message_time: None,
             conversation_activity: &[],
             resumed_turn: None,
+            goal: Default::default(),
         },
         &HashSet::new(),
     );

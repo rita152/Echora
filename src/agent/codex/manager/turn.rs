@@ -356,6 +356,7 @@ pub(super) fn build_turn_start_params(
     request: &AgentRequest,
     thread_id: &str,
     is_new_thread: bool,
+    presets: &[crate::agent::AgentCollaborationModePreset],
 ) -> Result<Value> {
     let mut params = serde_json::Map::new();
     params.insert("threadId".into(), json!(thread_id));
@@ -364,14 +365,29 @@ pub(super) fn build_turn_start_params(
     if let Some(id) = &request.client_message_id {
         params.insert("clientUserMessageId".into(), json!(id));
     }
-    params.insert("model".into(), json!(request.model));
-    params.insert("effort".into(), json!(request.effort));
     params.insert("serviceTier".into(), json!(request.service_tier));
     if let Some(plan) = request.context.plan_mode {
-        params.insert("collaborationMode".into(), json!({
-            "mode": if plan { "plan" } else { "default" },
-            "settings": { "model": request.model, "reasoning_effort": request.effort, "developer_instructions": null }
-        }));
+        let mode = if plan {
+            crate::agent::AgentCollaborationModeKind::Plan
+        } else {
+            crate::agent::AgentCollaborationModeKind::Default
+        };
+        // The mode carries the model and effort; like the reference, the
+        // top-level fields are then null so the two can never disagree.
+        params.insert(
+            "collaborationMode".into(),
+            super::super::collaboration::turn_collaboration_mode(
+                presets,
+                mode,
+                &request.model,
+                &request.effort,
+            )?,
+        );
+        params.insert("model".into(), Value::Null);
+        params.insert("effort".into(), Value::Null);
+    } else {
+        params.insert("model".into(), json!(request.model));
+        params.insert("effort".into(), json!(request.effort));
     }
     if is_new_thread {
         let PermissionFields {
@@ -439,7 +455,7 @@ impl CodexAppServerManager {
         let (thread_id, is_new_thread) = match request.thread_id.as_deref() {
             Some(thread_id) => {
                 connection.reserve_thread(thread_id)?;
-                match self.ensure_thread_loaded(&connection, Some(thread_id), None, true) {
+                match self.ensure_thread_loaded(&connection, Some(thread_id), None) {
                     Ok(thread_id) => (thread_id, false),
                     Err(error) => {
                         connection.release_reservation(thread_id);
@@ -448,8 +464,7 @@ impl CodexAppServerManager {
                 }
             }
             None => {
-                let thread_id =
-                    self.ensure_thread_loaded(&connection, None, Some(&request), false)?;
+                let thread_id = self.ensure_thread_loaded(&connection, None, Some(&request))?;
                 connection.reserve_thread(&thread_id)?;
                 if events
                     .send_blocking(AgentEvent::ThreadCreated {
@@ -466,7 +481,6 @@ impl CodexAppServerManager {
         };
         if control.is_abandoned() {
             connection.release_reservation(&thread_id);
-            self.finish_resume_bootstrap(&connection, &thread_id);
             let _ = events.send_blocking(AgentEvent::Interrupted);
             control.mark_terminal();
             return Ok(());
@@ -479,16 +493,23 @@ impl CodexAppServerManager {
             keepalive,
             control.clone(),
         );
-        if let Err(error) = connection.register_starting_turn(turn.clone()) {
-            self.finish_resume_bootstrap(&connection, &thread_id);
-            return Err(error);
-        }
+        connection.register_starting_turn(turn.clone())?;
         control.attach(&turn);
 
-        let params = match build_turn_start_params(&request, &thread_id, is_new_thread) {
+        // Presets are read once per generation. A failed read is logged and
+        // leaves the list empty: the default mode still goes out, plan cannot.
+        let presets = if request.context.plan_mode.is_some() {
+            self.collaboration_presets(&connection)
+                .unwrap_or_else(|error| {
+                    eprintln!("collaborationMode/list 读取失败：{error:#}");
+                    Vec::new()
+                })
+        } else {
+            Vec::new()
+        };
+        let params = match build_turn_start_params(&request, &thread_id, is_new_thread, &presets) {
             Ok(params) => params,
             Err(error) => {
-                self.finish_resume_bootstrap(&connection, &thread_id);
                 connection.finish_turn(&turn, Err(error));
                 return Ok(());
             }
@@ -496,7 +517,6 @@ impl CodexAppServerManager {
         let response = match connection.request("turn/start", params) {
             Ok(response) => response,
             Err(error) => {
-                self.finish_resume_bootstrap(&connection, &thread_id);
                 if !connection.failed.load(Ordering::Acquire) {
                     connection.finish_turn(&turn, Err(error.context("turn/start 失败")));
                 }
@@ -512,7 +532,7 @@ impl CodexAppServerManager {
             connection.fail_protocol(message);
             return Ok(());
         };
-        let bound = match connection.bind_starting_turn(&thread_id, &turn_id) {
+        let (bound, foreign) = match connection.bind_starting_turn(&thread_id, &turn_id) {
             Ok(bound) => bound,
             Err(error) => {
                 connection.fail_protocol(format!("turn/start response 关联失败：{error:#}"));
@@ -524,7 +544,9 @@ impl CodexAppServerManager {
             return Ok(());
         }
         let accepted = turn.accept(&turn_id);
-        self.finish_resume_bootstrap(&connection, &thread_id);
+        // Messages of another turn that arrived before the response belong to
+        // a turn the server started itself; they are streamed as that turn.
+        connection.replay_early(foreign);
         match accepted {
             Ok(Some(outcome)) => connection.finish_turn(&turn, Ok(outcome)),
             Ok(None) => {}
@@ -539,7 +561,6 @@ impl CodexAppServerManager {
         connection: &Arc<Connection>,
         thread_id: Option<&str>,
         new_thread_request: Option<&AgentRequest>,
-        keep_resume_bootstrap: bool,
     ) -> Result<String> {
         let _lifecycle_guard = connection
             .lifecycle_lock
@@ -648,14 +669,6 @@ impl CodexAppServerManager {
             state.thread_settings.insert(canonical.clone(), settings);
         }
         state.loaded_threads.insert(canonical.clone());
-        if thread_id.is_some() && keep_resume_bootstrap {
-            state.resume_bootstrap_threads.insert(canonical.clone());
-        }
         Ok(canonical)
-    }
-    pub(super) fn finish_resume_bootstrap(&self, connection: &Connection, thread_id: &str) {
-        if let Ok(mut state) = connection.state.lock() {
-            state.resume_bootstrap_threads.remove(thread_id);
-        }
     }
 }

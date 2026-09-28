@@ -1,4 +1,7 @@
 mod file_icons;
+mod goal_tab;
+
+pub use goal_tab::{GoalTabSync, SaveGoalObjective};
 
 use std::{
     collections::{HashMap, HashSet},
@@ -32,6 +35,7 @@ struct Document {
     id: u64,
     path: PathBuf,
     plan: Option<crate::agent::AgentPlan>,
+    goal: Option<goal_tab::GoalTab>,
     editor: Option<Entity<FileEditor>>,
     saved: Option<TextFile>,
     error: Option<String>,
@@ -48,6 +52,8 @@ impl Document {
     fn label(&self) -> String {
         if self.plan.is_some() {
             crate::i18n::text("套餐").to_owned()
+        } else if self.goal.is_some() {
+            self.path.to_string_lossy().into_owned()
         } else {
             self.path
                 .file_name()
@@ -173,7 +179,7 @@ impl FilePanel {
     pub fn open_documents(&self) -> Vec<String> {
         self.documents
             .iter()
-            .filter(|d| d.plan.is_none())
+            .filter(|d| d.plan.is_none() && d.goal.is_none())
             .map(|d| d.path.to_string_lossy().into_owned())
             .collect()
     }
@@ -342,6 +348,7 @@ impl FilePanel {
                 id,
                 path: PathBuf::from(crate::i18n::text("套餐")),
                 plan: Some(plan),
+                goal: None,
                 editor: None,
                 saved: None,
                 error: None,
@@ -388,6 +395,7 @@ impl FilePanel {
         );
         self.documents.push(Document {
             plan: None,
+            goal: None,
             id,
             path: path.clone(),
             editor: None,
@@ -437,7 +445,7 @@ impl FilePanel {
                             match e {
                                 EditorEvent::Changed => s.schedule_save(id, cx),
                                 EditorEvent::Save => s.save(id, cx),
-                                EditorEvent::Submit => {}
+                                EditorEvent::Submit | EditorEvent::SubmitInverted => {}
                             }
                             cx.notify();
                         })
@@ -626,7 +634,7 @@ impl FilePanel {
         let Some(d) = self.documents.iter().find(|d| d.id == id) else {
             return;
         };
-        if d.saving || d.plan.is_some() {
+        if d.saving || d.plan.is_some() || d.goal.is_some() {
             return;
         }
         let path = d.path.clone();
@@ -863,6 +871,8 @@ impl Render for FilePanel {
                     .child(
                         (if d.plan.is_some() {
                             icon("plan", theme.text_tertiary.into())
+                        } else if d.goal.is_some() {
+                            icon("goal-chip", theme.text_tertiary.into())
                         } else {
                             file_icon(&d.path, self.mode)
                         })
@@ -905,6 +915,8 @@ impl Render for FilePanel {
                         s.show_picker(cx);
                     })),
             );
+        let goal_toolbar = self.current().and_then(|d| self.goal_toolbar(d, theme, cx));
+        let goal_active = goal_toolbar.is_some();
         let mut toolbar = div()
             .h(px(40.))
             .flex_none()
@@ -1133,10 +1145,11 @@ impl Render for FilePanel {
                             .min_w(px(0.))
                             .min_h(px(0.))
                             .overflow_hidden()
+                            .when(d.goal.is_some(), |body| body.p(px(12.)))
                             .child(editor.clone()),
                     );
                 }
-                if editor.read(cx).can_undo() || editor.read(cx).can_redo() {
+                if d.goal.is_none() && (editor.read(cx).can_undo() || editor.read(cx).can_redo()) {
                     content = content.child(
                         div()
                             .absolute()
@@ -1369,8 +1382,10 @@ impl Render for FilePanel {
             .text_size(px(13.))
             .line_height(px(18.))
             .child(tabs)
-            .when(!self.current().is_some_and(|d| d.plan.is_some()), |panel| {
-                panel.child(toolbar)
+            .map(|panel| match goal_toolbar {
+                Some(goal_toolbar) => panel.child(goal_toolbar),
+                None if self.current().is_some_and(|d| d.plan.is_some()) => panel,
+                None => panel.child(toolbar),
             })
             .child(
                 div()
@@ -1380,7 +1395,7 @@ impl Render for FilePanel {
                     .overflow_hidden()
                     .flex()
                     .child(content)
-                    .when(self.tree_open, |b| b.child(tree)),
+                    .when(self.tree_open && !goal_active, |b| b.child(tree)),
             );
         if let Some(id) = self.pending_close
             && let Some(d) = self.documents.iter().find(|d| d.id == id)

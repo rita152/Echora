@@ -195,7 +195,7 @@ function parseDocument(text) {
 function optOutMethods() {
   const file = path.join(repoRoot, OPT_OUT_SOURCE);
   const source = fs.readFileSync(file, "utf8");
-  const block = /OPT_OUT_NOTIFICATION_METHODS: &\[&str\] = &\[([\s\S]*?)\];/.exec(source);
+  const block = /OPT_OUT_NOTIFICATION_METHODS: &\[&str\] =\s*&\[([\s\S]*?)\];/.exec(source);
   if (!block) throw new Error(`${OPT_OUT_SOURCE} 中找不到 OPT_OUT_NOTIFICATION_METHODS`);
   return [...block[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
 }

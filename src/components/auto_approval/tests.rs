@@ -24,9 +24,11 @@ fn model(status: Status) -> AutoApprovalReviewPresentation {
             started_at_ms: 100,
             completed_at_ms: (status != Status::InProgress).then_some(200),
             decision_source: (status != Status::InProgress).then(|| "agent".into()),
+            source: serde_json::json!({}),
         },
         closed_locally: false,
         attached_to_item: false,
+        approval: Default::default(),
     }
 }
 

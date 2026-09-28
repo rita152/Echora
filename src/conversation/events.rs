@@ -90,6 +90,12 @@ impl ConversationState {
                 Some(thread_id.as_str())
             }
             AgentConnectionEvent::ConfigWarning(_) => None,
+            AgentConnectionEvent::ThreadGoalUpdated { thread_id, .. }
+            | AgentConnectionEvent::ThreadGoalCleared { thread_id, .. } => Some(thread_id.as_str()),
+            // The composer takes server-started turns and queue invalidations
+            // itself, because both need the view to start work.
+            AgentConnectionEvent::TurnStarted { .. }
+            | AgentConnectionEvent::ThreadQueueChanged { .. } => return false,
             // Account surfaces are connection-scoped: they never belong to a
             // conversation, so they are not routed into one.
             AgentConnectionEvent::AccountUpdated(_)
@@ -117,6 +123,30 @@ impl ConversationState {
         // Elicitations have their own connection-owned identity and responder,
         // so they are reduced directly instead of being projected as turn
         // events. They must not create, restart, or finish a turn.
+        match &event {
+            AgentConnectionEvent::ThreadGoalUpdated {
+                generation,
+                goal,
+                turn_id,
+                ..
+            } => {
+                let changed = self.goal.observe(*generation, goal.clone());
+                if changed {
+                    // The reference keeps only the last completed goal: a
+                    // goal that is not complete withdraws "Goal achieved".
+                    self.clear_goal_achieved_marks();
+                    if goal.status == crate::agent::AgentThreadGoalStatus::Complete {
+                        self.mark_goal_achieved(turn_id.as_deref(), goal.time_used_seconds);
+                    }
+                }
+                return changed;
+            }
+            AgentConnectionEvent::ThreadGoalCleared {
+                generation,
+                thread_id,
+            } => return self.goal.observe_cleared(*generation, thread_id),
+            _ => {}
+        }
         if let AgentConnectionEvent::McpElicitationRequested { request, responder } = event {
             return self.mcp_elicitation_requested(request, responder);
         }
@@ -177,8 +207,12 @@ impl ConversationState {
             | AgentConnectionEvent::ThreadProjectUpdated { .. } => return false,
             AgentConnectionEvent::McpElicitationRequested { .. }
             | AgentConnectionEvent::McpElicitationResolved { .. }
-            | AgentConnectionEvent::McpElicitationFailed { .. } => {
-                unreachable!("elicitation lifecycle is reduced before turn projection")
+            | AgentConnectionEvent::McpElicitationFailed { .. }
+            | AgentConnectionEvent::ThreadGoalUpdated { .. }
+            | AgentConnectionEvent::ThreadGoalCleared { .. }
+            | AgentConnectionEvent::TurnStarted { .. }
+            | AgentConnectionEvent::ThreadQueueChanged { .. } => {
+                unreachable!("reduced before turn projection")
             }
         };
         self.apply_agent_event_batch(vec![event]);

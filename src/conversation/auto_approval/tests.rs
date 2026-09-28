@@ -46,6 +46,7 @@ pub(super) fn review(
         completed_at_ms: (status != AgentAutoApprovalReviewStatus::InProgress).then_some(200),
         decision_source: (status != AgentAutoApprovalReviewStatus::InProgress)
             .then(|| "agent".into()),
+        source: serde_json::json!({}),
     }
 }
 fn rows(state: &ConversationState) -> Vec<&AutoApprovalReviewPresentation> {

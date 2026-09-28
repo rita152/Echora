@@ -2,16 +2,21 @@
 
 mod account;
 mod apps;
+mod auto_review;
 mod catalog;
+mod collaboration;
 mod compact;
 mod config;
 mod connection;
 mod dispatch;
 mod events;
+mod external_turn;
 mod file_search;
+mod goal;
 mod mcp;
 mod plugins;
 mod protocol;
+mod queue;
 mod revert;
 mod settings;
 mod side_conversation;
@@ -256,7 +261,13 @@ impl ManagerInner {
             });
         }
         if let Ok(mut hub) = self.connection_events.lock() {
-            hub.snapshots.retain(|_,event| !matches!(event,AgentConnectionEvent::ThreadSettingsUpdated {generation:old,..} if *old==generation));
+            hub.snapshots.retain(|_, event| {
+                !matches!(event,
+                    AgentConnectionEvent::ThreadSettingsUpdated { generation: old, .. }
+                    | AgentConnectionEvent::ThreadGoalUpdated { generation: old, .. }
+                    | AgentConnectionEvent::ThreadGoalCleared { generation: old, .. }
+                        if *old == generation)
+            });
             // The account snapshots belonged to the generation that just
             // failed; a new subscriber must not replay them.
             hub.account = Default::default();

@@ -102,6 +102,7 @@ pub(super) struct CurrentTurnRows<'a> {
     pub(super) assistant_message_time: Option<String>,
     pub(super) conversation_activity: &'a [ConversationActivity],
     pub(super) resumed_turn: Option<ResumedTurnPresentation>,
+    pub(super) goal: crate::conversation::TurnGoalMarks,
 }
 
 pub(super) struct ToolGroupDisclosure {

@@ -155,6 +155,7 @@ pub(crate) struct AutoApprovalReviewView {
     action_focus: FocusHandle,
     details_focus: FocusHandle,
     on_change: Option<UiCallback<()>>,
+    on_approve: Option<UiCallback<crate::agent::AgentAutoApprovalReviewKey>>,
     action_transition: disclosure::DisclosureTransition,
     details_transition: disclosure::DisclosureTransition,
     content_width: std::rc::Rc<std::cell::Cell<f32>>,
@@ -181,6 +182,7 @@ impl AutoApprovalReviewView {
             action_focus: cx.focus_handle().tab_stop(true),
             details_focus: cx.focus_handle().tab_stop(true),
             on_change: None,
+            on_approve: None,
             action_transition: Default::default(),
             details_transition: Default::default(),
             content_width: std::rc::Rc::new(std::cell::Cell::new(711.586)),
@@ -191,6 +193,124 @@ impl AutoApprovalReviewView {
 
     pub(crate) fn on_change(&mut self, callback: UiCallback<()>) {
         self.on_change = Some(callback);
+    }
+
+    pub(crate) fn on_approve(
+        &mut self,
+        callback: UiCallback<crate::agent::AgentAutoApprovalReviewKey>,
+    ) {
+        self.on_approve = Some(callback);
+    }
+
+    /// The reference's approve section of a denied review: "Why it was
+    /// denied", then "What approval allows" with the Approve link. The approval
+    /// only records a single retry; the action itself is not run. Once the
+    /// approval is recorded the section disappears.
+    fn approval_section(&self, theme: Theme, cx: &mut Context<Self>) -> Option<Div> {
+        use crate::conversation::ReviewApproval;
+        let approval = self.model.approval.clone();
+        if approval == ReviewApproval::Approved {
+            return None;
+        }
+        let key = self.model.review.key.clone();
+        let callback = self.on_approve.clone();
+        let approving = approval == ReviewApproval::Approving;
+        let label = if approving {
+            crate::i18n::format!("正在批准…" => "Approving…")
+        } else {
+            crate::i18n::format!("批准" => "Approve")
+        };
+        let heading = |text: String| {
+            div()
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .text_color(theme.markdown_text.alpha(0.65))
+                .child(text)
+        };
+        let tertiary = theme.markdown_text.alpha(0.5);
+        let link = div()
+            .id("review-approve")
+            .role(Role::Button)
+            .aria_label(SharedString::from(label.clone()))
+            .focusable()
+            .tab_stop(true)
+            .relative()
+            .flex_none()
+            .text_color(tertiary)
+            .when(approving, |link| link.opacity(0.4))
+            .when(!approving, |link| {
+                let click_key = key.clone();
+                let click_callback = callback.clone();
+                link.cursor_pointer()
+                    .hover(move |s| s.text_color(theme.markdown_text))
+                    .on_click(move |_, window, cx| {
+                        if let Some(callback) = &click_callback {
+                            callback.emit(click_key.clone(), window, cx);
+                        }
+                    })
+                    .on_key_down(cx.listener(move |_, e: &gpui::KeyDownEvent, window, cx| {
+                        if matches!(e.keystroke.key.as_str(), "enter" | "space")
+                            && let Some(callback) = &callback
+                        {
+                            callback.emit(key.clone(), window, cx);
+                            cx.stop_propagation();
+                        }
+                    }))
+            })
+            .child(label)
+            .child(dotted_underline(
+                tertiary.into(),
+                theme.markdown_text.into(),
+                !approving,
+            ));
+        Some(
+            div()
+                .w_full()
+                .pt(px(APPROVAL_GAP))
+                .pb(px(4.))
+                .flex()
+                .flex_col()
+                .gap(px(APPROVAL_GAP))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(4.))
+                        .child(heading(
+                            crate::i18n::format!("被拒绝的原因" => "Why it was denied"),
+                        ))
+                        .child(
+                            div()
+                                .w_full()
+                                .text_color(tertiary)
+                                .child(denial_reason(&self.model.review.rationale)),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(4.))
+                        .child(heading(
+                            crate::i18n::format!("批准后允许的操作" => "What approval allows"),
+                        ))
+                        .child(
+                            div()
+                                .w_full()
+                                .flex()
+                                .items_baseline()
+                                .justify_between()
+                                .gap(px(APPROVAL_LINK_GAP))
+                                .child(
+                                    div()
+                                        .min_w(px(0.))
+                                        .flex_1()
+                                        .text_color(tertiary)
+                                        .child(approval_description()),
+                                )
+                                .child(link),
+                        ),
+                ),
+        )
     }
 
     pub(crate) fn sync(
@@ -518,6 +638,53 @@ impl AutoApprovalReviewView {
     }
 }
 
+const APPROVAL_GAP: f32 = 8.;
+const APPROVAL_LINK_GAP: f32 = 12.;
+/// 14px text on a 21px line: baseline at about 15px, plus the 2px offset.
+const APPROVAL_UNDERLINE_TOP: f32 = 17.;
+/// Room kept for the Approve link when measuring the text beside it.
+const APPROVAL_LINK_WIDTH: f32 = 72.;
+
+/// The reference's `underline decoration-dotted decoration-[0.5px]
+/// underline-offset-2`: GPUI underlines are solid or wavy, so the dots are
+/// painted 2px below the baseline of the 21px line, in the link's colour
+/// (full colour while hovered).
+fn dotted_underline(color: gpui::Hsla, hover: gpui::Hsla, interactive: bool) -> impl IntoElement {
+    gpui::canvas(
+        |_, _, _| {},
+        move |bounds, _, window, _| {
+            let hovered = interactive && bounds.contains(&window.mouse_position());
+            let color = if hovered { hover } else { color };
+            let mut x = bounds.left();
+            while x < bounds.right() {
+                window.paint_quad(gpui::fill(
+                    gpui::Bounds::new(gpui::point(x, bounds.top()), gpui::size(px(1.), px(1.))),
+                    color,
+                ));
+                x += px(2.);
+            }
+        },
+    )
+    .absolute()
+    .left_0()
+    .right_0()
+    .top(px(APPROVAL_UNDERLINE_TOP))
+    .h(px(1.))
+}
+
+fn denial_reason(rationale: &Option<String>) -> String {
+    rationale
+        .clone()
+        .filter(|text| !text.trim().is_empty())
+        .unwrap_or_else(
+            || crate::i18n::format!("未提供拒绝原因" => "No denial reason was provided"),
+        )
+}
+
+fn approval_description() -> String {
+    crate::i18n::format!("记录对此操作的批准，并允许重试一次，但不会运行该操作。" => "Records approval for this action and allows one retry. It does not run it.")
+}
+
 fn explanation_height(text: &str, width: f32, theme: Theme, window: &Window) -> f32 {
     let run = gpui::TextRun {
         len: text.len(),
@@ -617,8 +784,35 @@ impl Render for AutoApprovalReviewView {
                     .unwrap_or_else(|| fallback_explanation(status).to_owned())
             };
             let detail_height = explanation_height(&text, self.content_width.get(), theme, window);
+            let approval_height = if status == Status::Denied
+                && self.on_approve.is_some()
+                && self.model.approval != crate::conversation::ReviewApproval::Approved
+            {
+                let width = self.content_width.get();
+                APPROVAL_GAP
+                    + 21.
+                    + 4.
+                    + explanation_height(
+                        &denial_reason(&self.model.review.rationale),
+                        width,
+                        theme,
+                        window,
+                    )
+                    + APPROVAL_GAP
+                    + 21.
+                    + 4.
+                    + explanation_height(
+                        &approval_description(),
+                        width - APPROVAL_LINK_GAP - APPROVAL_LINK_WIDTH,
+                        theme,
+                        window,
+                    )
+                    + 4.
+            } else {
+                0.
+            };
             let body_height = if status == Status::Denied {
-                detail_height
+                detail_height + approval_height
             } else {
                 25. + detail_height * details_progress
             };
@@ -631,6 +825,11 @@ impl Render for AutoApprovalReviewView {
                 .items_start();
             if status == Status::Denied {
                 body = body.child(self.explanation(text, theme, cx).flex_none());
+                if self.on_approve.is_some()
+                    && let Some(section) = self.approval_section(theme, cx)
+                {
+                    body = body.child(section.flex_none());
+                }
             } else {
                 body = body.child(div().pt(px(4.)).flex_none().child(self.header(
                     status_label(status).to_owned(),

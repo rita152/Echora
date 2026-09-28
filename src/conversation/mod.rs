@@ -7,25 +7,33 @@ mod activity;
 mod auto_approval;
 mod elicitation;
 mod events;
+mod goal;
+pub(crate) use goal::GoalOperation;
 mod lifecycle;
 mod model;
+mod queue;
+pub(crate) use queue::QueueRowOperation;
 mod requests;
 mod runtime;
 mod state;
 mod submissions;
-pub(crate) use submissions::{SubmissionDraft, SubmissionStatus, UserSubmission};
+pub(crate) use submissions::{
+    SubmissionDraft, SubmissionStatus, UserSubmission, new_client_message_id,
+};
 mod stream;
 mod transcript;
 
 pub(crate) use activity::{ConversationActivity, ReasoningActivityPresentation};
-pub(crate) use auto_approval::{AutoApprovalReviewPresentation, StrictReviewPresentation};
+pub(crate) use auto_approval::{
+    AutoApprovalReviewPresentation, ReviewApproval, StrictReviewPresentation,
+};
 pub(crate) use state::ConversationState;
 pub(crate) use stream::{
     STREAM_DISCONNECTED_MESSAGE, STREAM_UPDATE_INTERVAL, collect_ready_agent_events,
     ensure_closed_batch_is_terminal,
 };
 pub(crate) use transcript::{
-    ConversationPhase, ConversationTranscriptTurn, ResumedTurnPresentation,
+    ConversationPhase, ConversationTranscriptTurn, ResumedTurnPresentation, TurnGoalMarks,
 };
 
 #[cfg(test)]

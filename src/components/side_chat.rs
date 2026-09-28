@@ -347,6 +347,13 @@ impl SideChatPanel {
     pub fn is_empty(&self) -> bool {
         self.tabs.is_empty()
     }
+    /// The composer of the selected tab.
+    pub fn active_composer(&self) -> Option<Entity<ComposerView>> {
+        self.tabs
+            .iter()
+            .find(|tab| Some(tab.id) == self.active)
+            .map(|tab| tab.composer.clone())
+    }
     pub fn set_fullscreen(&mut self, fullscreen: bool, cx: &mut Context<Self>) {
         if self.fullscreen != fullscreen {
             self.fullscreen = fullscreen;

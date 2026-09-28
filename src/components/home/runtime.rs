@@ -718,6 +718,7 @@ mod tests {
                     assistant_message_time: None,
                     conversation_activity: &activities,
                     resumed_turn: None,
+                    goal: Default::default(),
                 },
                 &Default::default(),
             );

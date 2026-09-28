@@ -214,6 +214,14 @@ pub(super) fn connection_event_key(event: &AgentConnectionEvent) -> String {
         AgentConnectionEvent::ThreadProjectUpdated { thread_id, .. } => {
             format!("thread-project:{thread_id}")
         }
+        AgentConnectionEvent::ThreadGoalUpdated { thread_id, .. }
+        | AgentConnectionEvent::ThreadGoalCleared { thread_id, .. } => {
+            format!("thread-goal:{thread_id}")
+        }
+        AgentConnectionEvent::TurnStarted { .. }
+        | AgentConnectionEvent::ThreadQueueChanged { .. } => {
+            unreachable!("transient connection events are never stored")
+        }
         AgentConnectionEvent::AccountUpdated(_) => "account".to_owned(),
         AgentConnectionEvent::AccountLoginUpdated(_) => "account-login".to_owned(),
         AgentConnectionEvent::AccountRateLimitsUpdated(_) => "rate-limits".to_owned(),
@@ -227,5 +235,7 @@ fn is_transient_connection_event(event: &AgentConnectionEvent) -> bool {
             | AgentConnectionEvent::McpElicitationResolved { .. }
             | AgentConnectionEvent::McpElicitationFailed { .. }
             | AgentConnectionEvent::ThreadReverted { .. }
+            | AgentConnectionEvent::TurnStarted { .. }
+            | AgentConnectionEvent::ThreadQueueChanged { .. }
     )
 }

@@ -18,12 +18,9 @@ use super::{
         is_integrated_server_request_method, parse_agent_notification,
         parse_mcp_server_startup_status_updated, parse_thread_status_changed,
         request_id_from_value, thread_started_id, validate_remote_control_status_changed,
-        validate_resume_goal_cleared,
     },
     ManagerInner,
-    connection::{
-        Connection, PendingThreadLifecycle, ServerRequestResponder, ThreadLifecycleKind, TurnKey,
-    },
+    connection::{Connection, ServerRequestResponder, ThreadLifecycleKind, TurnKey, TurnRoute},
     protocol::{
         optional_nullable_param_string, required_nullable_param_string, required_param_string,
     },
@@ -103,7 +100,16 @@ impl ManagerInner {
             .pointer("/params/turnId")
             .and_then(Value::as_str)
             .context("server request 缺少字符串 params.turnId")?;
-        let turn = connection.bind_starting_turn(thread_id, turn_id)?;
+        if !connection.has_pending_start(thread_id)?
+            && connection
+                .turn_for_key(&TurnKey {
+                    thread_id: thread_id.to_owned(),
+                    turn_id: turn_id.to_owned(),
+                })
+                .is_err()
+        {
+            bail!("收到未知 turn 的消息：threadId=`{thread_id}`，turnId=`{turn_id}`");
+        }
         let request_id = request_id_from_value(
             message
                 .get("id")
@@ -118,8 +124,18 @@ impl ManagerInner {
             key,
             ServerRequestResponder::Interactive,
         )?;
-        if let Some(outcome) = turn.ingest(message)? {
-            connection.finish_turn(&turn, Ok(outcome));
+        // The owner is recorded first so a resolution that races the buffer
+        // still finds it.
+        match connection.route(thread_id, turn_id, message)? {
+            TurnRoute::Owned(turn) => {
+                if let Some(outcome) = turn.ingest(message)? {
+                    connection.finish_turn(&turn, Ok(outcome));
+                }
+            }
+            TurnRoute::Buffered => {}
+            TurnRoute::Unowned => {
+                bail!("收到未知 turn 的消息：threadId=`{thread_id}`，turnId=`{turn_id}`")
+            }
         }
         Ok(())
     }
@@ -141,7 +157,20 @@ impl ManagerInner {
                 return self.answer_invalid_params(connection, TOOL_CALL_METHOD, message);
             }
         };
-        connection.bind_starting_turn(&call.thread_id, &call.turn_id)?;
+        if !connection.has_pending_start(&call.thread_id)?
+            && connection
+                .turn_for_key(&TurnKey {
+                    thread_id: call.thread_id.clone(),
+                    turn_id: call.turn_id.clone(),
+                })
+                .is_err()
+        {
+            bail!(
+                "收到未知 turn 的消息：threadId=`{}`，turnId=`{}`",
+                call.thread_id,
+                call.turn_id
+            );
+        }
         connection.record_server_request_owner(
             call.request_id.clone(),
             TurnKey {
@@ -313,7 +342,36 @@ impl ManagerInner {
                 Ok(())
             }
             "thread/started" => self.handle_thread_started(connection, message),
-            "thread/goal/cleared" => self.handle_resume_goal_cleared(connection, message),
+            super::super::goal::GOAL_UPDATED_METHOD | super::super::goal::GOAL_CLEARED_METHOD => {
+                let event = match super::super::goal::parse_notification(message)? {
+                    super::super::goal::GoalNotification::Updated {
+                        thread_id,
+                        turn_id,
+                        goal,
+                    } => AgentConnectionEvent::ThreadGoalUpdated {
+                        generation: connection.generation,
+                        thread_id,
+                        turn_id,
+                        goal,
+                    },
+                    super::super::goal::GoalNotification::Cleared { thread_id } => {
+                        AgentConnectionEvent::ThreadGoalCleared {
+                            generation: connection.generation,
+                            thread_id,
+                        }
+                    }
+                };
+                self.publish_connection_event(event);
+                Ok(())
+            }
+            super::super::queue::QUEUE_CHANGED_METHOD => {
+                let thread_id = super::super::queue::parse_changed(message)?;
+                self.publish_connection_event(AgentConnectionEvent::ThreadQueueChanged {
+                    generation: connection.generation,
+                    thread_id,
+                });
+                Ok(())
+            }
             "project/changed" => {
                 let project_id = required_param_string(message, "projectId", method)?;
                 let change = match required_param_string(message, "changeType", method)?.as_str() {
@@ -435,7 +493,12 @@ impl ManagerInner {
                     // resolution only releases the ownership record.
                     return Ok(());
                 }
-                let turn = connection.turn_for_key(&owner.key)?;
+                let turn =
+                    match connection.route(&owner.key.thread_id, &owner.key.turn_id, message)? {
+                        TurnRoute::Owned(turn) => turn,
+                        TurnRoute::Buffered => return Ok(()),
+                        TurnRoute::Unowned => connection.turn_for_key(&owner.key)?,
+                    };
                 let mut dispatch = turn
                     .dispatch
                     .lock()
@@ -617,7 +680,21 @@ impl ManagerInner {
                 if finished {
                     return Ok(());
                 }
-                let turn = connection.bind_starting_turn(thread_id, &turn_id)?;
+                // A turn the server started by itself (goal continuation, queue
+                // advance, queue/start) has no local owner until its own
+                // turn/started adopts it.
+                let turn = match connection.route(thread_id, &turn_id, message)? {
+                    TurnRoute::Owned(turn) => turn,
+                    // The pending turn/start has no id yet; the message waits
+                    // for its response to tell whose it is.
+                    TurnRoute::Buffered => return Ok(()),
+                    TurnRoute::Unowned if method == "turn/started" => {
+                        self.adopt_server_turn(connection, thread_id, &turn_id)?
+                    }
+                    TurnRoute::Unowned => {
+                        bail!("收到未知 turn 的消息：threadId=`{thread_id}`，turnId=`{turn_id}`")
+                    }
+                };
                 if let Some(outcome) = turn.ingest(message)? {
                     connection.finish_turn(&turn, Ok(outcome));
                 }
@@ -658,33 +735,6 @@ impl ManagerInner {
             return Ok(());
         }
         bail!("收到未关联 lifecycle 的 thread/started `{thread_id}`")
-    }
-    pub(super) fn handle_resume_goal_cleared(
-        &self,
-        connection: &Connection,
-        message: &Value,
-    ) -> Result<()> {
-        let thread_id = message
-            .pointer("/params/threadId")
-            .and_then(Value::as_str)
-            .context("thread/goal/cleared 缺少字符串 params.threadId")?;
-        let state = connection
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
-        let expected = if state.resume_bootstrap_threads.contains(thread_id) {
-            thread_id.to_owned()
-        } else {
-            match state.pending_thread_lifecycle.as_ref() {
-                Some(PendingThreadLifecycle {
-                    kind: ThreadLifecycleKind::Resume(expected),
-                    ..
-                }) => expected.clone(),
-                _ => bail!("thread/goal/cleared 仅允许出现在 thread/resume bootstrap 阶段"),
-            }
-        };
-        drop(state);
-        validate_resume_goal_cleared(message, &expected)
     }
     pub(super) fn publish_connection_event(&self, event: AgentConnectionEvent) {
         if let Ok(mut hub) = self.connection_events.lock() {

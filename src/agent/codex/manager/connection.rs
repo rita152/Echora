@@ -75,6 +75,20 @@ pub(super) struct ServerRequestOwner {
 /// Upper bound of the generation-scoped controlled-reply diagnostic record.
 pub(super) const SERVER_REQUEST_DIAGNOSTIC_LIMIT: usize = 256;
 
+/// Messages that waited for a `turn/start` response, with their turn id.
+pub(super) type EarlyMessages = Vec<(String, Value)>;
+
+/// Owner of a turn-scoped message.
+pub(super) enum TurnRoute {
+    /// A registered turn with this id.
+    Owned(Arc<ManagedTurn>),
+    /// The thread's `turn/start` is unanswered; the message was buffered
+    /// until its response names the turn's id.
+    Buffered,
+    /// No local turn: only `turn/started` may introduce it (a server turn).
+    Unowned,
+}
+
 pub(super) enum ThreadLifecycleKind {
     Start,
     Resume(String),
@@ -91,9 +105,17 @@ pub(super) struct ConnectionState {
     pub(super) loaded_threads: HashSet<String>,
     pub(super) pending_thread_lifecycle: Option<PendingThreadLifecycle>,
     pub(super) permission_probe_threads: VecDeque<String>,
-    pub(super) resume_bootstrap_threads: HashSet<String>,
     pub(super) reserved_threads: HashSet<String>,
     pub(super) starting_turns: HashMap<String, Arc<ManagedTurn>>,
+    /// Turn-scoped messages that arrived while the thread's `turn/start` was
+    /// still unanswered, in wire order with their turn id. They are not bound
+    /// to the pending turn until its response names its id: the server may
+    /// meanwhile have started another turn itself (the next queued follow-up,
+    /// a goal continuation), whose messages are then replayed as that turn.
+    pub(super) early_messages: HashMap<String, EarlyMessages>,
+    /// Server-started turns still running, by thread, so a conversation opened
+    /// later can claim the stream (which holds every event from the start).
+    pub(super) server_turns: HashMap<String, (String, crate::agent::AgentExternalTurn)>,
     pub(super) turns: HashMap<TurnKey, Arc<ManagedTurn>>,
     // A late informational event must never bind to a newer starting turn.
     pub(super) finished_turns: HashSet<TurnKey>,
@@ -116,6 +138,12 @@ pub(super) struct ConnectionState {
     pub(super) thread_settings: HashMap<String, AgentThreadSettings>,
     pub(super) confirmed_settings: HashMap<String, VecDeque<AgentThreadSettings>>,
     pub(super) remote_control_status: Option<Value>,
+    /// `collaborationMode/list`, read once per generation.
+    pub(super) collaboration_modes: Option<Vec<crate::agent::AgentCollaborationModePreset>>,
+    /// Threads with a denial approval in flight, and reviews approved in this
+    /// generation.
+    pub(super) approving_review_threads: HashSet<String>,
+    pub(super) approved_reviews: HashSet<String>,
     /// Connection-scoped account, login, and quota state for this generation.
     pub(super) account: AgentAccountState,
     /// Keyed by (thread scope, server name): a login only exists once the
@@ -547,11 +575,98 @@ impl Connection {
         Ok(())
     }
 
+    /// Who owns a turn-scoped message right now. A message for a thread
+    /// whose `turn/start` is unanswered is buffered in the same critical
+    /// section, so it can never miss the response's drain of the buffer.
+    pub(super) fn route(
+        &self,
+        thread_id: &str,
+        turn_id: &str,
+        message: &Value,
+    ) -> Result<TurnRoute> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        if let Some(turn) = state.turns.get(&TurnKey {
+            thread_id: thread_id.to_owned(),
+            turn_id: turn_id.to_owned(),
+        }) {
+            return Ok(TurnRoute::Owned(turn.clone()));
+        }
+        if state.starting_turns.contains_key(thread_id) {
+            state
+                .early_messages
+                .entry(thread_id.to_owned())
+                .or_default()
+                .push((turn_id.to_owned(), message.clone()));
+            return Ok(TurnRoute::Buffered);
+        }
+        Ok(TurnRoute::Unowned)
+    }
+
+    /// Whether a thread's `turn/start` is still unanswered.
+    pub(super) fn has_pending_start(&self, thread_id: &str) -> Result<bool> {
+        Ok(self
+            .state
+            .lock()
+            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?
+            .starting_turns
+            .contains_key(thread_id))
+    }
+
+    /// Replays early messages that did not belong to the thread's own turn,
+    /// so a turn the server started meanwhile is adopted and streamed.
+    pub(super) fn replay_early(self: &Arc<Self>, messages: Vec<Value>) {
+        let Some(manager) = self.manager.upgrade() else {
+            return;
+        };
+        for message in messages {
+            if let Err(error) = manager.handle_message(self, &message) {
+                self.fail_protocol(format!(
+                    "turn/start 期间到达的其他轮次消息处理失败：{error:#}"
+                ));
+                return;
+            }
+        }
+    }
+
+    /// Binds the pending `turn/start` to the id its response named. Early
+    /// messages for that id move into the turn's own buffer, in wire order;
+    /// the others are returned for replay as server-started turns.
     pub(super) fn bind_starting_turn(
         &self,
         thread_id: &str,
         turn_id: &str,
-    ) -> Result<Arc<ManagedTurn>> {
+    ) -> Result<(Arc<ManagedTurn>, Vec<Value>)> {
+        let (turn, early) = self.bind_turn_registry(thread_id, turn_id)?;
+        let mut foreign = Vec::new();
+        let mut own = Vec::new();
+        for (id, message) in early {
+            if id == turn_id {
+                own.push(message);
+            } else {
+                foreign.push(message);
+            }
+        }
+        // Anything already in the turn's buffer arrived after the drain, so
+        // the drained messages go first to keep wire order.
+        let mut dispatch = turn
+            .dispatch
+            .lock()
+            .map_err(|_| anyhow!("Codex managed turn dispatch 锁已损坏"))?;
+        let later = std::mem::take(&mut dispatch.buffered);
+        dispatch.buffered = own;
+        dispatch.buffered.extend(later);
+        drop(dispatch);
+        Ok((turn, foreign))
+    }
+
+    fn bind_turn_registry(
+        &self,
+        thread_id: &str,
+        turn_id: &str,
+    ) -> Result<(Arc<ManagedTurn>, EarlyMessages)> {
         let key = TurnKey {
             thread_id: thread_id.to_owned(),
             turn_id: turn_id.to_owned(),
@@ -562,7 +677,7 @@ impl Connection {
                 .lock()
                 .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
             if let Some(turn) = state.turns.get(&key) {
-                return Ok(turn.clone());
+                return Ok((turn.clone(), Vec::new()));
             }
             state
                 .starting_turns
@@ -579,7 +694,7 @@ impl Connection {
             .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
         if let Some(existing) = state.turns.get(&key) {
             if Arc::ptr_eq(existing, &turn) {
-                return Ok(turn);
+                return Ok((turn, Vec::new()));
             }
             bail!("turn registry key `{thread_id}`/`{turn_id}` 已被其他 turn 占用");
         }
@@ -591,7 +706,8 @@ impl Connection {
             state.starting_turns.remove(thread_id);
         }
         state.turns.insert(key, turn.clone());
-        Ok(turn)
+        let early = state.early_messages.remove(thread_id).unwrap_or_default();
+        Ok((turn, early))
     }
 
     pub(super) fn turn_for_key(&self, key: &TurnKey) -> Result<Arc<ManagedTurn>> {
@@ -710,7 +826,12 @@ impl Connection {
             .unwrap_or_default()
     }
 
-    pub(super) fn finish_turn(&self, turn: &Arc<ManagedTurn>, result: Result<TurnOutcome>) {
+    pub(super) fn finish_turn(
+        self: &Arc<Self>,
+        turn: &Arc<ManagedTurn>,
+        result: Result<TurnOutcome>,
+    ) {
+        let mut foreign_early = Vec::new();
         if let Some(manager) = self.manager.upgrade()
             && let Some(turn_id) = turn.turn_id()
         {
@@ -742,10 +863,20 @@ impl Connection {
                 .is_some_and(|candidate| Arc::ptr_eq(candidate, turn))
             {
                 state.starting_turns.remove(&turn.thread_id);
+                // The turn never got its id: whatever arrived meanwhile belongs
+                // to turns the server started itself.
+                if let Some(early) = state.early_messages.remove(&turn.thread_id) {
+                    foreign_early = early.into_iter().map(|(_, message)| message).collect();
+                }
             }
             state
                 .turns
                 .retain(|_, candidate| !Arc::ptr_eq(candidate, turn));
+            if let Some(turn_id) = turn.turn_id() {
+                state
+                    .server_turns
+                    .retain(|thread, (id, _)| !(thread == &turn.thread_id && id == &turn_id));
+            }
             let owned_keys = state
                 .server_request_owners
                 .iter()
@@ -764,6 +895,9 @@ impl Connection {
             }
         }
         turn.finish(result);
+        if !foreign_early.is_empty() {
+            self.replay_early(foreign_early);
+        }
     }
 
     /// Register one MCP elicitation under its original request id. The id space
@@ -955,7 +1089,6 @@ impl Connection {
                 let elicitations = state.invalidate_pending_elicitations(None);
                 state.loaded_threads.clear();
                 state.pending_thread_lifecycle = None;
-                state.resume_bootstrap_threads.clear();
                 state.reserved_threads.clear();
                 state.server_request_owners.clear();
                 state.resolved_server_requests.clear();

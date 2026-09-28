@@ -132,7 +132,7 @@ impl ComposerView {
     }
 
     pub(crate) fn side_composer_height(&self, cx: &App) -> f32 {
-        self.composer_body_height(cx) + self.submission_feedback_height()
+        self.composer_body_height(cx) + self.submission_feedback_height() + self.tray_height()
     }
     pub(super) fn composer_body_height(&self, cx: &App) -> f32 {
         self.prompt_editor.read(cx).composer_height()

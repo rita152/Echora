@@ -37,6 +37,8 @@ use crate::theme::{Theme, ThemeMode, UI_FONT_FAMILY};
 pub struct CloseSettings;
 pub struct ChangeTheme(pub ThemeMode);
 pub struct ChangeLanguage(pub crate::i18n::Language);
+/// The Follow-up behavior segmented control changed.
+pub struct ChangeFollowUpMode(pub crate::workspace::FollowUpMode);
 pub struct ConfigSaveFinished;
 
 /// Segment of the plugins settings page. Plugins and apps keep the reference
@@ -56,6 +58,7 @@ pub struct SettingsView {
     content_scroll: ScrollHandle,
     switch_overrides: HashMap<(&'static str, usize, usize), bool>,
     appearance_theme: usize,
+    pub(super) follow_up_mode: crate::workspace::FollowUpMode,
     language_menu_open: bool,
     language_menu_index: usize,
     language_focus: gpui::FocusHandle,
@@ -107,6 +110,20 @@ pub struct SettingsView {
 impl EventEmitter<CloseSettings> for SettingsView {}
 impl EventEmitter<ChangeTheme> for SettingsView {}
 impl EventEmitter<ChangeLanguage> for SettingsView {}
+impl EventEmitter<ChangeFollowUpMode> for SettingsView {}
+
+impl SettingsView {
+    pub fn set_follow_up_mode(
+        &mut self,
+        mode: crate::workspace::FollowUpMode,
+        cx: &mut Context<Self>,
+    ) {
+        if self.follow_up_mode != mode {
+            self.follow_up_mode = mode;
+            cx.notify();
+        }
+    }
+}
 impl EventEmitter<ConfigSaveFinished> for SettingsView {}
 
 impl SettingsView {
@@ -270,6 +287,7 @@ impl SettingsView {
             content_scroll: ScrollHandle::new(),
             switch_overrides: HashMap::new(),
             appearance_theme: if mode == ThemeMode::Dark { 2 } else { 1 },
+            follow_up_mode: Default::default(),
         }
     }
 

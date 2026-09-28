@@ -242,6 +242,7 @@ pub(super) fn conversation(
                 message: text,
                 images,
                 time: String::new(),
+                goal: false,
             },
             row => row,
         };
@@ -289,6 +290,7 @@ pub(super) fn conversation(
                 message,
                 images,
                 time,
+                goal,
             } => (
                 div()
                     .id(("transcript-turn-user", turn_index))
@@ -299,6 +301,7 @@ pub(super) fn conversation(
                             text: message,
                             images,
                             time: time.unwrap_or_default(),
+                            goal,
                             highlight: home_entity.read(_cx).user_message_highlight(index, _cx),
                         },
                         false,
@@ -316,6 +319,7 @@ pub(super) fn conversation(
                 message,
                 images,
                 time,
+                goal,
             } => (
                 div()
                     .id(("current-turn-user", index))
@@ -326,6 +330,7 @@ pub(super) fn conversation(
                             text: message,
                             images,
                             time,
+                            goal,
                             highlight: home_entity.read(_cx).user_message_highlight(index, _cx),
                         },
                         user_message_actions_visible_for_capture,
@@ -375,6 +380,7 @@ pub(super) fn conversation(
                 message,
                 completed_at,
                 hooks,
+                goal_achieved,
             } => (
                 div()
                     .id(SharedString::from(format!("response-footer-{id}")))
@@ -384,6 +390,17 @@ pub(super) fn conversation(
                         super::messages::ResponseFooterMetadata {
                             completed_at,
                             hooks,
+                            goal_achieved,
+                            // The reference's `alwaysShowActions`: only the
+                            // latest turn keeps its action row visible.
+                            always_visible: !rows[index + 1..].iter().any(|later| {
+                                matches!(
+                                    later,
+                                    ConversationListRow::CurrentResponseFooter { .. }
+                                        | ConversationListRow::HistoricalUser { .. }
+                                        | ConversationListRow::CurrentUser { .. }
+                                )
+                            }),
                         },
                         response_feedback,
                         home_entity.clone(),

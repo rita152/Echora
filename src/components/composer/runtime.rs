@@ -26,6 +26,46 @@ impl ComposerView {
         }
     }
 
+    /// Plan requires the connection's plan preset; while the presets are
+    /// unknown or failed to load, plan is not offered.
+    pub(super) fn plan_mode_available(&self) -> bool {
+        self.collaboration_modes.as_ref().is_some_and(|modes| {
+            modes
+                .preset(crate::agent::AgentCollaborationModeKind::Plan)
+                .is_some()
+        })
+    }
+
+    pub(crate) fn set_collaboration_modes(
+        &mut self,
+        modes: Option<crate::agent::AgentCollaborationModes>,
+        cx: &mut Context<Self>,
+    ) {
+        self.collaboration_modes = modes;
+        if !self.plan_mode_available() && self.prompt_context.plan_mode == Some(true) {
+            self.prompt_context.plan_mode = Some(false);
+        }
+        cx.notify();
+    }
+
+    /// Presets are cached per generation by the backend; a failed read is
+    /// logged and leaves plan unavailable.
+    pub(super) fn load_collaboration_modes(&mut self, cx: &mut Context<Self>) {
+        let receiver = self.backend.load_collaboration_modes();
+        cx.spawn(async move |this, cx| {
+            let result = receiver.recv().await;
+            let _ = this.update(cx, |this, cx| match result {
+                Ok(Ok(modes)) => this.set_collaboration_modes(Some(modes), cx),
+                Ok(Err(error)) => {
+                    eprintln!("collaborationMode/list 读取失败：{error}");
+                    this.set_collaboration_modes(None, cx);
+                }
+                Err(_) => this.set_collaboration_modes(None, cx),
+            });
+        })
+        .detach();
+    }
+
     #[cfg(not(test))]
     pub(super) fn load_model_catalog(&mut self, cx: &mut Context<Self>) {
         let receiver = self.backend.load_model_catalog();
@@ -45,11 +85,31 @@ impl ComposerView {
         .detach();
     }
     pub(super) fn submit_prompt(&mut self, raw_prompt: String, cx: &mut Context<Self>) {
+        self.submit_prompt_as(raw_prompt, false, cx);
+    }
+
+    /// `inverted` is ⌘⏎: the opposite follow-up behavior for this message.
+    pub(super) fn submit_prompt_as(
+        &mut self,
+        raw_prompt: String,
+        inverted: bool,
+        cx: &mut Context<Self>,
+    ) {
         // Manual context compaction is a composer command, not a chat message:
         // the reference exposes it as the "Compact" slash command and the
         // server answers through the ordinary turn stream.
         if raw_prompt.trim() == super::COMPACT_COMMAND {
             self.start_context_compaction(cx);
+            return;
+        }
+        // A fully typed `/goal <objective>` bypasses the slash menu. A new
+        // chat's first prompt may itself be `/goal <objective>`, which is sent
+        // as a turn so the thread exists before the goal is set.
+        if self.goal_after_first_turn.is_none() && self.handle_goal_command(&raw_prompt, cx) {
+            return;
+        }
+        if self.goal_draft {
+            self.submit_goal(raw_prompt.trim().to_owned(), cx);
             return;
         }
         if raw_prompt.trim().is_empty()
@@ -77,6 +137,21 @@ impl ComposerView {
             return;
         }
         let running = self.is_running();
+        // Sending while the queue is paused asks whether to clear it first.
+        if !running
+            && self.dialog.is_none()
+            && self.queue_edit.is_none()
+            && self.queue_paused()
+            && !self.queue_resumed
+        {
+            self.dialog = Some(super::dialogs::ComposerDialog::SendWhilePaused {
+                text: raw_prompt,
+                inverted,
+            });
+            self.dialog_focus_pending = true;
+            cx.notify();
+            return;
+        }
         if !running && self.conversation.permission_change.is_some() {
             self.submission_error = Some(
                 crate::i18n::text("权限变更尚未确认，输入已保留。请等待确认后发送新轮次。").into(),
@@ -84,7 +159,13 @@ impl ComposerView {
             cx.notify();
             return;
         }
-        let target = if running {
+        let queue_follow_up = running
+            && self.queue_supported()
+            && match self.follow_up_mode {
+                crate::workspace::FollowUpMode::Queue => !inverted,
+                crate::workspace::FollowUpMode::Steer => inverted,
+            };
+        let target = if running && !queue_follow_up && self.queue_edit.is_none() {
             match self.conversation.steer_target() {
                 Ok(target) => Some(target),
                 Err(error) => {
@@ -124,6 +205,34 @@ impl ComposerView {
                 crate::git_review::comments_prompt(&self.review_comments)
             )
         };
+        if let Some(edit) = self.queue_edit.clone() {
+            self.submission_error = None;
+            if self.submit_queue_edit(edit, prompt.clone(), draft.clone(), cx) {
+                cx.emit(ConversationChanged);
+                cx.notify();
+                return;
+            }
+        }
+        if queue_follow_up {
+            if self.submit_to_queue(prompt, draft.clone(), cx) {
+                self.submission_error = None;
+                self.draft_revision = self.draft_revision.wrapping_add(1);
+                self.clear_prompt(cx);
+                self.prompt_context.files.clear();
+                self.context_menu_open = false;
+                if !self.review_comments.is_empty() {
+                    self.review_comments.clear();
+                    cx.emit(super::ReviewCommentsSubmitted);
+                }
+            } else {
+                self.submission_error = Some(
+                    crate::i18n::format!("当前会话还不能排队，输入已保留。" => "This chat cannot queue yet; your input is kept."),
+                );
+            }
+            cx.emit(ConversationChanged);
+            cx.notify();
+            return;
+        }
         if !running {
             self.conversation.begin_prompt(&prompt);
             self.conversation.user_images = draft
@@ -246,17 +355,27 @@ impl ComposerView {
             .find(|s| s.id == id)
             .map(|s| s.draft.clone())
         {
-            self.prompt_editor
-                .update(cx, |editor, cx| editor.set_text_silently(&draft.text, cx));
-            self.prompt_context = draft.context;
-            self.review_comments = draft.comments;
-            if !self.review_comments.is_empty() {
-                cx.emit(super::ReviewCommentsRestored(self.review_comments.clone()));
-            }
-            self.focus_prompt_pending = true;
-            self.draft_revision = self.draft_revision.wrapping_add(1);
-            cx.notify();
+            self.restore_draft(draft, cx);
         }
+    }
+
+    /// Puts a draft snapshot back into the composer: text, attachments and
+    /// review comments.
+    pub(super) fn restore_draft(
+        &mut self,
+        draft: crate::conversation::SubmissionDraft,
+        cx: &mut Context<Self>,
+    ) {
+        self.prompt_editor
+            .update(cx, |editor, cx| editor.set_text_silently(&draft.text, cx));
+        self.prompt_context = draft.context;
+        self.review_comments = draft.comments;
+        if !self.review_comments.is_empty() {
+            cx.emit(super::ReviewCommentsRestored(self.review_comments.clone()));
+        }
+        self.focus_prompt_pending = true;
+        self.draft_revision = self.draft_revision.wrapping_add(1);
+        cx.notify();
     }
     pub(super) fn consume_agent_events(
         &mut self,
@@ -308,6 +427,16 @@ impl ComposerView {
                     let finished = this.apply_agent_event_batch(batch);
                     if let Some(thread_id) = created_thread {
                         cx.emit(ConversationThreadCreated { thread_id });
+                        this.sync_thread_scoped_state(cx);
+                    }
+                    this.apply_goal_after_first_turn(cx);
+                    if finished {
+                        // A server-started turn that arrived while this run
+                        // was still finishing takes over now.
+                        this.conversation.active_turn = None;
+                        this.attach_pending_external_turn(cx);
+                        this.conversation.queue.wanted += 1;
+                        this.refresh_queue(cx);
                     }
                     cx.emit(ConversationChanged);
                     cx.notify();
@@ -328,7 +457,7 @@ impl ComposerView {
         self.connection_event_task = Some(cx.spawn(async move |this, cx| {
             while let Ok(event) = receiver.recv().await {
                 let _ = this.update(cx, |this, cx| {
-                    if this.apply_connection_event(event) {
+                    if this.apply_connection_event(event, cx) {
                         cx.emit(ConversationChanged);
                         cx.notify();
                     }
@@ -337,6 +466,12 @@ impl ComposerView {
         }));
     }
     pub(super) fn stop_generation(&mut self, cx: &mut Context<Self>) {
+        // A stop pauses the queue (the server keeps it but does not advance
+        // after an interrupt) and, first of all, an active goal.
+        self.queue_resumed = false;
+        if self.stop_generation_with_goal(cx) {
+            return;
+        }
         if self.conversation.stop_generation() {
             cx.emit(ConversationChanged);
             cx.notify();

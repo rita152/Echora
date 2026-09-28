@@ -333,6 +333,8 @@ pub(super) struct UserMessageContent {
     pub(super) text: String,
     pub(super) images: Vec<crate::agent::UserMessageAttachment>,
     pub(super) time: String,
+    /// The message was sent as the thread goal ("Sent as goal").
+    pub(super) goal: bool,
     /// The rail's jump highlight over the bubble, while it plays.
     pub(super) highlight: Option<f32>,
 }
@@ -351,9 +353,10 @@ pub(super) fn current_user_message(
         text: user_message,
         images: user_images,
         time: user_message_time,
+        goal,
         highlight,
     } = message;
-    let reserve_footer = !continuation || actions_visible_for_capture;
+    let reserve_footer = reserve_footer_for(continuation, actions_visible_for_capture, goal);
     let hover_group: SharedString = "user-message-hover".into();
     let copied_user_message = user_message.clone();
     let keyboard_user_message = user_message.clone();
@@ -494,14 +497,52 @@ pub(super) fn current_user_message(
                                             .size(px(RESPONSE_ACTION_ICON_SIZE)),
                                     ),
                             )
-                        }),
+                        })
+                        .when(goal, |footer| footer.child(sent_as_goal_tag(theme))),
                 ),
         )
+}
+
+/// A goal message always shows its footer tag, so its footer is reserved even
+/// on a continuation bubble.
+fn reserve_footer_for(continuation: bool, actions_visible: bool, goal: bool) -> bool {
+    !continuation || actions_visible || goal
+}
+
+/// "Sent as goal": always visible, unlike the hover-only time and actions.
+fn sent_as_goal_tag(theme: Theme) -> impl IntoElement {
+    footer_mark(
+        "goal-chip",
+        14.0,
+        8.0,
+        crate::i18n::format!("设为目标" => "Sent as goal"),
+        theme,
+    )
+    // The footer row already carries the reference's 4px side margin.
+    .debug_selector(|| "USER_MESSAGE_SENT_AS_GOAL".to_owned())
+}
+
+/// An icon and a 12px tertiary label, as the reference's goal marks.
+fn footer_mark(glyph: &'static str, icon_size: f32, gap: f32, label: String, theme: Theme) -> Div {
+    div()
+        .h_full()
+        .flex()
+        .items_center()
+        .gap(px(gap))
+        .text_size(px(12.0))
+        .line_height(px(16.0))
+        .text_color(theme.text_tertiary)
+        .child(icon(glyph, theme.text_tertiary.into()).size(px(icon_size)))
+        .child(label)
 }
 
 pub(super) struct ResponseFooterMetadata {
     pub completed_at: Option<String>,
     pub hooks: Vec<crate::agent::AgentHookRun>,
+    /// This turn achieved the thread goal, after this many seconds.
+    pub goal_achieved: Option<i64>,
+    /// The latest turn's row stays visible; earlier ones show on hover.
+    pub always_visible: bool,
 }
 
 /// Corner radius, type, and padding of the reference's inline message editor:
@@ -624,6 +665,8 @@ pub(super) fn current_response_footer(
     let ResponseFooterMetadata {
         completed_at,
         hooks,
+        goal_achieved,
+        always_visible,
     } = metadata;
     use std::hash::{Hash, Hasher};
     let mut hash = std::hash::DefaultHasher::new();
@@ -636,6 +679,10 @@ pub(super) fn current_response_footer(
     div()
         .group("response-footer")
         .relative()
+        .when(!always_visible, |footer| {
+            // GPUI has no focus-within, so the reveal is hover only.
+            footer.opacity(0.0).hover(|footer| footer.opacity(1.0))
+        })
         .left(px(RESPONSE_ACTION_FOOTER_ELECTRON_SHIFT))
         .mt(px(RESPONSE_ACTION_FOOTER_OFFSET))
         .w_full()
@@ -720,6 +767,30 @@ pub(super) fn current_response_footer(
                     },
                 ),
         )
+        .when_some(goal_achieved, |footer, seconds| {
+            let time = crate::components::composer::achieved_duration_label(seconds);
+            // A 12px divider, then the check and the label, 6px apart.
+            footer.child(
+                div()
+                    .ml(px(6.0))
+                    .h_full()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .debug_selector(|| "RESPONSE_GOAL_ACHIEVED".to_owned())
+                    .child(div().w(px(1.0)).h(px(12.0)).bg(theme.border))
+                    .child(
+                        footer_mark(
+                            "plan-step-completed",
+                            16.0,
+                            6.0,
+                            crate::i18n::format!("已在 {time} 内达成目标" => "Goal achieved in {time}"),
+                            theme,
+                        )
+                        .line_height(px(20.0)),
+                    ),
+            )
+        })
         .when(!hooks.is_empty(), |footer| {
             footer.child(super::runtime::hook_button(
                 turn_scope, hooks, theme, hook_home, cx,

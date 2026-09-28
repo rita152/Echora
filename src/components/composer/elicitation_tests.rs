@@ -186,7 +186,7 @@ fn form_submission_validates_locally_and_waits_for_the_server_resolution() {
     app.update_entity(&composer, |composer, cx| {
         composer.conversation.thread_id = Some("thread-a".into());
         let (key, event) = request_event(form_request(AgentServerRequestId::Number(11)), &control);
-        assert!(composer.apply_connection_event(event));
+        assert!(composer.apply_scoped_connection_event(event));
         assert!(composer.focused_mcp_elicitation_request_id().as_deref() == Some(key.as_str()));
 
         // Empty required text, illegal number, and out-of-range values stay
@@ -294,12 +294,12 @@ fn form_submission_validates_locally_and_waits_for_the_server_resolution() {
         assert_eq!(responses(&control).len(), 1);
 
         let identity = composer.conversation.mcp_elicitation_contexts[&key].clone();
-        assert!(
-            composer.apply_connection_event(AgentConnectionEvent::McpElicitationResolved {
+        assert!(composer.apply_scoped_connection_event(
+            AgentConnectionEvent::McpElicitationResolved {
                 identity,
                 thread_id: "thread-a".into(),
-            })
-        );
+            }
+        ));
         assert_eq!(model(composer, &key).status, McpElicitationStatus::Accepted);
         assert!(!model(composer, &key).status.is_overlay_visible());
         assert!(composer.conversation.mcp_elicitation_responders.is_empty());
@@ -317,8 +317,8 @@ fn decline_and_cancel_send_distinct_protocol_actions() {
             request_event(form_request(AgentServerRequestId::Number(21)), &control);
         let (cancel_key, cancel) =
             request_event(form_request(AgentServerRequestId::Number(22)), &control);
-        composer.apply_connection_event(decline);
-        composer.apply_connection_event(cancel);
+        composer.apply_scoped_connection_event(decline);
+        composer.apply_scoped_connection_event(cancel);
 
         composer.handle_mcp_elicitation_event(&decline_key, McpElicitationEvent::Decline, cx);
         composer.handle_mcp_elicitation_event(&cancel_key, McpElicitationEvent::Cancel, cx);
@@ -338,7 +338,7 @@ fn decline_and_cancel_send_distinct_protocol_actions() {
         );
 
         let decline_identity = composer.conversation.mcp_elicitation_contexts[&decline_key].clone();
-        composer.apply_connection_event(AgentConnectionEvent::McpElicitationResolved {
+        composer.apply_scoped_connection_event(AgentConnectionEvent::McpElicitationResolved {
             identity: decline_identity,
             thread_id: "thread-a".into(),
         });
@@ -352,7 +352,7 @@ fn decline_and_cancel_send_distinct_protocol_actions() {
             McpElicitationStatus::Submitting
         );
         let cancel_identity = composer.conversation.mcp_elicitation_contexts[&cancel_key].clone();
-        composer.apply_connection_event(AgentConnectionEvent::McpElicitationResolved {
+        composer.apply_scoped_connection_event(AgentConnectionEvent::McpElicitationResolved {
             identity: cancel_identity,
             thread_id: "thread-a".into(),
         });
@@ -372,7 +372,7 @@ fn url_cards_open_the_link_without_answering_and_keep_the_explicit_action() {
     app.update_entity(&composer, |composer, cx| {
         composer.conversation.thread_id = Some("thread-a".into());
         let (key, event) = request_event(url_request(AgentServerRequestId::Number(31)), &control);
-        composer.apply_connection_event(event);
+        composer.apply_scoped_connection_event(event);
         composer.handle_mcp_elicitation_event(&key, McpElicitationEvent::OpenUrl, cx);
         assert!(
             responses(&control).is_empty(),
@@ -402,9 +402,9 @@ fn connection_failure_invalidates_the_card_and_blocks_further_submits() {
     app.update_entity(&composer, |composer, cx| {
         composer.conversation.thread_id = Some("thread-a".into());
         let (key, event) = request_event(form_request(AgentServerRequestId::Number(41)), &control);
-        composer.apply_connection_event(event);
+        composer.apply_scoped_connection_event(event);
         let identity = composer.conversation.mcp_elicitation_contexts[&key].clone();
-        composer.apply_connection_event(AgentConnectionEvent::McpElicitationFailed {
+        composer.apply_scoped_connection_event(AgentConnectionEvent::McpElicitationFailed {
             identity,
             thread_id: "thread-a".into(),
             kind: AgentServerRequestFailureKind::Failed,
@@ -434,7 +434,7 @@ fn write_failure_is_visible_and_never_retried() {
     app.update_entity(&composer, |composer, cx| {
         composer.conversation.thread_id = Some("thread-a".into());
         let (key, event) = request_event(url_request(AgentServerRequestId::Number(51)), &control);
-        composer.apply_connection_event(event);
+        composer.apply_scoped_connection_event(event);
         composer.handle_mcp_elicitation_event(&key, McpElicitationEvent::Decline, cx);
         let model = model(composer, &key);
         assert_eq!(model.status, McpElicitationStatus::Invalid);
@@ -457,7 +457,7 @@ fn keyboard_order_covers_fields_and_buttons_and_escape_cancels() {
     app.update_entity(&composer, |composer, cx| {
         composer.conversation.thread_id = Some("thread-a".into());
         let (key, event) = request_event(form_request(AgentServerRequestId::Number(61)), &control);
-        composer.apply_connection_event(event);
+        composer.apply_scoped_connection_event(event);
         assert_eq!(
             model(composer, &key).keyboard_focus,
             Some(McpElicitationFocus::Field(0))

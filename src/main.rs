@@ -1122,6 +1122,24 @@ fn main() {
             .map(ToOwned::to_owned)
     });
     #[cfg(feature = "screenshot")]
+    let queue_ui_state = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--queue-ui-state=").map(ToOwned::to_owned));
+    #[cfg(feature = "screenshot")]
+    let goal_ui_state = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--goal-ui-state=").map(ToOwned::to_owned));
+    #[cfg(feature = "screenshot")]
+    let auto_review_denial_state = args.iter().find_map(|arg| {
+        arg.strip_prefix("--auto-review-denial-state=")
+            .map(ToOwned::to_owned)
+    });
+    #[cfg(feature = "screenshot")]
+    let slash_menu_state = args.iter().find_map(|arg| {
+        arg.strip_prefix("--slash-menu-state=")
+            .map(ToOwned::to_owned)
+    });
+    #[cfg(feature = "screenshot")]
     let streaming_reply_ui_state = args.iter().find_map(|arg| {
         arg.strip_prefix("--streaming-reply-ui-state=")
             .map(ToOwned::to_owned)
@@ -1609,6 +1627,26 @@ fn main() {
                         if let Some(state) = runtime_ui_state.as_deref() {
                             app.complete_startup_for_capture(cx);
                             app.set_runtime_for_capture(state, cx);
+                        }
+                        #[cfg(feature = "screenshot")]
+                        if let Some(state) = queue_ui_state.as_deref() {
+                            app.complete_startup_for_capture(cx);
+                            app.set_batch1_for_capture("queue", state, cx);
+                        }
+                        #[cfg(feature = "screenshot")]
+                        if let Some(state) = goal_ui_state.as_deref() {
+                            app.complete_startup_for_capture(cx);
+                            app.set_batch1_for_capture("goal", state, cx);
+                        }
+                        #[cfg(feature = "screenshot")]
+                        if let Some(state) = auto_review_denial_state.as_deref() {
+                            app.complete_startup_for_capture(cx);
+                            app.set_batch1_for_capture("auto-review", state, cx);
+                        }
+                        #[cfg(feature = "screenshot")]
+                        if let Some(state) = slash_menu_state.as_deref() {
+                            app.complete_startup_for_capture(cx);
+                            app.set_batch1_for_capture("slash", state, cx);
                         }
                         #[cfg(feature = "screenshot")]
                         if let Some(state) = streaming_reply_ui_state.as_deref() {

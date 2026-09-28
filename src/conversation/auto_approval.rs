@@ -15,6 +15,18 @@ pub(crate) struct AutoApprovalReviewPresentation {
     /// Turn cleanup is local evidence, never an invented server decision/time.
     pub closed_locally: bool,
     pub attached_to_item: bool,
+    /// The user's approval of a denied review.
+    pub approval: ReviewApproval,
+}
+
+/// Approving a denial records it for one retry; it never runs the action.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ReviewApproval {
+    #[default]
+    Idle,
+    Approving,
+    Approved,
+    Failed(String),
 }
 
 impl AutoApprovalReviewPresentation {
@@ -62,7 +74,7 @@ fn upsert(
         existing.review = review;
         existing.closed_locally |= finished;
     } else {
-        activities.push(ConversationActivity::AutoApprovalReview(Box::new(AutoApprovalReviewPresentation { review, closed_locally: finished, attached_to_item: false })));
+        activities.push(ConversationActivity::AutoApprovalReview(Box::new(AutoApprovalReviewPresentation { review, closed_locally: finished, attached_to_item: false, approval: ReviewApproval::Idle })));
     }
 }
 
@@ -130,6 +142,105 @@ impl ConversationState {
                 _ => {}
             }
         }
+    }
+
+    fn review_presentation_mut(
+        &mut self,
+        key: &crate::agent::AgentAutoApprovalReviewKey,
+    ) -> Option<&mut AutoApprovalReviewPresentation> {
+        self.transcript
+            .iter_mut()
+            .flat_map(|turn| turn.activities.iter_mut())
+            .chain(self.activities.iter_mut())
+            .find_map(|activity| match activity {
+                ConversationActivity::AutoApprovalReview(review) if &review.review.key == key => {
+                    Some(review.as_mut())
+                }
+                _ => None,
+            })
+    }
+
+    /// The newest denied reviews that can still be approved, for the
+    /// `/autoreview` menu: at most `limit`, newest first.
+    pub(crate) fn approvable_denials(&self, limit: usize) -> Vec<AutoApprovalReviewPresentation> {
+        let mut denials = self
+            .transcript
+            .iter()
+            .flat_map(|turn| turn.activities.iter())
+            .chain(self.activities.iter())
+            .filter_map(|activity| match activity {
+                ConversationActivity::AutoApprovalReview(review)
+                    if review.review.status == AgentAutoApprovalReviewStatus::Denied
+                        && review.approval != ReviewApproval::Approved
+                        && !self.approved_reviews.contains(&review.review.key.review_id) =>
+                {
+                    Some((**review).clone())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        denials.sort_by_key(|review| {
+            std::cmp::Reverse(
+                review
+                    .review
+                    .completed_at_ms
+                    .unwrap_or(review.review.started_at_ms),
+            )
+        });
+        denials.truncate(limit);
+        denials
+    }
+
+    /// Starts approving one denied review. Refuses a review that is not
+    /// denied, already approved, or while another approval of this
+    /// conversation is in flight, so a repeated click sends nothing.
+    pub(crate) fn begin_review_approval(
+        &mut self,
+        key: &crate::agent::AgentAutoApprovalReviewKey,
+    ) -> Option<crate::agent::AgentAutoReviewApproval> {
+        if self.approving_review.is_some()
+            || self.approved_reviews.contains(&key.review_id)
+            || self.thread_id.as_deref() != Some(key.thread_id.as_str())
+        {
+            return None;
+        }
+        let generation = self.runtime.generation;
+        let presentation = self.review_presentation_mut(key)?;
+        if presentation.review.status != AgentAutoApprovalReviewStatus::Denied
+            || presentation.approval == ReviewApproval::Approved
+        {
+            return None;
+        }
+        presentation.approval = ReviewApproval::Approving;
+        let review = presentation.review.clone();
+        self.approving_review = Some(key.review_id.clone());
+        Some(crate::agent::AgentAutoReviewApproval { generation, review })
+    }
+
+    /// Applies the answer. An answer for another thread (the user switched
+    /// chats meanwhile) is dropped.
+    pub(crate) fn finish_review_approval(
+        &mut self,
+        key: &crate::agent::AgentAutoApprovalReviewKey,
+        result: Result<(), String>,
+    ) -> bool {
+        if self.thread_id.as_deref() != Some(key.thread_id.as_str())
+            || self.approving_review.as_deref() != Some(key.review_id.as_str())
+        {
+            return false;
+        }
+        self.approving_review = None;
+        let approved = result.is_ok();
+        if approved {
+            self.approved_reviews.insert(key.review_id.clone());
+        }
+        if let Some(presentation) = self.review_presentation_mut(key) {
+            presentation.approval = match result {
+                Ok(()) => ReviewApproval::Approved,
+                Err(error) => ReviewApproval::Failed(error),
+            };
+        }
+        true
     }
 
     fn queue_review_event(&mut self, turn_id: String, event: AgentEvent) {

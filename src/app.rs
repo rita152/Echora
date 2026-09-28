@@ -1,5 +1,6 @@
 mod capture;
 mod conversations;
+mod goal;
 mod image_preview;
 mod permissions;
 mod plan;
@@ -218,9 +219,18 @@ impl ChatApp {
         let home = cx.new(|cx| HomeView::new_with_backend(mode, agent_backend.clone(), cx));
         let initial_composer = home.read(cx).composer_entity();
         let initial_cwd = std::env::current_dir().unwrap_or_default();
+        let follow_up_mode = workspace_store.snapshot().preferences.follow_up_mode;
         initial_composer.update(cx, |composer, cx| {
             composer.set_workspace_context(initial_cwd.clone(), None, None, cx);
+            composer.set_follow_up_mode(follow_up_mode, cx);
         });
+        cx.subscribe(
+            &initial_composer,
+            |this, _, event: &crate::components::composer::FollowUpModeToggled, cx| {
+                this.apply_follow_up_mode(event.0, cx);
+            },
+        )
+        .detach();
         let active_conversation = ConversationKey::Draft(DraftId(1));
         let mut conversation_hosts = HashMap::new();
         conversation_hosts.insert(
@@ -354,6 +364,16 @@ impl ChatApp {
                 this.refresh_child_views(cx);
                 cx.refresh_windows();
                 cx.notify();
+            },
+        )
+        .detach();
+        settings.update(cx, |settings, cx| {
+            settings.set_follow_up_mode(workspace_store.snapshot().preferences.follow_up_mode, cx)
+        });
+        cx.subscribe(
+            &settings,
+            |this, _, event: &crate::settings::ChangeFollowUpMode, cx| {
+                this.apply_follow_up_mode(event.0, cx);
             },
         )
         .detach();
@@ -498,6 +518,64 @@ impl ChatApp {
 
     /// Reapply presentation to child entities, including cached inputs that
     /// are hidden while settings are open. Preserves drafts and session state.
+    /// Persists the follow-up default locally and applies it everywhere it is
+    /// shown: every conversation's composer and the settings control.
+    pub(crate) fn apply_follow_up_mode(
+        &mut self,
+        mode: crate::workspace::FollowUpMode,
+        cx: &mut Context<Self>,
+    ) {
+        self.workspace_store.set_follow_up_mode(mode);
+        for host in self.conversation_hosts.values() {
+            host.composer
+                .update(cx, |composer, cx| composer.set_follow_up_mode(mode, cx));
+        }
+        self.settings
+            .update(cx, |settings, cx| settings.set_follow_up_mode(mode, cx));
+        cx.notify();
+    }
+
+    /// A composer for a new conversation host, configured with the current
+    /// follow-up default and wired to the queue menu's toggle.
+    pub(crate) fn new_host_composer(&mut self, cx: &mut Context<Self>) -> Entity<ComposerView> {
+        let backend = self.agent_backend.clone();
+        let mode = self.workspace_store.snapshot().preferences.follow_up_mode;
+        let composer = cx.new(|cx| {
+            let mut composer = ComposerView::new_with_backend(self.mode, backend, cx);
+            composer.set_follow_up_mode(mode, cx);
+            composer
+        });
+        cx.subscribe(
+            &composer,
+            |this, _, event: &crate::components::composer::FollowUpModeToggled, cx| {
+                this.apply_follow_up_mode(event.0, cx);
+            },
+        )
+        .detach();
+        cx.subscribe(
+            &composer,
+            |this, composer, event: &crate::components::composer::OpenQueuedInSideChat, cx| {
+                this.open_queued_in_side_chat(composer, event, cx);
+            },
+        )
+        .detach();
+        cx.subscribe(
+            &composer,
+            |this, _, event: &crate::components::composer::OpenGoalEditor, cx| {
+                this.open_goal_editor(event.goal.clone(), event.text.clone(), cx);
+            },
+        )
+        .detach();
+        cx.subscribe(
+            &composer,
+            |this, composer, _: &crate::components::composer::ConversationChanged, cx| {
+                this.sync_goal_tabs(&composer, cx);
+            },
+        )
+        .detach();
+        composer
+    }
+
     fn refresh_child_views(&mut self, cx: &mut Context<Self>) {
         for panel in self.file_panels.values() {
             panel.update(cx, |panel, cx| panel.set_mode(self.mode, cx));

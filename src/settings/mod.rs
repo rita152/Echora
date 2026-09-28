@@ -5,7 +5,10 @@ mod spec;
 mod view;
 
 pub use spec::{ControlSpec, PageKind, PageSpec, RowSpec, SectionSpec};
-pub use view::{ChangeLanguage, ChangeTheme, CloseSettings, ConfigSaveFinished, SettingsView};
+pub use view::{
+    ChangeFollowUpMode, ChangeLanguage, ChangeTheme, CloseSettings, ConfigSaveFinished,
+    SettingsView,
+};
 
 pub fn pages() -> impl Iterator<Item = &'static PageSpec> {
     catalog_personal::PAGES

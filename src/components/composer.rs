@@ -1,9 +1,16 @@
 #[cfg(test)]
 use crate::agent::CodexAppServerBackend;
 
+mod auto_review;
 mod capture;
 mod context;
+mod dialogs;
 mod dictation;
+mod followup;
+mod followup_edit;
+mod followup_render;
+mod goal;
+mod goal_render;
 mod layout;
 mod permissions;
 mod picker;
@@ -11,9 +18,16 @@ mod render;
 mod requests;
 mod runtime;
 mod side_chat;
+mod slash_menu;
+mod slash_menu_render;
 mod submissions;
+mod toast;
 mod workspace;
 
+pub use followup::FollowUpModeToggled;
+pub use followup_edit::OpenQueuedInSideChat;
+pub use goal::OpenGoalEditor;
+pub(crate) use goal_render::achieved_duration_label;
 pub use workspace::WorkspacePresentation;
 
 use std::{path::PathBuf, sync::Arc};
@@ -194,6 +208,39 @@ pub struct ComposerView {
     approval_resolved_capture: bool,
     workspace: WorkspacePresentation,
     checkout_cycle: u64,
+    follow_up_mode: crate::workspace::FollowUpMode,
+    /// A queued row loaded into the composer for editing.
+    queue_edit: Option<followup_edit::QueueEdit>,
+    queue_removal: Option<followup_edit::RemovedQueuedMessage>,
+    queue_redo: Option<followup_edit::RemovedQueuedMessage>,
+    /// Row whose actions menu is open.
+    queue_menu: Option<String>,
+    queue_drag: Option<followup_render::QueueDrag>,
+    /// The user resumed or sent after stopping, so the stopped turn no longer
+    /// pauses the queue.
+    queue_resumed: bool,
+    /// Server-started turns waiting for the current run to end.
+    pending_external_turns: std::collections::VecDeque<crate::agent::AgentRun>,
+    goal_draft: bool,
+    /// Full text behind long goal objectives sent as file pointers.
+    goal_texts: std::collections::HashMap<String, String>,
+    /// Where long goal objectives are written, resolved once.
+    codex_home: Option<std::path::PathBuf>,
+    slash_menu: Option<slash_menu::SlashMenu>,
+    toasts: Vec<toast::ComposerToast>,
+    next_toast_id: u64,
+    /// Objective shown as the request of the turn the server starts for it.
+    pending_goal_bubble: Option<String>,
+    /// A goal submitted from a new chat, set once its first turn is accepted.
+    goal_after_first_turn: Option<String>,
+    /// `updatedAt` of the complete goal this composer already cleared.
+    auto_cleared_goal: Option<i64>,
+    dialog: Option<dialogs::ComposerDialog>,
+    /// `collaborationMode/list` of the connection; plan is offered only when
+    /// it lists a plan preset, as the reference hides plan otherwise.
+    collaboration_modes: Option<crate::agent::AgentCollaborationModes>,
+    dialog_focus: FocusHandle,
+    dialog_focus_pending: bool,
 }
 
 impl ComposerView {
@@ -230,9 +277,16 @@ impl ComposerView {
                 match event {
                     crate::components::file_editor::EditorEvent::Changed => {
                         this.draft_revision = this.draft_revision.wrapping_add(1);
+                        this.update_slash_menu(cx);
                     }
                     crate::components::file_editor::EditorEvent::Submit => {
-                        this.submit_prompt(editor.read(cx).text().to_owned(), cx);
+                        // Enter picks the highlighted slash command instead.
+                        if !this.slash_menu_enter(cx) {
+                            this.submit_prompt(editor.read(cx).text().to_owned(), cx);
+                        }
+                    }
+                    crate::components::file_editor::EditorEvent::SubmitInverted => {
+                        this.submit_prompt_as(editor.read(cx).text().to_owned(), true, cx);
                     }
                     crate::components::file_editor::EditorEvent::Save => {}
                 }
@@ -368,12 +422,34 @@ impl ComposerView {
             approval_resolved_capture: false,
             workspace: WorkspacePresentation::default(),
             checkout_cycle: 0,
+            follow_up_mode: Default::default(),
+            queue_edit: None,
+            queue_removal: None,
+            queue_redo: None,
+            queue_menu: None,
+            queue_drag: None,
+            queue_resumed: false,
+            pending_external_turns: Default::default(),
+            goal_draft: false,
+            goal_texts: std::collections::HashMap::new(),
+            codex_home: crate::agent::codex_home(),
+            slash_menu: None,
+            toasts: Vec::new(),
+            next_toast_id: 0,
+            pending_goal_bubble: None,
+            goal_after_first_turn: None,
+            auto_cleared_goal: None,
+            dialog: None,
+            collaboration_modes: None,
+            dialog_focus: cx.focus_handle(),
+            dialog_focus_pending: false,
         };
         view.consume_connection_events(connection_events, cx);
         #[cfg(not(test))]
         {
             view.load_model_catalog(cx);
             view.load_permission_catalog(cx);
+            view.load_collaboration_modes(cx);
         }
         view
     }
@@ -508,6 +584,7 @@ impl ComposerView {
         let changed_project = self.conversation.project_id != project_id;
         self.conversation
             .set_workspace_context(cwd, project_id, thread_id);
+        self.sync_thread_scoped_state(cx);
         if changed_cwd {
             self.permission_config = None;
             self.load_permission_catalog(cx);
@@ -529,14 +606,33 @@ impl ComposerView {
     }
 
     pub fn hydrate_history(&mut self, history: ThreadHistory, cx: &mut Context<Self>) {
+        let thread_id = history.thread.thread_id.clone();
+        // Checked before hydrating: the history marks its in-progress turn as
+        // running, but only a stream this view already consumes blocks a claim.
+        let streaming_locally = self.is_running();
         self.conversation.hydrate_history(history);
         self.load_effective_permissions(cx);
+        // A turn the server started before this chat was opened keeps
+        // streaming; claim it and let its replayed events rebuild the turn.
+        if !streaming_locally
+            && let Some((turn_id, run)) = self.backend.take_server_turn(&thread_id)
+        {
+            self.conversation.drop_history_turn(&turn_id);
+            self.attach_external_turn(run, cx);
+        }
         cx.emit(ConversationChanged);
         cx.notify();
     }
 
     pub fn user_images(&self) -> Vec<crate::agent::UserMessageAttachment> {
         self.conversation.user_images()
+    }
+
+    pub fn current_goal_marks(&self) -> crate::conversation::TurnGoalMarks {
+        crate::conversation::TurnGoalMarks {
+            sent_as_goal: self.conversation.user_message_goal,
+            achieved_seconds: self.conversation.goal_achieved_seconds,
+        }
     }
 
     pub fn resumed_turn(&self) -> Option<ResumedTurnPresentation> {
@@ -556,7 +652,43 @@ impl ComposerView {
         self.conversation.conversation_render_snapshot()
     }
 
-    fn apply_connection_event(&mut self, event: AgentConnectionEvent) -> bool {
+    fn apply_connection_event(
+        &mut self,
+        event: AgentConnectionEvent,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        match &event {
+            AgentConnectionEvent::TurnStarted {
+                generation,
+                thread_id,
+                run,
+                ..
+            } => {
+                self.offer_external_turn(*generation, thread_id, run, cx);
+                return true;
+            }
+            AgentConnectionEvent::ThreadQueueChanged {
+                generation,
+                thread_id,
+            } => {
+                self.queue_changed(*generation, thread_id, cx);
+                return false;
+            }
+            _ => {}
+        }
+        let goal_event = matches!(
+            event,
+            AgentConnectionEvent::ThreadGoalUpdated { .. }
+                | AgentConnectionEvent::ThreadGoalCleared { .. }
+        );
+        let changed = self.apply_scoped_connection_event(event);
+        if goal_event && changed {
+            self.after_goal_change(cx);
+        }
+        changed
+    }
+
+    fn apply_scoped_connection_event(&mut self, event: AgentConnectionEvent) -> bool {
         if let AgentConnectionEvent::ThreadSettingsUpdated { generation, .. } = &event
             && (*generation < self.conversation.runtime.generation
                 || self
@@ -682,5 +814,7 @@ impl ComposerView {}
 mod approval_tests;
 #[cfg(test)]
 mod elicitation_tests;
+#[cfg(test)]
+mod followup_tests;
 #[cfg(test)]
 mod tests;

@@ -31,6 +31,7 @@ const WAIT: Duration = Duration::from_secs(3);
 
 mod account;
 mod auto_approval;
+mod batch1;
 mod config;
 mod elicitation;
 mod manage;
@@ -1380,8 +1381,9 @@ fn late_loaded_thread_notification_does_not_bind_the_next_lifecycle() {
 }
 
 #[test]
-fn late_resume_bootstrap_notification_is_not_bound_to_another_resume() {
+fn goal_notification_during_another_resume_is_published_without_disturbing_it() {
     let (manager, spawner) = manager_with_fake();
+    let events = manager.subscribe_connection_events();
     let first = manager.run_prompt(request("resume a", Some("thr_resume_a")));
     let (first_events, first_interrupt) = first.into_parts();
     let mut endpoint = spawner.next_endpoint();
@@ -1416,6 +1418,16 @@ fn late_resume_bootstrap_notification_is_not_bound_to_another_resume() {
         collect_terminal(&second_events).last(),
         Some(&AgentEvent::Completed)
     );
+    let deadline = Instant::now() + WAIT;
+    let cleared = loop {
+        match events.try_recv() {
+            Ok(AgentConnectionEvent::ThreadGoalCleared { thread_id, .. }) => break thread_id,
+            Ok(_) => {}
+            Err(_) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(5)),
+            Err(error) => panic!("no goal event: {error:?}"),
+        }
+    };
+    assert_eq!(cleared, "thr_resume_a");
     drop(first_interrupt);
     drop(second_interrupt);
     manager.shutdown();

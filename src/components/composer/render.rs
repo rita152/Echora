@@ -108,6 +108,38 @@ impl ComposerView {
                     cx.stop_propagation();
                 } else {cx.propagate();}
             }))
+            // ⌘Z undoes the composer text first, then restores the last
+            // removed queued message, as the reference's app undo does.
+            .capture_action(cx.listener(|this, _: &crate::components::file_editor::EditorUndo, _, cx| {
+                let text_undo = this.prompt_editor.read(cx).can_undo();
+                if !text_undo && this.undo_queue_removal(cx) {
+                    cx.stop_propagation();
+                }
+            }))
+            .capture_action(cx.listener(|this, _: &crate::components::file_editor::EditorRedo, _, cx| {
+                let text_redo = this.prompt_editor.read(cx).can_redo();
+                if !text_redo && this.redo_queue_removal(cx) {
+                    cx.stop_propagation();
+                }
+            }))
+            .capture_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
+                let modifiers = event.keystroke.modifiers;
+                let ctrl_only = modifiers.control && !modifiers.platform && !modifiers.alt && !modifiers.shift;
+                if (!modifiers.modified() || ctrl_only)
+                    && this.slash_menu_key(event.keystroke.key.as_str(), ctrl_only, cx)
+                {
+                    cx.stop_propagation();
+                    return;
+                }
+                if event.keystroke.key == "up"
+                    && !modifiers.modified()
+                    && this.prompt_focus_handle(cx).is_focused(window)
+                    && this.queue_supported()
+                    && this.edit_last_queued(cx)
+                {
+                    cx.stop_propagation();
+                }
+            }))
             .on_drop(cx.listener(|this, paths: &gpui::ExternalPaths, _, cx| this.attach_paths(paths.paths().to_vec(), cx)))
             .flex()
             .flex_col()
@@ -116,6 +148,27 @@ impl ComposerView {
                 composer.child(context_toolbar(&self.workspace, theme))
             })
             .child(self.submission_feedback(theme, cx))
+            .when(self.tray_height() > 0.0, |composer| {
+                composer.child(div().h(px(self.tray_height())).flex_none())
+            })
+            .children(self.render_slash_menu(
+                theme,
+                if self.review_comments.is_empty() {
+                    self.composer_body_height(cx)
+                } else {
+                    self.composer_body_height(cx) + 32.0
+                },
+                cx,
+            ))
+            .children(self.render_tray(
+                theme,
+                if self.review_comments.is_empty() {
+                    self.composer_body_height(cx)
+                } else {
+                    self.composer_body_height(cx) + 32.0
+                },
+                cx,
+            ))
             .child(
                 div()
                     .h(px(if self.review_comments.is_empty() {
@@ -289,7 +342,8 @@ impl ComposerView {
                                                     .when(!compact, |button| button.child(permission_label))
                                                     .when(self.prompt_context.plan_mode == Some(true) && !compact, |button| button.child(crate::i18n::text(" · 计划"))),
                                             )
-                                        }),
+                                        })
+                                        .children(self.render_goal_chip(theme, cx)),
                                 )
                                 .child(div().flex_1())
                                 .child(

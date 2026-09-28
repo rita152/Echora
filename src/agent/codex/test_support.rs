@@ -18,10 +18,7 @@ use super::{
         TURN_SCOPED_SERVER_METHODS, ensure_server_method_is_defined,
         is_integrated_server_request_method,
     },
-    notifications::{
-        forward_agent_notification, parse_agent_notification, thread_started_id,
-        validate_resume_goal_cleared,
-    },
+    notifications::{forward_agent_notification, parse_agent_notification, thread_started_id},
     permissions::{PermissionFields, permission_fields, thread_settings_update_request},
     requests::{
         handle_server_request_resolved, reject_server_request, respond_to_server_request_on_session,
@@ -201,7 +198,7 @@ pub(super) fn initialize_turn_connection<R: BufRead, W: Write + Send + 'static>(
             }
         }
     }))?;
-    wait_for_session_response(reader, session, INITIALIZE_ID, events, None, None, None)?;
+    wait_for_session_response(reader, session, INITIALIZE_ID, events, None, None)?;
     session.send(json!({ "method": "initialized", "params": {} }))
 }
 
@@ -353,7 +350,6 @@ pub(super) fn drive_session<R: BufRead, W: Write + Send + 'static>(
                 events,
                 Some(&mut thread_started_correlation),
                 Some(&mut deferred_turn_notifications),
-                Some(expected_thread_id),
             )
             .with_context(|| format!("thread/resume `{expected_thread_id}` 失败"))?;
             let resumed_thread_id = thread_response
@@ -389,7 +385,6 @@ pub(super) fn drive_session<R: BufRead, W: Write + Send + 'static>(
                 events,
                 Some(&mut thread_started_correlation),
                 Some(&mut deferred_turn_notifications),
-                None,
             )
             .context("thread/start 失败")?;
             let thread_id = thread_response
@@ -445,7 +440,6 @@ pub(super) fn drive_session<R: BufRead, W: Write + Send + 'static>(
         events,
         Some(&mut thread_started_correlation),
         Some(&mut deferred_turn_notifications),
-        (!is_new_thread).then_some(thread_id.as_str()),
     )
     .context("turn/start 失败")?;
     let turn_id = turn_response
@@ -554,7 +548,6 @@ pub(super) fn wait_for_session_response<R: BufRead, W: Write + Send + 'static>(
     events: &Sender<AgentEvent>,
     mut thread_started_correlation: Option<&mut ThreadStartedCorrelation>,
     mut deferred_turn_notifications: Option<&mut Vec<Value>>,
-    resume_bootstrap_thread_id: Option<&str>,
 ) -> Result<Value> {
     loop {
         let message = read_message(reader)?;
@@ -568,12 +561,6 @@ pub(super) fn wait_for_session_response<R: BufRead, W: Write + Send + 'static>(
         }
 
         let method = message.get("method").and_then(Value::as_str);
-        if method == Some("thread/goal/cleared")
-            && let Some(expected_thread_id) = resume_bootstrap_thread_id
-        {
-            validate_resume_goal_cleared(&message, expected_thread_id)?;
-            continue;
-        }
         if method == Some("thread/started")
             && let Some(correlation) = thread_started_correlation.as_deref_mut()
         {

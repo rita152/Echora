@@ -258,22 +258,6 @@ pub(super) fn parse_thread_reverted(message: &Value) -> Result<String> {
     required_notification_string(message, "threadId")
 }
 
-pub(super) fn validate_resume_goal_cleared(
-    message: &Value,
-    expected_thread_id: &str,
-) -> Result<()> {
-    if message.get("id").is_some() {
-        bail!("thread/goal/cleared 在 resume bootstrap 阶段必须是通知，不能包含 id");
-    }
-    let thread_id = required_notification_string(message, "threadId")?;
-    if thread_id != expected_thread_id {
-        bail!(
-            "thread/goal/cleared 通知的 thread id `{thread_id}` 与当前 resume thread `{expected_thread_id}` 不一致"
-        );
-    }
-    Ok(())
-}
-
 pub(super) fn optional_string_at(
     message: &Value,
     pointer: &str,

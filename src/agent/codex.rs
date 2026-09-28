@@ -9,10 +9,12 @@ mod auto_approval;
 mod backend;
 mod catalog;
 mod client_tools;
+mod collaboration;
 mod config;
 mod dispatch;
 mod elicitation;
 mod file_search;
+mod goal;
 mod input;
 mod items;
 mod json;
@@ -23,6 +25,7 @@ mod notifications;
 mod permissions;
 mod plugins;
 mod progress;
+mod queue;
 mod registry;
 mod requests;
 mod runtime;
@@ -56,7 +59,7 @@ use methods::{
 };
 use notifications::{
     parse_agent_notification, parse_mcp_server_startup_status_updated, parse_thread_status_changed,
-    thread_started_id, validate_remote_control_status_changed, validate_resume_goal_cleared,
+    thread_started_id, validate_remote_control_status_changed,
 };
 use permissions::{permission_fields, thread_settings_update_request};
 use requests::{handle_server_request_resolved, request_id_from_value};

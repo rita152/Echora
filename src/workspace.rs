@@ -24,7 +24,8 @@ use loaders::{
     load_all_turns, receive,
 };
 pub use preferences::{
-    ActivityPreferences, PanelRatio, ReviewPreferences, UiPreferences, preferred_language,
+    ActivityPreferences, FollowUpMode, PanelRatio, ReviewPreferences, UiPreferences,
+    preferred_language,
 };
 use preferences::{PreferenceStore, default_preferences_path};
 
@@ -443,6 +444,12 @@ impl WorkspaceStore {
             | AgentConnectionEvent::McpElicitationRequested { .. }
             | AgentConnectionEvent::McpElicitationResolved { .. }
             | AgentConnectionEvent::McpElicitationFailed { .. }
+            // Goals, the follow-up queue, and server-started turns belong to
+            // the conversation of their thread, not to the workspace lists.
+            | AgentConnectionEvent::TurnStarted { .. }
+            | AgentConnectionEvent::ThreadGoalUpdated { .. }
+            | AgentConnectionEvent::ThreadGoalCleared { .. }
+            | AgentConnectionEvent::ThreadQueueChanged { .. }
             | AgentConnectionEvent::AccountRateLimitsUpdated(_) => {}
         }
     }
@@ -1288,6 +1295,10 @@ impl WorkspaceStore {
 
     pub fn set_language(&self, language: crate::i18n::Language) {
         self.update(|snapshot| snapshot.preferences.language = language);
+        self.save_preferences();
+    }
+    pub fn set_follow_up_mode(&self, mode: preferences::FollowUpMode) {
+        self.update(|snapshot| snapshot.preferences.follow_up_mode = mode);
         self.save_preferences();
     }
     pub fn set_skip_side_chat_close_confirmation(&self, skip: bool) {

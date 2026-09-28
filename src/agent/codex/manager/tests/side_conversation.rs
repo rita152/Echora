@@ -323,7 +323,22 @@ fn side_conversation_file_context_and_planning_use_typed_turn_input() {
         },
     ];
     request.context.plan_mode = Some(true);
-    let params = super::super::turn::build_turn_start_params(&request, "side", false).unwrap();
+    let presets = [
+        crate::agent::AgentCollaborationModePreset {
+            name: "Plan".into(),
+            mode: crate::agent::AgentCollaborationModeKind::Plan,
+            model: Some("preset-model".into()),
+            reasoning_effort: Some("medium".into()),
+        },
+        crate::agent::AgentCollaborationModePreset {
+            name: "Default".into(),
+            mode: crate::agent::AgentCollaborationModeKind::Default,
+            model: None,
+            reasoning_effort: None,
+        },
+    ];
+    let params =
+        super::super::turn::build_turn_start_params(&request, "side", false, &presets).unwrap();
     assert_eq!(params["threadId"], "side");
     assert!(
         params["input"][0]["text"]
@@ -336,9 +351,27 @@ fn side_conversation_file_context_and_planning_use_typed_turn_input() {
         json!({"type":"localImage","path":"/tmp/example.png"})
     );
     assert_eq!(params["collaborationMode"]["mode"], "plan");
+    // The user's selection wins over the preset's model and effort, and the
+    // top-level fields are null whenever a mode is sent.
+    assert_eq!(
+        params["collaborationMode"]["settings"]["model"],
+        request.model
+    );
+    assert_eq!(
+        params["collaborationMode"]["settings"]["reasoning_effort"],
+        request.effort
+    );
+    assert!(params["collaborationMode"]["settings"]["developer_instructions"].is_null());
+    assert!(params["model"].is_null() && params["effort"].is_null());
     request.context.plan_mode = Some(false);
-    let params = super::super::turn::build_turn_start_params(&request, "side", false).unwrap();
+    let params =
+        super::super::turn::build_turn_start_params(&request, "side", false, &presets).unwrap();
     assert_eq!(params["collaborationMode"]["mode"], "default");
+    // Without presets the default mode still goes out; plan is refused.
+    let params = super::super::turn::build_turn_start_params(&request, "side", false, &[]).unwrap();
+    assert_eq!(params["collaborationMode"]["mode"], "default");
+    request.context.plan_mode = Some(true);
+    assert!(super::super::turn::build_turn_start_params(&request, "side", false, &[]).is_err());
 }
 
 #[test]
