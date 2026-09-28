@@ -1,66 +1,40 @@
 #!/bin/sh
-# Launch the dedicated ChatGPT reference instance used by the P0 capture
-# scripts. Nothing here touches the user's own running ChatGPT: the instance is
-# started from an explicit binary path with its own remote debugging port and
-# an isolated PATH whose codex entry is the wire shim.
+# Launch the dedicated ChatGPT reference instance with its app-server routed
+# through the wire shim, so the JSON-RPC dialogue is logged as evidence.
 #
-# P0_REFERENCE_PORT  remote debugging port (default 9333, must be free)
-# P0_WIRE_LOG_DIR    where the app-server JSONL logs are written
+# This is `scripts/launch_chatgpt_reference.sh` with the P0 defaults: its own
+# port, launchd label and profile clone, plus `CHATGPT_REFERENCE_WIRE_LOG_DIR`.
+# Everything that launcher does applies here too: `launchctl submit` instead of
+# `open -n`, the clone's `Singleton*` entries removed so the instance cannot
+# forward into the user's window, and the legacy sidebar pinned once the
+# window is up (the instance is stopped when that fails).
 #
-# A second instance cannot reuse the user's own profile: the app forwards to
-# the running window instead of starting. The launcher therefore clones the
-# profile once (APFS clonefile, no extra disk use) and points the instance at
-# the copy, so the user's profile is only ever read.
+# Usage:
+#   scripts/p0/launch_reference_instance.sh [--stop]
 #
-# Like `scripts/launch_chatgpt_reference.sh`, it pins the legacy sidebar Echora
-# recreates once the window is up (ChatGPT fetches the navigation-rail gate
-# anew at every launch) and stops the instance when that fails.
+# Environment:
+#   P0_REFERENCE_PORT              remote debugging port (default 9333, must be free)
+#   P0_REFERENCE_LABEL             launchd label (default chatgpt-reference-p0)
+#   P0_REFERENCE_USER_DATA         profile clone directory
+#   P0_REFERENCE_SOURCE_USER_DATA  profile to clone from
+#   P0_WIRE_LOG_DIR                where the app-server JSONL logs are written;
+#                                  keep it under $HOME, a launchd job cannot
+#                                  write to this repository's external volume
+# The underlying launcher's CHATGPT_REFERENCE_* variables, such as
+# CHATGPT_REFERENCE_CODEX_HOME, apply as well.
 set -eu
 
-port="${P0_REFERENCE_PORT:-9333}"
-root="$(cd "$(dirname "$0")/../.." && pwd)"
-log_dir="${P0_WIRE_LOG_DIR:-$root/artifacts/p0-stage/wire/reference}"
-shim_dir="$root/artifacts/p0-stage/wire-shims/reference"
-user_data="${P0_REFERENCE_USER_DATA:-$root/artifacts/p0-stage/reference-user-data}"
-source_data="${P0_REFERENCE_SOURCE_USER_DATA:-$HOME/Library/Application Support/Codex}"
+here="$(cd "$(dirname "$0")" && pwd)"
+support="$HOME/Library/Application Support/gpui-chatgpt-reference"
 
-command -v node >/dev/null 2>&1 || { echo "node is required to pin the legacy sidebar" >&2; exit 2; }
-if lsof -nP -i ":$port" >/dev/null 2>&1; then
-  echo "port $port is already in use; refusing to reuse another task's instance" >&2
-  exit 2
+CHATGPT_REFERENCE_PORT="${P0_REFERENCE_PORT:-9333}"
+CHATGPT_REFERENCE_LABEL="${P0_REFERENCE_LABEL:-chatgpt-reference-p0}"
+CHATGPT_REFERENCE_USER_DATA="${P0_REFERENCE_USER_DATA:-$support/p0-user-data}"
+CHATGPT_REFERENCE_WIRE_LOG_DIR="${P0_WIRE_LOG_DIR:-$HOME/Library/Logs/gpui-capture/p0-wire/reference}"
+export CHATGPT_REFERENCE_PORT CHATGPT_REFERENCE_LABEL CHATGPT_REFERENCE_USER_DATA CHATGPT_REFERENCE_WIRE_LOG_DIR
+if [ -n "${P0_REFERENCE_SOURCE_USER_DATA:-}" ]; then
+  CHATGPT_REFERENCE_SOURCE_DATA="$P0_REFERENCE_SOURCE_USER_DATA"
+  export CHATGPT_REFERENCE_SOURCE_DATA
 fi
 
-if [ ! -d "$user_data/Default" ]; then
-  mkdir -p "$user_data"
-  cp -Rc "$source_data/." "$user_data/"
-fi
-
-mkdir -p "$log_dir" "$shim_dir"
-ln -sf "$root/scripts/p0/codex_wire_shim.sh" "$shim_dir/codex"
-
-# LaunchServices detaches the instance from this shell, which keeps it alive
-# after the launcher returns; --env carries the wire shim into the app.
-open -n \
-  --env "P0_WIRE_LOG_DIR=$log_dir" \
-  --env "P0_WIRE_ORIGIN=reference" \
-  --env "P0_SHIM_HELPER=$root/scripts/p0/app_server_wire_shim.py" \
-  --env "PATH=$shim_dir:$PATH" \
-  --env "CODEX_CLI_PATH=$shim_dir/codex" \
-  --env "CODEX_ELECTRON_USER_DATA_PATH=$user_data" \
-  /Applications/ChatGPT.app \
-  --args --user-data-dir="$user_data" --remote-debugging-port="$port"
-
-layout_report="$log_dir/reference-layout.json"
-if ! CHATGPT_CDP_HTTP="http://127.0.0.1:$port" node "$root/scripts/cdp_pin_reference_layout.mjs" --layout=legacy --wait=90 >"$layout_report" 2>&1; then
-  echo "the reference did not render the legacy sidebar; stopping it" >&2
-  cat "$layout_report" >&2 || true
-  for pid in $(pgrep -f "ChatGPT --user-data-dir=$user_data" 2>/dev/null || true); do
-    for child in $(pgrep -P "$pid" 2>/dev/null || true); do
-      kill "$child" 2>/dev/null || true
-    done
-    kill "$pid" 2>/dev/null || true
-  done
-  exit 3
-fi
-
-echo "launched ChatGPT reference instance on port $port with the legacy sidebar pinned; logs in $log_dir"
+exec "$here/../launch_chatgpt_reference.sh" "$@"

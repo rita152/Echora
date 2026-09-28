@@ -71,8 +71,14 @@ if agent == "1":
 pathlib.Path(destination).write_text(plist)
 PY
 
+# Replace rather than overwrite the executable, so an instance still running
+# from the previous package keeps its own file.
+rm -f "$bundle/Contents/MacOS/gpui-chat-clone"
 cp "$root/target/$profile/gpui-chat-clone" "$bundle/Contents/MacOS/gpui-chat-clone"
 # The bundle carries its own assets, so copying it anywhere keeps the icons.
+# Start from an empty directory so assets removed from the worktree do not
+# linger in the package.
+rm -rf "$bundle/Contents/Resources/assets"
 mkdir -p "$bundle/Contents/Resources/assets"
 cp -R "$root/assets/." "$bundle/Contents/Resources/assets/"
 codesign --force --sign - "$bundle" >/dev/null 2>&1 || true

@@ -39,13 +39,32 @@ cd "$root"
 
 label="${GPUI_VERIFY_LABEL:-gpui-verify}"
 
+# The copy is named after the source bundle, whose name carries this
+# worktree's slug; resolving the name does not package anything.
+source_name="${GPUI_VERIFY_BUNDLE:-$("$root/scripts/gpui_capture_name.sh")}"
+display="$(basename "$source_name" .app)"
+destination="$HOME/Applications/$display.app"
+binary="$destination/Contents/MacOS/gpui-chat-clone"
+
+# Processes whose executable is exactly this instance's binary. Other
+# worktrees' instances share the "GPUI Capture" prefix, and the bundle name
+# holds regex metacharacters, so the path is compared as a plain string.
+instance_pids() {
+  ps -axo pid=,comm= | awk -v binary="$binary" '{
+    pid = $1
+    sub(/^[[:space:]]*[0-9]+[[:space:]]+/, "")
+    if ($0 == binary) print pid
+  }'
+}
+
 if [ "${1:-}" = "--stop" ]; then
-  launchctl remove "$label" 2>/dev/null || true
   # Take the app-server down with the app: `codex app-server --stdio` is
   # spawned by the GUI process, and killing only the parent can leave the child
   # behind. Matching by parent keeps this away from other tools' app-servers,
   # which spell their command line differently (`--listen stdio://`).
-  for pid in $(pgrep -f "GPUI Capture|GPUI Verify" 2>/dev/null || true); do
+  pids="$(instance_pids)"
+  launchctl remove "$label" 2>/dev/null || true
+  for pid in $pids; do
     for child in $(pgrep -P "$pid" 2>/dev/null || true); do
       kill "$child" 2>/dev/null || true
     done
@@ -55,9 +74,17 @@ if [ "${1:-}" = "--stop" ]; then
   exit 0
 fi
 
+# Refuse before touching the copy a running instance may still execute from.
+if launchctl list | grep -q "[[:space:]]$label$"; then
+  echo "$label is already loaded; run --stop first" >&2
+  exit 2
+fi
+if [ -n "$(instance_pids)" ]; then
+  echo "an instance of $binary is already running; run --stop first" >&2
+  exit 2
+fi
+
 source_bundle="${GPUI_VERIFY_BUNDLE:-$("$root/scripts/gpui_capture_binary.sh" --bundle)}"
-display="$(basename "$source_bundle" .app)"
-destination="$HOME/Applications/$display.app"
 
 mkdir -p "$HOME/Applications"
 rm -rf "$destination"
@@ -67,7 +94,6 @@ else
   cp -R "$source_bundle" "$destination"
 fi
 
-binary="$destination/Contents/MacOS/gpui-chat-clone"
 if [ ! -x "$binary" ]; then
   echo "missing $binary after copying $source_bundle" >&2
   exit 2
@@ -76,11 +102,6 @@ fi
 log_dir="$HOME/Library/Logs/gpui-capture"
 log="$log_dir/verify-instance.log"
 mkdir -p "$log_dir"
-
-if launchctl list | grep -q "[[:space:]]$label$"; then
-  echo "$label is already loaded; run --stop first" >&2
-  exit 2
-fi
 
 # Prove which build this is, and that the copy resolves its own assets.
 "$binary" --print-diagnostics
@@ -107,4 +128,9 @@ sleep 3
 echo "launched $label from $destination"
 echo "binary: $binary"
 echo "log: $log"
-pgrep -lf "$binary" | head -3 || echo "not running yet; check $log"
+pids="$(instance_pids)"
+if [ -n "$pids" ]; then
+  echo "pid:" $pids
+else
+  echo "not running yet; check $log"
+fi

@@ -47,6 +47,15 @@
 #                                 covered window rendering, because Chromium
 #                                 stops delivering input and frames to an
 #                                 occluded (`visibilityState: hidden`) page
+#   CHATGPT_REFERENCE_WIRE_LOG_DIR
+#                                 optional: route the app's `codex app-server`
+#                                 through `scripts/p0/codex_wire_shim.sh` and
+#                                 write its JSON-RPC logs here. Keep it under
+#                                 `$HOME`; the shim itself is copied next to
+#                                 the profile clone for the same reason as the
+#                                 log below.
+#   CHATGPT_REFERENCE_WIRE_ORIGIN label recorded in every wire log line
+#                                 (default reference)
 set -eu
 
 port="${CHATGPT_REFERENCE_PORT:-9335}"
@@ -55,10 +64,12 @@ user_data="${CHATGPT_REFERENCE_USER_DATA:-$HOME/Library/Application Support/gpui
 source_data="${CHATGPT_REFERENCE_SOURCE_DATA:-$HOME/Library/Application Support/Codex}"
 log_dir="${CHATGPT_REFERENCE_LOG_DIR:-$HOME/Library/Logs/gpui-capture}"
 codex_home="${CHATGPT_REFERENCE_CODEX_HOME:-}"
+wire_log_dir="${CHATGPT_REFERENCE_WIRE_LOG_DIR:-}"
 binary="/Applications/ChatGPT.app/Contents/MacOS/ChatGPT"
 extra_args="${CHATGPT_REFERENCE_EXTRA_ARGS:---disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling}"
 
-pin_script="$(cd "$(dirname "$0")" && pwd)/cdp_pin_reference_layout.mjs"
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+pin_script="$script_dir/cdp_pin_reference_layout.mjs"
 
 stop_instance() {
   launchctl remove "$label" 2>/dev/null || true
@@ -106,11 +117,23 @@ if [ -n "$codex_home" ]; then
   codex_home_export="export CODEX_HOME='$codex_home';"
 fi
 
+wire_export=""
+if [ -n "$wire_log_dir" ]; then
+  # The app spawns `codex` from CODEX_CLI_PATH. A launchd job cannot read this
+  # repository's external volume, so the shim and its helper run from a copy.
+  shim_dir="$(dirname "$user_data")/wire-shim-$port"
+  mkdir -p "$shim_dir" "$wire_log_dir"
+  cp "$script_dir/p0/codex_wire_shim.sh" "$shim_dir/codex"
+  cp "$script_dir/p0/app_server_wire_shim.py" "$shim_dir/app_server_wire_shim.py"
+  chmod +x "$shim_dir/codex"
+  wire_export="export PATH='$shim_dir:$PATH'; export CODEX_CLI_PATH='$shim_dir/codex'; export P0_WIRE_LOG_DIR='$wire_log_dir'; export P0_WIRE_ORIGIN='${CHATGPT_REFERENCE_WIRE_ORIGIN:-reference}';"
+fi
+
 mkdir -p "$log_dir"
 log="$log_dir/reference-instance-$port.log"
 
 launchctl submit -l "$label" -- /bin/sh -c \
-  "export HOME='$HOME'; export CODEX_ELECTRON_USER_DATA_PATH='$user_data'; $codex_home_export exec '$binary' --user-data-dir='$user_data' --remote-debugging-port=$port $extra_args >>'$log' 2>&1"
+  "export HOME='$HOME'; export CODEX_ELECTRON_USER_DATA_PATH='$user_data'; $codex_home_export $wire_export exec '$binary' --user-data-dir='$user_data' --remote-debugging-port=$port $extra_args >>'$log' 2>&1"
 
 endpoint_ready=""
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
@@ -139,5 +162,6 @@ fi
 echo "launched $label on port $port"
 echo "profile: $user_data"
 [ -z "$codex_home" ] || echo "codex home: $codex_home"
+[ -z "$wire_log_dir" ] || echo "wire logs: $wire_log_dir"
 echo "layout: legacy sidebar pinned in memory ($(grep -o '"networkValue": [a-z]*' "$layout_report" | sed 's/.*: //;s/true/network value: rail/;s/false/network value: legacy/'))"
 echo "log: $log"
