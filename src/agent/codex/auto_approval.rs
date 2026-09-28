@@ -1,4 +1,5 @@
-//! CLI 0.153 automatic-review notification decoding, separate from routing.
+//! Automatic-review notification decoding for the baseline CLI schema, separate
+//! from routing.
 
 use anyhow::{Context as _, Result, bail};
 use serde_json::Value;

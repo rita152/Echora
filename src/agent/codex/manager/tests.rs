@@ -678,7 +678,7 @@ fn assert_workspace_request(endpoint: &mut FakeEndpoint, method: &str) -> Value 
         !serde_json::to_string(&request)
             .unwrap()
             .contains("isPinned"),
-        "0.153.0 does not define isPinned: {request}"
+        "the app-server schema does not define isPinned: {request}"
     );
     request
 }

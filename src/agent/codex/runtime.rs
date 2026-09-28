@@ -1,4 +1,5 @@
-//! CLI 0.153 runtime codecs. Notification policy is deliberately exact-name only.
+//! Runtime codecs for the baseline CLI schema (docs/APP_SERVER_INTEGRATION.md).
+//! Notification policy is deliberately exact-name only.
 
 use anyhow::{Context as _, Result, bail};
 use serde_json::Value;

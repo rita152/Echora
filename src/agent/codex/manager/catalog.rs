@@ -51,7 +51,7 @@ impl CodexAppServerManager {
                 Ok(page) => page,
                 Err(error) => {
                     let message =
-                        format!("无法解析 model/list 响应；0.153.0 schema 不匹配：{error}");
+                        format!("无法解析 model/list 响应；与 app-server schema 不匹配：{error}");
                     connection.fail_protocol(message.clone());
                     bail!(message);
                 }

@@ -1,4 +1,5 @@
-//! Codex 0.153.0 configuration wire format (default + experimental schema).
+//! Codex configuration wire format of the baseline CLI schema (default +
+//! experimental).
 use crate::agent::{
     AgentConfigChoiceSet, AgentConfigError, AgentConfigErrorKind, AgentConfigLayer,
     AgentConfigReceipt, AgentConfigRequirements, AgentConfigSnapshot, AgentConfigSource,

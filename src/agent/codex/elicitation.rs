@@ -1,7 +1,7 @@
 //! Strict decoding and encoding for mcpServer/elicitation/request.
 //!
 //! Field names, optionality, and variant membership follow the schema emitted
-//! by codex-cli 0.153.0 (artifacts/app-server-schema/0.153.0/
+//! by the baseline codex-cli (artifacts/app-server-schema/default/
 //! McpServerElicitationRequestParams.json). Only the standard form and url
 //! modes are supported: openai/form and openaiForm describe an opaque schema
 //! this client cannot render, so they stay protocol errors instead of being

@@ -54,8 +54,9 @@ pub enum LegacySubAgentActivityKind {
     Completed,
 }
 
-/// Agent-neutral form shared by the public `collabToolCall`, the installed
-/// desktop app's `collabAgentToolCall`, and persisted `subAgentActivity` items.
+/// Agent-neutral form shared by the schema's `collabAgentToolCall`, the
+/// `collabToolCall` name of adjacent CLI versions, and persisted
+/// `subAgentActivity` items.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AgentCollaboration {
     pub id: String,

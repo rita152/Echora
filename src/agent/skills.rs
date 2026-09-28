@@ -77,8 +77,7 @@ pub struct AgentSkill {
 }
 
 impl AgentSkill {
-    /// Prefers the newer `interface.displayName`, then the legacy
-    /// `shortDescription`, then the directory name.
+    /// Prefers `interface.displayName`, then the directory name.
     pub fn display_name(&self) -> String {
         self.interface
             .as_ref()

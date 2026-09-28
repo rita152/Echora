@@ -30,7 +30,7 @@ pub(super) fn validate_workspace_response<T>(
     match parsed {
         Ok(value) => Ok(value),
         Err(error) => {
-            let message = format!("无法解析 {method} 响应；Codex 0.153.0 schema 不匹配：{error:#}");
+            let message = format!("无法解析 {method} 响应；与 app-server schema 不匹配：{error:#}");
             connection.fail_protocol(message.clone());
             bail!(message)
         }
@@ -485,7 +485,7 @@ impl CodexAppServerManager {
             match update.project {
                 AgentOptionalField::Unspecified => {}
                 AgentOptionalField::Null => {
-                    // Codex 0.153.0 uses an empty string as the explicit
+                    // The app-server schema uses an empty string as the explicit
                     // project-unassignment sentinel; null only represents an
                     // omitted optional field in the generated JSON schema.
                     params.insert("projectId".into(), Value::String(String::new()));

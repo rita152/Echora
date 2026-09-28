@@ -1086,7 +1086,6 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "文件不在当前审查中" => "File is not in the current review",
         "文件为只读，无法保存" => "File is read only and cannot be saved",
         "文件仍有未保存的编辑" => "Files have unsaved edits",
-        "文件内容不可用" => "File contents unavailable",
         "文件内容不是有效的 base64" => "File contents are not valid base64",
         "文件内容，可直接编辑并自动保存" => "File contents, editable with autosave",
         "文件和文件夹" => "Files and folders",
@@ -1113,7 +1112,6 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "新建独立聊天" => "New standalone chat",
         "新建终端" => "New terminal",
         "新建远程项目" => "New remote project",
-        "新标签页" => "New tab",
         "新窗口" => "New window",
         "新聊天" => "New chat",
         "方形" => "Square",
@@ -1193,7 +1191,6 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "暂无" => "None yet",
         "暂无已归档聊天" => "No archived chats",
         "暂无最近聊天" => "No recent chats",
-        "暂无进行中的聊天" => "No active chats",
         "暂无项目" => "No projects yet",
         "更多 Git 操作" => "More Git actions",
         "更多浏览器" => "More browsers",
@@ -1395,7 +1392,6 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "没有配置 MCP 服务器" => "No MCP servers configured",
         "注释" => "Comment",
         "注销" => "Log out",
-        "活动" => "Activity",
         "活动洞察" => "Activity insights",
         "浅色" => "Light",
         "浏览历史" => "Browsing history",
@@ -1497,7 +1493,6 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         }
         "移除项目" => "Remove project",
         "空目录" => "Empty directory",
-        "站点" => "Sites",
         "等待失败" => "Wait failed",
         "等待审批" => "Awaiting approval",
         "等待已中断" => "Wait interrupted",
@@ -2042,6 +2037,8 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "最近的对话串不会被归档" => "Recent threads won’t be archived",
         "正在归档…" => "Archiving…",
         "停止并归档" => "Stop and archive",
+        "收藏该轮次" => "Bookmark turn",
+        "取消收藏该轮次" => "Remove bookmark",
         _ => return None,
     })
 }

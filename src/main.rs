@@ -58,7 +58,6 @@ fn configure_native_blur_sampling(window: &mut gpui::Window) {
         });
     }
 
-    #[allow(unexpected_cfgs)]
     unsafe fn apply() -> bool {
         use cocoa::{
             appkit::{

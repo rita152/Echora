@@ -248,7 +248,6 @@ pub trait AgentBackend: Send + Sync {
     fn close_side_conversation(&self, _thread_id: ThreadId) -> Receiver<WorkspaceResult<()>> {
         unsupported_receiver(AgentCapability::SideConversation)
     }
-    #[cfg_attr(test, allow(dead_code))]
     fn load_model_catalog(&self) -> Receiver<Result<AgentModelCatalog, String>>;
     fn load_permission_profiles(
         &self,

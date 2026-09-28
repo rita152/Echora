@@ -1162,7 +1162,12 @@ impl SettingsView {
                                 this.mcp.detail = None;
                                 cx.notify();
                             }))
-                            .child(svg().path("icons/chevron-left.svg").size(px(14.0)))
+                            .child(
+                                svg()
+                                    .path("icons/back.svg")
+                                    .size(px(14.0))
+                                    .text_color(theme.text),
+                            )
                             .child(
                                 div()
                                     .text_size(px(13.0))
