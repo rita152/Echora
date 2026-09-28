@@ -245,7 +245,7 @@ Full launch options are in [src/main.rs](src/main.rs).
 | `--new-chat-project=NAME` | Starts a new chat in the named project (or its stable id) through the same path as the project row's new-chat button, once the sidebar lists it, so the home heading and the composer's project and branch controls show that project. |
 | `--thread-hover-card=TITLE` | Opens the sidebar task hover card for the named task (or its stable id) without a pointer, for the static half of the hover-card captures. |
 | `--thread-rename=TITLE` | Opens the task rename dialog for the named task (or its stable id) without a pointer, for the static half of the rename-panel captures. |
-| `--sidebar-width=PX` | Renders the sidebar at a persisted width (clamped to 240–480), matching a reference whose user dragged it away from the 275 px default. |
+| `--sidebar-width=PX` | Renders the sidebar at a persisted width (clamped to 240–480). The native sidebar opens at its 240 px minimum; pass the reference's persisted width (275 px until its user drags it) to match a ChatGPT capture. |
 | `--sidebar-collapsed` | Starts with the sidebar closed and its transition settled: the titlebar keeps only the sidebar trigger, and pages such as Pull Requests start their headers after it. |
 | `--display=N` | Opens the window on display `N` of the platform list, so one run can capture the Retina panel (DPR 2) and another an external 1x monitor. |
 | `--print-diagnostics` | Prints executable path, working directory, compiled worktree, bundle name and identifier, the resolved assets base with its origin, and every assets candidate with its verdict, then exits. Use it to prove which build a verification run drives. |

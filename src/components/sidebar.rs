@@ -123,8 +123,11 @@ fn sidebar_row_label(text: impl Into<SharedString>) -> Div {
 }
 
 // These values come from the live ChatGPT desktop app at 127.0.0.1:9222.
-/// Matches the reference shell's `--codex-sidebar-preferred-width` (275px).
-pub(crate) const SIDEBAR_WIDTH: f32 = 275.0;
+/// Narrowest width the resize handle allows.
+pub(crate) const SIDEBAR_MIN_WIDTH: f32 = 240.0;
+/// New windows open at the narrowest width rather than the reference shell's
+/// `--codex-sidebar-preferred-width` (275px).
+pub(crate) const SIDEBAR_WIDTH: f32 = SIDEBAR_MIN_WIDTH;
 const SIDEBAR_TITLEBAR_SAFE_TOP: f32 = 46.0;
 const ROW_HEIGHT: f32 = 30.0;
 const ROW_RADIUS: f32 = 12.5;
@@ -4495,7 +4498,7 @@ mod tests {
             window.read(|sidebar, _| sidebar.selected_thread_id.clone()),
             Some("thread-stable-id".to_owned())
         );
-        assert_eq!(SIDEBAR_WIDTH, 275.0);
+        assert_eq!(SIDEBAR_WIDTH, 240.0);
         assert_eq!(SIDEBAR_TITLEBAR_SAFE_TOP, 46.0);
         assert_eq!(ROW_HEIGHT, 30.0);
         assert_eq!(ROW_RADIUS, 12.5);

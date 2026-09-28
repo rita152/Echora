@@ -62,7 +62,7 @@ use crate::{
         side_chat::SideChatPanel,
         sidebar::{
             AccountAction, AccountIntent, NewConversation, OpenChatSearch, OpenProjectCreation,
-            OpenSettings, SelectThread, SidebarView,
+            OpenSettings, SIDEBAR_MIN_WIDTH, SelectThread, SidebarView,
         },
         terminal::TerminalPanel,
     },
@@ -149,7 +149,6 @@ const RIGHT_PANEL_ITEMS: &[(RightPanelMode, &str, &str, &str)] = &[
     (RightPanelMode::Files, "文件", "⌘P", "panel-files"),
     (RightPanelMode::Review, "审查", "⌃⇧G", "panel-review"),
 ];
-const SIDEBAR_MIN_WIDTH: f32 = 240.0;
 const SIDEBAR_MAX_WIDTH: f32 = 480.0;
 const RIGHT_PANEL_MIN_WIDTH: f32 = 320.0;
 const RIGHT_PANEL_MAIN_MIN_WIDTH: f32 = 384.0;
