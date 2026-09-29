@@ -261,7 +261,6 @@ impl ConversationState {
         self.history_stale = true;
         true
     }
-    #[cfg(feature = "screenshot")]
     pub(crate) fn history_loading(&self) -> bool {
         self.history_loading
     }

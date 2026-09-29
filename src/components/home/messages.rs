@@ -114,7 +114,11 @@ pub(super) fn render_user_message_text(source: String) -> Div {
                         .when(index > 0, |paragraph| {
                             paragraph.mt(px(USER_MESSAGE_PARAGRAPH_GAP))
                         })
-                        .child(paragraph),
+                        .child({
+                            let highlights =
+                                crate::components::markdown::find::highlight_ranges(&paragraph);
+                            gpui::StyledText::new(paragraph).with_highlights(highlights)
+                        }),
                 )
             },
         )

@@ -2,6 +2,8 @@ mod agent;
 mod appearance;
 mod appshots;
 mod artwork;
+#[cfg(test)]
+mod batch2_tests;
 mod browser;
 mod chronicle;
 mod computer_use;
@@ -9,11 +11,14 @@ mod configuration;
 mod connections;
 mod controls;
 mod data_controls;
+mod dynamic;
 mod environments;
+mod features;
 mod git;
 mod hooks;
 mod keyboard;
 mod language;
+mod memories;
 mod navigation;
 mod personalization;
 mod plugins;
@@ -22,6 +27,8 @@ mod plugins_catalog;
 mod plugins_mcp;
 mod plugins_skills;
 mod profile;
+#[cfg(test)]
+mod test_backend;
 mod worktrees;
 
 use std::collections::HashMap;
@@ -40,6 +47,7 @@ pub struct ChangeLanguage(pub crate::i18n::Language);
 /// The Follow-up behavior segmented control changed.
 pub struct ChangeFollowUpMode(pub crate::workspace::FollowUpMode);
 pub struct ConfigSaveFinished;
+pub use hooks::OpenSettingsFile;
 
 /// Segment of the plugins settings page. Plugins and apps keep the reference
 /// catalog rendering; MCP servers and skills are backed by the backend.
@@ -105,12 +113,21 @@ pub struct SettingsView {
     mcp_generation: u64,
     /// Active conversation thread, used for thread scoped MCP runtime status.
     mcp_thread_id: Option<String>,
+    /// `hooks/list` snapshot, source dialog and trust/enable writes.
+    hooks: crate::hooks::HooksDirectory,
+    /// `experimentalFeature/list`, shared by the Beta section and memories.
+    features: crate::features::FeatureDirectory,
+    memory_reset: memories::MemoryReset,
+    /// Settings-wide toasts (the reference's success and danger toasts).
+    toasts: Vec<(u64, crate::components::composer::ToastKind, String)>,
+    next_toast_id: u64,
 }
 
 impl EventEmitter<CloseSettings> for SettingsView {}
 impl EventEmitter<ChangeTheme> for SettingsView {}
 impl EventEmitter<ChangeLanguage> for SettingsView {}
 impl EventEmitter<ChangeFollowUpMode> for SettingsView {}
+impl EventEmitter<OpenSettingsFile> for SettingsView {}
 
 impl SettingsView {
     pub fn set_follow_up_mode(
@@ -281,6 +298,11 @@ impl SettingsView {
             skills_generation: 0,
             mcp_generation: 0,
             mcp_thread_id: None,
+            hooks: Default::default(),
+            features: Default::default(),
+            memory_reset: Default::default(),
+            toasts: Vec::new(),
+            next_toast_id: 0,
             mode,
             selected: "general-settings",
             nav_scroll: ScrollHandle::new(),
@@ -295,8 +317,16 @@ impl SettingsView {
         self.language_menu_open = false;
         self.selected = slug;
         self.config_menu = None;
-        if matches!(slug, "agent" | "personalization") && self.config_editor.snapshot.is_none() {
+        if matches!(slug, "agent" | "personalization" | "hooks-settings")
+            && self.config_editor.snapshot.is_none()
+        {
             self.set_config_context(self.config_cwd.clone(), cx);
+        }
+        if slug == "hooks-settings" && !self.hooks.loading {
+            self.refresh_hooks(false, cx);
+        }
+        if matches!(slug, "agent" | "personalization") && !self.features.loading {
+            self.refresh_features(cx);
         }
         self.content_scroll.set_offset(point(px(0.0), px(0.0)));
         self.ensure_plugins_segment_loaded(cx);
@@ -404,7 +434,7 @@ impl SettingsView {
             _ if page.slug == "personalization" => self.personalization_content(page, theme, cx),
             _ if page.slug == "chronicle" => self.chronicle_content(page, theme),
             _ if page.slug == "plugins-settings" => self.plugins_content(page, theme, cx),
-            _ if page.slug == "hooks-settings" => self.hooks_content(page, theme),
+            _ if page.slug == "hooks-settings" => self.hooks_content(page, theme, cx),
             _ if page.slug == "connections" => self.connections_content(page, theme, cx),
             _ if page.slug == "browser-use" => self.browser_content(page, theme, cx),
             _ if page.slug == "agent" => self.agent_content(page, theme, cx),
@@ -461,7 +491,10 @@ impl Render for SettingsView {
                     this.language_menu_open = false;
                     this.config_menu = None;
                     this.config_custom_key = None;
-                    if !this.dismiss_manage_overlays(cx) {
+                    if !this.dismiss_hook_dialog(cx)
+                        && !this.dismiss_memory_dialog(cx)
+                        && !this.dismiss_manage_overlays(cx)
+                    {
                         cx.notify();
                     }
                     cx.stop_propagation();
@@ -651,5 +684,67 @@ impl Render for SettingsView {
                     .then(|| self.mcp_login_overlay(&theme, cx))
                     .flatten(),
             )
+            .children(
+                (selected.slug == "hooks-settings")
+                    .then(|| self.hook_source_overlay(theme, cx))
+                    .flatten(),
+            )
+            .children(
+                (selected.slug == "personalization")
+                    .then(|| self.memory_reset_overlay(theme, cx))
+                    .flatten(),
+            )
+            .children(self.render_toasts(cx))
+    }
+}
+
+impl SettingsView {
+    pub(super) fn show_toast(
+        &mut self,
+        kind: crate::components::composer::ToastKind,
+        text: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.next_toast_id += 1;
+        let id = self.next_toast_id;
+        self.toasts.push((id, kind, text));
+        let overflow = self
+            .toasts
+            .len()
+            .saturating_sub(crate::components::composer::VISIBLE_TOASTS);
+        self.toasts.drain(..overflow);
+        let timer = cx
+            .background_executor()
+            .timer(crate::components::composer::TOAST_DURATION);
+        cx.spawn(async move |this, cx| {
+            timer.await;
+            let _ = this.update(cx, |this, cx| this.dismiss_toast(id, cx));
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn dismiss_toast(&mut self, id: u64, cx: &mut Context<Self>) {
+        self.toasts.retain(|(toast, ..)| *toast != id);
+        cx.notify();
+    }
+
+    fn render_toasts(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        if self.toasts.is_empty() {
+            return None;
+        }
+        let dark = self.mode == ThemeMode::Dark;
+        Some(crate::components::composer::toast_stack(
+            self.toasts.iter().map(|(id, kind, text)| {
+                let id = *id;
+                crate::components::composer::toast_card(
+                    id,
+                    *kind,
+                    text,
+                    dark,
+                    cx.listener(move |this, _, _, cx| this.dismiss_toast(id, cx)),
+                )
+            }),
+        ))
     }
 }

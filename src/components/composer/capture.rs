@@ -1303,6 +1303,12 @@ impl ComposerView {
 }
 
 #[cfg(feature = "screenshot")]
+mod batch2;
+#[cfg(feature = "screenshot")]
+pub(crate) mod capture_find {
+    pub(crate) use super::batch2::{FIND_PROMPT, FIND_REPLY};
+}
+#[cfg(feature = "screenshot")]
 mod batch1;
 #[cfg(feature = "screenshot")]
 mod progress;

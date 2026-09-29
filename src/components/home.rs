@@ -9,6 +9,8 @@ mod collaboration;
 mod context;
 mod conversation;
 mod dynamic_tool;
+mod find;
+pub(crate) use find::init_keyboard as init_find_keyboard;
 mod landing;
 mod mcp;
 mod media;
@@ -113,6 +115,8 @@ pub struct HomeView {
     hook_control_focus: HashMap<String, FocusHandle>,
     user_message_actions_visible_for_capture: bool,
     conversation_rows: Rc<Vec<ConversationListRow>>,
+    /// Find in chat: bar, pages read and the active match's row.
+    find: find::FindView,
     /// Real prompts of the loaded task, in transcript order, for the floating
     /// user-message navigation rail.
     user_message_navigation: Rc<Vec<navigation::UserMessageNavigationItem>>,
@@ -425,6 +429,7 @@ impl HomeView {
             message_edit_input: None,
             message_edit_focus_pending: false,
             conversation_rows: Rc::new(Vec::new()),
+            find: Default::default(),
             user_message_navigation: Rc::new(Vec::new()),
             navigation_rail: navigation::UserMessageRail::default(),
             navigation_bookmarks: HashSet::new(),
@@ -526,6 +531,7 @@ impl HomeView {
         self.conversation_cache_dirty = true;
         sync_list_item_count(&self.conversation_list, self.conversation_rows.len());
         self.flush_pending_navigation_capture(cx);
+        self.refresh_find_after_rows_changed(cx);
     }
 
     /// Keeps the paced reveal bound to the message that is still arriving.
@@ -2000,7 +2006,29 @@ impl Render for HomeView {
             ),
         };
         let measured_home = cx.entity();
+        let find_bar = self.render_find_bar(theme, cx);
         content
+            .when(!blocking_keyboard_request_pending, |content| {
+                content.key_context(find::FIND_CONTEXT)
+            })
+            .on_action(
+                cx.listener(|home, _: &find::FindInChat, window, cx| home.open_find(window, cx)),
+            )
+            .on_action(cx.listener(|home, _: &find::FindNext, _, cx| {
+                if home.find.state.open {
+                    home.step_find(true, cx)
+                } else {
+                    cx.propagate()
+                }
+            }))
+            .on_action(cx.listener(|home, _: &find::FindPrevious, _, cx| {
+                if home.find.state.open {
+                    home.step_find(false, cx)
+                } else {
+                    cx.propagate()
+                }
+            }))
+            .children(find_bar)
             .when(blocking_keyboard_request_pending, |content| {
                 content.key_context(
                     if self
@@ -2088,6 +2116,8 @@ impl Render for HomeView {
     }
 }
 
+#[cfg(test)]
+mod find_tests;
 #[cfg(test)]
 mod landing_tests;
 #[cfg(test)]

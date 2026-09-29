@@ -13,8 +13,10 @@ mod collaboration;
 mod config;
 mod dispatch;
 mod elicitation;
+mod features;
 mod file_search;
 mod goal;
+mod hooks;
 mod input;
 mod items;
 mod json;
@@ -29,10 +31,12 @@ mod queue;
 mod registry;
 mod requests;
 mod runtime;
+mod search;
 mod server_requests;
 mod session;
 mod skills;
 mod transport;
+mod turn_settings;
 mod workspace_protocol;
 
 #[cfg(test)]

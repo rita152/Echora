@@ -28,6 +28,7 @@ use crate::{
 };
 
 mod fade;
+pub(crate) mod find;
 mod highlight;
 use highlight::highlighted_code_spans;
 mod preview;
@@ -1353,6 +1354,7 @@ fn render_styled_text_with_state(
         &mut runs,
         fade,
     );
+    let runs = find::highlight_runs(&text, runs);
     StyledText::new(text).with_runs(runs)
 }
 
@@ -1500,6 +1502,7 @@ fn fading_fragment_text(
             }),
         })
         .collect::<Vec<_>>();
+    let runs = find::highlight_runs(&label, runs);
     StyledText::new(label).with_runs(runs)
 }
 
@@ -2401,6 +2404,7 @@ fn highlighted_code_text(
             )
         })
         .collect();
+    let runs = find::highlight_runs(code, runs);
     StyledText::new(code.to_owned()).with_runs(runs)
 }
 

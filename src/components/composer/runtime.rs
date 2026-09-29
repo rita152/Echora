@@ -315,6 +315,8 @@ impl ComposerView {
             self.conversation.actual_model = Some(model.clone());
             self.conversation.model_status = None;
             self.conversation.safety_buffering = false;
+            let mut context = draft.context;
+            context.memory = self.new_chat_memory();
             let run = self.backend.run_prompt(AgentRequest {
                 client_message_id: Some(id),
                 prompt,
@@ -325,7 +327,7 @@ impl ComposerView {
                 effort: self.request_effort(),
                 service_tier: self.conversation.selected_service_tier.clone(),
                 permission_mode: self.selected_agent_permission_mode(),
-                context: draft.context,
+                context,
             });
             let (receiver, interrupt) = run.into_parts();
             self.conversation.active_turn = interrupt;

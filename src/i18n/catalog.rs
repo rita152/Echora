@@ -260,8 +260,8 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "保存" => "Save",
         "保持简短且易于识别" => "Keep it short and recognizable",
         "保存中…" => "Saving…",
-        "保存后会回读有效配置。配置默认值与当前线程权限分别管理；线程权限变更用于后续轮次。" => {
-            "Effective configuration is read back after saving. Defaults and current thread permissions are managed separately; thread permission changes apply to subsequent turns."
+        "保存后会回读有效配置。配置默认值与当前线程权限分别管理；线程权限变更从下一轮起生效，复核者会同步到进行中的轮次。" => {
+            "Effective configuration is read back after saving. Defaults and current thread permissions are managed separately; thread permission changes apply from the next turn, and the reviewer also switches for a running turn."
         }
         "保存连接已关闭" => "The save connection closed",
         "保存连接已关闭；写入结果未知，请重新读取后核对" => {

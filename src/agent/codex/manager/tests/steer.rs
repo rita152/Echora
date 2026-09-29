@@ -42,6 +42,7 @@ fn steer_parameters_share_input_encoding_and_exclude_turn_overrides() {
                 image: true,
             },
         ],
+        memory: None,
     };
     let params = super::super::steer::build_steer_params(&request).unwrap();
     let mut start = super::request(&request.prompt, Some("t"));

@@ -68,7 +68,7 @@ impl SettingsView {
         self.reload_config(cx);
     }
 
-    fn reload_config(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn reload_config(&mut self, cx: &mut Context<Self>) {
         if self.config_editor.busy() {
             return;
         }

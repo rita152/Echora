@@ -28,6 +28,58 @@ pub struct ConfigEditor {
     /// After a conflict, rereading retains the draft and requires explicit review.
     pub needs_review: bool,
     pub cycle: u64,
+    /// An immediate (switch) write is in flight. Drafts are not saved meanwhile,
+    /// so the two can never race for the same file version.
+    pub immediate_in_flight: bool,
+}
+
+/// What the readback of an immediate write showed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ImmediateWriteOutcome {
+    /// The file and the effective configuration hold the written values.
+    Saved,
+    /// Written, but a higher-priority layer decides these keys.
+    Overridden(Vec<String>),
+    /// The readback differs from what was written.
+    Differs(Vec<String>),
+}
+
+/// Compares a readback with the written edits: keys a higher layer overrides,
+/// and keys (or the file version) whose stored or effective value differs.
+fn readback_differences(
+    snapshot: &AgentConfigSnapshot,
+    receipt: &AgentConfigReceipt,
+    edits: &BTreeMap<String, Value>,
+) -> (Vec<String>, Vec<String>) {
+    let mut overridden = Vec::new();
+    let mut different = Vec::new();
+    let written_layer = snapshot.layer(&receipt.file_path);
+    if written_layer.is_none_or(|layer| layer.source.version != receipt.version) {
+        different.push(crate::i18n::text("文件版本（写入后发生变化或配置层不可见）").into());
+    }
+    for (key, value) in edits {
+        let stored = written_layer.and_then(|layer| config_value(&layer.config, key));
+        if value.is_null() && stored.is_some_and(|stored| !stored.is_null()) {
+            different.push(key.clone());
+        }
+        let effective = config_value(&snapshot.effective, key);
+        if !value.is_null() && stored.is_none_or(|stored| !snapshot.equivalent(key, value, stored))
+        {
+            different.push(crate::i18n::format!("{key}（文件值）" => "{key} (file value)"));
+        }
+        if !value.is_null()
+            && effective.is_none_or(|effective| !snapshot.equivalent(key, value, effective))
+        {
+            if snapshot.origin(key).is_some_and(|source| {
+                written_layer.is_none_or(|layer| source.metadata != layer.source.metadata)
+            }) {
+                overridden.push(key.clone());
+            } else {
+                different.push(key.clone());
+            }
+        }
+    }
+    (overridden, different)
 }
 
 impl ConfigEditor {
@@ -185,7 +237,7 @@ impl ConfigEditor {
         if matches!(self.operation, ConfigOperation::ReadFailed(_)) {
             return Err(crate::i18n::text("读取失败后需要先成功重新读取配置，才能保存草稿").into());
         }
-        if self.busy() || self.needs_review {
+        if self.busy() || self.needs_review || self.immediate_in_flight {
             return Err(crate::i18n::text("请等待配置就绪并核对草稿").into());
         }
         if let ConfigOperation::Failed(error) = &self.operation
@@ -273,48 +325,8 @@ impl ConfigEditor {
                     }
                     Ok(snapshot) => {
                         let target = &result.receipt.file_path;
-                        let mut overridden = Vec::new();
-                        let mut different = Vec::new();
-                        let written_layer = snapshot.layer(target);
-                        if written_layer
-                            .is_none_or(|layer| layer.source.version != result.receipt.version)
-                        {
-                            different.push(
-                                crate::i18n::text("文件版本（写入后发生变化或配置层不可见）")
-                                    .into(),
-                            );
-                        }
-                        for (key, value) in &self.edits {
-                            let stored =
-                                written_layer.and_then(|layer| config_value(&layer.config, key));
-                            if value.is_null() && stored.is_some_and(|stored| !stored.is_null()) {
-                                different.push(key.clone());
-                            }
-                            let effective = config_value(&snapshot.effective, key);
-                            if !value.is_null()
-                                && stored
-                                    .is_none_or(|stored| !snapshot.equivalent(key, value, stored))
-                            {
-                                different.push(
-                                    crate::i18n::format!("{key}（文件值）" => "{key} (file value)"),
-                                );
-                            }
-                            if !value.is_null()
-                                && effective.is_none_or(|effective| {
-                                    !snapshot.equivalent(key, value, effective)
-                                })
-                            {
-                                if snapshot.origin(key).is_some_and(|source| {
-                                    written_layer.is_none_or(|layer| {
-                                        source.metadata != layer.source.metadata
-                                    })
-                                }) {
-                                    overridden.push(key.clone());
-                                } else {
-                                    different.push(key.clone());
-                                }
-                            }
-                        }
+                        let (overridden, different) =
+                            readback_differences(&snapshot, &result.receipt, &self.edits);
                         let mut feedback = crate::i18n::format!("已写入 {}，并回读有效配置。" => "Wrote {} and read back effective configuration.", target.display());
                         if result.receipt.status == "okOverridden" || !overridden.is_empty() {
                             feedback.push_str(&crate::i18n::format!(
@@ -345,6 +357,84 @@ impl ConfigEditor {
             }
         }
         true
+    }
+
+    /// A switch that saves at once writes only its own edits to the user
+    /// layer, with that layer's path and version; the page's drafts are left
+    /// alone. Returns the write, or why it cannot be sent.
+    pub fn prepare_immediate_write(
+        &mut self,
+        edits: Vec<AgentConfigEdit>,
+    ) -> Result<AgentConfigWrite, String> {
+        if matches!(self.operation, ConfigOperation::ReadFailed(_)) {
+            return Err(crate::i18n::text("读取配置失败，请重新读取后再试").into());
+        }
+        if self.busy() || self.immediate_in_flight {
+            return Err(crate::i18n::text("正在读取或保存配置").into());
+        }
+        let snapshot = self
+            .snapshot
+            .as_ref()
+            .ok_or(crate::i18n::text("配置尚未就绪"))?;
+        let layer = snapshot
+            .user_layer()
+            .ok_or(crate::i18n::text("没有可写的用户配置文件"))?;
+        if let Some(reason) = &layer.disabled_reason {
+            return Err(reason.clone());
+        }
+        let file_path = layer
+            .source
+            .file_path()
+            .ok_or(crate::i18n::text("没有可写的用户配置文件"))?;
+        if edits.is_empty() {
+            return Err(crate::i18n::text("没有待保存的修改").into());
+        }
+        for edit in &edits {
+            if let Some(reason) = snapshot.restriction(&edit.key, &edit.value) {
+                return Err(reason);
+            }
+        }
+        self.immediate_in_flight = true;
+        Ok(AgentConfigWrite {
+            generation: snapshot.generation,
+            cwd: snapshot.cwd.clone(),
+            file_path,
+            expected_version: layer.source.version.clone(),
+            edits,
+            reload_user_config: true,
+        })
+    }
+
+    /// Settles an immediate write. A readback replaces the snapshot (the new
+    /// file version is this client's own write, so pending drafts stay valid);
+    /// a failure leaves the snapshot for an explicit reread, never a retry.
+    pub fn accept_immediate_save(
+        &mut self,
+        write: &AgentConfigWrite,
+        result: Result<AgentConfigSaveResult, AgentConfigError>,
+    ) -> Result<ImmediateWriteOutcome, AgentConfigError> {
+        self.immediate_in_flight = false;
+        let result = result?;
+        let snapshot = result.readback?;
+        let edits = write
+            .edits
+            .iter()
+            .map(|edit| (edit.key.clone(), edit.value.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let (overridden, different) = readback_differences(&snapshot, &result.receipt, &edits);
+        let current = self.snapshot.as_ref().is_some_and(|before| {
+            before.cwd == snapshot.cwd && before.generation == snapshot.generation
+        });
+        if current {
+            self.snapshot = Some(snapshot);
+        }
+        Ok(if !different.is_empty() {
+            ImmediateWriteOutcome::Differs(different)
+        } else if result.receipt.status == "okOverridden" || !overridden.is_empty() {
+            ImmediateWriteOutcome::Overridden(overridden)
+        } else {
+            ImmediateWriteOutcome::Saved
+        })
     }
 }
 

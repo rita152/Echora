@@ -101,9 +101,7 @@ impl ChatApp {
                         this.image_preview.zoom = 1.0;
                     }
                     SideChatEvent::OpenHookSettings => {
-                        this.settings
-                            .update(cx, |settings, cx| settings.select("hooks-settings", cx));
-                        this.showing_settings = true;
+                        this.open_settings_page("hooks-settings", cx);
                     }
                     SideChatEvent::FullAccess(composer) => {
                         this.open_permission_confirmation(composer.clone(), cx);

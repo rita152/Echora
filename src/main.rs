@@ -5,7 +5,9 @@ mod assets;
 mod components;
 mod configuration;
 mod conversation;
+mod features;
 mod git_review;
+mod hooks;
 mod i18n;
 mod mcp;
 mod media;
@@ -1139,6 +1141,23 @@ fn main() {
         arg.strip_prefix("--slash-menu-state=")
             .map(ToOwned::to_owned)
     });
+    // Batch two: deterministic states of the hooks page, the experimental
+    // features section, the memory surfaces and the find bar.
+    #[cfg(feature = "screenshot")]
+    let batch2_states = [
+        "hooks-settings",
+        "experimental-features",
+        "memories",
+        "find-bar",
+    ]
+    .into_iter()
+    .filter_map(|kind| {
+        let prefix = format!("--{kind}-state=");
+        args.iter()
+            .find_map(|arg| arg.strip_prefix(prefix.as_str()).map(ToOwned::to_owned))
+            .map(|state| (kind, state))
+    })
+    .collect::<Vec<_>>();
     #[cfg(feature = "screenshot")]
     let streaming_reply_ui_state = args.iter().find_map(|arg| {
         arg.strip_prefix("--streaming-reply-ui-state=")
@@ -1432,6 +1451,7 @@ fn main() {
             components::approval::init(cx);
             components::home::init_runtime_keyboard(cx);
             components::home::init_navigation_keyboard(cx);
+            components::home::init_find_keyboard(cx);
             cx.bind_keys([gpui::KeyBinding::new("cmd-p", app::OpenFiles, None)]);
             let display_id = display_index
                 .and_then(|index| cx.displays().get(index).map(|display| display.id()));
@@ -1703,6 +1723,11 @@ fn main() {
                             app.open_settings_page(slug, cx);
                         } else if settings_open {
                             app.open_settings(cx);
+                        }
+                        #[cfg(feature = "screenshot")]
+                        for (kind, state) in &batch2_states {
+                            app.complete_startup_for_capture(cx);
+                            app.set_batch2_for_capture(kind, state, window, cx);
                         }
                         if pull_requests_open {
                             app.complete_startup_for_capture(cx);

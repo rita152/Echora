@@ -256,162 +256,164 @@ pub(super) fn conversation(
                     ..
                 }
         );
-        let (row, top_gap, bottom_gap) = match row {
-            ConversationListRow::FileSummary(review) => (
-                resumed_file_summary_card(review, home_entity.clone(), theme, _cx)
-                    .into_any_element(),
-                0.0,
-                44.0,
-            ),
-            ConversationListRow::ResumedWork {
-                id,
-                label,
-                expanded,
-            } => (
-                resumed_work_header(
-                    home_entity.clone(),
-                    home_entity
-                        .read(_cx)
-                        .resumed_turn_focus
-                        .get(&id)
-                        .expect("resumed header focus")
-                        .clone(),
+        let find_scope = home_entity.read(_cx).find_scope_for_row(index);
+        let (row, top_gap, bottom_gap) =
+            crate::components::markdown::find::with_find_scope(find_scope, || match row {
+                ConversationListRow::FileSummary(review) => (
+                    resumed_file_summary_card(review, home_entity.clone(), theme, _cx)
+                        .into_any_element(),
+                    0.0,
+                    44.0,
+                ),
+                ConversationListRow::ResumedWork {
                     id,
                     label,
                     expanded,
-                    theme,
-                )
-                .into_any_element(),
-                0.0,
-                16.0,
-            ),
-            ConversationListRow::HistoricalUser {
-                turn_index,
-                message,
-                images,
-                time,
-                goal,
-            } => (
-                div()
-                    .id(("transcript-turn-user", turn_index))
-                    .w_full()
-                    .child(current_user_message(
-                        super::messages::UserMessageContent {
-                            continuation,
-                            text: message,
-                            images,
-                            time: time.unwrap_or_default(),
-                            goal,
-                            highlight: home_entity.read(_cx).user_message_highlight(index, _cx),
-                        },
-                        false,
-                        theme,
-                        window,
+                } => (
+                    resumed_work_header(
                         home_entity.clone(),
-                        home_entity.read(_cx).content_width,
-                        false,
-                    ))
-                    .into_any_element(),
-                0.0,
-                16.0,
-            ),
-            ConversationListRow::CurrentUser {
-                message,
-                images,
-                time,
-                goal,
-            } => (
-                div()
-                    .id(("current-turn-user", index))
-                    .w_full()
-                    .child(current_user_message(
-                        super::messages::UserMessageContent {
-                            continuation,
-                            text: message,
-                            images,
-                            time,
-                            goal,
-                            highlight: home_entity.read(_cx).user_message_highlight(index, _cx),
-                        },
-                        user_message_actions_visible_for_capture,
-                        theme,
-                        window,
-                        home_entity.clone(),
-                        home_entity.read(_cx).content_width,
-                        home_entity.read(_cx).message_edit_available(_cx),
-                    ))
-                    .into_any_element(),
-                0.0,
-                16.0,
-            ),
-            ConversationListRow::MessageEdit { .. } => (
-                div()
-                    .id(("message-edit-row", index))
-                    .w_full()
-                    .child(
                         home_entity
                             .read(_cx)
-                            .message_edit_form(theme, home_entity.clone()),
+                            .resumed_turn_focus
+                            .get(&id)
+                            .expect("resumed header focus")
+                            .clone(),
+                        id,
+                        label,
+                        expanded,
+                        theme,
                     )
                     .into_any_element(),
-                0.0,
-                16.0,
-            ),
-            ConversationListRow::AssistantMarkdown { id, text } => (
-                render_assistant_markdown(&text, theme, &id).into_any_element(),
-                0.0,
-                16.0,
-            ),
-            ConversationListRow::Activity {
-                unit,
-                show_thinking_tail,
-            } => (
-                render_activity_stream_unit(&render, index, unit, show_thinking_tail),
-                0.0,
-                16.0,
-            ),
-            ConversationListRow::Thinking => (
-                thinking_shimmer(theme, thinking_shimmer_progress).into_any_element(),
-                0.0,
-                16.0,
-            ),
-            ConversationListRow::CurrentResponseFooter {
-                id,
-                message,
-                completed_at,
-                hooks,
-                goal_achieved,
-            } => (
-                div()
-                    .id(SharedString::from(format!("response-footer-{id}")))
-                    .child(current_response_footer(
-                        &id,
-                        message,
-                        super::messages::ResponseFooterMetadata {
-                            completed_at,
-                            hooks,
-                            goal_achieved,
-                            // The reference's `alwaysShowActions`: only the
-                            // latest turn keeps its action row visible.
-                            always_visible: !rows[index + 1..].iter().any(|later| {
-                                matches!(
-                                    later,
-                                    ConversationListRow::CurrentResponseFooter { .. }
-                                        | ConversationListRow::HistoricalUser { .. }
-                                        | ConversationListRow::CurrentUser { .. }
-                                )
-                            }),
-                        },
-                        response_feedback,
-                        home_entity.clone(),
-                        theme,
-                        _cx,
-                    ))
-                    .into_any_element(),
-                0.0,
-                3.0,
-            ),
-        };
+                    0.0,
+                    16.0,
+                ),
+                ConversationListRow::HistoricalUser {
+                    turn_index,
+                    message,
+                    images,
+                    time,
+                    goal,
+                } => (
+                    div()
+                        .id(("transcript-turn-user", turn_index))
+                        .w_full()
+                        .child(current_user_message(
+                            super::messages::UserMessageContent {
+                                continuation,
+                                text: message,
+                                images,
+                                time: time.unwrap_or_default(),
+                                goal,
+                                highlight: home_entity.read(_cx).user_message_highlight(index, _cx),
+                            },
+                            false,
+                            theme,
+                            window,
+                            home_entity.clone(),
+                            home_entity.read(_cx).content_width,
+                            false,
+                        ))
+                        .into_any_element(),
+                    0.0,
+                    16.0,
+                ),
+                ConversationListRow::CurrentUser {
+                    message,
+                    images,
+                    time,
+                    goal,
+                } => (
+                    div()
+                        .id(("current-turn-user", index))
+                        .w_full()
+                        .child(current_user_message(
+                            super::messages::UserMessageContent {
+                                continuation,
+                                text: message,
+                                images,
+                                time,
+                                goal,
+                                highlight: home_entity.read(_cx).user_message_highlight(index, _cx),
+                            },
+                            user_message_actions_visible_for_capture,
+                            theme,
+                            window,
+                            home_entity.clone(),
+                            home_entity.read(_cx).content_width,
+                            home_entity.read(_cx).message_edit_available(_cx),
+                        ))
+                        .into_any_element(),
+                    0.0,
+                    16.0,
+                ),
+                ConversationListRow::MessageEdit { .. } => (
+                    div()
+                        .id(("message-edit-row", index))
+                        .w_full()
+                        .child(
+                            home_entity
+                                .read(_cx)
+                                .message_edit_form(theme, home_entity.clone()),
+                        )
+                        .into_any_element(),
+                    0.0,
+                    16.0,
+                ),
+                ConversationListRow::AssistantMarkdown { id, text } => (
+                    render_assistant_markdown(&text, theme, &id).into_any_element(),
+                    0.0,
+                    16.0,
+                ),
+                ConversationListRow::Activity {
+                    unit,
+                    show_thinking_tail,
+                } => (
+                    render_activity_stream_unit(&render, index, unit, show_thinking_tail),
+                    0.0,
+                    16.0,
+                ),
+                ConversationListRow::Thinking => (
+                    thinking_shimmer(theme, thinking_shimmer_progress).into_any_element(),
+                    0.0,
+                    16.0,
+                ),
+                ConversationListRow::CurrentResponseFooter {
+                    id,
+                    message,
+                    completed_at,
+                    hooks,
+                    goal_achieved,
+                } => (
+                    div()
+                        .id(SharedString::from(format!("response-footer-{id}")))
+                        .child(current_response_footer(
+                            &id,
+                            message,
+                            super::messages::ResponseFooterMetadata {
+                                completed_at,
+                                hooks,
+                                goal_achieved,
+                                // The reference's `alwaysShowActions`: only the
+                                // latest turn keeps its action row visible.
+                                always_visible: !rows[index + 1..].iter().any(|later| {
+                                    matches!(
+                                        later,
+                                        ConversationListRow::CurrentResponseFooter { .. }
+                                            | ConversationListRow::HistoricalUser { .. }
+                                            | ConversationListRow::CurrentUser { .. }
+                                    )
+                                }),
+                            },
+                            response_feedback,
+                            home_entity.clone(),
+                            theme,
+                            _cx,
+                        ))
+                        .into_any_element(),
+                    0.0,
+                    3.0,
+                ),
+            });
         // The response toolbar owns its 3px top inset. A normal activity gap
         // here double-counts spacing and shifts the entire bottom-anchored
         // answer upward by 16px in a resumed thread.

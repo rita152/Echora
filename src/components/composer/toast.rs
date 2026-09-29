@@ -10,8 +10,8 @@ use gpui::{AnyElement, Context, Role, div, prelude::*, px, rgba};
 use super::ComposerView;
 use crate::{components::icons::icon, theme::ThemeMode};
 
-const TOAST_DURATION: Duration = Duration::from_secs(5);
-const VISIBLE_TOASTS: usize = 3;
+pub(crate) const TOAST_DURATION: Duration = Duration::from_secs(5);
+pub(crate) const VISIBLE_TOASTS: usize = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ToastKind {
@@ -58,105 +58,125 @@ impl ComposerView {
         }
         let dark = self.mode == ThemeMode::Dark;
         let toasts = self.toasts().iter().map(|toast| {
-            // The reference's rich toast colours (default Electron theme).
-            let (text, background, border, glyph) = match (toast.kind, dark) {
-                (ToastKind::Success, false) => (
-                    rgba(0x00a240ff),
-                    rgba(0xedfaf2ff),
-                    rgba(0x00a24033),
-                    "toast-success",
-                ),
-                (ToastKind::Success, true) => (
-                    rgba(0x40c977ff),
-                    rgba(0x011c0bff),
-                    rgba(0x40c97733),
-                    "toast-success",
-                ),
-                (ToastKind::Danger, false) => (
-                    rgba(0xe02e2aff),
-                    rgba(0xfff0f0ff),
-                    rgba(0xe02e2a26),
-                    "toast-danger",
-                ),
-                (ToastKind::Danger, true) => (
-                    rgba(0xff6764ff),
-                    rgba(0x280b0aff),
-                    rgba(0xfa423e66),
-                    "toast-danger",
-                ),
-            };
             let id = toast.id;
-            div()
-                .id(("composer-toast", id))
-                .role(Role::Status)
-                .aria_label(toast.text.clone())
-                .max_w_full()
-                .p(px(8.))
-                .rounded(px(12.))
-                .border_1()
-                .border_color(border)
-                .bg(background)
-                .text_color(text)
-                .text_size(px(14.))
-                .line_height(px(19.6))
-                .shadow(vec![gpui::BoxShadow {
-                    color: rgba(0x0000001a).into(),
-                    offset: gpui::point(px(0.), px(4.)),
-                    blur_radius: px(12.),
-                    spread_radius: px(0.),
-                    inset: false,
-                }])
-                .flex()
-                .items_start()
-                .gap(px(4.))
-                .debug_selector(|| "COMPOSER_TOAST".to_owned())
-                .child(
-                    div()
-                        .size(px(24.))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .child(icon(glyph, text.into()).size(px(16.))),
-                )
-                .child(
-                    div()
-                        .min_h(px(24.))
-                        .flex()
-                        .items_center()
-                        .font_weight(gpui::FontWeight::MEDIUM)
-                        .child(toast.text.clone()),
-                )
-                .child(
-                    div()
-                        .id(("composer-toast-close", id))
-                        .role(Role::Button)
-                        .aria_label(crate::i18n::format!("关闭" => "Close"))
-                        .size(px(24.))
-                        .flex_none()
-                        .rounded_full()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .cursor_pointer()
-                        .hover(move |button| button.bg(gpui::Rgba { a: 0.05, ..text }))
-                        .on_click(cx.listener(move |this, _, _, cx| this.dismiss_toast(id, cx)))
-                        .child(icon("close-dialog", text.into()).size(px(16.))),
-                )
+            toast_card(
+                id,
+                toast.kind,
+                &toast.text,
+                dark,
+                cx.listener(move |this, _, _, cx| this.dismiss_toast(id, cx)),
+            )
         });
-        Some(
-            div()
-                .absolute()
-                .top(px(8.))
-                .left_0()
-                .right_0()
-                .px(px(8.))
-                .flex()
-                .flex_col()
-                .items_center()
-                .gap(px(8.))
-                .children(toasts)
-                .into_any_element(),
-        )
+        Some(toast_stack(toasts))
     }
+}
+
+/// One toast in the reference's rich colours (default Electron theme). Shared
+/// by every surface that shows toasts; each owns its own stack and timers.
+pub(crate) fn toast_card(
+    id: u64,
+    kind: ToastKind,
+    label: &str,
+    dark: bool,
+    on_close: impl Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
+) -> gpui::Stateful<gpui::Div> {
+    let (text, background, border, glyph) = match (kind, dark) {
+        (ToastKind::Success, false) => (
+            rgba(0x00a240ff),
+            rgba(0xedfaf2ff),
+            rgba(0x00a24033),
+            "toast-success",
+        ),
+        (ToastKind::Success, true) => (
+            rgba(0x40c977ff),
+            rgba(0x011c0bff),
+            rgba(0x40c97733),
+            "toast-success",
+        ),
+        (ToastKind::Danger, false) => (
+            rgba(0xe02e2aff),
+            rgba(0xfff0f0ff),
+            rgba(0xe02e2a26),
+            "toast-danger",
+        ),
+        (ToastKind::Danger, true) => (
+            rgba(0xff6764ff),
+            rgba(0x280b0aff),
+            rgba(0xfa423e66),
+            "toast-danger",
+        ),
+    };
+    div()
+        .id(("composer-toast", id))
+        .role(Role::Status)
+        .aria_label(label.to_owned())
+        .max_w_full()
+        .p(px(8.))
+        .rounded(px(12.))
+        .border_1()
+        .border_color(border)
+        .bg(background)
+        .text_color(text)
+        .text_size(px(14.))
+        .line_height(px(19.6))
+        .shadow(vec![gpui::BoxShadow {
+            color: rgba(0x0000001a).into(),
+            offset: gpui::point(px(0.), px(4.)),
+            blur_radius: px(12.),
+            spread_radius: px(0.),
+            inset: false,
+        }])
+        .flex()
+        .items_start()
+        .gap(px(4.))
+        .debug_selector(|| "COMPOSER_TOAST".to_owned())
+        .child(
+            div()
+                .size(px(24.))
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(icon(glyph, text.into()).size(px(16.))),
+        )
+        .child(
+            div()
+                .min_h(px(24.))
+                .flex()
+                .items_center()
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .child(label.to_owned()),
+        )
+        .child(
+            div()
+                .id(("composer-toast-close", id))
+                .role(Role::Button)
+                .aria_label(crate::i18n::format!("关闭" => "Close"))
+                .size(px(24.))
+                .flex_none()
+                .rounded_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .cursor_pointer()
+                .hover(move |button| button.bg(gpui::Rgba { a: 0.05, ..text }))
+                .on_click(on_close)
+                .child(icon("close-dialog", text.into()).size(px(16.))),
+        )
+}
+
+/// Top-centre, 8px from the top, toasts stacked 8px apart.
+pub(crate) fn toast_stack(toasts: impl IntoIterator<Item = impl IntoElement>) -> AnyElement {
+    div()
+        .absolute()
+        .top(px(8.))
+        .left_0()
+        .right_0()
+        .px(px(8.))
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap(px(8.))
+        .children(toasts)
+        .into_any_element()
 }

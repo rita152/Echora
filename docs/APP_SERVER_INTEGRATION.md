@@ -24,11 +24,11 @@ node scripts/scan_reference_rpc_methods.mjs /Applications/ChatGPT.app/Contents/R
 
 | 状态 | 数量 | 判定 |
 |---|---|---|
-| 已接入 | 136 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
+| 已接入 | 142 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
 | 后端已接入 | 4 | 已实现读取或校验，尚无对应可见 UI 调用方或展示 |
 | 部分接入 | 5 | 只支持部分类型、有效变体或限定生命周期窗口 |
 | 兼容退订 | 2 | initialize 按完整方法名退订；不代表对应产品能力已接入 |
-| 未接入 | 105 | 客户端不发送；服务端请求按原 id 回受控回执并保持 generation 与共享连接，同时登记连接级诊断；仅 EOF、崩溃、写失败或致命协议错误终止连接；服务端通知仍按严格协议校验处理 |
+| 未接入 | 99 | 客户端不发送；服务端请求按原 id 回受控回执并保持 generation 与共享连接，同时登记连接级诊断；仅 EOF、崩溃、写失败或致命协议错误终止连接；服务端通知仍按严格协议校验处理 |
 
 未接入行的“—”沿用上述规则；带受控回执的服务端请求会另外列出入口，见下段。`tool/requestUserInput` 是兼容别名，不计入本版本 schema 的 252 项。
 
@@ -63,7 +63,7 @@ node scripts/scan_reference_rpc_methods.mjs /Applications/ChatGPT.app/Contents/R
 
 设置页按当前会话工作目录调用 `config/read(includeLayers=true,cwd)`，并在同一 generation 调用 `configRequirements/read`。`config`、`origins`、`layers`、每层版本、disabledReason 和原始来源元数据分别保留；缺省、null、用户层显式值与更高层的有效值不混为一谈。已知来源在适配器归一化为用户、项目、系统、受管、会话与默认层，未知来源保持只读；当前 CLI 实测仅允许写用户配置文件，因此项目层不因 schema 接受 `filePath` 就显示为可写。选中 profile 的配置层、没有版本或没有绝对路径的来源也不可写。
 
-当前可编辑字段为 `approval_policy`、`sandbox_mode`、`web_search`、`model_verbosity`、`model_reasoning_summary`、`approvals_reviewer`、`default_permissions`、`model`、`model_reasoning_effort`、`plan_mode_reasoning_effort`、`service_tier`、`personality`。枚举来自本机 schema；模型、推理强度和服务档位结合实际模型目录。保留合法 granular approval policy 和可扩展字符串，不把旧 `on-failure` 列为当前 schema 的新选项；兼容已返回的值。`guardian_subagent` 与 `auto_review` 在比较时等价，granular 的两个缺省布尔值按 schema 补为 false。合法未知字段仍保留在快照与来源详情中，未提供通用 JSON 配置编辑器。
+当前可编辑字段为 `approval_policy`、`sandbox_mode`、`web_search`、`model_verbosity`、`model_reasoning_summary`、`approvals_reviewer`、`default_permissions`、`model`、`model_reasoning_effort`、`plan_mode_reasoning_effort`、`service_tier`、`personality`，以及由开关直接保存的 `hooks.state."<key>".enabled`、`hooks.state."<key>".trusted_hash`、实验性功能 `features.<name>`（仅设置页列出的 beta 项）、`features.memories`、`memories.generate_memories`、`memories.use_memories`、`memories.disable_on_external_context`（同时删除旧键 `memories.no_memories_if_mcp_or_web_search`）；这些开关的规则见「钩子、实验性功能与记忆」。枚举来自本机 schema；模型、推理强度和服务档位结合实际模型目录。保留合法 granular approval policy 和可扩展字符串，不把旧 `on-failure` 列为当前 schema 的新选项；兼容已返回的值。`guardian_subagent` 与 `auto_review` 在比较时等价，granular 的两个缺省布尔值按 schema 补为 false。合法未知字段仍保留在快照与来源详情中，未提供通用 JSON 配置编辑器。
 
 受管允许值映射到批准策略／复核者、沙盒、网页搜索及权限 profile 的选项和禁用原因；`defaultPermissions`、`models.newThread` 的强制模型／推理强度／serviceTier 等约束显示为受管值。其余 feature、登录 shell、存储和网络等实际要求保留在详情中；没有对应编辑控件时不新增可提交入口。存在命名权限定义且其他有效层没有默认 profile 时，禁止删除必需的 `default_permissions`。服务端校验始终作为最终约束，客户端不自行放宽权限。
 
@@ -85,7 +85,7 @@ node scripts/scan_reference_rpc_methods.mjs /Applications/ChatGPT.app/Contents/R
 
 首次发送与既有线程更新复用同一权限编码。已有线程先从 start/resume/fork 响应及设置通知建立有效权限快照，不能拿配置文件值替代线程状态。每线程独立串行权限队列，不阻塞其他线程；操作绑定原 threadId、generation 和本地 operationId。waiter 在写 RPC 前注册，RPC 成功与匹配的 `thread/settings/updated` 缺一不可；通知先于响应时暂存，失败不发布成功。匹配校验本次明确发送的 policy、reviewer、profile／sandbox，已确认重复／已知迟到通知不回退状态。
 
-本机通知没有 operationId 或服务端版本，无法从协议区分“与本次期望完全相同的外部修改”和本次操作回执；串行队列与字段匹配提供当前可实现的关联边界。通知等待超时关闭旧 generation，禁止其迟到回执满足新连接；连接 generation 更新同时清理尚未绑定线程的旧设置快照和待确认权限操作，旧读取回调不能覆盖新状态；切换会话、关闭侧边标签和线程关闭使旧视图操作失效。临时线程只使用原 generation，关闭取消 waiter 并 unsubscribe，不能自动 resume。权限更新只影响后续轮次，进行中的轮次保留原权限。原生菜单、主／侧边选择、等待反馈、失败恢复及完整访问确认均经过这条路径。
+本机通知没有 operationId 或服务端版本，无法从协议区分“与本次期望完全相同的外部修改”和本次操作回执；串行队列与字段匹配提供当前可实现的关联边界。通知等待超时关闭旧 generation，禁止其迟到回执满足新连接；连接 generation 更新同时清理尚未绑定线程的旧设置快照和待确认权限操作，旧读取回调不能覆盖新状态；切换会话、关闭侧边标签和线程关闭使旧视图操作失效。临时线程只使用原 generation，关闭取消 waiter 并 unsubscribe，不能自动 resume。权限更新对后续轮次生效；进行中的轮次保留原批准策略与沙盒，只有复核者随之切换：`thread/settings/update` 成功并收到匹配通知后，若该线程有唯一未结束的受管轮次且本次带 approvalsReviewer，在同一串行队列内发送 `turn/settings/update {threadId,turnId,approvalsReviewer}`（与参考相同的时机与字段）。applied 表示当前轮次已切换；targetUnavailable（轮次恰好结束）只记日志；RPC 失败不回退线程设置，只提示「将从下一轮起生效」。原生菜单、主／侧边选择、等待反馈、失败恢复及完整访问确认均经过这条路径。
 
 配置领域位于 `src/agent/config.rs`，编解码位于 `config.rs`，连接操作位于 `manager/config.rs`、`manager/settings.rs`，草稿与回读判定位于 `src/configuration.rs`，交互位于设置和 Composer 视图。真实独立配置验证入口为 `python3 scripts/verify_config_permissions.py --output artifacts/config-permissions-smoke`。
 
@@ -178,6 +178,22 @@ Composer 在运行中有草稿时显示“追加输入”，无草稿时显示�
 
 0.158 参考与本机基线的差异（只实现 0.154 schema 已有字段）：通知多出 `emittedAtMs`；`turn/completed` 携带 summary items；`turn/start` 多出 `environments`、`turnTrigger`、`multiAgentMode`、`responsesapiClientMetadata` 等字段；`turn/steer` 多出 `responsesapiClientMetadata`；`thread/queue/changed` 周期性重复下发。
 
+### 钩子、实验性功能与记忆
+
+三类开关都是用户层 `config/batchWrite`：`filePath`、`expectedVersion` 取自当前读取到的用户层，edits 只含所切换的字段、`mergeStrategy=replace`，写后回读核对；同一时刻只允许一个开关写入，写入期间显示意图值，冲突、失败或回执缺失时恢复服务端值并在该行提示，结果未知不自动重试。有未保存的配置草稿时两类写入互斥，互不覆盖对方的版本。参考对同样的键发送 `mergeStrategy=upsert`、`filePath=null`、`expectedVersion=null`（`artifacts/batch2-{hooks,features,memories}-20260928/wire/`）：服务端会写到默认用户层并跳过版本检查，并发编辑时后写覆盖前写。本机 0.154 两种写法都被接受，过期版本返回 `configVersionConflict`（`artifacts/batch2-baseline-20260928`），因此 Echora 沿用既有纪律，以显式层与版本换取冲突检测；布尔叶子上 replace 与 upsert 结果相同。
+
+**钩子**（`hooks/list`）：打开「钩子」设置页即读取，cwds 为当前项目根、其后是其他已知项目根（排序、去重），空列表时退回当前 cwd。列表按参考分组：「来自配置」（用户、管理员等配置层）、「来自插件」、「来自项目」与「其他来源」；每个来源行显示钩子数与「N 个问题 · N 项待审核」摘要，点击打开 680 宽的来源对话框：需审核时顶部横幅提供「全部信任」，其下是可折叠的加载问题（`warnings` 与 `errors`，后者在 0.154 只来自插件）和按事件分组的钩子行。钩子行显示标题（`{序号} - {statusMessage}` 或「钩子 {序号}」）、打开所在配置文件、需要审核时的「信任」（提示区分 untrusted「新钩子」与 modified「钩子自上次标记为可信后已更改」），以及启用开关；受管钩子（`isManaged`）始终开启、不可切换，未信任的钩子在信任前不可启用；展开显示类型、handler、命令或 MCP 服务器／工具、matcher 与超时。信任写 `hooks.state."<key>".trusted_hash=<currentHash>`，启用写 `.enabled`；key 以 JSON 引号包裹整段，来源按去引号的点号路径匹配。写入回执 `okOverridden` 显示为被更高层覆盖；成功后重新读取列表。「刷新」重新读取并提示「钩子已刷新」。项目层 `hooks.state` 在 0.154 不生效（基线已验证），因此所有状态都写用户层。
+
+**实验性功能**（`experimentalFeature/list`）：设置 →「配置」页的「实验性质功能（测试版）」只显示服务端返回的 beta 项，按服务端顺序；与参考一致排除 `memories`、`multi_agent`、`plugins`、`plugin`、`remote_control`、`chronicle`、`workspace_dependencies` 与 `realtime_*`。切换写 `features.<name>`，不请求 `reloadUserConfig`；列表随后显示新的 enabled，但运行中的 app-server 保留启动时的功能开关，因此显示「重启 Echora（新建 Codex 连接）以应用实验性功能更改」，直到读到新 generation 的列表。参考该分区受 Statsig 2106641128 控制、放在同一「配置」页；0.158 参考改用 `experimentalFeature/enablement/set`，不在本批范围。
+
+**记忆**：个性化设置顶部的「Codex 记忆」以功能列表中的 `memories` 项判定：缺失时显示「这台电脑不支持 Codex 记忆功能」。「启用 Codex 记忆功能」一次写入 `features.memories`、`memories.generate_memories`、`memories.use_memories` 三项（参考拆成两次写入，中途失败会留下不一致的组合）；「允许从使用工具的聊天中生成记忆」写 `memories.disable_on_external_context=!值` 并删除旧键，功能关闭时不可操作。「删除」先确认，确认后发送无 params 的 `memory/reset`，成功提示「Codex 记忆已删除」、失败提示「无法删除 Codex 记忆」，不自动刷新。斜杠菜单的「记忆」仅在 `memories` 功能开启时出现，打开 400 宽的「聊天记忆」对话框：新聊天两项均可切换，默认值取有效配置，首条消息以 `thread/start.config {"memories.use_memories","memories.generate_memories"}` 发送；已开始的聊天「使用记忆」只读（「对话开始后无法更改」），「生成记忆」乐观切换并发送 `thread/memoryMode/set`，失败回滚并提示，迟到、旧 generation 或其他线程的回执丢弃。
+
+### 聊天内查找
+
+⌘F 只在对话区域（key context `ChatConversation`）获得焦点时打开查找栏，文件编辑器、终端与 PR 面板保留各自的 ⌘F；⌘G／⇧⌘G、Enter／⇧Enter 切换结果，Esc 关闭并把焦点还给输入框。查询停顿 150 ms 后发送 `thread/searchOccurrences {threadId,searchTerm,limit:250}`（searchTerm 去首尾空白，空白查询不发送）；与参考一致只读取第一页，计数显示「{当前} / {总数} 个结果」，还有 nextCursor 时加「+」。越过最后一个已读结果时带 cursor 读取下一页，游标重复即报错停止；读完后回绕到第一个。0.154 每个匹配各占一项（同一条消息重复出现），因此同一 item 的第 n 个结果对应渲染文本中的第 n 个匹配；高亮在 Markdown 文本 run 与用户消息上按不区分大小写的字面匹配绘制，当前结果为橙色、其余为黄色（取自参考）。snippetMatchRange 是 UTF-16 下标，转字节时拒绝越界、倒序和切开代理对的范围。结果所在轮次未加载时复用历史分页重新读取一次，之后仍找不到则标记不可达；临时侧边线程返回 `-32601`，改为在已加载的用户消息和最终回复中本地查找。请求绑定查询周期、threadId 与 generation，旧查询、其他线程或旧连接的回执不改变状态。0.154 实测：游标绑定检索词（换词复用旧游标返回 -32600），未加载但已持久化的线程无需 resume 也可搜索，`turnCursor` 对 `thread/turns/list` 是包含式游标（Echora 暂未直接使用，改为整段历史重读）。
+
+0.158 参考与本机基线在本批方法上的差异：`hooks/list` 在参考中随设置页多次调用并包含更多来源；实验性功能切换改走 `experimentalFeature/enablement/set`；记忆设置另有 `memory/status` 与从 ChatGPT 导入，均不在 0.154 schema 或本批范围内。
+
 ## Item 与历史兼容
 
 实时 `item/started`／`item/completed` 与历史恢复支持下表类型。未知实时类型报错，未知历史类型保留为 `ThreadHistoryItem::Unsupported`。本机 schema 共 19 个 ThreadItem 变体，全部已有实时／历史编解码与领域状态支持；相邻版本的两个别名（collabToolCall、image_generation）不计入这 19 项。
@@ -256,7 +272,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `environment/info` | 实验 | 未接入 | — | — |
 | `environment/status` | 实验 | 未接入 | — | — |
 | `experimentalFeature/enablement/set` | 默认 | 未接入 | — | — |
-| `experimentalFeature/list` | 默认 | 未接入 | — | — |
+| `experimentalFeature/list` | 默认 | 已接入 | cursor/limit=100/threadId；遍历全部页（最多 32 页），拒绝重复游标与重复 name，严格校验 stage 与 name；设置页「实验性质功能（测试版）」只列服务端 beta 行（排除参考同样隐藏的项），切换写 `features.<name>`；记忆设置与 `/memories` 以 `memories` 项判定可用与开启。 | `manager/features`、`features` |
 | `externalAgentConfig/detect` | 默认 | 未接入 | — | — |
 | `externalAgentConfig/import` | 默认 | 未接入 | — | — |
 | `externalAgentConfig/import/readHistories` | 默认 | 未接入 | — | — |
@@ -275,7 +291,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `fuzzyFileSearch/sessionStart` | 实验 | 已接入 | 搜索弹窗进入文件模式时为当前会话 cwd 建一个会话；失败按 session not found 回退到一次性请求。 | `manager` |
 | `fuzzyFileSearch/sessionStop` | 实验 | 已接入 | 关闭弹窗、切换模式或切换会话时结束会话；会话 id 保留有上限的退休标记，迟到通知保持惰性。 | `manager` |
 | `fuzzyFileSearch/sessionUpdate` | 实验 | 已接入 | 每次输入变化更新查询；结果经 sessionUpdated 通知返回，按 cycle 丢弃过期响应。 | `manager` |
-| `hooks/list` | 默认 | 未接入 | — | — |
+| `hooks/list` | 默认 | 已接入 | cwds 为当前项目根与其他已知项目根；按 generation 校验每项 cwd、事件／来源／handler／trustStatus 枚举、绝对 sourcePath 与非负超时；钩子设置页按参考分组显示来源、摘要、问题与逐项信任／启用，写入 `hooks.state."<key>".{trusted_hash,enabled}` 后重新读取。 | `manager/hooks`、`hooks` |
 | `initialize` | 默认 | 已接入 | 每个连接 generation 一次；发送 clientInfo、experimentalApi=true、requestAttestation=false；按完整方法名退订两项通知，列表见运行时能力协商。 | `manager` |
 | `marketplace/add` | 默认 | 已接入 | source（必填）与可选 refName/sparsePaths；来源文本只来自用户在“添加”面板的输入；成功/失败/超时/结果未知四态分离，结果未知不自动重试。 | `manager/plugins`、`plugins_catalog` |
 | `marketplace/remove` | 默认 | 已接入 | marketplaceName；先确认再发送，失败保留意图可显式重试，成功后强制重读目录。 | `manager/plugins`、`plugins_catalog` |
@@ -286,7 +302,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `mcpServer/resource/read` | 默认 | 未接入 | — | — |
 | `mcpServer/tool/call` | 默认 | 未接入 | — | — |
 | `mcpServerStatus/list` | 默认 | 已接入 | cursor/limit/detail/threadId；保留 id/name、runtimeStatus、authStatus、错误、工具、资源、模板与全部未知字段；循环游标中止并报错。 | `manager/mcp`、`mcp` |
-| `memory/reset` | 实验 | 未接入 | — | — |
+| `memory/reset` | 实验 | 已接入 | 与参考一致不带 params；个性化设置「删除」先确认，成功／失败分别提示，不伪造成功。 | `manager/features`、`settings/view/memories` |
 | `mock/experimentalMethod` | 实验 | 未接入 | — | — |
 | `model/list` | 默认 | 已接入 | limit=50、includeHidden=false；遍历 nextCursor，拒绝循环游标；返回模型、默认值、推理强度及服务档位。 | `manager/catalog` |
 | `modelProvider/capabilities/read` | 默认 | 未接入 | — | — |
@@ -344,7 +360,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/items/list` | 默认 | 已接入 | 按 threadId、nullable turnId 升序分页；补全非 full 的历史轮次。 | `manager/workspace` |
 | `thread/list` | 默认 | 已接入 | 分页读取最近、归档、项目与分区列表；保留前后游标及 projectId/sectionId 的省略、null、值三态。与参考端一致发送 `useStateDbOnly=true`、空 `modelProviders`／`sourceKinds` 与 null `parentThreadId`：缺省时服务端改走 rollout 扫描，只返回最近 10 个且不带游标，侧栏项目与最近聊天会缺行。 | `manager/workspace` |
 | `thread/loaded/list` | 默认 | 未接入 | — | — |
-| `thread/memoryMode/set` | 实验 | 未接入 | — | — |
+| `thread/memoryMode/set` | 实验 | 已接入 | threadId/mode（enabled/disabled）绑定 generation 与线程；`/memories` 对已开始的聊天乐观切换「生成记忆」，失败回滚并提示，迟到或旧线程回执丢弃。 | `manager/features`、`conversation/memory` |
 | `thread/metadata/update` | 默认 | 已接入 | projectId 省略表示不变，空字符串表示移出项目，非空 id 表示分配；读取 result.thread。 | `manager/workspace` |
 | `thread/name/set` | 默认 | 已接入 | threadId、name；重命名会话。侧栏双击任务行弹出与参考一致的居中面板：输入框默认全选，取消／关闭／Esc／蒙层不发送请求，保存与 Enter 复用同一提交路径，空或纯空白不发送，超过 60 个字符的名称与参考一致截为前 59 个字符加省略号。 | `manager/workspace`、`components/sidebar` |
 | `thread/queue/add` | 实验 | 已接入 | 运行中且跟进方式为排队（或 ⌘⏎ 取反）时发送 input 与新的 clientUserMessageId，重新提交编辑时同样用新 id；⌘Z 恢复与侧边聊天失败放回时沿用原 id 与原 input；返回的 clientUserMessageId 必须一致；草稿快照按该 id 保留。 | `manager/queue`、`queue` |
@@ -364,9 +380,9 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/revert` | 默认 | 已接入 | 改写最新用户消息时按 beforeTurnId 传该轮 id：把持久化历史替换为该轮之前的前缀，随后仍走 thread/read 与分页路径重载；响应是历史权威来源，校验返回 thread 与请求 threadId 一致并保留可选 turnsBackwardsCursor／itemsBackwardsCursor，不回退本地文件改动。先到的 `thread/reverted` 记为该请求的确认。 | `manager/revert`、`components/composer` |
 | `thread/rollback` | 默认 | 未接入 | — | — |
 | `thread/search` | 实验 | 已接入 | 非空 searchTerm、archived、分页和排序；返回 thread 与 snippet。历史会话搜索弹窗用它检索会话；空查询改用 `threadSection/list` 的置顶分区与 `thread/list`（recency 倒序）拼出前九行。参考实现的弹窗还会合并 ChatGPT 云端会话，app-server 无对应数据。 | `manager/workspace` |
-| `thread/searchOccurrences` | 实验 | 未接入 | — | — |
+| `thread/searchOccurrences` | 实验 | 已接入 | threadId/searchTerm（去首尾空白）/limit=250/cursor；UTF-16 snippetMatchRange 转字节并拒绝越界、倒序或切开代理对；游标重复即停止；`-32601`（临时线程）回退本地已加载消息查找；聊天内 ⌘F 查找栏逐项定位与高亮。 | `manager/search`、`conversation/find`、`home/find` |
 | `thread/section/move` | 默认 | 已接入 | threadId、nullable sectionId/beforeThreadId；用于置顶和取消置顶。 | `manager/workspace` |
-| `thread/settings/update` | 实验 | 已接入 | 主／临时线程按线程队列更新 approvalPolicy、approvalsReviewer、permissions 或 sandboxPolicy；绑定 generation／操作，等待 RPC 成功和匹配的有效权限通知，影响后续轮次。 | `manager/settings`、`permissions` |
+| `thread/settings/update` | 实验 | 已接入 | 主／临时线程按线程队列更新 approvalPolicy、approvalsReviewer、permissions 或 sandboxPolicy；绑定 generation／操作，等待 RPC 成功和匹配的有效权限通知，影响后续轮次；复核者另经 `turn/settings/update` 同步到进行中的轮次。 | `manager/settings`、`permissions` |
 | `thread/shellCommand` | 默认 | 未接入 | — | — |
 | `thread/start` | 默认 | 已接入 | 首条提示词才新建；发送 cwd、projectId、historyMode=paginated、ephemeral=false、serviceName、model、serviceTier；采用 result.thread.id。 | `manager/turn` |
 | `thread/timeline/list` | 实验 | 未接入 | — | — |
@@ -378,7 +394,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `threadSection/list` | 默认 | 已接入 | 遍历分区分页；以服务端 Pinned 的稳定 id 实现置顶。 | `manager/workspace` |
 | `threadSection/update` | 默认 | 未接入 | — | — |
 | `turn/interrupt` | 默认 | 已接入 | 定向 threadId/turnId，每轮最多发送一次；等待真实 interrupted 终态，保持共享连接。 | `manager/turn` |
-| `turn/settings/update` | 实验 | 未接入 | — | — |
+| `turn/settings/update` | 实验 | 已接入 | 线程权限更新成功后，若该线程有唯一进行中的轮次且本次带 approvalsReviewer，在同一串行队列里发送 `{threadId,turnId,approvalsReviewer}`；applied 与 targetUnavailable 严格解码，失败只影响当前轮次并提示从下一轮生效。 | `manager/settings`、`turn_settings` |
 | `turn/start` | 默认 | 已接入 | 文本及 localImage 输入、路径上下文、model/effort/serviceTier；选择 plan/default 时 collaborationMode 由本 generation 的预设生成、顶层 model/effort 为 null；新线程首轮附权限字段。可选 clientUserMessageId；以 result.turn.id 建立轮次归属。 | `manager/turn`、`input`、`collaboration` |
 | `turn/steer` | 默认 | 已接入 | 主会话／临时侧边聊天运行中即时追加：threadId、expectedTurnId、input、clientUserMessageId；校验 result.turnId。复用文本、localImage、文件路径上下文及审查评论编码；不传 model/cwd/权限等轮次覆盖字段。 | `manager/steer`、`input` |
 | `userVerification/delete` | 实验 | 未接入 | — | — |
@@ -500,7 +516,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 
 修改方法、有效变体、兼容别名或失败处理时，同步更新本表与对应测试；升级 CLI 时核对四个 schema union（ClientRequest、ServerRequest、ClientNotification、ServerNotification），保持方法唯一、方向／API 分类和状态统计一致。只有形成表中声明的产品路径后才标记“已接入”。
 
-批次一（协作模式、服务端排队、线程目标、自动复核批准）的本机基线行为可用 `python3 scripts/batch1_app_server_probe.py --output artifacts/batch1-baseline-<日期>` 复现：它以隔离的 CODEX_HOME 和本地假 Responses 端点运行 PATH 上的 `codex app-server`，不发真实模型请求；截图对比用 `python3 scripts/compare_batch1_captures.py`。
+批次一（协作模式、服务端排队、线程目标、自动复核批准）的本机基线行为可用 `python3 scripts/batch1_app_server_probe.py --output artifacts/batch1-baseline-<日期>` 复现：它以隔离的 CODEX_HOME 和本地假 Responses 端点运行 PATH 上的 `codex app-server`，不发真实模型请求；截图对比用 `python3 scripts/compare_batch1_captures.py`。批次二（轮次设置、查找、钩子、实验性功能、记忆）的基线用 `python3 scripts/batch2_app_server_probe.py --output artifacts/batch2-baseline-<日期>` 复现，同样不发真实模型请求；参考截图用 `node scripts/cdp_capture_batch2.mjs`（专用参考实例），Echora 截图用 `ECHORA_CODEX_HOME=<~/.codex 的副本> scripts/capture_batch2_gpui.sh <日期>`。
 
 `scripts/verify_integration_table.mjs` 直接用 CLI schema 重新推导方法集合、默认／实验归属、方法唯一性、口径表统计、合计行与 `runtime::OPT_OUT_NOTIFICATION_METHODS`，发现任何结构性不一致都以非零状态退出；`artifacts/app-server-schema` 缺失时会先用本机 `codex` 生成临时副本，因此可在干净检出上直接运行。
 

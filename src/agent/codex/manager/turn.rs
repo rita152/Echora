@@ -587,18 +587,23 @@ impl CodexAppServerManager {
             None => {
                 let request = new_thread_request
                     .context("thread/start 缺少新 conversation 的 AgentRequest")?;
-                (
-                    "thread/start",
-                    json!({
-                        "cwd": request.cwd,
-                        "ephemeral": false,
-                        "historyMode": "paginated",
-                        "serviceName": "gpui-chat-clone",
-                        "model": request.model,
-                        "serviceTier": request.service_tier,
-                        "projectId": request.project_id
-                    }),
-                )
+                let mut params = json!({
+                    "cwd": request.cwd,
+                    "ephemeral": false,
+                    "historyMode": "paginated",
+                    "serviceName": "gpui-chat-clone",
+                    "model": request.model,
+                    "serviceTier": request.service_tier,
+                    "projectId": request.project_id
+                });
+                // The chat memories dialog's choice, as the reference sends it.
+                if let Some(memory) = request.context.memory {
+                    params["config"] = json!({
+                        "memories.generate_memories": memory.generate_memories,
+                        "memories.use_memories": memory.use_memories,
+                    });
+                }
+                ("thread/start", params)
             }
         };
         {

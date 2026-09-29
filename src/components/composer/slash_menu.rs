@@ -1,5 +1,5 @@
 //! The composer's slash command menu, for the commands this client supports:
-//! Goal, Compact, Plan mode and the `/autoreview` Approve submenu.
+//! Goal, Compact, Memories, Plan mode and the `/autoreview` Approve submenu.
 //!
 //! As in the reference, the menu opens for a `/query` token that ends at the
 //! caret (a `/` at the start of a line or after whitespace; the query may
@@ -8,7 +8,8 @@
 //! query with a space matches nothing. Compact needs an otherwise empty
 //! composer: the whole text must be one `/…` line. Selecting a command removes
 //! only the token. Approve only exists while approvable denials do, and opens
-//! a submenu of the newest ten.
+//! a submenu of the newest ten. Memories only exists while the `memories` feature
+//! is enabled, and opens the chat memories dialog.
 
 use std::ops::Range;
 
@@ -24,17 +25,25 @@ pub(crate) enum SlashCommand {
     Approve,
     Compact,
     Goal,
+    Memories,
     PlanMode,
 }
 
 impl SlashCommand {
-    const ALL: [Self; 4] = [Self::Approve, Self::Compact, Self::Goal, Self::PlanMode];
+    const ALL: [Self; 5] = [
+        Self::Approve,
+        Self::Compact,
+        Self::Goal,
+        Self::Memories,
+        Self::PlanMode,
+    ];
 
     fn id(self) -> &'static str {
         match self {
             Self::Approve => "autoreview",
             Self::Compact => "compact",
             Self::Goal => "goal",
+            Self::Memories => "memories",
             Self::PlanMode => "plan-mode",
         }
     }
@@ -44,6 +53,7 @@ impl SlashCommand {
             Self::Approve => crate::i18n::format!("批准" => "Approve"),
             Self::Compact => crate::i18n::format!("压缩" => "Compact"),
             Self::Goal => crate::i18n::format!("目标" => "Goal"),
+            Self::Memories => crate::i18n::format!("记忆" => "Memories"),
             Self::PlanMode => crate::i18n::format!("计划模式" => "Plan mode"),
         }
     }
@@ -57,6 +67,7 @@ impl SlashCommand {
             Self::Approve => "auto-review-shield",
             Self::Compact => "context-compaction",
             Self::Goal => "goal-chip",
+            Self::Memories => "slash-memories",
             Self::PlanMode => "slash-plan-mode",
         }
     }
@@ -182,6 +193,7 @@ impl ComposerView {
                 .is_empty(),
             SlashCommand::Compact => self.conversation.thread_id.is_some() && !self.side_chat,
             SlashCommand::Goal => !self.side_chat,
+            SlashCommand::Memories => !self.side_chat && self.memories_feature_enabled(),
             SlashCommand::PlanMode => self.plan_mode_available(),
         }
     }
@@ -200,6 +212,8 @@ impl ComposerView {
             SlashCommand::Goal => {
                 crate::i18n::format!("设置要持续追求的目标" => "Set a goal to keep pursuing")
             }
+            // The reference's row has a title only.
+            SlashCommand::Memories => String::new(),
             SlashCommand::PlanMode => {
                 if self.prompt_context.plan_mode == Some(true) {
                     crate::i18n::format!("关闭计划模式" => "Turn plan mode off")
@@ -325,6 +339,9 @@ impl ComposerView {
             self.slash_menu = None;
             return;
         };
+        if self.slash_menu.is_none() {
+            self.ensure_memories_feature(cx);
+        }
         let menu = self.slash_menu.get_or_insert_with(SlashMenu::default);
         if menu
             .dismissed
@@ -432,6 +449,7 @@ impl ComposerView {
                 self.prompt_context.plan_mode = Some(on);
                 self.focus_prompt_pending = true;
             }
+            SlashCommand::Memories => self.open_memories_dialog(cx),
             SlashCommand::Approve => unreachable!("opens its submenu above"),
         }
         cx.emit(ConversationChanged);

@@ -89,6 +89,29 @@ pub struct AgentThreadPermissionResult {
     pub generation: u64,
     pub operation_id: u64,
     pub settings: AgentThreadSettings,
+    /// Set when the confirmed change named a reviewer while a turn of the
+    /// thread was running: the reviewer is then also published to that turn.
+    pub active_turn_reviewer: Option<AgentActiveTurnReviewerUpdate>,
+}
+
+/// How `turn/settings/update` answered for the reviewer of the running turn.
+/// Steps the turn already captured and pending approvals keep their reviewer
+/// either way; the other permission fields only apply from the next turn.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AgentActiveTurnReviewerUpdate {
+    /// The running turn's later captures use the new reviewer.
+    Applied { turn_id: String },
+    /// No live task remained: the turn ended first. Not a failure.
+    TargetUnavailable { turn_id: String },
+    /// The request failed; the running turn keeps its original reviewer.
+    Failed { turn_id: String, message: String },
+}
+
+/// `TurnSettingsUpdateResponse.status`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AgentTurnSettingsStatus {
+    Applied,
+    TargetUnavailable,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

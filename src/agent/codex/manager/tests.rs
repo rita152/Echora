@@ -32,6 +32,7 @@ const WAIT: Duration = Duration::from_secs(3);
 mod account;
 mod auto_approval;
 mod batch1;
+mod batch2;
 mod config;
 mod elicitation;
 mod manage;

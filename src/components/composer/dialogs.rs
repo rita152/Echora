@@ -16,6 +16,8 @@ pub(crate) enum ComposerDialog {
     SendWhilePaused { text: String, inverted: bool },
     /// A new objective while a goal is saved.
     ReplaceGoal { objective: String },
+    /// `/memories`: the chat memories switches.
+    Memories,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,6 +49,7 @@ impl ComposerView {
             (ComposerDialog::ReplaceGoal { objective }, DialogChoice::Primary) => {
                 self.set_goal(objective, cx);
             }
+            (ComposerDialog::Memories, _) => {}
             (ComposerDialog::ReplaceGoal { .. }, DialogChoice::Secondary) => {
                 // Cancel keeps the composer text and the Goal chip.
                 if !self.goal_draft {
@@ -67,6 +70,9 @@ impl ComposerView {
         if self.dialog_focus_pending {
             self.dialog_focus_pending = false;
             self.dialog_focus.focus(window, cx);
+        }
+        if dialog == ComposerDialog::Memories {
+            return Some(self.render_memories_dialog(cx));
         }
         let theme = Theme::for_mode(self.mode);
         let danger = match self.mode {
@@ -89,6 +95,7 @@ impl ComposerView {
                     true,
                 )
             }
+            ComposerDialog::Memories => unreachable!("rendered above"),
             ComposerDialog::ReplaceGoal { objective } => (
                 crate::i18n::format!("替换当前目标吗？" => "Replace current goal?"),
                 crate::i18n::format!("这会保留聊天，但会用你当前在输入框中的文本替换已保存的目标" => "This will keep the chat but replace the saved goal with your current composer text"),

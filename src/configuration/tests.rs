@@ -266,3 +266,84 @@ fn static_only_changes_do_not_request_runtime_permission_reload() {
     state.edit("web_search", json!("cached")).unwrap();
     assert!(state.prepare_write(&fields).unwrap().1.reload_user_config);
 }
+
+#[test]
+fn an_immediate_write_sends_only_its_edits_and_keeps_the_drafts() {
+    let mut state = editor();
+    state.edit("web_search", json!("cached")).unwrap();
+    let write = state
+        .prepare_immediate_write(vec![AgentConfigEdit {
+            key: "features.network_proxy".into(),
+            value: json!(true),
+        }])
+        .unwrap();
+    assert_eq!(write.edits.len(), 1, "the page's draft is not sent");
+    assert_eq!(write.file_path, PathBuf::from("/test/config.toml"));
+    assert_eq!(write.expected_version, "v1");
+    // One at a time, and never alongside a draft save.
+    assert!(
+        state
+            .prepare_immediate_write(vec![write.edits[0].clone()])
+            .is_err()
+    );
+    assert!(state.prepare_write(&[]).is_err());
+    let mut readback = snapshot("v2");
+    readback.layers.as_mut().unwrap()[0].config =
+        json!({"model_verbosity":"low","features":{"network_proxy":true}});
+    readback.effective["features"] = json!({"network_proxy": true});
+    let outcome = state.accept_immediate_save(
+        &write,
+        Ok(AgentConfigSaveResult {
+            receipt: AgentConfigReceipt {
+                status: "ok".into(),
+                version: "v2".into(),
+                file_path: "/test/config.toml".into(),
+                overridden: None,
+            },
+            readback: Ok(readback),
+        }),
+    );
+    assert_eq!(outcome, Ok(ImmediateWriteOutcome::Saved));
+    assert_eq!(state.edits.get("web_search"), Some(&json!("cached")));
+    // The draft now saves against the new version this write produced.
+    let (_, draft) = state.prepare_write(&[]).unwrap();
+    assert_eq!(draft.expected_version, "v2");
+}
+
+#[test]
+fn an_immediate_write_reports_conflicts_and_differences_without_retrying() {
+    let mut state = editor();
+    let edit = AgentConfigEdit {
+        key: "memories.use_memories".into(),
+        value: json!(false),
+    };
+    let write = state.prepare_immediate_write(vec![edit.clone()]).unwrap();
+    let conflict = state.accept_immediate_save(&write, Err(error(AgentConfigErrorKind::Conflict)));
+    assert_eq!(conflict.unwrap_err().kind, AgentConfigErrorKind::Conflict);
+    // A readback that does not hold the value is a difference, not success.
+    let write = state.prepare_immediate_write(vec![edit]).unwrap();
+    let outcome = state.accept_immediate_save(
+        &write,
+        Ok(AgentConfigSaveResult {
+            receipt: AgentConfigReceipt {
+                status: "ok".into(),
+                version: "v1".into(),
+                file_path: "/test/config.toml".into(),
+                overridden: None,
+            },
+            readback: Ok(snapshot("v1")),
+        }),
+    );
+    assert!(matches!(outcome, Ok(ImmediateWriteOutcome::Differs(_))));
+    // After a failed read nothing is written.
+    let cycle = state.begin_read();
+    state.accept_read(cycle, Err(error(AgentConfigErrorKind::Connection)));
+    assert!(
+        state
+            .prepare_immediate_write(vec![AgentConfigEdit {
+                key: "x".into(),
+                value: json!(1)
+            }])
+            .is_err()
+    );
+}

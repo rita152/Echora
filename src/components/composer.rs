@@ -12,6 +12,9 @@ mod followup_render;
 mod goal;
 mod goal_render;
 mod layout;
+mod memories;
+#[cfg(test)]
+mod memories_tests;
 mod permissions;
 mod picker;
 mod render;
@@ -24,10 +27,14 @@ mod submissions;
 mod toast;
 mod workspace;
 
+#[cfg(feature = "screenshot")]
+pub(crate) use capture::capture_find;
 pub use followup::FollowUpModeToggled;
 pub use followup_edit::OpenQueuedInSideChat;
+pub(crate) use followup_render::TrayTooltip;
 pub use goal::OpenGoalEditor;
 pub(crate) use goal_render::achieved_duration_label;
+pub(crate) use toast::{TOAST_DURATION, ToastKind, VISIBLE_TOASTS, toast_card, toast_stack};
 pub use workspace::WorkspacePresentation;
 
 use std::{path::PathBuf, sync::Arc};
@@ -199,6 +206,9 @@ pub struct ComposerView {
     permission_read_cycle: u64,
     permission_catalog_error: Option<String>,
     permission_config: Option<crate::agent::AgentConfigSnapshot>,
+    /// Whether the `memories` feature is enabled, for the generation read.
+    memories_feature: Option<(u64, bool)>,
+    memories_feature_loading: bool,
     permission_profiles: Vec<crate::agent::AgentPermissionProfile>,
     permission_menu_focus: FocusHandle,
     permission_menu_focused_item: usize,
@@ -413,6 +423,8 @@ impl ComposerView {
             permission_read_cycle: 0,
             permission_catalog_error: None,
             permission_config: None,
+            memories_feature: None,
+            memories_feature_loading: false,
             permission_profiles: Vec::new(),
             permission_menu_focus: cx.focus_handle().tab_stop(true),
             permission_menu_focused_item: 0,
@@ -502,6 +514,26 @@ impl ComposerView {
         self.conversation.thread_id()
     }
 
+    /// The agent this conversation talks to.
+    pub(crate) fn agent_backend(&self) -> Arc<dyn AgentBackend> {
+        self.backend.clone()
+    }
+
+    /// The current turn's id, once the server named it.
+    pub fn current_turn_id(&self) -> Option<&str> {
+        self.conversation.turn_id.as_deref()
+    }
+
+    /// Re-reads this conversation's history through the ordinary loader, as
+    /// a revert this client did not make would.
+    pub fn request_history_reload(&mut self, cx: &mut Context<Self>) {
+        if let Some(thread_id) = self.conversation.thread_id.clone()
+            && self.conversation.mark_history_stale(&thread_id)
+        {
+            cx.emit(ConversationChanged);
+        }
+    }
+
     pub fn history_needs_retry(&self) -> bool {
         self.conversation.history_needs_retry()
     }
@@ -558,7 +590,6 @@ impl ComposerView {
             || self.conversation.editable_user_turn().is_some()
     }
 
-    #[cfg(feature = "screenshot")]
     pub fn history_loading(&self) -> bool {
         self.conversation.history_loading()
     }

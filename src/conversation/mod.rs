@@ -7,9 +7,15 @@ mod activity;
 mod auto_approval;
 mod elicitation;
 mod events;
+mod find;
+#[cfg(feature = "screenshot")]
+pub(crate) use find::local_occurrences as find_local_occurrences;
+pub(crate) use find::{FIND_PAGE_SIZE, FindState, FindStep, case_insensitive_matches};
 mod goal;
 pub(crate) use goal::GoalOperation;
 mod lifecycle;
+mod memory;
+pub(crate) use memory::MemoryModeSettled;
 mod model;
 mod queue;
 pub(crate) use queue::QueueRowOperation;

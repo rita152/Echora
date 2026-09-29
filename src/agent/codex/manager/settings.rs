@@ -4,8 +4,9 @@ use super::{
     connection::{Connection, PendingThreadLifecycle, ThreadLifecycleKind},
 };
 use crate::agent::{
-    AgentConnectionEvent, AgentPermissionMode, AgentThreadPermissionResult,
-    AgentThreadPermissionUpdate, AgentThreadSettings,
+    AgentActiveTurnReviewerUpdate, AgentConnectionEvent, AgentPermissionMode,
+    AgentThreadPermissionResult, AgentThreadPermissionUpdate, AgentThreadSettings,
+    AgentTurnSettingsStatus,
 };
 use anyhow::{Context as _, Result, anyhow, bail};
 use async_channel::{Receiver, Sender};
@@ -91,6 +92,53 @@ fn json_contains(actual: &Value, expected: &Value) -> bool {
                 .is_some_and(|actual| json_contains(actual, value))
         }),
         _ => actual == expected,
+    }
+}
+
+/// The thread's running turn on this connection. A turn that is still
+/// starting has no id yet, and a finished one has nothing left to publish to.
+fn active_turn_id(connection: &Connection, thread_id: &str) -> Option<String> {
+    let state = connection.state.lock().ok()?;
+    let mut live = state.turns.iter().filter(|(key, turn)| {
+        key.thread_id == thread_id
+            && !turn.terminal.load(std::sync::atomic::Ordering::Acquire)
+            && !state.finished_turns.contains(*key)
+    });
+    let (key, _) = live.next()?;
+    // A replayed server turn can briefly coexist with another turn of the
+    // thread; without a single live turn there is no target to name.
+    live.next().is_none().then(|| key.turn_id.clone())
+}
+
+/// Publishes the reviewer to the running turn. `targetUnavailable` means the
+/// turn ended first, which is not a failure; a failed request leaves the turn
+/// with its original reviewer and is reported, never retried.
+fn update_active_turn_reviewer(
+    connection: &Connection,
+    thread_id: &str,
+    turn_id: String,
+    reviewer: &str,
+) -> AgentActiveTurnReviewerUpdate {
+    use super::super::turn_settings::{
+        TURN_SETTINGS_UPDATE_METHOD, parse_response, reviewer_params,
+    };
+    let response = connection.request_with_timeout(
+        TURN_SETTINGS_UPDATE_METHOD,
+        Some(reviewer_params(thread_id, &turn_id, reviewer)),
+        Duration::from_secs(20),
+    );
+    match response.and_then(|response| parse_response(&response)) {
+        Ok(AgentTurnSettingsStatus::Applied) => AgentActiveTurnReviewerUpdate::Applied { turn_id },
+        Ok(AgentTurnSettingsStatus::TargetUnavailable) => {
+            eprintln!(
+                "turn/settings/update：线程 {thread_id} 的轮次 {turn_id} 已结束（targetUnavailable），复核者从下一轮起生效"
+            );
+            AgentActiveTurnReviewerUpdate::TargetUnavailable { turn_id }
+        }
+        Err(error) => AgentActiveTurnReviewerUpdate::Failed {
+            turn_id,
+            message: format!("{error:#}"),
+        },
     }
 }
 
@@ -224,6 +272,10 @@ impl CodexAppServerManager {
                     observed: None,
                 },
             );
+        let reviewer = params
+            .get("approvalsReviewer")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
         let response = connection.request("thread/settings/update", params);
         if let Err(error) = response {
             connection
@@ -282,11 +334,23 @@ impl CodexAppServerManager {
                 generation: connection.generation,
                 settings: settings.clone(),
             });
+        // Still inside this thread's queue slot, so a later permission change
+        // cannot overtake the running turn's reviewer update.
+        let active_turn_reviewer = reviewer.as_deref().and_then(|reviewer| {
+            let turn_id = active_turn_id(&connection, &request.thread_id)?;
+            Some(update_active_turn_reviewer(
+                &connection,
+                &request.thread_id,
+                turn_id,
+                reviewer,
+            ))
+        });
         Ok(AgentThreadPermissionResult {
             thread_id: request.thread_id,
             generation: connection.generation,
             operation_id: request.operation_id,
             settings,
+            active_turn_reviewer,
         })
     }
 

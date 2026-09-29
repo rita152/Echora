@@ -310,6 +310,7 @@ impl SettingsView {
                     )),
             );
         }
+        content = content.child(self.experimental_features_section(theme, cx));
         content = content.child(
             div()
                 .mt(px(24.))
@@ -443,7 +444,7 @@ impl SettingsView {
         content.child(div().mt(px(24.)).text_size(px(12.)).line_height(px(18.)).text_color(theme.settings_description)
             .child(crate::i18n::format!("工作目录：{}" => "Working directory: {}",self.config_cwd.display())))
             .child(div().mt(px(6.)).text_size(px(12.)).line_height(px(18.)).text_color(theme.settings_description)
-                .child(crate::i18n::text("保存后会回读有效配置。配置默认值与当前线程权限分别管理；线程权限变更用于后续轮次。")))
+                .child(crate::i18n::text("保存后会回读有效配置。配置默认值与当前线程权限分别管理；线程权限变更从下一轮起生效，复核者会同步到进行中的轮次。")))
             .into_any_element()
     }
 }

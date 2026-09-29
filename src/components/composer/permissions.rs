@@ -317,10 +317,25 @@ impl ComposerView {
                     return;
                 }
                 this.conversation.permission_change = None;
+                let turn_reviewer = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|result| result.active_turn_reviewer.clone());
                 this.apply_permission_update_result(
                     selection,
                     result.map(|result| result.settings),
                 );
+                // The thread settings did change; only the running turn kept
+                // its reviewer, which is worth saying rather than hiding.
+                if let Some(crate::agent::AgentActiveTurnReviewerUpdate::Failed {
+                    message, ..
+                }) = turn_reviewer
+                {
+                    this.conversation.permission_error = Some(crate::i18n::format!(
+                        "权限已更新，但当前轮次的复核者未能更新：{message}；将从下一轮起生效" =>
+                        "Permissions updated, but the running turn kept its reviewer: {message}. The change applies from the next turn"
+                    ));
+                }
                 cx.emit(ConversationChanged);
                 cx.notify();
             });

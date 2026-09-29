@@ -53,6 +53,9 @@ class FakeResponses(http.server.BaseHTTPRequestHandler):
     slow_seconds = 4.0
     requests: list[dict] = []
     guardian_verdicts: list[dict] = []
+    # Optional `(last user text) -> assistant text`; other probes reuse this
+    # endpoint and need replies with known content.
+    reply_for = None
 
     def log_message(self, *_args):
         return
@@ -89,6 +92,8 @@ class FakeResponses(http.server.BaseHTTPRequestHandler):
                 else {"outcome": "allow"}
             )
             reply = json.dumps(verdict)
+        elif FakeResponses.reply_for is not None:
+            reply = FakeResponses.reply_for(json.dumps(last, ensure_ascii=False))
         else:
             reply = "ok"
         if last.get("type") == "message" and "ESCALATE" in json.dumps(last) and GUARDIAN_MARKER not in whole:

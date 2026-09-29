@@ -41,6 +41,7 @@ mod tests {
                 cwd: "/work".into(),
                 permissions: None,
             },
+            active_turn_reviewer: None,
         };
         assert!(pending.confirms(&result));
         result.thread_id = "side".into();

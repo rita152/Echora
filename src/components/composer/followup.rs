@@ -50,6 +50,7 @@ pub(super) fn row_input(
         AgentPromptContext {
             files,
             plan_mode: None,
+            memory: None,
         },
     )
 }
@@ -96,6 +97,7 @@ impl ComposerView {
         }
         self.conversation.queue.reset(thread_id.clone());
         self.conversation.goal.reset(thread_id.clone());
+        self.conversation.memory.reset(thread_id.clone());
         self.queue_edit = None;
         self.queue_removal = None;
         self.queue_redo = None;

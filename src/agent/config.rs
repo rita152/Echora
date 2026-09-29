@@ -77,8 +77,53 @@ pub struct AgentConfigSnapshot {
 }
 
 pub fn config_value<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
-    key.split('.')
-        .try_fold(value, |value, part| value.get(part))
+    key_path_segments(key)
+        .iter()
+        .try_fold(value, |value, part| value.get(part.as_str()))
+}
+
+/// Splits a `config/batchWrite` keyPath into table keys. A segment may be a
+/// JSON string, as in `hooks.state."/path/config.toml:stop:0:0".enabled`, whose
+/// dots and colons belong to the key; bare segments split at every dot.
+pub fn key_path_segments(key: &str) -> Vec<String> {
+    let mut segments = Vec::new();
+    let mut rest = key;
+    loop {
+        if rest.starts_with('"')
+            && let Some(end) = quoted_segment_end(rest)
+            && let Ok(segment) = serde_json::from_str::<String>(&rest[..end])
+        {
+            segments.push(segment);
+            match rest[end..].strip_prefix('.') {
+                Some(next) => rest = next,
+                None => return segments,
+            }
+            continue;
+        }
+        match rest.split_once('.') {
+            Some((segment, next)) => {
+                segments.push(segment.to_owned());
+                rest = next;
+            }
+            None => {
+                segments.push(rest.to_owned());
+                return segments;
+            }
+        }
+    }
+}
+
+/// Byte length of the leading JSON string literal, closing quote included.
+fn quoted_segment_end(text: &str) -> Option<usize> {
+    let mut escaped = false;
+    for (index, character) in text.char_indices().skip(1) {
+        match character {
+            '\\' if !escaped => escaped = true,
+            '"' if !escaped => return Some(index + 1),
+            _ => escaped = false,
+        }
+    }
+    None
 }
 
 /// Display name of the configured `model_provider`: its
@@ -100,14 +145,13 @@ pub fn model_provider_name(effective: &Value) -> Option<String> {
 }
 
 impl AgentConfigSnapshot {
+    /// The server keys origins by the dot-joined raw table keys, quoted
+    /// segments included, so the lookup walks segments rather than dots.
     pub fn origin(&self, key: &str) -> Option<&AgentConfigSource> {
-        let mut path = key;
-        loop {
-            if let Some(origin) = self.origins.get(path) {
-                return Some(origin);
-            }
-            path = path.rsplit_once('.')?.0;
-        }
+        let segments = key_path_segments(key);
+        (1..=segments.len())
+            .rev()
+            .find_map(|length| self.origins.get(&segments[..length].join(".")))
     }
 
     pub fn layer(&self, path: &std::path::Path) -> Option<&AgentConfigLayer> {
@@ -278,8 +322,29 @@ pub struct AgentConfigChoiceSet {
 
 #[cfg(test)]
 mod tests {
-    use super::model_provider_name;
+    use super::{config_value, key_path_segments, model_provider_name};
     use serde_json::json;
+
+    #[test]
+    fn quoted_key_path_segments_keep_their_dots() {
+        let key = r#"hooks.state."/home/config.toml:pre_tool_use:0:0".trusted_hash"#;
+        assert_eq!(
+            key_path_segments(key),
+            [
+                "hooks",
+                "state",
+                "/home/config.toml:pre_tool_use:0:0",
+                "trusted_hash"
+            ]
+        );
+        assert_eq!(
+            key_path_segments("features.memories"),
+            ["features", "memories"]
+        );
+        assert_eq!(key_path_segments(r#"a."b\"c".d"#), ["a", r#"b"c"#, "d"]);
+        let config = json!({"hooks": {"state": {"/home/config.toml:pre_tool_use:0:0": {"trusted_hash": "sha256:x"}}}});
+        assert_eq!(config_value(&config, key), Some(&json!("sha256:x")));
+    }
 
     #[test]
     fn model_provider_name_prefers_the_provider_display_name() {

@@ -58,6 +58,7 @@
 | **浏览 Pull Request** | 打开侧边栏 `Pull requests` 页面：列表与过滤、Summary、Activity、提交与检查、带文件树的 diff、行内评论，以及从变更统计按钮打开的 Review 标签页。 |
 | **侧边探索** | 从主会话派生临时对话，分别控制输入、模型、权限与停止操作。 |
 | **配置 Codex** | 读取有效配置与来源，查看受管限制，编辑已支持的用户层设置，并通过后端回读核验保存结果。 |
+| **钩子、实验性功能与记忆** | 「设置 → 钩子」按来源列出 `hooks/list` 返回的钩子，显示待审核与加载问题摘要，支持逐项信任与全部信任、启用开关（受管钩子始终开启）、详情、刷新，以及打开钩子所在的配置文件。「设置 → 配置」在「实验性质功能（测试版）」中列出服务端的 beta 功能，切换后提示需要重启。「设置 → 个性化」可启用 Codex 记忆、允许从使用工具的聊天中生成记忆，并在确认后删除全部记忆；斜杠菜单的「记忆」设置当前聊天是否使用与生成记忆。 |
 | **选择语言** | 在设置 → 常规 → 语言中切换 English、简体中文或自动检测；切换立即生效并在本地保存。 |
 | **管理账户** | 在账户菜单查看当前 ChatGPT 账户与套餐，未以 ChatGPT 登录时显示所配置模型提供方的名称；后端要求 OpenAI 认证时可通过 Codex 管理的 ChatGPT 登录，也可取消进行中的登录，并在确认后退出登录。 |
 | **管理技能与 MCP** | 读取技能目录并按技能启用／禁用并核验回执；列出 MCP 服务器的状态、认证、工具与服务端扩展字段；重新加载服务器；完成 OAuth 登录并区分等待、成功、失败、取消与断连状态。 |
@@ -106,6 +107,7 @@ Cargo 包和可执行文件目前仍名为 `gpui-chat-clone`，现有构建与�
 | 登录 / 退出登录 | 账户菜单 → 登录行（后端要求 OpenAI 认证时显示），或在应用内确认后 `退出登录`；`Esc` 关闭菜单 |
 | 发送 / 向活动轮次追加输入 | `Enter`；`Shift+Enter` 换行；`Cmd+Enter` 对单条消息使用相反的跟进处理方式 |
 | 斜杠命令 | 在行首或空格后输入 `/`；`Up`/`Down`（或 `Ctrl+N`/`Ctrl+P`）移动，`Enter` 执行，`Esc` 关闭 |
+| 在聊天中查找 | 对话区域获得焦点时按 `Cmd+F`；`Cmd+G` / `Cmd+Shift+G` 或 `Enter` / `Shift+Enter` 切换结果，`Esc` 关闭 |
 | 编辑最后一条排队消息 / 撤销或重做排队消息的删除或编辑 | 空输入框中按 `Up` / 输入框没有可撤销或重做的文本编辑时按 `Cmd+Z`、`Cmd+Shift+Z` |
 | 立即保存文件 | `Cmd+S` |
 | 终端清屏 | `Cmd+K` |
@@ -116,11 +118,11 @@ Cargo 包和可执行文件目前仍名为 `gpui-chat-clone`，现有构建与�
 
 - **运行中追加输入：** 设置 → 常规 →「跟进处理方式」在引导（`turn/steer`，默认）与排队（`thread/queue/add`）之间选择，`Cmd+Enter` 对单条消息取反，选择保存在 UI 偏好中。排队的消息显示在输入框上方的托盘里，每行可以立即发送（运行中引导进当前轮次并移出队列，空闲时直接开始）、编辑、在新的侧边聊天中打开、删除或拖动排序。与 ChatGPT 一致，编辑会先把消息移出队列，重新提交时排回原位置（没有运行中的轮次也没有其他排队消息时直接发送）；`Cmd+Z` 可在一分钟内恢复删除的消息、30 分钟内恢复编辑中的消息，`Cmd+Shift+Z` 重做。轮次结束后由服务端自行开始下一条；用户停止轮次后队列暂停，直到继续，此时发送新消息会先询问是否清空队列。侧边聊天始终引导。失败输入可连同附件与审查评论恢复，不覆盖后续新草稿，也不自动改发为新轮次。
 - **目标：** 斜杠菜单的「目标」（或输入 `/goal`）打开输入框的「目标」标记，`/goal <目标>` 直接设置。之后服务端会在聊天空闲时自行推进，这些轮次与普通轮次一样流式显示，请求下方显示「设为目标」。托盘显示目标状态与已用时间，提供清除、暂停／恢复和编辑；编辑在右侧面板打开「编辑目标」标签，提供「还原」和「保存」（保存会同时恢复已暂停的目标）。替换已保存的目标前会先确认。停止轮次时先暂停进行中的目标再中断；目标达成后立即离开托盘并自动清除，达成目标的轮次显示「已在 … 内达成目标」，直到开始新的目标。超过 4000 个字符的目标与 ChatGPT 一样保存到 `$CODEX_HOME/attachments` 下的文件，以指针发送。
-- **斜杠菜单：** 在行首或空格后输入 `/` 会在输入框上方打开菜单，提供「目标」「压缩」「计划模式」（服务端提供时）和「批准」（存在可批准的自动复核拒绝时）；输入的查询按模糊匹配排序，ChatGPT 的其他命令尚未实现。
+- **斜杠菜单：** 在行首或空格后输入 `/` 会在输入框上方打开菜单，提供「目标」「压缩」「计划模式」（服务端提供时）、「批准」（存在可批准的自动复核拒绝时）和「记忆」（记忆功能开启时）；输入的查询按模糊匹配排序，ChatGPT 的其他命令尚未实现。
 - **协作模式：** 计划与默认模式来自连接的 `collaborationMode/list` 预设，每个连接读取一次；服务端列出计划模式时才提供该选项，模型与推理强度始终使用你的选择。
 - **实时输出与历史：** 实时与恢复后的已完成轮次共用最终答复选择、工作过程折叠、答复操作与文件汇总。文本增量保留 item 身份，完成消息快照校正显示内容；相邻增量以 8 ms 窗口批处理，代码高亮复用已完成行，仅重解析未结束行。已完成轮次折叠最终答复之前的过程消息，追加的用户消息保留原有位置与附件。文件变更按路径汇总并保留原始 patch。历史由 app-server 提供，不伪造缺失的时间、计划步骤快照或自动复核历史。
 - **审批：** 并发请求依次显示，提交后等待服务端释放。响应失败可见且不可重复提交。可查看原始请求补丁，展开和复制长命令。使用 Tab / 方向键导航、Enter 激活、Esc 关闭或拒绝；文件审批的 `Shift+Esc` 拒绝并停止轮次。
-- **权限：** 读取服务端 profile 全部页面，展示禁用选项及原因。菜单隐藏内置 `:read-only` profile，不显示后续轮次提示和手动重新读取入口。已有线程等待 RPC 成功与匹配的设置通知后才显示生效，更新影响后续轮次。完整访问权限需要应用内确认，侧边聊天独立管理权限。线程被另一个 app-server 占用时，警告卡片固定在输入框上方，不随会话滚动。
+- **权限：** 读取服务端 profile 全部页面，展示禁用选项及原因。菜单隐藏内置 `:read-only` profile，不显示后续轮次提示和手动重新读取入口。已有线程等待 RPC 成功与匹配的设置通知后才显示生效，更新影响后续轮次；复核者变化还会经 `turn/settings/update` 同步到进行中的轮次。完整访问权限需要应用内确认，侧边聊天独立管理权限。线程被另一个 app-server 占用时，警告卡片固定在输入框上方，不随会话滚动。
 - **账户：** 账户菜单与登录流程都由连接级账户快照驱动。缺失的套餐显示为未知而不是杜撰，登录保留服务端返回的 `loginId` 直到完成通知到达，退出登录先确认再发请求。只提供 Codex 管理的 ChatGPT 登录，API key、外部 token 与 Bedrock 变体返回明确错误。具体协议覆盖见接入总表。
 - **配置：** 使用带版本的 `config/batchWrite` 保存并回读，项目层与受管层只读。冲突保留草稿，结果未知时不自动重试。保存的模型、推理强度、服务等级与个性默认值用于后续线程，不热更新已打开的线程。
 - **活动：** 计划支持流式更新、步骤进度、复制、显式下载和只读文件标签；搜索保留查询与结果，等待保留时长与状态。Hook 反馈只读。被拒绝的自动复核会显示「被拒绝的原因」和「批准后允许的操作」，并提供文字链接「批准」，通过 `thread/approveGuardianDeniedAction` 记录一次重试授权，不会执行该操作；斜杠菜单的「批准」列出最新 10 条可批准的拒绝。自动复核详情支持键盘操作和文字选择，遵循减少动态效果设置。认证恢复与弃用提示的展示边界见接入总表。
@@ -131,6 +133,8 @@ Cargo 包和可执行文件目前仍名为 `gpui-chat-clone`，现有构建与�
 - **活动视图：** 进行中与待处理状态来自 Echora 自身 app-server 连接上的 `thread/status/changed`，因此在其他客户端（例如 ChatGPT 应用）中运行的聊天不会在这里显示为进行中。app-server 没有已读状态：聊天不在主区域显示时，若轮次结束或请求批准／输入，由 Echora 自己记为未读并随 UI 偏好保存；打开该聊天或使用“全部标为已读”后恢复为已读。“定时任务”选项会保存，但目前没有线程来源能识别定时任务运行，因此不影响列表；参考实现的一次性引导气泡与 `⌘1`–`⌘9` 行快捷键尚未实现。
 - **聊天搜索：** 弹窗先列出置顶聊天，再按最近顺序补足，最多九行；输入后经 app-server `thread/search` 检索。参考实现还会通过自身的检索服务合并 ChatGPT 云端会话，app-server 不提供该数据，因此命中较多时结果集合与排序可能不同。`Search files`（或 `⌘P`）把同一弹窗切到文件搜索：为当前会话工作目录打开一个 `fuzzyFileSearch` 会话，边输入边接收 `sessionUpdated` 结果，按服务端返回的下标高亮命中，选中后在文件面板打开。服务端不支持会话时回退到一次性 `fuzzyFileSearch` 请求。
 - **改写消息：** 最新一条用户消息的悬停操作里提供编辑入口。提交改写后的文本会以该轮作为 `beforeTurnId` 调用 `thread/revert`，把持久化历史替换为该轮之前的前缀，随后发起新的 `turn/start`。只改会话历史，不动本地文件；轮次仍按既有分页路径重载。
+- **在聊天中查找：** 在对话中按 `Cmd+F` 打开查找栏，由 `thread/searchOccurrences` 提供结果（先取前 250 个，还有更多时显示「+」，越过已读结果时继续读取下一页）。匹配在渲染后的消息中高亮，当前结果为橙色；结果所在轮次尚未加载时会重新读取一次历史。服务端无法搜索的临时侧边聊天改为在已加载的消息中本地查找。文件编辑器、终端与 PR 视图保留各自的 `Cmd+F`。
+- **钩子、功能与记忆：** 钩子信任与启用、实验性功能开关和记忆设置都以带版本的用户层 `config/batchWrite` 立即保存并回读；冲突或失败时恢复服务端值并显示错误。运行中的 app-server 保留启动时的功能开关，因此功能更改在新的 Codex 连接上生效。`/memories` 让新聊天随 `thread/start` 发送所选设置；聊天开始后只能更改是否生成记忆（`thread/memoryMode/set`，失败时回滚）。
 - **压缩上下文：** 斜杠菜单的「压缩」或输入 `/compact` 会执行 `thread/compact/start`；轮次运行中会提示无法压缩。压缩按不可 steer 的轮次运行，期间追加输入会如实展示服务端结论，压缩结果沿用既有 contextCompaction 条目展示。
 
 </details>
@@ -220,7 +224,7 @@ Computer Use 先枚举应用，连接打包脚本打印的那个名字，读取�
 
 每个打包产物的名称与标识都以本工作树 slug 结尾，资源随 bundle 一起分发，因此 LaunchServices 不可能换成其他目录里的构建。采集脚本通过 `scripts/gpui_capture_binary.sh` 解析该 bundle，它每次调用都会先重新打包当前工作树；`GPUI_CAPTURE_SKIP_BUILD=1` 沿用已有产物，`GPUI_CAPTURE_BUNDLE` 指定一个原样使用的 bundle。`--print-diagnostics` 会打印可执行文件、bundle 身份以及每个资源候选路径与判定，验收运行可以自证在驱动哪一个构建。需要让 bundle 从别处读取资源时，用 `GPUI_ASSETS_DIR` 硬覆盖搜索。若所有候选都不可用，应用继续运行、向 stderr 告警，并在窗口顶部显示写明已尝试路径的红色条，截图不可能再悄悄呈现无图标的界面。`scripts/launch_project_hover_instance.sh` 使用同一套打包身份，会在本工作树的悬停验收实例已在运行时拒绝重复启动，并打印二进制路径、pid 与日志。
 
-Computer Use 只能驱动 macOS 视作用户应用的 bundle，而且驱动过程不能触发隐私弹窗。`scripts/launch_verify_instance.sh` 会打包、把 bundle 复制到 `~/Applications`，再用 `launchctl submit` 加上本会话的 `PATH` 与真实 `HOME` 启动：GUI 进程因此不会打开本仓库所在外置卷上的任何文件，启动也不经过 LaunchServices，它的 `codex app-server --stdio` 子进程读到的正是 ChatGPT 应用同一份 `~/.codex` 项目、会话与登录态。它的 `--stop` 只停止从本工作树副本运行的实例。打成 agent 应用（`GPUI_CAPTURE_AGENT_APP=1`）虽然不显示 Dock 图标，却也会让 Computer Use 的应用清单看不到它。对外置卷上的 bundle 使用 `open -n` 会弹出「想要访问可移除宗卷上的文件」，`launchctl submit` 与会话内的子进程都不会，因此采集脚本与 ChatGPT 参考启动器都不使用 `open -n`。
+Computer Use 只能驱动 macOS 视作用户应用的 bundle，而且驱动过程不能触发隐私弹窗。`scripts/launch_verify_instance.sh` 会打包、把 bundle 复制到 `~/Applications`，再用 `launchctl submit` 加上本会话的 `PATH` 与真实 `HOME` 启动：GUI 进程因此不会打开本仓库所在外置卷上的任何文件，启动也不经过 LaunchServices，它的 `codex app-server --stdio` 子进程读到的正是 ChatGPT 应用同一份 `~/.codex` 项目、会话与登录态。脚本转发 `GPUI_UI_PREFERENCES_PATH`、`GPUI_ASSETS_DIR` 与 `CODEX_HOME`；验证任何会写入 Codex 配置或删除数据的操作（钩子信任、实验性功能、记忆开关、删除记忆）前，先把 `CODEX_HOME` 指向 `~/.codex` 的副本（例如 `cp -Rc ~/.codex/. "$HOME/Library/Application Support/echora-verify/codex-home/"`）。它的 `--stop` 只停止从本工作树副本运行的实例。打成 agent 应用（`GPUI_CAPTURE_AGENT_APP=1`）虽然不显示 Dock 图标，却也会让 Computer Use 的应用清单看不到它。对外置卷上的 bundle 使用 `open -n` 会弹出「想要访问可移除宗卷上的文件」，`launchctl submit` 与会话内的子进程都不会，因此采集脚本与 ChatGPT 参考启动器都不使用 `open -n`。
 
 真实实时轮次采集：启动时传入 `--capture-live-turn="$PWD/artifacts/live.png"`，再在验收实例输入提示词。完成后保存尚未重新加载历史的实时画面，以及包含线程身份、活动数据的 `.json` 侧文件，然后退出。中断、失败或超过五分钟返回失败。
 
@@ -246,6 +250,10 @@ Computer Use 只能驱动 macOS 视作用户应用的 bundle，而且驱动过�
 | `--runtime-ui-state=completed/running/turnless/auth-started/auth-completed/interrupted/disconnected/history/long/deprecation` | 确定性 Hook、hookPrompt、认证与应用提示，不执行 Hook 或模型请求；`GPUI_RUNTIME_AUDIT_OUTPUT` 输出原始状态与本地收束原因。 |
 | `--queue-ui-state=queued/paused/confirm/menu/failed/sending/editing/restored` | 跟进队列托盘：运行中的排队行、停止后的暂停横幅、暂停时发送的确认框、行菜单、发送失败或发送中的行、移出队列正在编辑的消息，以及恢复提示；不发送队列或模型请求。 |
 | `--goal-ui-state=active/paused/blocked/usage-limited/budget-limited/chip/replace/complete/edit-tab` | 各状态的目标摘要、输入框的「目标」标记、替换确认、完成目标的轮次（「设为目标」「已在 3s 内达成目标」）以及「编辑目标」标签；不发送目标或模型请求。 |
+| `--hooks-settings-state=overview/dialog/trusted/expanded/issues/overridden/refreshed/empty/loading/error` | 以固定数据显示钩子设置：来源总览、带「全部信任」横幅的来源对话框、信任之后、展开详情、加载问题、被覆盖的写入、刷新提示，以及空、加载中与错误状态。配合 `--settings-page=hooks-settings` 使用，不写入任何配置。 |
+| `--experimental-features-state=list/restart/empty/loading/error` | 「配置」页（`--settings-page=agent`）的「实验性质功能（测试版）」：固定行、更改后（重启提示），以及空、加载中与错误状态。 |
+| `--memories-state=settings-on/settings-off/settings-unavailable/delete-confirm/deleted/delete-failed/slash/dialog-new/dialog-started/dialog-generate-off/rollback` | Codex 记忆设置（`--settings-page=personalization`）及其删除确认与提示、含「记忆」的斜杠菜单，以及新聊天、已开始聊天、关闭生成、更改回滚后的「聊天记忆」对话框。不发送记忆请求。 |
+| `--find-bar-state=open/results/second/capped/none` | 固定的「hello」聊天上的查找栏：空查询、两个结果中的第一个、第二个、首页截断（`+`）与无结果。本地匹配，不发送搜索请求。 |
 | `--slash-menu-state=menu/query/approve/compact-busy` | 列出全部可用命令的斜杠菜单、输入 `/go` 后的查询结果、含两条拒绝的「批准」子菜单，以及轮次运行中选择「压缩」时的危险提示。 |
 | `--auto-review-denial-state=denied/approving/approved/failed` | 被拒绝的自动复核及其批准区域的各个状态；不发送批准请求。 |
 | `--progress-ui-state=running/streaming/completed/interrupted` | 计划、搜索与等待归约；streaming 定时产生更新和完成，running 可中断。 |
@@ -298,6 +306,7 @@ node scripts/cdp_pin_reference_layout.mjs --layout=legacy --wait=60
 | 任务重命名面板 | `scripts/capture_thread_rename_gpui.sh both` 先采集原生侧（参考实例会给打开过的任务留下写者），再按相同设备像素比通过 CDP 重采参考，最后由 `scripts/compare_thread_rename.py` 逐主题打分。脚本按参考期望发出两次点击，记录面板几何、计算样式、真实 DOM 与截图，并用真实任务驱动取消、关闭按钮、蒙层、Esc、Enter 与保存（含 59 字符加省略号的截断）；`cargo test rename_panel` 覆盖同一契约。 |
 | 会话用户消息导航轨 | `scripts/capture_user_message_rail_gpui.sh both` 先采集原生侧的静止态与单条悬停态，再以同一视口通过 CDP 重采参考，最后用 `scripts/compare_user_message_rail.py` 逐主题打分。参考侧脚本（`scripts/cdp_capture_user_message_rail.mjs`）通过应用自身的 Appearance 控件切换主题，并用真实指针悬停与点击记录轨道几何、计算样式、各标记宽度、提示卡延迟、预览 DOM 与截图；对比报告给出轨道的 `pixelsWithin2`、悬停态的 `toleranceAdjustedSimilarity`、卡片表面相似度以及两个锚点偏差。`cargo test navigation` 固定标记递减宽度、当前标记规则与预览卡截断点，并用窗口事件与模拟时钟驱动提示轨，固定悬停、关闭宽限、拖动浏览与跳转的时序。动效方面，`scripts/cdp_probe_user_message_rail_motion.mjs` 以固定的指针脚本逐帧记录参考；采集构建用 `--resume-thread=… --user-message-navigation-jump=1 --user-message-rail-motion --screenshot=PATH` 回放同一脚本（写出 `PATH.motion.json`）；`scripts/compare_user_message_rail_motion.py` 对比预览的打开与关闭时间、跳过延迟后的重新打开、标记过渡完成时间、平滑滚动时长、气泡闪烁、拖动浏览时的 `aria-current` 序列、每个标记的预览高度、Alt+方向键的落点以及滚轮路由。 |
 | 跟进队列、目标与自动复核批准 | `python3 scripts/batch1_app_server_probe.py --output artifacts/batch1-baseline-<日期>` 以隔离的 `CODEX_HOME` 和本地假 Responses 端点运行本机 `codex app-server`，记录基线下队列、目标、协作模式与批准的行为，不发模型请求；`--scenario guardian_live` 让假审核拒绝一次提权的 `echo` 再批准该拒绝，在真实的 0.154 服务端上观察批准路径。原生侧用 `--queue-ui-state`、`--goal-ui-state`、`--slash-menu-state`、`--auto-review-denial-state` 采集，`python3 scripts/compare_batch1_captures.py OUT ref.png:echora.png:x0,y0,x1,y1[:name] …` 以同一矩形裁剪两侧（不缩放、不平移）并给出相似度。`cargo test followup_tests`、`cargo test goal_tab` 与 `cargo test batch1` 用脚本化后端驱动输入框、「编辑目标」标签与 manager 流程。 |
+| 轮次设置、聊天内查找、钩子、实验性功能与记忆 | `python3 scripts/batch2_app_server_probe.py --output artifacts/batch2-baseline-<日期>` 以隔离的 `CODEX_HOME` 和假 Responses 端点记录 0.154 基线下 `turn/settings/update`、`thread/searchOccurrences`（分页、游标、大小写与 UTF-16 范围）、用户层与项目层的 `hooks/list`、`experimentalFeature/list`、`thread/memoryMode/set` 与 `memory/reset` 的行为。专用参考实例运行时，`CHATGPT_CDP_HTTP=http://127.0.0.1:PORT node scripts/cdp_capture_batch2.mjs --output=artifacts/batch2` 把两种主题的参考状态采集到 `artifacts/batch2-<主题>-<日期>/reference/`；`ECHORA_CODEX_HOME=<~/.codex 的副本> scripts/capture_batch2_gpui.sh <日期>` 把对应的原生状态采集到 `…/echora/`，并拒绝使用真实的 `~/.codex`。`cargo test batch2`、`cargo test find_tests` 与 `cargo test memories_tests` 用脚本化后端驱动 manager、设置页、查找栏与 `/memories` 流程。 |
 | 图像生成 | `python3 scripts/compare_image_generation_component.py --help`，传入实测等尺寸裁切范围和 DPR。 |
 | 历史诊断 | `python3 scripts/audit_resume_rendering.py --help`；rollout 仅用于离线诊断。 |
 

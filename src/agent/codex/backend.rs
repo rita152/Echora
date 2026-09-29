@@ -439,6 +439,43 @@ impl AgentBackend for CodexAppServerBackend {
         self.manager.read_thread_goal(thread_id)
     }
 
+    fn search_thread_occurrences(
+        &self,
+        request: crate::agent::AgentThreadOccurrenceRequest,
+    ) -> Receiver<
+        Result<crate::agent::AgentThreadOccurrencePage, crate::agent::AgentThreadSearchError>,
+    > {
+        self.manager.search_thread_occurrences(request)
+    }
+
+    fn list_hooks(
+        &self,
+        cwds: Vec<std::path::PathBuf>,
+    ) -> Receiver<Result<crate::agent::AgentHooksSnapshot, String>> {
+        self.manager.list_hooks(cwds)
+    }
+
+    fn list_experimental_features(
+        &self,
+        thread_id: Option<String>,
+    ) -> Receiver<Result<crate::agent::AgentExperimentalFeatures, String>> {
+        self.manager.list_experimental_features(thread_id)
+    }
+
+    fn set_thread_memory_mode(
+        &self,
+        thread_id: String,
+        generation: u64,
+        mode: crate::agent::AgentThreadMemoryMode,
+    ) -> Receiver<Result<(), String>> {
+        self.manager
+            .set_thread_memory_mode(thread_id, generation, mode)
+    }
+
+    fn reset_memories(&self) -> Receiver<Result<(), String>> {
+        self.manager.reset_memories()
+    }
+
     fn update_thread_goal(
         &self,
         update: crate::agent::AgentThreadGoalUpdate,

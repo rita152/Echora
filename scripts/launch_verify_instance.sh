@@ -32,6 +32,11 @@
 #                               of the same bundle their own file, because they
 #                               would otherwise overwrite one preferences file
 #   GPUI_ASSETS_DIR             forwarded to the app
+#   CODEX_HOME                  forwarded to the app, and so to the
+#                               `codex app-server` it spawns: point it at a
+#                               copy of ~/.codex before exercising anything
+#                               that writes config or deletes data (hook trust,
+#                               experimental features, memories)
 set -eu
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -112,7 +117,7 @@ for argument in "$@"; do
 done
 
 forwarded=""
-for name in GPUI_UI_PREFERENCES_PATH GPUI_ASSETS_DIR; do
+for name in GPUI_UI_PREFERENCES_PATH GPUI_ASSETS_DIR CODEX_HOME; do
   value="$(eval "printf '%s' \"\${$name:-}\"")"
   [ -n "$value" ] || continue
   forwarded="$forwarded

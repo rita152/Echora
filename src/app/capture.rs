@@ -551,6 +551,42 @@ impl ChatApp {
             .update(cx, |view, cx| view.set_runtime_for_capture(state, cx));
         cx.notify();
     }
+    /// `--hooks-settings-state`, `--experimental-features-state`,
+    /// `--memories-state` and `--find-bar-state`.
+    pub fn set_batch2_for_capture(
+        &mut self,
+        kind: &str,
+        state: &str,
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) {
+        match kind {
+            "find-bar" => self
+                .home
+                .update(cx, |home, cx| home.set_find_for_capture(state, window, cx)),
+            "hooks-settings" => self.settings.update(cx, |settings, cx| {
+                settings.apply_hooks_capture_fixture(state, cx)
+            }),
+            "experimental-features" => self.settings.update(cx, |settings, cx| {
+                settings.apply_features_capture_fixture(state, cx)
+            }),
+            "memories" if state.starts_with("settings") || state.starts_with("delete") => {
+                self.settings.update(cx, |settings, cx| {
+                    settings.apply_memories_capture_fixture(state, cx)
+                })
+            }
+            "memories" => {
+                let composer = self.home.read(cx).composer_entity();
+                composer.update(cx, |composer, cx| {
+                    composer.set_memories_for_capture(state, cx)
+                });
+                self.home
+                    .update(cx, |home, cx| home.refresh_conversation_for_capture(cx));
+            }
+            _ => {}
+        }
+        cx.notify();
+    }
     /// `--queue-ui-state`, `--goal-ui-state`, `--auto-review-denial-state`.
     #[cfg(feature = "screenshot")]
     pub fn set_batch1_for_capture(&mut self, kind: &str, state: &str, cx: &mut Context<Self>) {

@@ -146,6 +146,9 @@ pub struct AgentPromptContext {
     pub files: Vec<AgentInputFile>,
     /// None preserves the current conversation mode; false explicitly exits planning.
     pub plan_mode: Option<bool>,
+    /// A new chat's memory switches, sent as `thread/start` config overrides.
+    /// None leaves the configured defaults; ignored once the thread exists.
+    pub memory: Option<super::AgentMemoryPreferences>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -803,6 +806,49 @@ pub trait AgentBackend: Send + Sync {
         _generation: u64,
     ) -> Receiver<Result<bool, String>> {
         unsupported_account_receiver(crate::i18n::text("线程目标"))
+    }
+
+    /// One page of a thread's message occurrences of a search term.
+    fn search_thread_occurrences(
+        &self,
+        _request: super::AgentThreadOccurrenceRequest,
+    ) -> Receiver<Result<super::AgentThreadOccurrencePage, super::AgentThreadSearchError>> {
+        let (sender, receiver) = async_channel::bounded(1);
+        let _ = sender.try_send(Err(super::AgentThreadSearchError::Unsupported(
+            crate::i18n::text("当前 coding agent 不支持聊天内查找").into(),
+        )));
+        receiver
+    }
+
+    /// Hooks configured for these working directories (`hooks/list`).
+    fn list_hooks(
+        &self,
+        _cwds: Vec<std::path::PathBuf>,
+    ) -> Receiver<Result<super::AgentHooksSnapshot, String>> {
+        unsupported_account_receiver(crate::i18n::text("钩子"))
+    }
+
+    /// Every experimental feature flag, all pages.
+    fn list_experimental_features(
+        &self,
+        _thread_id: Option<ThreadId>,
+    ) -> Receiver<Result<super::AgentExperimentalFeatures, String>> {
+        unsupported_account_receiver(crate::i18n::text("实验性功能"))
+    }
+
+    /// Whether a started chat may generate memories, on the generation shown.
+    fn set_thread_memory_mode(
+        &self,
+        _thread_id: ThreadId,
+        _generation: u64,
+        _mode: super::AgentThreadMemoryMode,
+    ) -> Receiver<Result<(), String>> {
+        unsupported_account_receiver(crate::i18n::text("记忆"))
+    }
+
+    /// Deletes every memory of this computer's agent.
+    fn reset_memories(&self) -> Receiver<Result<(), String>> {
+        unsupported_account_receiver(crate::i18n::text("记忆"))
     }
 
     fn list_thread_queue(

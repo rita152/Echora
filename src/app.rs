@@ -313,10 +313,9 @@ impl ChatApp {
         cx.subscribe(
             &home,
             |this, _, _: &crate::components::home::OpenHookSettings, cx| {
-                this.settings
-                    .update(cx, |settings, cx| settings.select("hooks-settings", cx));
-                this.showing_settings = true;
-                cx.notify();
+                // Through open_settings, so the page knows the project roots
+                // and the config it writes trust to.
+                this.open_settings_page("hooks-settings", cx);
             },
         )
         .detach();
@@ -333,6 +332,15 @@ impl ChatApp {
             this.close_pull_requests(cx);
             this.start_draft(event.project_id.clone(), event.cwd.clone(), cx);
         })
+        .detach();
+        cx.subscribe(
+            &settings,
+            |this, _, event: &crate::settings::OpenSettingsFile, cx| {
+                this.showing_settings = false;
+                this.open_matched_file(event.0.display().to_string(), false, cx);
+                cx.notify();
+            },
+        )
         .detach();
         cx.subscribe(&settings, |this, _, _: &CloseSettings, cx| {
             this.showing_settings = false;
@@ -830,8 +838,25 @@ impl ChatApp {
             .conversation_hosts
             .get(&self.active_conversation)
             .and_then(|host| host.composer.read(cx).thread_id().map(str::to_owned));
+        let snapshot = self.workspace_store.snapshot();
+        let project_id = self
+            .conversation_hosts
+            .get(&self.active_conversation)
+            .and_then(|host| host.project_id.clone());
+        let selected_roots = snapshot
+            .projects
+            .iter()
+            .find(|project| Some(&project.project_id) == project_id.as_ref())
+            .map(|project| project.roots.clone())
+            .unwrap_or_else(|| vec![cwd.clone()]);
+        let all_roots = snapshot
+            .projects
+            .iter()
+            .flat_map(|project| project.roots.iter().cloned())
+            .collect::<Vec<_>>();
         self.settings.update(cx, |settings, cx| {
             settings.set_config_context(cwd, cx);
+            settings.set_hook_roots(selected_roots, all_roots, cx);
             settings.set_manage_context(thread_id, cx);
             settings.ensure_plugins_segment_loaded(cx);
         });

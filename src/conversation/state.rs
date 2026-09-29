@@ -86,6 +86,7 @@ pub(crate) struct ConversationState {
     pub(crate) goal_achieved_seconds: Option<i64>,
     pub(crate) goal: super::goal::ConversationGoal,
     pub(crate) queue: super::queue::ConversationQueue,
+    pub(crate) memory: super::memory::ConversationMemory,
     /// Denied reviews this conversation approved, and the one in flight.
     pub(crate) approved_reviews: std::collections::HashSet<String>,
     pub(crate) approving_review: Option<String>,
@@ -153,6 +154,7 @@ impl Default for ConversationState {
             user_message_goal: false,
             goal_achieved_seconds: None,
             goal: Default::default(),
+            memory: Default::default(),
             queue: Default::default(),
             approved_reviews: Default::default(),
             approving_review: None,

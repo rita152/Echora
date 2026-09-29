@@ -11,15 +11,18 @@ mod codex;
 mod collaboration;
 mod config;
 mod events;
+mod features;
 mod file_search;
 mod goal;
 mod goal_objective;
+mod hooks;
 mod mcp;
 mod message;
 mod plugins;
 mod queue;
 mod requests;
 mod runtime;
+mod search;
 mod skills;
 mod status;
 mod thread;
@@ -67,21 +70,29 @@ pub use backend::{
     AgentSteerRequest, AgentTurnIdentity, SideConversationRequest, WorkspaceError, WorkspaceResult,
 };
 pub use catalog::{
-    AgentActivePermissionProfile, AgentEffectivePermissions, AgentModel, AgentModelCatalog,
-    AgentPermissionMode, AgentPermissionProfile, AgentReasoningEffort, AgentServiceTier,
-    AgentThreadPermissionResult, AgentThreadPermissionUpdate, AgentThreadSettings,
-    AgentThreadSettingsSnapshot,
+    AgentActivePermissionProfile, AgentActiveTurnReviewerUpdate, AgentEffectivePermissions,
+    AgentModel, AgentModelCatalog, AgentPermissionMode, AgentPermissionProfile,
+    AgentReasoningEffort, AgentServiceTier, AgentThreadPermissionResult,
+    AgentThreadPermissionUpdate, AgentThreadSettings, AgentThreadSettingsSnapshot,
+    AgentTurnSettingsStatus,
 };
 pub use codex::{CodexAppServerBackend, CodexAppServerManager};
 pub use collaboration::{
     AgentCollaborationModeKind, AgentCollaborationModePreset, AgentCollaborationModes,
 };
+#[cfg(test)]
+pub use config::key_path_segments;
 pub use config::{
     AgentConfigChoiceSet, AgentConfigEdit, AgentConfigError, AgentConfigErrorKind,
     AgentConfigLayer, AgentConfigReceipt, AgentConfigRequirements, AgentConfigSaveResult,
     AgentConfigSnapshot, AgentConfigSource, AgentConfigWrite, config_value, model_provider_name,
 };
 pub use events::{AgentConnectionEvent, AgentEvent};
+pub use features::{
+    AgentExperimentalFeature, AgentExperimentalFeatureStage, AgentExperimentalFeatures,
+    AgentMemoryConfig, AgentMemoryPreferences, AgentThreadMemoryMode, memory_enable_edits,
+    memory_tool_assisted_edits,
+};
 pub(crate) use file_search::AgentFileSearchSessionControl;
 pub use file_search::{
     AgentFileMatchType, AgentFileSearchRequest, AgentFileSearchResult, AgentFileSearchSession,
@@ -92,6 +103,11 @@ pub use goal::{
 };
 pub use goal_objective::{
     GOAL_OBJECTIVE_LIMIT, codex_home, load_objective, objective_file, prepare_objective,
+};
+pub use hooks::{
+    AgentHook, AgentHookEventName, AgentHookHandler, AgentHookListEntry, AgentHookLoadError,
+    AgentHookSource, AgentHookSourceGroup, AgentHookStateChange, AgentHookTrustStatus,
+    AgentHooksSnapshot,
 };
 pub use mcp::{
     AgentMcpAuthStatus, AgentMcpError, AgentMcpErrorKind, AgentMcpOauthClientRegistration,
@@ -155,6 +171,10 @@ pub use runtime::{
     AgentAuthRecovery, AgentDeprecationNotice, AgentHookOutput, AgentHookPrompt,
     AgentHookPromptFragment, AgentHookRun, AgentHookStatus, AgentLocalClosure, AgentRuntimeEvent,
     AgentRuntimeObservation, AgentRuntimeState, AgentScopedHookPrompt,
+};
+pub use search::{
+    AgentThreadOccurrence, AgentThreadOccurrencePage, AgentThreadOccurrenceRequest,
+    AgentThreadSearchError, utf16_range_to_bytes,
 };
 pub use skills::{
     AgentSkill, AgentSkillDependency, AgentSkillInterface, AgentSkillLoadError, AgentSkillScope,
