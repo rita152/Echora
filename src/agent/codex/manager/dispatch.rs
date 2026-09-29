@@ -7,9 +7,11 @@ use serde_json::{Value, json};
 
 use super::super::{
     client_tools::{TOOL_CALL_METHOD, parse_dynamic_tool_call_request},
+    methods::is_unintegrated_server_notification,
     server_requests::{
         ControlledServerRequestReply, controlled_reply_message, invalid_params_reply,
         reply_to_controlled_server_request, reply_to_dynamic_tool_call,
+        unintegrated_notification_diagnostic,
     },
 };
 use super::{
@@ -698,6 +700,14 @@ impl ManagerInner {
                 if let Some(outcome) = turn.ingest(message)? {
                     connection.finish_turn(&turn, Ok(outcome));
                 }
+                Ok(())
+            }
+            // Schema-known but unintegrated: accepted undecoded and recorded, so
+            // an unprompted notice cannot fail the shared connection.
+            method if is_unintegrated_server_notification(message) => {
+                connection.record_unintegrated_notification(unintegrated_notification_diagnostic(
+                    method, message,
+                ));
                 Ok(())
             }
             _ => ensure_server_method_is_defined(message),

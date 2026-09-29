@@ -14,7 +14,9 @@
 //     entry point, and the summary counts match the rows,
 //   * the "共 N 个方法" line matches the tables,
 //   * the `兼容退订` rows equal OPT_OUT_NOTIFICATION_METHODS in
-//     src/agent/codex/runtime.rs.
+//     src/agent/codex/runtime.rs,
+//   * the `未接入` server-notification rows equal
+//     UNINTEGRATED_SERVER_NOTIFICATION_METHODS in src/agent/codex/methods.rs.
 //
 // Usage:
 //   node scripts/verify_integration_table.mjs
@@ -41,6 +43,7 @@ const OPT_OUT_STATUS = "兼容退订";
 const UNINTEGRATED_STATUS = "未接入";
 const EMPTY_CELL = "—";
 const OPT_OUT_SOURCE = "src/agent/codex/runtime.rs";
+const UNINTEGRATED_NOTIFICATION_SOURCE = "src/agent/codex/methods.rs";
 
 function parseArgs(argv) {
   const options = {
@@ -192,11 +195,10 @@ function parseDocument(text) {
   return { sections, summary, totals };
 }
 
-function optOutMethods() {
-  const file = path.join(repoRoot, OPT_OUT_SOURCE);
-  const source = fs.readFileSync(file, "utf8");
-  const block = /OPT_OUT_NOTIFICATION_METHODS: &\[&str\] =\s*&\[([\s\S]*?)\];/.exec(source);
-  if (!block) throw new Error(`${OPT_OUT_SOURCE} 中找不到 OPT_OUT_NOTIFICATION_METHODS`);
+function rustStringList(relativeFile, constant) {
+  const source = fs.readFileSync(path.join(repoRoot, relativeFile), "utf8");
+  const block = new RegExp(`${constant}: &\\[&str\\] =\\s*&\\[([\\s\\S]*?)\\];`).exec(source);
+  if (!block) throw new Error(`${relativeFile} 中找不到 ${constant}`);
   return [...block[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
 }
 
@@ -302,7 +304,7 @@ function main() {
         .map((row) => row.method),
     ),
   );
-  const codeOptOut = sorted(optOutMethods());
+  const codeOptOut = sorted(rustStringList(OPT_OUT_SOURCE, "OPT_OUT_NOTIFICATION_METHODS"));
   if (declaredOptOut.join(",") !== codeOptOut.join(",")) {
     failures.push(
       `兼容退订与 ${OPT_OUT_SOURCE} 不一致；表中 ${formatList(declaredOptOut)}；代码 ${formatList(codeOptOut)}`,
@@ -312,11 +314,29 @@ function main() {
     notes.push(`兼容退订计数 ${summary.get(OPT_OUT_STATUS)} 与表中 ${declaredOptOut.length} 行不一致`);
   }
 
+  // 4. Unintegrated server notifications are exactly the ones the connection
+  // accepts undecoded; anything else outside the integrated rows stays fatal.
+  const declaredUnintegrated = sorted(
+    sections
+      .get("服务端通知")
+      .rows.filter((row) => row.status === UNINTEGRATED_STATUS)
+      .map((row) => row.method),
+  );
+  const codeUnintegrated = sorted(
+    rustStringList(UNINTEGRATED_NOTIFICATION_SOURCE, "UNINTEGRATED_SERVER_NOTIFICATION_METHODS"),
+  );
+  if (declaredUnintegrated.join(",") !== codeUnintegrated.join(",")) {
+    failures.push(
+      `未接入服务端通知与 ${UNINTEGRATED_NOTIFICATION_SOURCE} 不一致；表中 ${formatList(declaredUnintegrated)}；代码 ${formatList(codeUnintegrated)}`,
+    );
+  }
+
   const statusLine = STATUSES.map((status) => `${status} ${actual.get(status)}`).join("、");
   if (failures.length === 0) {
     process.stdout.write(`✓ ${rowTotal} 项口径与 schema 一致：${statusLine}\n`);
     process.stdout.write(`✓ 四个方向的 API 列、方法唯一性与标题计数一致\n`);
     process.stdout.write(`✓ 兼容退订与 ${OPT_OUT_SOURCE} 一致\n`);
+    process.stdout.write(`✓ 未接入服务端通知与 ${UNINTEGRATED_NOTIFICATION_SOURCE} 一致\n`);
     for (const note of notes) process.stdout.write(`! ${note}\n`);
     return 0;
   }

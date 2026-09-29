@@ -18,7 +18,7 @@ node scripts/scan_reference_rpc_methods.mjs /Applications/ChatGPT.app/Contents/R
 
 当前扫描：参考 bundle（ChatGPT 26.924.22138）内嵌 262 个方法名中的 249 个，未出现的 13 个均为客户端请求，明细见 `artifacts/app-server-reference-methods-20260928/reference-method-scan.json`。方法名出现只代表参考客户端包含对应协议封装，不等于该产品流程已启用；未出现也不排除运行时动态拼接方法名。
 
-0.158.0 相对 0.154.0 新增 `account/gatewayOAuth/read|login|cancel`（通知 `account/gatewayOAuth/changed`）、`thread/attachment/add|list|remove`（通知 `thread/attachment/updated`）、`memory/status`、`rollout/compress`、`userVerification/cancel`，并移除 `thread/rollback`；这些新增方法均未接入，客户端不发送，也未加入通知退订。若服务端主动下发上述两个新通知，会按未知方法报致命协议错误；触发它们需要客户端先调用对应请求，本客户端不会。已有方法的部分载荷字段也有增减（如 `thread/queue/*`、`model/list`、`config/read`），本机 0.158.0 上的批次一、二探针可正常运行，`cargo test agent::codex` 通过（测试使用固定载荷，不等于逐字段核对新版响应）。
+0.158.0 相对 0.154.0 新增 `account/gatewayOAuth/read|login|cancel`（通知 `account/gatewayOAuth/changed`）、`thread/attachment/add|list|remove`（通知 `thread/attachment/updated`）、`memory/status`、`rollout/compress`、`userVerification/cancel`，并移除 `thread/rollback`；这些新增方法均未接入，客户端不发送，也未加入通知退订。上述两个新通知与其他未接入的服务端通知一样被接受但不解码，并登记连接级诊断，不会断开连接。已有方法的部分载荷字段也有增减（如 `thread/queue/*`、`model/list`、`config/read`），本机 0.158.0 上的批次一、二探针可正常运行，`cargo test agent::codex` 通过（测试使用固定载荷，不等于逐字段核对新版响应）。
 
 共 **262** 个方法：167 个客户端请求、11 个服务端请求、1 个客户端通知、83 个服务端通知。表中“默认”表示方法出现在默认 schema，“实验”表示仅出现在 experimental schema；字段以 experimental schema 为准。运行时启用 `experimentalApi=true`。
 
@@ -28,11 +28,13 @@ node scripts/scan_reference_rpc_methods.mjs /Applications/ChatGPT.app/Contents/R
 | 后端已接入 | 4 | 已实现读取或校验，尚无对应可见 UI 调用方或展示 |
 | 部分接入 | 5 | 只支持部分类型、有效变体或限定生命周期窗口 |
 | 兼容退订 | 2 | initialize 按完整方法名退订；不代表对应产品能力已接入 |
-| 未接入 | 109 | 客户端不发送；服务端请求按原 id 回受控回执并保持 generation 与共享连接，同时登记连接级诊断；仅 EOF、崩溃、写失败或致命协议错误终止连接；服务端通知仍按严格协议校验处理 |
+| 未接入 | 109 | 客户端不发送；服务端请求按原 id 回受控回执并保持 generation 与共享连接，同时登记连接级诊断；仅 EOF、崩溃、写失败或致命协议错误终止连接；服务端通知接受但不解码，登记连接级诊断 |
 
 未接入行的“—”沿用上述规则；带受控回执的服务端请求会另外列出入口，见下段。`tool/requestUserInput` 是兼容别名，不计入本版本 schema 的 252 项。
 
 服务端请求不再以断开连接暴露覆盖缺口：不会转成交互请求的服务端请求一律按原 id 回受控回执，并记录连接级诊断（方法、请求 id、thread／turn、处置，以及脱敏且截断的 params 形状），连接、共享 pending RPC 与活动轮次全部继续存活。旧版审批协议（`applyPatchApproval`、`execCommandApproval`）校验载荷后回显式拒绝结果，并说明本客户端不为旧版协议提供审批 UI；`currentTime/read` 回本机时钟的 Unix 整秒；本阶段不集成或未知的方法回 `-32601`；已知方法的载荷无法解码时回 `-32602`。动态工具调用见 `item/tool/call`。
+
+服务端通知同样不以断开连接暴露覆盖缺口：总表中未接入的服务端通知（`methods::UNINTEGRATED_SERVER_NOTIFICATION_METHODS`，与表中未接入行逐项一致）即使由服务端主动推送（如 `thread/environment/connected`、Windows 沙盒提示），也被接受但不解码，并按方法、threadId 和脱敏 params 形状登记连接级诊断。只有 schema 之外的通知，以及已接入通知的载荷无法解码时，才仍是致命协议错误。
 
 ## 连接与状态
 
@@ -228,7 +230,7 @@ Composer 在运行中有草稿时显示“追加输入”，无草稿时显示�
 
 ## 运行时观察与能力协商
 
-初始化保持 `experimentalApi=true`、`requestAttestation=false`，发送精确的 `optOutNotificationMethods` 两项：`turn/moderationMetadata`、`thread/compacted`。目标与队列通知已接入，见上文；`skills/changed` 与 `app/list/updated` 不在退订名单中：设置页分别把它们当作技能目录与应用目录的失效信号。默认 schema 与 experimental schema 均包含这些通知方法；逐项理由见总表。退订只作用于通知，不能屏蔽请求、响应或错误；未实现或未知的服务端请求按原 id 回受控回执（方法特定结果、`-32601` 或 `-32602`）并保持 generation 与共享连接，处置登记在连接级诊断中；只有 EOF、崩溃、写失败或致命协议错误才进入连接失败处理。不会退订 item/started 或 item/completed，也不会忽略未知方法。
+初始化保持 `experimentalApi=true`、`requestAttestation=false`，发送精确的 `optOutNotificationMethods` 两项：`turn/moderationMetadata`、`thread/compacted`。目标与队列通知已接入，见上文；`skills/changed` 与 `app/list/updated` 不在退订名单中：设置页分别把它们当作技能目录与应用目录的失效信号。默认 schema 与 experimental schema 均包含这些通知方法；逐项理由见总表。退订只作用于通知，不能屏蔽请求、响应或错误；未实现或未知的服务端请求按原 id 回受控回执（方法特定结果、`-32601` 或 `-32602`）并保持 generation 与共享连接，处置登记在连接级诊断中；只有 EOF、崩溃、写失败或致命协议错误才进入连接失败处理。不会退订 item/started 或 item/completed；未接入的服务端通知接受但不解码并登记诊断，schema 之外的方法不被忽略。
 
 Hook、认证恢复和 hookPrompt 快照通过带 generation 的观察通道交付。Hook 以 threadId/optional turnId/run.id 区分身份；缺省与 null 共同使用独立的无轮次键，同一 run.id 可以跨轮次存在，不把无 turnId 的记录迁移到前台或已知轮次。认证恢复以 threadId/turnId/provider 区分身份。两者可以早于 turn/start 响应，也可以晚于 turn/completed；不会建立或结束 turn。重复事件原位更新；服务端完成、终态 status 和较新完成时间不会被迟到 started 回退。turn 完成／中断／失败只收束该 turn 的本地等待；无 turnId 的 Hook 继续独立存在，在线程关闭或连接失效时本地收束。原始 status、message、output、时间和是否实际收到 completed 始终保留。
 
@@ -528,7 +530,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 
 批次一（协作模式、服务端排队、线程目标、自动复核批准）的本机基线行为可用 `python3 scripts/batch1_app_server_probe.py --output artifacts/batch1-baseline-<日期>` 复现：它以隔离的 CODEX_HOME 和本地假 Responses 端点运行 PATH 上的 `codex app-server`，不发真实模型请求；截图对比用 `python3 scripts/compare_batch1_captures.py`。批次二（轮次设置、查找、钩子、实验性功能、记忆）的基线用 `python3 scripts/batch2_app_server_probe.py --output artifacts/batch2-baseline-<日期>` 复现，同样不发真实模型请求；参考截图用 `node scripts/cdp_capture_batch2.mjs`（专用参考实例），Echora 截图用 `ECHORA_CODEX_HOME=<~/.codex 的副本> scripts/capture_batch2_gpui.sh <日期>`。
 
-`scripts/verify_integration_table.mjs` 直接用 CLI schema 重新推导方法集合、默认／实验归属、方法唯一性、口径表统计、合计行与 `runtime::OPT_OUT_NOTIFICATION_METHODS`，发现任何结构性不一致都以非零状态退出；`artifacts/app-server-schema` 缺失时会先用本机 `codex` 生成临时副本，因此可在干净检出上直接运行。
+`scripts/verify_integration_table.mjs` 直接用 CLI schema 重新推导方法集合、默认／实验归属、方法唯一性、口径表统计、合计行、`runtime::OPT_OUT_NOTIFICATION_METHODS` 与 `methods::UNINTEGRATED_SERVER_NOTIFICATION_METHODS`，发现任何结构性不一致都以非零状态退出；`artifacts/app-server-schema` 缺失时会先用本机 `codex` 生成临时副本，因此可在干净检出上直接运行。
 
 ```bash
 node scripts/verify_integration_table.mjs

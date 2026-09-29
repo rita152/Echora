@@ -12,7 +12,7 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use async_channel::{Receiver, Sender};
 use serde_json::{Value, json};
 
-use super::super::server_requests::ServerRequestDiagnostic;
+use super::super::server_requests::{ServerRequestDiagnostic, UnintegratedNotificationDiagnostic};
 use super::{
     super::TurnOutcome,
     ManagerInner,
@@ -131,6 +131,9 @@ pub(super) struct ConnectionState {
     /// replaces the old "disconnect to raise attention" guardrail: nothing is
     /// answered silently, and nothing kills the connection to become visible.
     server_request_diagnostics: VecDeque<ServerRequestDiagnostic>,
+    /// Capped record of schema-known notifications accepted without being
+    /// integrated, so tolerating them never happens silently.
+    unintegrated_notification_diagnostics: VecDeque<UnintegratedNotificationDiagnostic>,
     pub(super) pending_mcp_elicitations: HashMap<AgentServerRequestId, PendingMcpElicitation>,
     resolved_mcp_elicitations: HashMap<AgentServerRequestId, String>,
     resolved_mcp_elicitation_order: VecDeque<AgentServerRequestId>,
@@ -235,6 +238,17 @@ impl ConnectionState {
         self.server_request_diagnostics.push_back(diagnostic);
         while self.server_request_diagnostics.len() > SERVER_REQUEST_DIAGNOSTIC_LIMIT {
             self.server_request_diagnostics.pop_front();
+        }
+    }
+
+    fn remember_unintegrated_notification(
+        &mut self,
+        diagnostic: UnintegratedNotificationDiagnostic,
+    ) {
+        self.unintegrated_notification_diagnostics
+            .push_back(diagnostic);
+        while self.unintegrated_notification_diagnostics.len() > SERVER_REQUEST_DIAGNOSTIC_LIMIT {
+            self.unintegrated_notification_diagnostics.pop_front();
         }
     }
 
@@ -815,6 +829,33 @@ impl Connection {
         if let Ok(mut state) = self.state.lock() {
             state.remember_server_request_diagnostic(diagnostic);
         }
+    }
+
+    /// Records one schema-known notification accepted without integration.
+    pub(super) fn record_unintegrated_notification(
+        &self,
+        diagnostic: UnintegratedNotificationDiagnostic,
+    ) {
+        if let Ok(mut state) = self.state.lock() {
+            state.remember_unintegrated_notification(diagnostic);
+        }
+    }
+
+    /// The unintegrated notifications this generation accepted, oldest first.
+    #[cfg(test)]
+    pub(super) fn unintegrated_notification_diagnostics(
+        &self,
+    ) -> Vec<UnintegratedNotificationDiagnostic> {
+        self.state
+            .lock()
+            .map(|state| {
+                state
+                    .unintegrated_notification_diagnostics
+                    .iter()
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// The controlled replies this generation wrote, oldest first.

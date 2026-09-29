@@ -76,6 +76,15 @@ pub(super) struct ServerRequestDiagnostic {
     pub(super) params: String,
 }
 
+/// One schema-known server notification this client accepted without
+/// integrating it. It keeps the same redaction as request diagnostics.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct UnintegratedNotificationDiagnostic {
+    pub(super) method: String,
+    pub(super) thread_id: Option<String>,
+    pub(super) params: String,
+}
+
 /// The JSON-RPC body written under the original request id.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum ServerRequestReplyBody {
@@ -362,6 +371,17 @@ fn diagnostic(
         turn_id,
         disposition,
         detail,
+        params: summarize_request_params(message.get("params")),
+    }
+}
+
+pub(super) fn unintegrated_notification_diagnostic(
+    method: &str,
+    message: &Value,
+) -> UnintegratedNotificationDiagnostic {
+    UnintegratedNotificationDiagnostic {
+        method: method.to_owned(),
+        thread_id: param_string(message, "threadId"),
         params: summarize_request_params(message.get("params")),
     }
 }

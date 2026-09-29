@@ -464,6 +464,15 @@ impl ManagerInner {
             .map(|connection| connection.server_request_diagnostics())
             .unwrap_or_default()
     }
+
+    /// The unintegrated notifications the live generation accepted, oldest first.
+    pub(super) fn unintegrated_notification_diagnostics(
+        &self,
+    ) -> Vec<super::server_requests::UnintegratedNotificationDiagnostic> {
+        self.current_connection()
+            .map(|connection| connection.unintegrated_notification_diagnostics())
+            .unwrap_or_default()
+    }
 }
 
 #[cfg(test)]

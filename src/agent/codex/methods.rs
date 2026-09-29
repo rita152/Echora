@@ -43,6 +43,48 @@ pub(super) const TURN_SCOPED_SERVER_METHODS: &[&str] = &[
     "model/safetyBuffering/updated",
 ];
 
+/// Server notifications in the schema this client was built against that it
+/// does not integrate. Most follow a client request this client never sends,
+/// but a server may still push some of them unprompted (environment and
+/// platform notices), and one unintegrated notice must not cost the shared
+/// connection with its pending RPCs and live turns. They are accepted without
+/// decoding; the manager records each in the generation's diagnostic trail.
+/// Methods outside the schema keep failing loudly.
+pub(super) const UNINTEGRATED_SERVER_NOTIFICATION_METHODS: &[&str] = &[
+    "account/gatewayOAuth/changed",
+    "command/exec/outputDelta",
+    "externalAgentConfig/import/completed",
+    "externalAgentConfig/import/progress",
+    "fs/changed",
+    "mcpServer/event/stream/notification",
+    "process/exited",
+    "process/outputDelta",
+    "thread/attachment/updated",
+    "thread/environment/connected",
+    "thread/environment/disconnected",
+    "thread/realtime/closed",
+    "thread/realtime/error",
+    "thread/realtime/item/completed",
+    "thread/realtime/item/started",
+    "thread/realtime/item/transcript/delta",
+    "thread/realtime/itemAdded",
+    "thread/realtime/outputAudio/delta",
+    "thread/realtime/sdp",
+    "thread/realtime/started",
+    "thread/realtime/transcript/delta",
+    "thread/realtime/transcript/done",
+    "windows/worldWritableWarning",
+    "windowsSandbox/setupCompleted",
+];
+
+pub(super) fn is_unintegrated_server_notification(message: &Value) -> bool {
+    message.get("id").is_none()
+        && message
+            .get("method")
+            .and_then(Value::as_str)
+            .is_some_and(|method| UNINTEGRATED_SERVER_NOTIFICATION_METHODS.contains(&method))
+}
+
 pub(super) fn is_defined_server_method(method: &str) -> bool {
     matches!(
         method,
@@ -96,8 +138,6 @@ pub(super) fn is_defined_server_method(method: &str) -> bool {
             | "fuzzyFileSearch/sessionUpdated"
             | "fuzzyFileSearch/sessionCompleted"
             | "app/list/updated"
-            | "externalAgentConfig/import/progress"
-            | "externalAgentConfig/import/completed"
             | "thread/goal/updated"
             | "thread/goal/cleared"
             | "thread/queue/changed"
@@ -165,6 +205,7 @@ pub(super) fn ensure_server_method_is_defined(message: &Value) -> Result<()> {
         "account/updated" => super::account::parse_account_updated(message).map(|_| ()),
         "account/login/completed" => super::account::parse_login_completed(message).map(|_| ()),
         method if is_defined_server_method(method) => Ok(()),
+        _ if is_unintegrated_server_notification(message) => Ok(()),
         method => Err(undefined_server_method_error(method, message)),
     }
 }

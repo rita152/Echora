@@ -17,7 +17,8 @@ use super::{
     },
     methods::{
         ensure_server_method_is_defined, is_controlled_server_request_method,
-        is_integrated_server_request_method, undefined_server_method_error,
+        is_integrated_server_request_method, is_unintegrated_server_notification,
+        undefined_server_method_error,
     },
     notifications::{
         forward_agent_notification, required_notification_i64, required_notification_index,
@@ -78,6 +79,9 @@ pub(super) fn process_turn_message<W: Write + Send + 'static>(
         return Ok(None);
     }
     ensure_server_method_is_defined(message)?;
+    if is_unintegrated_server_notification(message) {
+        return Ok(None);
+    }
 
     match message.get("method").and_then(Value::as_str) {
         Some("item/started") => {

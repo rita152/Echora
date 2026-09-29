@@ -2288,6 +2288,84 @@ fn unknown_server_request_replies_method_not_found_and_keeps_generation() {
 }
 
 #[test]
+fn unintegrated_server_notifications_are_recorded_and_keep_generation() {
+    let (manager, spawner) = manager_with_fake();
+    let run = manager.run_prompt(request("unintegrated notice", Some("thr_notice")));
+    let (events, interrupt) = run.into_parts();
+    let mut endpoint = spawner.next_endpoint();
+    handshake(&mut endpoint);
+    start_known_turn(&mut endpoint, "thr_notice", "turn_notice");
+
+    let catalog = manager.load_model_catalog();
+    let model_list = endpoint.recv();
+    assert_eq!(model_list["method"], "model/list");
+
+    endpoint.send(json!({
+        "method": "thread/environment/connected",
+        "params": {"threadId": "thr_notice", "environmentId": "env_1", "secret": "token"}
+    }));
+    endpoint.send(json!({
+        "method": "externalAgentConfig/import/progress",
+        "params": {"importId": "imp_1", "message": "copying"}
+    }));
+
+    endpoint.respond(&model_list, model_page());
+    assert!(wait_value(&catalog).is_ok());
+    complete(&endpoint, "thr_notice", "turn_notice", "completed");
+    assert!(matches!(
+        collect_terminal(&events).last(),
+        Some(AgentEvent::Completed)
+    ));
+
+    let recorded = manager.inner.unintegrated_notification_diagnostics();
+    assert_eq!(recorded.len(), 2);
+    assert_eq!(recorded[0].method, "thread/environment/connected");
+    assert_eq!(recorded[0].thread_id.as_deref(), Some("thr_notice"));
+    assert!(recorded[0].params.contains("environmentId=\"env_1\""));
+    assert!(
+        !recorded[0].params.contains("token"),
+        "{}",
+        recorded[0].params
+    );
+    assert_eq!(recorded[1].method, "externalAgentConfig/import/progress");
+    assert!(
+        !recorded[1].params.contains("copying"),
+        "{}",
+        recorded[1].params
+    );
+
+    drop(interrupt);
+    manager.shutdown();
+    wait_for_process(&endpoint.process);
+}
+
+#[test]
+fn server_notifications_outside_the_schema_still_fail_the_generation() {
+    let (manager, spawner) = manager_with_fake();
+    let run = manager.run_prompt(request("unknown notice", Some("thr_future")));
+    let (events, _interrupt) = run.into_parts();
+    let mut endpoint = spawner.next_endpoint();
+    handshake(&mut endpoint);
+    start_known_turn(&mut endpoint, "thr_future", "turn_future");
+
+    endpoint.send(json!({
+        "method": "thread/futureNotice/updated",
+        "params": {"threadId": "thr_future"}
+    }));
+    assert!(matches!(
+        collect_terminal(&events).last(),
+        Some(AgentEvent::Failed(message)) if message.contains("thread/futureNotice/updated")
+    ));
+    assert!(
+        manager
+            .inner
+            .unintegrated_notification_diagnostics()
+            .is_empty()
+    );
+    wait_for_process(&endpoint.process);
+}
+
+#[test]
 fn dropping_last_manager_owner_terminates_and_waits_for_process() {
     let (manager, spawner) = manager_with_fake();
     let catalog = manager.load_model_catalog();
