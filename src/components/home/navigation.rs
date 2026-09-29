@@ -825,6 +825,7 @@ mod tests {
             images: Vec::new(),
             time: None,
             goal: false,
+            review: false,
         };
         let answer = |id: &str| ConversationListRow::AssistantMarkdown {
             id: id.to_owned(),

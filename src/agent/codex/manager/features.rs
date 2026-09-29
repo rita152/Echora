@@ -6,7 +6,7 @@ use anyhow::bail;
 use async_channel::Receiver;
 
 use super::CodexAppServerManager;
-use crate::agent::{AgentExperimentalFeatures, AgentThreadMemoryMode};
+use crate::agent::{AgentExperimentalFeatures, AgentMemoryStatus, AgentThreadMemoryMode};
 
 /// The list is about 150 flags in pages of 100; the bound only stops a server
 /// that never ends its cursor chain.
@@ -87,6 +87,24 @@ impl CodexAppServerManager {
                 .map_err(|_| anyhow::anyhow!("memory/reset 连接在返回前关闭"))?
                 .map_err(anyhow::Error::msg)?;
             parse_empty_result(&response, MEMORY_RESET_METHOD)
+        })
+    }
+
+    /// Reads whether the consolidated memory pipeline is ready, against
+    /// `required_threads` distinct chats. A server error (out-of-range
+    /// threshold, memories unavailable) is reported, never retried.
+    pub(in crate::agent::codex) fn read_memory_status(
+        &self,
+        required_threads: u32,
+    ) -> Receiver<Result<AgentMemoryStatus, String>> {
+        self.spawn_call(move |manager| {
+            use super::super::features::{
+                MEMORY_STATUS_METHOD, memory_status_params, parse_memory_status,
+            };
+            let connection = manager.inner.ensure_connection()?;
+            let response =
+                connection.request(MEMORY_STATUS_METHOD, memory_status_params(required_threads))?;
+            parse_memory_status(connection.generation, required_threads, &response)
         })
     }
 }

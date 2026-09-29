@@ -286,6 +286,13 @@ impl Render for ChatApp {
         let thread_rename_panel = self.sidebar.read(cx).thread_rename();
         let activity_archive = self.sidebar.read(cx).activity_archive_confirmation();
         let thread_rename_input = self.sidebar.read(cx).thread_rename_input();
+        let section_dialog = self.sidebar.read(cx).section_dialog();
+        let section_name_input = self.sidebar.read(cx).section_name_input();
+        let section_field_focused = section_name_input
+            .read(cx)
+            .focus_handle(cx)
+            .is_focused(window);
+        let section_dialog_submittable = self.sidebar.read(cx).section_dialog_submittable(cx);
         let rename_field_focused = thread_rename_input
             .read(cx)
             .focus_handle(cx)
@@ -449,6 +456,11 @@ impl Render for ChatApp {
                 // `ThreadRename` context.
                 if this.sidebar.read(cx).thread_rename().is_some() {
                     this.dismiss_thread_rename(cx);
+                    cx.stop_propagation();
+                    return;
+                }
+                if this.sidebar.read(cx).section_dialog().is_some() {
+                    this.dismiss_section_dialog(cx);
                     cx.stop_propagation();
                     return;
                 }
@@ -750,6 +762,17 @@ impl Render for ChatApp {
                     thread_rename_input,
                     self.mode,
                     rename_field_focused,
+                    theme,
+                    cx,
+                ))
+            })
+            .when_some(section_dialog, |shell, dialog| {
+                shell.child(section_dialog_overlay(
+                    dialog,
+                    section_name_input,
+                    self.mode,
+                    section_field_focused,
+                    section_dialog_submittable,
                     theme,
                     cx,
                 ))
@@ -1259,7 +1282,20 @@ fn tracked_title(
     line_height: f32,
     color: gpui::Hsla,
 ) -> impl IntoElement {
-    let text: gpui::SharedString = crate::i18n::text(text).to_owned().into();
+    tracked_label(
+        crate::i18n::text(text).to_owned().into(),
+        size,
+        line_height,
+        color,
+    )
+}
+
+fn tracked_label(
+    text: gpui::SharedString,
+    size: f32,
+    line_height: f32,
+    color: gpui::Hsla,
+) -> impl IntoElement {
     let tracking = -0.018 * size;
     canvas(
         move |_, window, _| {
@@ -1473,7 +1509,194 @@ fn thread_rename_overlay(
         )
 }
 
+/// New section / Edit section: the reference's compact section dialog, drawn
+/// like the rename dialog (the reference opens both from the same dialog
+/// family; its own section dialog is reachable only through native menus, so
+/// the rename dialog's measured card is the visual baseline). An empty name
+/// creates "New section"; editing needs a name.
+fn section_dialog_overlay(
+    dialog: crate::components::sidebar::SectionDialog,
+    input: gpui::Entity<crate::components::prompt_input::PromptInput>,
+    mode: ThemeMode,
+    focused: bool,
+    submittable: bool,
+    theme: Theme,
+    cx: &mut Context<ChatApp>,
+) -> impl IntoElement {
+    let editing = dialog.editing.is_some();
+    let title = if editing {
+        crate::i18n::format!("编辑分区" => "Edit section")
+    } else {
+        crate::i18n::format!("新建分区" => "New section")
+    };
+    let primary = if editing {
+        crate::i18n::format!("保存" => "Save")
+    } else {
+        crate::i18n::format!("创建分区" => "Create section")
+    };
+    div()
+        .id("section-dialog-overlay")
+        .absolute()
+        .inset_0()
+        .bg(theme.chat_search_overlay)
+        .flex()
+        .items_center()
+        .justify_center()
+        .on_click(cx.listener(|this, _, _, cx| this.dismiss_section_dialog(cx)))
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .child(
+            div()
+                .id("section-dialog")
+                .debug_selector(|| "SECTION_DIALOG".to_owned())
+                .role(Role::Dialog)
+                .aria_label(gpui::SharedString::from(title.clone()))
+                .w(px(420.0))
+                .h(px(185.0))
+                .rounded(px(25.0))
+                .bg(rename_card_surface(theme))
+                .shadow(vec![
+                    BoxShadow::new(px(0.0), px(0.0), rename_dialog_ring(mode).into())
+                        .blur_radius(px(0.0))
+                        .spread_radius(px(0.5)),
+                    BoxShadow::new(px(0.0), px(4.0), rgba(0x0000001a).into())
+                        .blur_radius(px(8.0))
+                        .spread_radius(px(-2.0)),
+                ])
+                .on_click(|_, _, cx| cx.stop_propagation())
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .p(px(20.0))
+                .flex()
+                .flex_col()
+                .text_color(theme.text)
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(4.0))
+                        .child(div().h(px(28.0)).w_full().child(tracked_label(
+                            title.into(),
+                            20.0,
+                            28.0,
+                            theme.text.into(),
+                        )))
+                        .child(
+                            div()
+                                .h(px(21.0))
+                                .text_size(px(14.0))
+                                .line_height(px(21.0))
+                                .text_color(theme.chat_search_description)
+                                .child(crate::i18n::format!(
+                                    "按你的方式组织聊天和项目" => "Group chats and projects however you like"
+                                )),
+                        ),
+                )
+                .child(
+                    div().pt(px(12.0)).child(
+                        div()
+                            .id("section-dialog-input")
+                            .h(px(36.0))
+                            .w_full()
+                            .rounded(px(10.0))
+                            .border(px(1.0))
+                            .border_color(rename_field_border(mode, focused))
+                            .bg(theme.control)
+                            .flex()
+                            .items_center()
+                            .child(input),
+                    ),
+                )
+                .child(
+                    div()
+                        .pt(px(12.0))
+                        .flex()
+                        .justify_end()
+                        .gap(px(12.0))
+                        .child(
+                            div()
+                                .id("section-dialog-cancel")
+                                .debug_selector(|| "SECTION_DIALOG_CANCEL".to_owned())
+                                .role(Role::Button)
+                                .aria_label(crate::i18n::format!("取消" => "Cancel"))
+                                .h(px(32.0))
+                                .px(px(16.0))
+                                .py(px(6.0))
+                                .rounded(px(12.5))
+                                .border(px(1.0))
+                                .border_color(theme.chat_search_border)
+                                .bg(theme.edit_button_surface)
+                                .flex()
+                                .items_center()
+                                .text_size(px(14.0))
+                                .line_height(px(18.0))
+                                .cursor_pointer()
+                                .hover(move |style| style.bg(theme.sidebar_hover))
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| this.dismiss_section_dialog(cx)),
+                                )
+                                .child(crate::i18n::format!("取消" => "Cancel")),
+                        )
+                        .child(
+                            div()
+                                .id("section-dialog-submit")
+                                .debug_selector(|| "SECTION_DIALOG_SUBMIT".to_owned())
+                                .role(Role::Button)
+                                .aria_label(gpui::SharedString::from(primary.clone()))
+                                .h(px(32.0))
+                                .px(px(16.0))
+                                .py(px(6.0))
+                                .rounded(px(12.5))
+                                .border(px(1.0))
+                                .border_color(theme.chat_search_border)
+                                .bg(theme.button)
+                                .flex()
+                                .items_center()
+                                .text_size(px(14.0))
+                                .line_height(px(18.0))
+                                .text_color(theme.button_text)
+                                .when(!submittable, |button| button.opacity(0.5))
+                                .when(submittable, |button| {
+                                    button
+                                        .cursor_pointer()
+                                        .hover(move |style| style.bg(theme.button.alpha(0.8)))
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.submit_section_dialog(cx)
+                                        }))
+                                })
+                                .child(primary),
+                        ),
+                )
+                .child(
+                    div()
+                        .id("section-dialog-close")
+                        .role(Role::Button)
+                        .aria_label(crate::i18n::format!("关闭对话框" => "Close dialog"))
+                        .absolute()
+                        .top(px(16.0))
+                        .right(px(16.0))
+                        .size(px(24.0))
+                        .rounded(px(4.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .cursor_pointer()
+                        .hover(move |style| style.bg(theme.sidebar_hover))
+                        .on_click(cx.listener(|this, _, _, cx| this.dismiss_section_dialog(cx)))
+                        .child(icon("close-dialog", theme.text.alpha(0.8).into()).size(px(16.0))),
+                ),
+        )
+}
+
 impl ChatApp {
+    fn dismiss_section_dialog(&mut self, cx: &mut Context<Self>) {
+        self.sidebar
+            .update(cx, |sidebar, cx| sidebar.dismiss_section_dialog(cx));
+    }
+
+    fn submit_section_dialog(&mut self, cx: &mut Context<Self>) {
+        self.sidebar
+            .update(cx, |sidebar, cx| sidebar.submit_section_dialog(cx));
+    }
+
     /// The main area shows a chat only on the home page. The sidebar keeps the
     /// activity view's Priority in step with it and the store reads it.
     fn sync_viewed_thread(&mut self, cx: &mut Context<Self>) {

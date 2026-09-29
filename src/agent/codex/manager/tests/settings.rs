@@ -260,7 +260,14 @@ fn loading_existing_permissions_reuses_lifecycle_fields_and_cache() {
             .id,
         ":read-only"
     );
-    wait_value(&manager.load_thread_settings("main".into(), 1)).unwrap();
+    // Reopening confirms the local record with the server instead of
+    // resuming again, then reuses the cached settings.
+    let again = manager.load_thread_settings("main".into(), 1);
+    let loaded_list = endpoint.recv();
+    assert_eq!(loaded_list["method"], "thread/loaded/list");
+    assert_eq!(loaded_list["params"], json!({}));
+    endpoint.respond(&loaded_list, json!({"data": ["main"], "nextCursor": null}));
+    wait_value(&again).unwrap();
     assert!(endpoint.from_client.try_recv().is_err());
     manager.shutdown();
 }

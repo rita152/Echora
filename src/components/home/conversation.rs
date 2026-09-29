@@ -243,6 +243,7 @@ pub(super) fn conversation(
                 images,
                 time: String::new(),
                 goal: false,
+                review: false,
             },
             row => row,
         };
@@ -293,6 +294,7 @@ pub(super) fn conversation(
                     images,
                     time,
                     goal,
+                    review,
                 } => (
                     div()
                         .id(("transcript-turn-user", turn_index))
@@ -304,6 +306,7 @@ pub(super) fn conversation(
                                 images,
                                 time: time.unwrap_or_default(),
                                 goal,
+                                review,
                                 highlight: home_entity.read(_cx).user_message_highlight(index, _cx),
                             },
                             false,
@@ -322,6 +325,7 @@ pub(super) fn conversation(
                     images,
                     time,
                     goal,
+                    review,
                 } => (
                     div()
                         .id(("current-turn-user", index))
@@ -333,6 +337,7 @@ pub(super) fn conversation(
                                 images,
                                 time,
                                 goal,
+                                review,
                                 highlight: home_entity.read(_cx).user_message_highlight(index, _cx),
                             },
                             user_message_actions_visible_for_capture,

@@ -33,6 +33,8 @@ use crate::agent::{
     AgentFunctionCallOutputContentItem, AgentImageDetail, AgentUserInputAnswer,
 };
 
+mod batch3;
+
 struct FailingWriter;
 
 impl Write for FailingWriter {
@@ -619,6 +621,8 @@ fn drives_one_complete_prompt_and_normalizes_stream_events() {
                 terminal_process_id: None,
                 status: super::CommandExecutionStatus::InProgress,
                 exit_code: None,
+                source: crate::agent::CommandExecutionSource::Agent,
+                timed_out: false,
             }),
             AgentEvent::CommandOutputDelta {
                 item_id: "exec_1".into(),
@@ -635,6 +639,8 @@ fn drives_one_complete_prompt_and_normalizes_stream_events() {
                 terminal_process_id: None,
                 status: super::CommandExecutionStatus::Completed,
                 exit_code: Some(0),
+                source: crate::agent::CommandExecutionSource::Agent,
+                timed_out: false,
             }),
             AgentEvent::ThreadTokenUsageUpdated(AgentThreadTokenUsage {
                 thread_id: "thr_1".into(),

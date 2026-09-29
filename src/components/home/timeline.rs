@@ -71,12 +71,14 @@ pub(super) enum ConversationListRow {
         images: Vec<crate::agent::UserMessageAttachment>,
         time: Option<String>,
         goal: bool,
+        review: bool,
     },
     CurrentUser {
         message: String,
         images: Vec<crate::agent::UserMessageAttachment>,
         time: String,
         goal: bool,
+        review: bool,
     },
     /// The newest user message replaced by the reference's inline rewrite form.
     MessageEdit {
@@ -799,6 +801,7 @@ pub(super) fn conversation_list_rows(
                 images: turn.user_images,
                 time: turn.user_message_time,
                 goal: turn.goal.sent_as_goal,
+                review: turn.goal.review_request,
             });
         }
         if turn.activities.is_empty() {
@@ -861,6 +864,7 @@ pub(super) fn conversation_list_rows(
             images: user_images,
             time: user_message_time,
             goal: goal.sent_as_goal,
+            review: goal.review_request,
         });
     }
     if conversation_activity.is_empty() {

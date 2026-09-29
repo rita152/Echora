@@ -121,6 +121,8 @@ fn command(
         terminal_process_id: None,
         status,
         exit_code: (status == CommandExecutionStatus::Completed).then_some(0),
+        source: crate::agent::CommandExecutionSource::Agent,
+        timed_out: false,
     }
 }
 
@@ -837,6 +839,8 @@ fn one_command_execution_renders_every_structured_action_as_its_own_row() {
         terminal_process_id: None,
         status: CommandExecutionStatus::Completed,
         exit_code: Some(0),
+        source: crate::agent::CommandExecutionSource::Agent,
+        timed_out: false,
     };
 
     let summaries = command_activity_summaries(&command);
@@ -1048,6 +1052,8 @@ fn resumed_historical_tool_group_keeps_its_disclosure_state() {
                 actions: Vec::new(),
                 cwd: None,
                 exit_code: None,
+                source: crate::agent::CommandExecutionSource::Agent,
+                timed_out: false,
             },
         ],
         started_at: Some(1_000),
@@ -1141,6 +1147,8 @@ fn dense_resumed_tool_group_preserves_row_height_and_scrolls_instead_of_overlapp
         actions: Vec::new(),
         cwd: None,
         exit_code: None,
+        source: crate::agent::CommandExecutionSource::Agent,
+        timed_out: false,
     }));
     let history = ThreadHistory {
         thread: ThreadSummary {

@@ -82,6 +82,9 @@ pub(crate) struct ConversationState {
     pub(crate) external_turn: bool,
     /// The current user message is a goal objective ("Sent as goal").
     pub(crate) user_message_goal: bool,
+    /// The current turn is a code review ("Review mode"); the server's own
+    /// review prompt item is not shown as the user's message.
+    pub(crate) user_message_review: bool,
     /// The goal was achieved in the current turn, after this much time.
     pub(crate) goal_achieved_seconds: Option<i64>,
     pub(crate) goal: super::goal::ConversationGoal,
@@ -152,6 +155,7 @@ impl Default for ConversationState {
             permission_error: None,
             external_turn: false,
             user_message_goal: false,
+            user_message_review: false,
             goal_achieved_seconds: None,
             goal: Default::default(),
             memory: Default::default(),

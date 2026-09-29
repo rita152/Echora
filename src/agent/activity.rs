@@ -274,6 +274,17 @@ pub enum CommandExecutionStatus {
     Failed,
 }
 
+/// Who started a command. `UserShell` is a command the user typed into the
+/// composer (`thread/shellCommand`); the others run for the agent.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CommandExecutionSource {
+    #[default]
+    Agent,
+    UserShell,
+    UnifiedExecStartup,
+    UnifiedExecInteraction,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CommandExecutionAction {
     Read {
@@ -307,6 +318,9 @@ pub struct CommandExecution {
     pub terminal_process_id: Option<String>,
     pub status: CommandExecutionStatus,
     pub exit_code: Option<i64>,
+    pub source: CommandExecutionSource,
+    /// The command ran out of time. Its output is what streamed before.
+    pub timed_out: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

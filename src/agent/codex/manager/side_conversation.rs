@@ -144,6 +144,14 @@ impl CodexAppServerManager {
         Ok(thread_id)
     }
 
+    /// Whether `id` is a side conversation's temporary thread (open or not).
+    pub(super) fn is_temporary_thread(&self, id: &str) -> bool {
+        self.inner
+            .temporary_threads
+            .lock()
+            .is_ok_and(|threads| threads.contains_key(id))
+    }
+
     pub(super) fn validate_temporary_thread(
         &self,
         connection: &Connection,

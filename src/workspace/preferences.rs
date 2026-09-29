@@ -1,7 +1,7 @@
 //! Versioned UI preferences and atomic local persistence.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
     io::{ErrorKind, Write},
     path::PathBuf,
@@ -50,6 +50,31 @@ pub struct UiPreferences {
     /// desktop app's setting, not app-server state this client should write.
     #[serde(default)]
     pub follow_up_mode: FollowUpMode,
+    /// Where `/review` runs, as the reference's Git setting "Review delivery".
+    #[serde(default)]
+    pub review_delivery: ReviewDelivery,
+    /// Custom sidebar sections in the order shown. The sections and their
+    /// chats are app-server state; their order, like the reference's
+    /// `sectionOrder`, is kept locally. New sections are appended.
+    #[serde(default)]
+    pub section_order: Vec<ThreadSectionId>,
+    /// Projects placed in a custom section. App-server sections hold threads
+    /// only, so project membership is local, as the reference keeps its
+    /// section item keys.
+    #[serde(default)]
+    pub section_projects: BTreeMap<ThreadSectionId, Vec<ProjectId>>,
+    #[serde(default)]
+    pub collapsed_section_ids: BTreeSet<ThreadSectionId>,
+}
+
+/// `Inline` starts the review in the current chat; `Detached` starts a new
+/// chat for it in the same project. Inline is the reference's default.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ReviewDelivery {
+    #[default]
+    Inline,
+    Detached,
 }
 
 /// Follow-up behavior while a turn runs. `Steer` is the default because the

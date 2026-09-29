@@ -6,8 +6,8 @@ mod view;
 
 pub use spec::{ControlSpec, PageKind, PageSpec, RowSpec, SectionSpec};
 pub use view::{
-    ChangeFollowUpMode, ChangeLanguage, ChangeTheme, CloseSettings, ConfigSaveFinished,
-    OpenSettingsFile, SettingsView,
+    ChangeFollowUpMode, ChangeLanguage, ChangeReviewDelivery, ChangeTheme, CloseSettings,
+    ConfigSaveFinished, OpenSettingsFile, SettingsView,
 };
 
 pub fn pages() -> impl Iterator<Item = &'static PageSpec> {

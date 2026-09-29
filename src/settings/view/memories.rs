@@ -25,6 +25,7 @@ pub(super) enum MemoryReset {
 }
 
 const ENABLE_SWITCH: &str = "memories.enable";
+
 const TOOL_ASSISTED_SWITCH: &str = "memories.tool_assisted";
 
 impl SettingsView {
@@ -33,6 +34,34 @@ impl SettingsView {
             .snapshot
             .as_ref()
             .map(|snapshot| AgentMemoryConfig::from_effective(&snapshot.effective))
+    }
+
+    /// Reads whether consolidated memory is ready. A failure hides the row
+    /// and is logged; it is not retried until the page is shown again.
+    pub(super) fn refresh_memory_status(&mut self, cx: &mut Context<Self>) {
+        self.memory_status_cycle = self.memory_status_cycle.wrapping_add(1);
+        let cycle = self.memory_status_cycle;
+        let receiver = self
+            .backend
+            .read_memory_status(crate::agent::MEMORY_V2_REQUIRED_THREADS);
+        cx.spawn(async move |this, cx| {
+            let result = receiver.recv().await;
+            let _ = this.update(cx, |this, cx| {
+                if this.memory_status_cycle != cycle {
+                    return;
+                }
+                this.memory_status = match result {
+                    Ok(Ok(status)) => Some(status),
+                    Ok(Err(error)) => {
+                        eprintln!("memory/status 读取失败：{error}");
+                        None
+                    }
+                    Err(_) => None,
+                };
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     pub(super) fn reset_memories(&mut self, cx: &mut Context<Self>) {
@@ -219,6 +248,20 @@ impl SettingsView {
                 false,
                 theme,
             ))
+            .when_some(
+                self.memory_status
+                    .filter(|_| enabled)
+                    .map(crate::conversation::memory_status_line),
+                |card, subtitle| {
+                    card.child(row(
+                        crate::i18n::format!("记忆整合" => "Memory consolidation"),
+                        Some(subtitle),
+                        None,
+                        false,
+                        theme,
+                    ))
+                },
+            )
             .child(row(
                 crate::i18n::format!("删除 Codex 记忆" => "Delete Codex memories"),
                 Some(crate::i18n::format!("删除本地上的全部 Codex 记忆" => "Delete all Codex memories for Local")),
@@ -377,6 +420,21 @@ impl SettingsView {
 impl SettingsView {
     /// Capture-only memory settings states. The feature list comes from the
     /// features fixture; the switches read the loaded configuration.
+    /// Batch three: the memory card with its consolidation row, `ready` or
+    /// `pending`. A read the page started is dropped.
+    #[cfg(feature = "screenshot")]
+    pub fn apply_memory_status_capture_fixture(&mut self, state: &str, cx: &mut Context<Self>) {
+        self.apply_memories_capture_fixture("settings-on", cx);
+        self.memory_status_cycle = self.memory_status_cycle.wrapping_add(1);
+        self.memory_status = Some(crate::agent::AgentMemoryStatus {
+            generation: 1,
+            v2_ready: state == "ready",
+            consolidated_threads: if state == "ready" { 25 } else { 3 },
+            required_threads: crate::agent::MEMORY_V2_REQUIRED_THREADS,
+        });
+        cx.notify();
+    }
+
     pub fn apply_memories_capture_fixture(&mut self, state: &str, cx: &mut Context<Self>) {
         self.apply_features_capture_fixture(
             if state == "settings-unavailable" {

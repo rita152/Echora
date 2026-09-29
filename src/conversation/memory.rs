@@ -102,6 +102,17 @@ impl ConversationMemory {
     }
 }
 
+/// How far consolidated (v2) memory is, as one line.
+pub(crate) fn memory_status_line(status: crate::agent::AgentMemoryStatus) -> String {
+    let count = status.consolidated_threads;
+    let required = status.required_threads;
+    if status.v2_ready {
+        crate::i18n::format!("已就绪 · 已整合 {count} 个聊天" => "Ready · built from {count} chats")
+    } else {
+        crate::i18n::format!("尚未就绪 · 已整合 {count}/{required} 个聊天" => "Not ready yet · {count} of {required} chats consolidated")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

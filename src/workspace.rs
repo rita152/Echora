@@ -1,6 +1,7 @@
 pub mod activity;
 mod loaders;
 mod preferences;
+mod sections;
 
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
@@ -24,10 +25,11 @@ use loaders::{
     load_all_turns, receive,
 };
 pub use preferences::{
-    ActivityPreferences, FollowUpMode, PanelRatio, ReviewPreferences, UiPreferences,
-    preferred_language,
+    ActivityPreferences, FollowUpMode, PanelRatio, ReviewDelivery, ReviewPreferences,
+    UiPreferences, preferred_language,
 };
 use preferences::{PreferenceStore, default_preferences_path};
+pub use sections::{CustomSection, SectionItem};
 
 /// One row of the chat search dialog: the thread plus the match snippet the
 /// backend returned for the current query. The reference collapses the snippet
@@ -59,6 +61,7 @@ pub struct WorkspaceLoading {
     pub archived: bool,
     pub pinned: bool,
     pub search: bool,
+    pub sections: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -73,6 +76,9 @@ pub enum WorkspaceOperation {
     DeleteThread(ThreadId),
     MoveThread(ThreadId),
     PinThread(ThreadId),
+    CreateSection(String),
+    RenameSection(ThreadSectionId),
+    DeleteSection(ThreadSectionId),
 }
 
 impl WorkspaceOperation {
@@ -103,6 +109,8 @@ pub struct WorkspaceSnapshot {
     pub recent_threads: Vec<ThreadSummary>,
     pub archived_threads: Vec<ThreadSummary>,
     pub pinned_threads: Vec<ThreadSummary>,
+    /// Custom sidebar sections, in the preferred order, with their chats.
+    pub custom_sections: Vec<sections::CustomSection>,
     pub search_query: String,
     pub search_results: Vec<ThreadSearchResult>,
     pub loading: WorkspaceLoading,
@@ -120,6 +128,7 @@ impl WorkspaceSnapshot {
             recent_threads: Vec::new(),
             archived_threads: Vec::new(),
             pinned_threads: Vec::new(),
+            custom_sections: Vec::new(),
             search_query: String::new(),
             search_results: Vec::new(),
             loading: WorkspaceLoading::default(),
@@ -191,6 +200,7 @@ pub struct WorkspaceStore {
     recent_generation: AtomicU64,
     archived_generation: AtomicU64,
     pinned_generation: AtomicU64,
+    sections_generation: AtomicU64,
     pin_section_lock: Mutex<()>,
     preference_save_lock: Mutex<()>,
     thread_notification_overlays: Mutex<HashMap<ThreadId, ThreadNotificationOverlay>>,
@@ -225,6 +235,7 @@ impl WorkspaceStore {
             recent_generation: AtomicU64::new(0),
             archived_generation: AtomicU64::new(0),
             pinned_generation: AtomicU64::new(0),
+            sections_generation: AtomicU64::new(0),
             pin_section_lock: Mutex::new(()),
             preference_save_lock: Mutex::new(()),
             thread_notification_overlays: Mutex::new(HashMap::new()),
@@ -637,6 +648,8 @@ impl WorkspaceStore {
             if preference_changed {
                 store.save_preferences();
             }
+            // Custom sections exclude Pinned, which this read just settled.
+            store.refresh_custom_sections();
         });
     }
 
@@ -768,6 +781,7 @@ impl WorkspaceStore {
                     snapshot.error = Some(errors.join("\n"));
                 }
             });
+            store.refresh_custom_sections();
         });
     }
 
@@ -979,6 +993,11 @@ impl WorkspaceStore {
                     snapshot
                         .pinned_threads
                         .retain(|thread| thread.thread_id != thread_id);
+                    for section in &mut snapshot.custom_sections {
+                        section
+                            .threads
+                            .retain(|thread| thread.thread_id != thread_id);
+                    }
                 });
                 self.finish(&operation, None);
                 true
@@ -1301,6 +1320,11 @@ impl WorkspaceStore {
         self.update(|snapshot| snapshot.preferences.follow_up_mode = mode);
         self.save_preferences();
     }
+
+    pub fn set_review_delivery(&self, delivery: preferences::ReviewDelivery) {
+        self.update(|snapshot| snapshot.preferences.review_delivery = delivery);
+        self.save_preferences();
+    }
     pub fn set_skip_side_chat_close_confirmation(&self, skip: bool) {
         self.update(|snapshot| snapshot.preferences.skip_side_chat_close_confirmation = skip);
         self.save_preferences();
@@ -1585,6 +1609,15 @@ fn visit_thread_mut(
             visit(&mut result.thread);
         }
     }
+    for thread in snapshot
+        .custom_sections
+        .iter_mut()
+        .flat_map(|section| section.threads.iter_mut())
+    {
+        if thread.thread_id == thread_id {
+            visit(thread);
+        }
+    }
 }
 
 fn remove_thread(snapshot: &mut WorkspaceSnapshot, thread_id: &str) {
@@ -1600,6 +1633,11 @@ fn remove_thread(snapshot: &mut WorkspaceSnapshot, thread_id: &str) {
     snapshot
         .search_results
         .retain(|result| result.thread.thread_id != thread_id);
+    for section in &mut snapshot.custom_sections {
+        section
+            .threads
+            .retain(|thread| thread.thread_id != thread_id);
+    }
 }
 
 fn upsert_project(projects: &mut Vec<Project>, project: Project) {
@@ -1634,5 +1672,9 @@ fn upsert_thread_everywhere(snapshot: &mut WorkspaceSnapshot, thread: ThreadSumm
     }
 }
 
+#[cfg(test)]
+pub(crate) mod sections_fake;
+#[cfg(test)]
+mod sections_tests;
 #[cfg(test)]
 mod tests;

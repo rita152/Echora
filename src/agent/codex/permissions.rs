@@ -190,6 +190,41 @@ pub(super) fn permission_fields(
     })
 }
 
+/// Permission fields for a `thread/start` whose thread never sends a first
+/// `turn/start` (a review or a shell command starts it), so the thread gets
+/// the composer's permissions instead of the server defaults. Full access
+/// names the working directory as its only runtime root; a custom mode sends
+/// nothing and inherits the resolved defaults, as a new prompt thread does.
+pub(super) fn thread_start_permission_params(
+    mode: AgentPermissionMode,
+    cwd: &Path,
+) -> Result<serde_json::Map<String, Value>> {
+    let full = matches!(mode, AgentPermissionMode::Full);
+    let PermissionFields {
+        approval_policy,
+        approvals_reviewer,
+        permissions,
+        ..
+    } = permission_fields(mode, cwd, "", true)?;
+    let mut params = serde_json::Map::new();
+    if let Some(policy) = approval_policy {
+        params.insert("approvalPolicy".into(), policy);
+    }
+    if let Some(reviewer) = approvals_reviewer {
+        params.insert("approvalsReviewer".into(), json!(reviewer));
+    }
+    if let Some(profile) = permissions {
+        params.insert("permissions".into(), json!(profile));
+    }
+    if full {
+        params.insert(
+            "runtimeWorkspaceRoots".into(),
+            json!([cwd.to_string_lossy()]),
+        );
+    }
+    Ok(params)
+}
+
 pub(super) fn thread_settings_update_request(
     id: u64,
     thread_id: &str,

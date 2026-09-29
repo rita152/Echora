@@ -267,6 +267,12 @@ impl ChatApp {
         let Some(host) = self.conversation_hosts.remove(&draft_key) else {
             return;
         };
+        if let Some(section_id) = self.draft_sections.remove(&draft_key) {
+            self.workspace_store.move_to_custom_section(
+                crate::workspace::SectionItem::Thread(thread_id.clone()),
+                Some(section_id),
+            );
+        }
         let real_key = ConversationKey::Thread(thread_id.clone());
         if self.active_conversation == draft_key {
             self.active_conversation = real_key.clone();

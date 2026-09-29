@@ -598,6 +598,14 @@ impl ReviewPanel {
         cx.notify();
     }
 
+    /// Shows `scope`, as the reference opens its review pane on the diff a
+    /// code review looks at. The scope already shown is left as it is.
+    pub fn show_scope(&mut self, scope: Scope, cx: &mut Context<Self>) {
+        if self.scope != scope {
+            self.change_scope(scope, cx);
+        }
+    }
+
     fn change_scope(&mut self, scope: Scope, cx: &mut Context<Self>) {
         self.scope = scope;
         self.menu = None;

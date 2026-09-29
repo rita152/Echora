@@ -43,6 +43,8 @@ fn command() -> ConversationActivity {
         status: CommandExecutionStatus::Completed,
         exit_code: Some(0),
         terminal_process_id: None,
+        source: crate::agent::CommandExecutionSource::Agent,
+        timed_out: false,
     })
 }
 

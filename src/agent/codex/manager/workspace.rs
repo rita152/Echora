@@ -569,6 +569,49 @@ impl CodexAppServerManager {
             )
         })
     }
+    pub(in crate::agent::codex) fn rename_thread_section(
+        &self,
+        section_id: ThreadSectionId,
+        name: String,
+    ) -> Receiver<WorkspaceResult<ThreadSection>> {
+        self.workspace_call(move |manager| {
+            let connection = manager.inner.ensure_connection()?;
+            // `appearance` is omitted, which the schema defines as "keep".
+            let response = connection.request(
+                "threadSection/update",
+                json!({ "sectionId": section_id, "name": name }),
+            )?;
+            let section = validate_workspace_response(
+                &connection,
+                "threadSection/update",
+                (|| {
+                    parse_thread_section(object_field(
+                        response_result(&response, "threadSection/update")?,
+                        "section",
+                        "threadSection/update result",
+                    )?)
+                })(),
+            )?;
+            if section.section_id != section_id {
+                let message = format!(
+                    "threadSection/update 返回了其他分区 `{}`，请求的是 `{section_id}`",
+                    section.section_id
+                );
+                connection.fail_protocol(message.clone());
+                bail!(message);
+            }
+            Ok(section)
+        })
+    }
+    pub(in crate::agent::codex) fn delete_thread_section(
+        &self,
+        section_id: ThreadSectionId,
+    ) -> Receiver<WorkspaceResult<()>> {
+        self.workspace_call(move |manager| {
+            manager
+                .empty_workspace_request("threadSection/delete", json!({ "sectionId": section_id }))
+        })
+    }
     pub(in crate::agent::codex) fn move_thread_to_section(
         &self,
         thread_id: ThreadId,

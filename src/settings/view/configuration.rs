@@ -114,6 +114,23 @@ impl SettingsView {
             });
         })
         .detach();
+        // The configured provider decides what the gated rows allow; a failed
+        // read leaves them ungated.
+        let capabilities = self.backend.read_provider_capabilities();
+        cx.spawn(async move |this, cx| {
+            let capabilities = capabilities.recv().await;
+            let _ = this.update(cx, |this, cx| {
+                if this.config_editor.cycle != cycle || this.provider_capabilities_fixture {
+                    return;
+                }
+                this.provider_capabilities = match capabilities {
+                    Ok(Ok(capabilities)) => Some(capabilities),
+                    _ => None,
+                };
+                cx.notify();
+            });
+        })
+        .detach();
         let models = self.backend.load_model_catalog();
         cx.spawn(async move |this, cx| {
             let models = models.recv().await;
@@ -407,6 +424,11 @@ impl SettingsView {
                 {
                     reason = Some(crate::i18n::text("服务端未允许使用此权限配置").into());
                 }
+                if reason.is_none()
+                    && let Some(unsupported) = self.provider_unsupported_reason(key, &value)
+                {
+                    reason = Some(unsupported);
+                }
                 (
                     config_label(key, &value),
                     ConfigAction::Choose(key.into(), value),
@@ -426,6 +448,35 @@ impl SettingsView {
             ));
         }
         options
+    }
+
+    /// Batch three: `unsupported` (a provider without web search) or
+    /// `supported`, on the Agent page.
+    #[cfg(feature = "screenshot")]
+    pub fn apply_capabilities_capture_fixture(&mut self, state: &str, cx: &mut Context<Self>) {
+        self.provider_capabilities_fixture = true;
+        self.provider_capabilities = Some(crate::agent::AgentProviderCapabilities {
+            generation: 1,
+            image_generation: true,
+            web_search: state != "unsupported",
+            namespace_tools: true,
+        });
+        cx.notify();
+    }
+
+    /// Why a value needs a capability the configured provider lacks. Only
+    /// web search is gated: turning it off (or inheriting) stays possible.
+    pub(super) fn provider_unsupported_reason(&self, key: &str, value: &Value) -> Option<String> {
+        let capabilities = self.provider_capabilities?;
+        (key == "web_search"
+            && !capabilities.web_search
+            && !value.is_null()
+            && value.as_str() != Some("disabled"))
+        .then(|| {
+            crate::i18n::format!(
+                "当前模型提供方不支持网页搜索" => "The configured model provider doesn't support web search"
+            )
+        })
     }
 
     fn config_menu_key(

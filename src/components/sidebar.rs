@@ -33,7 +33,11 @@ use crate::{
 };
 
 mod activity;
+mod sections;
+#[cfg(test)]
+mod sections_tests;
 mod sticky;
+pub use sections::{NewChatInSection, SectionDialog};
 
 use activity::ActivityTooltipTarget;
 pub use activity::{ActivityArchiveConfirmation, ActivityCaptureRequest};
@@ -81,6 +85,7 @@ impl gpui::EventEmitter<OpenProjectCreation> for SidebarView {}
 impl gpui::EventEmitter<OpenChatSearch> for SidebarView {}
 impl gpui::EventEmitter<SelectThread> for SidebarView {}
 impl gpui::EventEmitter<NewConversation> for SidebarView {}
+impl gpui::EventEmitter<NewChatInSection> for SidebarView {}
 
 /// Project and working directory for a new conversation. Selecting a project in
 /// the sidebar drives both; without one the process working directory is used.
@@ -883,6 +888,19 @@ pub struct SidebarView {
     projects_section_menu_open: bool,
     pinned_menu_open: bool,
     profile_menu_open: bool,
+    /// Custom section whose "Options for {name}" menu is open.
+    section_menu_id: Option<crate::agent::ThreadSectionId>,
+    hovered_custom_section: Option<crate::agent::ThreadSectionId>,
+    /// The New section / Edit section dialog, drawn by the shell.
+    section_dialog: Option<SectionDialog>,
+    section_name_input: Entity<PromptInput>,
+    section_dialog_focus_pending: bool,
+    /// Section capture state waiting for the seeded sections.
+    #[cfg(feature = "screenshot")]
+    pending_sections_capture: Option<String>,
+    /// Section headings' and chat rows' window bounds, for anchoring a
+    /// capture's menu where a click would open it.
+    section_header_bounds: Rc<RefCell<HashMap<crate::agent::ThreadSectionId, Bounds<Pixels>>>>,
     account: AccountView,
     /// The activity view the bell toggles, with the Priority snapshot it took
     /// when it opened.
@@ -922,6 +940,14 @@ impl SidebarView {
             this.commit_rename(event.0.clone(), cx);
         })
         .detach();
+        let section_name_input = cx.new(|cx| PromptInput::section_name(mode, cx));
+        cx.subscribe(
+            &section_name_input,
+            |this, _, event: &PromptSubmitted, cx| {
+                this.commit_section_dialog(event.0.clone(), cx);
+            },
+        )
+        .detach();
         let thread_rename_input = cx.new(|cx| PromptInput::rename_chat(mode, "", cx));
         cx.subscribe(
             &thread_rename_input,
@@ -951,6 +977,12 @@ impl SidebarView {
                     if let Some(thread) = this.pending_thread_rename.clone() {
                         this.pending_thread_rename = None;
                         this.open_thread_rename_for_capture(&thread, cx);
+                    }
+                    #[cfg(feature = "screenshot")]
+                    if !this.snapshot.custom_sections.is_empty()
+                        && let Some(state) = this.pending_sections_capture.take()
+                    {
+                        this.set_sections_for_capture(&state, cx);
                     }
                     cx.notify();
                 });
@@ -999,6 +1031,14 @@ impl SidebarView {
             projects_section_menu_open: false,
             pinned_menu_open: false,
             profile_menu_open: false,
+            section_menu_id: None,
+            hovered_custom_section: None,
+            section_dialog: None,
+            section_name_input,
+            section_dialog_focus_pending: false,
+            #[cfg(feature = "screenshot")]
+            pending_sections_capture: None,
+            section_header_bounds: Rc::new(RefCell::new(HashMap::new())),
             account: AccountView::default(),
             activity: None,
             activity_menu_open: false,
@@ -1081,6 +1121,7 @@ impl SidebarView {
     pub fn close_transient_menus(&mut self, cx: &mut Context<Self>) {
         self.project_menu_id = None;
         self.thread_menu_id = None;
+        self.section_menu_id = None;
         self.projects_section_menu_open = false;
         self.pinned_menu_open = false;
         self.profile_menu_open = false;
@@ -2019,8 +2060,16 @@ impl SidebarView {
                     )))
                 },
             );
+        let drag = (!archived && !pending)
+            .then(|| self.thread_drag(&thread_id, &thread.title))
+            .flatten();
+        let selector_id = thread_id.clone();
         div()
             .id(format!("thread-row-{thread_id}"))
+            .debug_selector(move || format!("THREAD_ROW_{selector_id}"))
+            .when_some(drag, |row, drag| {
+                row.on_drag(drag, |drag, _, _, cx| cx.new(|_| drag.clone()))
+            })
             .h(px(ROW_HEIGHT))
             .relative()
             .pl(px(ROW_HORIZONTAL_PADDING))
@@ -2233,9 +2282,15 @@ impl SidebarView {
             .id(format!("project-group-{project_id}"))
             .flex()
             .flex_col();
+        let drag = (!pending && !rename_active)
+            .then(|| self.project_drag(&project_id, &project.name))
+            .flatten();
         group = group.child(
             div()
                 .id(format!("project-row-{project_id}"))
+                .when_some(drag, |row, drag| {
+                    row.on_drag(drag, |drag, _, _, cx| cx.new(|_| drag.clone()))
+                })
                 .h(px(ROW_HEIGHT))
                 .w_full()
                 .relative()
@@ -2845,12 +2900,8 @@ impl SidebarView {
             .snapshot
             .capabilities
             .supports(AgentCapability::ProjectCreate);
-        let pinned_ids = self
-            .snapshot
-            .pinned_threads
-            .iter()
-            .map(|thread| thread.thread_id.as_str())
-            .collect::<HashSet<_>>();
+        let pinned_ids = self.sectioned_thread_ids();
+        let sectioned_projects = self.sectioned_project_ids();
         let menu_button = Self::nav_icon_button("projects-options", "more-horizontal", theme)
             .on_click(cx.listener(|this, _, _, cx| {
                 cx.stop_propagation();
@@ -2866,11 +2917,15 @@ impl SidebarView {
                     cx.emit(OpenProjectCreation);
                 }))
             });
-        let mut section = div()
-            .id("projects-section")
-            .px(px(ROW_HORIZONTAL_PADDING))
-            .flex()
-            .flex_col();
+        let mut section = self.section_exit_drop(
+            div()
+                .id("projects-section")
+                .px(px(ROW_HORIZONTAL_PADDING))
+                .flex()
+                .flex_col(),
+            theme,
+            cx,
+        );
         section = section.child(
             div()
                 .id("projects-section-heading-row")
@@ -2966,7 +3021,12 @@ impl SidebarView {
             .flex()
             .flex_col()
             .gap(px(ROW_GAP));
-        for project in &self.snapshot.projects {
+        for project in self
+            .snapshot
+            .projects
+            .iter()
+            .filter(|project| !sectioned_projects.contains(project.project_id.as_str()))
+        {
             projects = projects.child(self.project_group(project, &pinned_ids, theme, window, cx));
         }
         section = section.child(projects);
@@ -2987,12 +3047,7 @@ impl SidebarView {
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
         let collapsed = self.snapshot.preferences.recent_collapsed;
-        let pinned_ids = self
-            .snapshot
-            .pinned_threads
-            .iter()
-            .map(|thread| thread.thread_id.as_str())
-            .collect::<HashSet<_>>();
+        let pinned_ids = self.sectioned_thread_ids();
         let threads = self
             .snapshot
             .recent_threads
@@ -3003,11 +3058,16 @@ impl SidebarView {
             })
             .take(MAX_VISIBLE_RECENTS)
             .collect::<Vec<_>>();
-        let section = div()
-            .id("recent-section")
-            .px(px(ROW_HORIZONTAL_PADDING))
-            .flex()
-            .flex_col()
+        let section = self
+            .section_exit_drop(
+                div()
+                    .id("recent-section")
+                    .px(px(ROW_HORIZONTAL_PADDING))
+                    .flex()
+                    .flex_col(),
+                theme,
+                cx,
+            )
             .child(self.section_header(
                 "recent-heading",
                 crate::i18n::text("最近"),
@@ -3294,10 +3354,13 @@ impl SidebarView {
                 content.child(self.activity_list(theme, window, cx))
             })
             .when(self.activity.is_none(), |content| {
+                // The reference's order: Pinned, the custom sections, then
+                // Projects and Recents.
                 content
                     .when(!self.snapshot.pinned_threads.is_empty(), |content| {
                         content.child(self.pinned_section(theme, window, cx))
                     })
+                    .children(self.custom_section_elements(theme, window, cx))
                     .child(self.projects_section(theme, window, cx))
                     .child(self.recent_section(theme, window, cx))
             })
@@ -3477,6 +3540,11 @@ impl SidebarView {
                     }))
                 }),
             )
+            .children(self.section_menu_rows(
+                crate::workspace::SectionItem::Project(project_id.clone()),
+                theme,
+                cx,
+            ))
             .child(Self::menu_separator(theme))
             .child(
                 Self::menu_item(
@@ -3649,6 +3717,11 @@ impl SidebarView {
                 }),
             );
         }
+        menu = menu.children(self.section_menu_rows(
+            crate::workspace::SectionItem::Thread(thread_id.clone()),
+            theme,
+            cx,
+        ));
         menu.child(Self::menu_separator(theme)).child(
             Self::menu_item(
                 format!("thread-delete-{thread_id}"),
@@ -3706,6 +3779,7 @@ impl SidebarView {
                     }))
                 }),
             )
+            .children(self.new_section_menu_rows(theme, cx))
     }
 
     fn header(&self, theme: Theme, cx: &mut Context<Self>) -> Div {
@@ -4139,6 +4213,9 @@ impl Render for SidebarView {
         if std::mem::take(&mut self.thread_rename_focus_pending) {
             self.thread_rename_input.focus_handle(cx).focus(window, cx);
         }
+        if std::mem::take(&mut self.section_dialog_focus_pending) {
+            self.section_name_input.focus_handle(cx).focus(window, cx);
+        }
         let theme = Theme::for_mode(self.mode);
         let mut sidebar = div()
             .id("sidebar")
@@ -4186,6 +4263,14 @@ impl Render for SidebarView {
         if let Some(thread_id) = self.thread_menu_id.as_deref()
             && let Some(thread) = self.snapshot.thread(thread_id)
         {
+            if self.menu_origin == (0.0, 0.0)
+                && let Some(bounds) = self.thread_row_bounds.borrow().get(thread_id)
+            {
+                self.menu_origin = (
+                    f32::from(bounds.origin.x) + 60.0,
+                    f32::from(bounds.center().y),
+                );
+            }
             let left = self.menu_origin.0.clamp(8.0, self.width - 222.0);
             let top = self.menu_origin.1.max(42.0);
             sidebar = sidebar.child(deferred(
@@ -4194,6 +4279,27 @@ impl Render for SidebarView {
                     .left(px(left))
                     .top(px(top))
                     .child(self.thread_context_menu(thread, theme, cx)),
+            ));
+        }
+        if let Some(section_id) = self.section_menu_id.as_deref()
+            && let Some(section) = self.snapshot.custom_section(section_id)
+        {
+            if self.menu_origin == (0.0, 0.0)
+                && let Some(bounds) = self.section_header_bounds.borrow().get(section_id)
+            {
+                self.menu_origin = (
+                    f32::from(bounds.origin.x + bounds.size.width) - 14.0,
+                    f32::from(bounds.origin.y + bounds.size.height) - 4.0,
+                );
+            }
+            let left = self.menu_origin.0.clamp(8.0, self.width - 222.0);
+            let top = self.menu_origin.1.max(42.0);
+            sidebar = sidebar.child(deferred(
+                div()
+                    .absolute()
+                    .left(px(left))
+                    .top(px(top))
+                    .child(self.section_options_menu(section, theme, cx)),
             ));
         }
         if self.projects_section_menu_open {

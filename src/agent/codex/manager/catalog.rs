@@ -13,7 +13,9 @@ use super::{
     super::{MODEL_LIST_PAGE_SIZE, ModelListResponse},
     CodexAppServerManager,
 };
-use crate::agent::{AgentModel, AgentModelCatalog, AgentPermissionProfile};
+use crate::agent::{
+    AgentModel, AgentModelCatalog, AgentPermissionProfile, AgentProviderCapabilities,
+};
 
 impl CodexAppServerManager {
     pub(in crate::agent::codex) fn load_model_catalog(
@@ -28,6 +30,21 @@ impl CodexAppServerManager {
             let _ = sender.send_blocking(result);
         });
         receiver
+    }
+    /// What the configured provider supports on the current connection. The
+    /// answer names its generation so a view can drop a stale one.
+    pub(in crate::agent::codex) fn read_provider_capabilities(
+        &self,
+    ) -> Receiver<Result<AgentProviderCapabilities, String>> {
+        self.spawn_call(move |manager| {
+            use super::super::provider::{
+                PROVIDER_CAPABILITIES_METHOD, capabilities_params, parse_capabilities,
+            };
+            let connection = manager.inner.ensure_connection()?;
+            let response =
+                connection.request(PROVIDER_CAPABILITIES_METHOD, capabilities_params())?;
+            parse_capabilities(connection.generation, &response)
+        })
     }
     pub(super) fn load_model_catalog_blocking(&self) -> Result<AgentModelCatalog> {
         let connection = self.inner.ensure_connection()?;

@@ -48,6 +48,8 @@ pub(super) struct ConversationRenderContext {
     pub(super) response_feedback: i8,
     pub(super) user_message_actions_visible_for_capture: bool,
     pub(super) disclosures: Rc<DisclosureRenderState>,
+    /// The provider can generate images, so a failed image offers Retry.
+    pub(super) image_generation_available: bool,
 }
 
 #[derive(Clone)]

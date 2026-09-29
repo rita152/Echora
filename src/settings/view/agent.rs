@@ -9,11 +9,12 @@ impl SettingsView {
     pub(super) fn agent_row(
         &self,
         title: &'static str,
-        subtitle: &'static str,
+        subtitle: impl Into<gpui::SharedString>,
         right: gpui::AnyElement,
         last: bool,
         theme: Theme,
     ) -> gpui::AnyElement {
+        let subtitle: gpui::SharedString = subtitle.into();
         let field_key = match title {
             "批准策略" => "approval_policy",
             "沙盒设置" => "sandbox_mode",
@@ -62,7 +63,7 @@ impl SettingsView {
                         .text_size(px(12.0))
                         .line_height(px(16.0))
                         .text_color(theme.settings_description)
-                        .child(crate::i18n::text(subtitle)),
+                        .child(crate::i18n::text(&subtitle).to_owned()),
                 )
             });
         let label = label.when_some(field_error, |column, error| {
@@ -170,6 +171,12 @@ impl SettingsView {
         .into_iter()
         .enumerate()
         .map(|(index, (key, title, description))| {
+            // A provider without web search says so under the row.
+            let gated = (key == "web_search")
+                .then(|| self.provider_unsupported_reason(key, &serde_json::json!("live")))
+                .flatten();
+            let description: gpui::SharedString =
+                gated.map_or_else(|| description.into(), Into::into);
             self.agent_row(
                 title,
                 description,

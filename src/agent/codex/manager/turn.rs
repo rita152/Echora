@@ -125,6 +125,8 @@ pub(super) struct ManagedTurn {
     pub(super) interrupt_requested: AtomicBool,
     pub(super) interrupt_sent: AtomicBool,
     pub(super) terminal: AtomicBool,
+    /// Started by `review/start`, whose `turn/started` names an alias id.
+    pub(super) review: AtomicBool,
     pub(super) connection: Weak<Connection>,
     pub(super) control: Arc<PromptControl>,
 }
@@ -153,6 +155,7 @@ impl ManagedTurn {
             interrupt_requested: AtomicBool::new(false),
             interrupt_sent: AtomicBool::new(false),
             terminal: AtomicBool::new(false),
+            review: AtomicBool::new(false),
             connection: Arc::downgrade(connection),
             control,
         })
@@ -332,6 +335,14 @@ impl ManagedTurn {
     }
 }
 
+/// How a thread that does not exist yet is started.
+pub(super) struct NewThread<'a> {
+    pub(super) request: &'a AgentRequest,
+    /// Send the request's permissions with `thread/start`.
+    pub(super) with_permissions: bool,
+    pub(super) thread_source: Option<&'static str>,
+}
+
 pub(super) fn turn_id_from_turn_message(message: &Value) -> Result<String> {
     let method = message
         .get("method")
@@ -413,6 +424,24 @@ pub(super) fn build_turn_start_params(
 
 impl CodexAppServerManager {
     pub(in crate::agent::codex) fn run_prompt(&self, request: AgentRequest) -> AgentRun {
+        self.spawn_turn(move |manager, events, keepalive, control| {
+            manager.run_prompt_blocking(request, events, keepalive, control)
+        })
+    }
+
+    /// Runs `start` on its own thread with a fresh event stream and interrupt
+    /// control; an error it returns before the turn ends becomes `Failed`.
+    pub(super) fn spawn_turn(
+        &self,
+        start: impl FnOnce(
+            &CodexAppServerManager,
+            Sender<AgentEvent>,
+            Receiver<AgentEvent>,
+            Arc<PromptControl>,
+        ) -> Result<()>
+        + Send
+        + 'static,
+    ) -> AgentRun {
         let (events, receiver) = async_channel::unbounded();
         let keepalive = receiver.clone();
         let control = Arc::new(PromptControl::default());
@@ -422,8 +451,8 @@ impl CodexAppServerManager {
         let task_events = events.clone();
         let task_control = control.clone();
         std::thread::spawn(move || {
-            if let Err(error) = manager.run_prompt_blocking(
-                request,
+            if let Err(error) = start(
+                &manager,
                 task_events.clone(),
                 keepalive,
                 task_control.clone(),
@@ -514,53 +543,118 @@ impl CodexAppServerManager {
                 return Ok(());
             }
         };
-        let response = match connection.request("turn/start", params) {
+        self.start_registered_turn(&connection, &turn, "turn/start", params, |response| {
+            response
+                .pointer("/result/turn/id")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .context("turn/start 响应缺少 result.turn.id")
+        });
+        Ok(())
+    }
+
+    /// Sends the request that starts `turn` (already registered as the
+    /// thread's starting turn) and binds it to the turn id the response
+    /// names. A failed request ends the turn; a malformed response or a
+    /// binding mismatch is a protocol error.
+    pub(super) fn start_registered_turn(
+        &self,
+        connection: &Arc<Connection>,
+        turn: &Arc<ManagedTurn>,
+        method: &str,
+        params: Value,
+        turn_id_of: impl FnOnce(&Value) -> Result<String>,
+    ) {
+        let response = match connection.request(method, params) {
             Ok(response) => response,
             Err(error) => {
                 if !connection.failed.load(Ordering::Acquire) {
-                    connection.finish_turn(&turn, Err(error.context("turn/start 失败")));
+                    connection.finish_turn(turn, Err(error.context(format!("{method} 失败"))));
                 }
-                return Ok(());
+                return;
             }
         };
-        let Some(turn_id) = response
-            .pointer("/result/turn/id")
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-        else {
-            let message = "turn/start 响应缺少 result.turn.id".to_owned();
-            connection.fail_protocol(message);
-            return Ok(());
+        let turn_id = match turn_id_of(&response) {
+            Ok(turn_id) => turn_id,
+            Err(error) => {
+                connection.fail_protocol(format!("{error:#}"));
+                return;
+            }
         };
-        let (bound, foreign) = match connection.bind_starting_turn(&thread_id, &turn_id) {
+        let (bound, foreign) = match connection.bind_starting_turn(&turn.thread_id, &turn_id) {
             Ok(bound) => bound,
             Err(error) => {
-                connection.fail_protocol(format!("turn/start response 关联失败：{error:#}"));
-                return Ok(());
+                connection.fail_protocol(format!("{method} response 关联失败：{error:#}"));
+                return;
             }
         };
-        if !Arc::ptr_eq(&bound, &turn) {
-            connection.fail_protocol("turn/start response 被路由到其他 logical turn".to_owned());
-            return Ok(());
+        if !Arc::ptr_eq(&bound, turn) {
+            connection.fail_protocol(format!("{method} response 被路由到其他 logical turn"));
+            return;
         }
         let accepted = turn.accept(&turn_id);
         // Messages of another turn that arrived before the response belong to
         // a turn the server started itself; they are streamed as that turn.
         connection.replay_early(foreign);
         match accepted {
-            Ok(Some(outcome)) => connection.finish_turn(&turn, Ok(outcome)),
+            Ok(Some(outcome)) => connection.finish_turn(turn, Ok(outcome)),
             Ok(None) => {}
             Err(error) => connection.fail_protocol(format!(
-                "turn/start 前缓存的 notification 校验失败：{error:#}"
+                "{method} 前缓存的 notification 校验失败：{error:#}"
             )),
         }
-        Ok(())
     }
     pub(super) fn ensure_thread_loaded(
         &self,
         connection: &Arc<Connection>,
         thread_id: Option<&str>,
         new_thread_request: Option<&AgentRequest>,
+    ) -> Result<String> {
+        let new_thread = new_thread_request.map(|request| NewThread {
+            request,
+            with_permissions: false,
+            thread_source: None,
+        });
+        self.ensure_thread_loaded_with(connection, thread_id, new_thread, false)
+    }
+
+    /// Starts a thread for work that is not a prompt. Its first turn will not
+    /// carry permissions, so `thread/start` does.
+    pub(super) fn start_prompt_less_thread(
+        &self,
+        connection: &Arc<Connection>,
+        request: &AgentRequest,
+        thread_source: &'static str,
+    ) -> Result<String> {
+        self.ensure_thread_loaded_with(
+            connection,
+            None,
+            Some(NewThread {
+                request,
+                with_permissions: true,
+                thread_source: Some(thread_source),
+            }),
+            false,
+        )
+    }
+
+    /// `ensure_thread_loaded` for a thread being opened: a thread this
+    /// generation believes loaded is first confirmed with `thread/loaded/list`
+    /// and resumed if the server no longer holds it.
+    pub(super) fn ensure_thread_loaded_confirmed(
+        &self,
+        connection: &Arc<Connection>,
+        thread_id: &str,
+    ) -> Result<String> {
+        self.ensure_thread_loaded_with(connection, Some(thread_id), None, true)
+    }
+
+    fn ensure_thread_loaded_with(
+        &self,
+        connection: &Arc<Connection>,
+        thread_id: Option<&str>,
+        new_thread: Option<NewThread<'_>>,
+        confirm: bool,
     ) -> Result<String> {
         let _lifecycle_guard = connection
             .lifecycle_lock
@@ -576,6 +670,9 @@ impl CodexAppServerManager {
                 .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?
                 .loaded_threads
                 .contains(thread_id)
+            && (!confirm
+                || self.is_temporary_thread(thread_id)
+                || self.confirm_loaded_thread(connection, thread_id)?)
         {
             return Ok(thread_id.to_owned());
         }
@@ -585,8 +682,9 @@ impl CodexAppServerManager {
                 json!({ "threadId": thread_id, "excludeTurns": true }),
             ),
             None => {
-                let request = new_thread_request
-                    .context("thread/start 缺少新 conversation 的 AgentRequest")?;
+                let new_thread =
+                    new_thread.context("thread/start 缺少新 conversation 的 AgentRequest")?;
+                let request = new_thread.request;
                 let mut params = json!({
                     "cwd": request.cwd,
                     "ephemeral": false,
@@ -602,6 +700,17 @@ impl CodexAppServerManager {
                         "memories.generate_memories": memory.generate_memories,
                         "memories.use_memories": memory.use_memories,
                     });
+                }
+                if new_thread.with_permissions
+                    && let Some(object) = params.as_object_mut()
+                {
+                    object.extend(super::super::permissions::thread_start_permission_params(
+                        request.permission_mode.clone(),
+                        &request.cwd,
+                    )?);
+                }
+                if let Some(source) = new_thread.thread_source {
+                    params["threadSource"] = json!(source);
                 }
                 ("thread/start", params)
             }

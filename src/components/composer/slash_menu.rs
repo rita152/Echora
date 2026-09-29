@@ -9,7 +9,10 @@
 //! composer: the whole text must be one `/…` line. Selecting a command removes
 //! only the token. Approve only exists while approvable denials do, and opens
 //! a submenu of the newest ten. Memories only exists while the `memories` feature
-//! is enabled, and opens the chat memories dialog.
+//! is enabled, and opens the chat memories dialog. Code review (`/review`)
+//! needs an otherwise empty composer in a repository and opens its own
+//! submenu (see `review.rs`); the token is replaced by `/`, and what is typed
+//! after it filters the submenu until Escape closes the whole menu.
 
 use std::ops::Range;
 
@@ -23,6 +26,7 @@ const DENIAL_LIMIT: usize = 10;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SlashCommand {
     Approve,
+    CodeReview,
     Compact,
     Goal,
     Memories,
@@ -30,8 +34,9 @@ pub(crate) enum SlashCommand {
 }
 
 impl SlashCommand {
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::Approve,
+        Self::CodeReview,
         Self::Compact,
         Self::Goal,
         Self::Memories,
@@ -41,6 +46,7 @@ impl SlashCommand {
     fn id(self) -> &'static str {
         match self {
             Self::Approve => "autoreview",
+            Self::CodeReview => "review",
             Self::Compact => "compact",
             Self::Goal => "goal",
             Self::Memories => "memories",
@@ -51,6 +57,7 @@ impl SlashCommand {
     pub(crate) fn title(self) -> String {
         match self {
             Self::Approve => crate::i18n::format!("批准" => "Approve"),
+            Self::CodeReview => crate::i18n::format!("代码审查" => "Code review"),
             Self::Compact => crate::i18n::format!("压缩" => "Compact"),
             Self::Goal => crate::i18n::format!("目标" => "Goal"),
             Self::Memories => crate::i18n::format!("记忆" => "Memories"),
@@ -59,12 +66,18 @@ impl SlashCommand {
     }
 
     fn requires_empty_composer(self) -> bool {
-        self == Self::Compact
+        matches!(self, Self::Compact | Self::CodeReview)
+    }
+
+    /// The row shows a chevron: choosing it opens a submenu.
+    pub(crate) fn opens_submenu(self) -> bool {
+        self == Self::CodeReview
     }
 
     pub(crate) fn icon(self) -> &'static str {
         match self {
             Self::Approve => "auto-review-shield",
+            Self::CodeReview => "slash-review",
             Self::Compact => "context-compaction",
             Self::Goal => "goal-chip",
             Self::Memories => "slash-memories",
@@ -95,6 +108,8 @@ pub(crate) struct DenialItem {
 pub(crate) struct SlashMenu {
     pub(crate) highlighted: usize,
     pub(crate) denials: bool,
+    /// The Code review submenu is showing.
+    pub(crate) review: bool,
     /// Escape closes the menu until the query changes.
     dismissed: Option<String>,
 }
@@ -181,7 +196,7 @@ impl ComposerView {
         Some((range, query))
     }
 
-    fn slash_query(&self, cx: &gpui::App) -> Option<String> {
+    pub(super) fn slash_query(&self, cx: &gpui::App) -> Option<String> {
         self.slash_token(cx).map(|(_, query)| query)
     }
 
@@ -191,6 +206,7 @@ impl ComposerView {
                 .conversation
                 .approvable_denials(DENIAL_LIMIT)
                 .is_empty(),
+            SlashCommand::CodeReview => self.review_available(),
             SlashCommand::Compact => self.conversation.thread_id.is_some() && !self.side_chat,
             SlashCommand::Goal => !self.side_chat,
             SlashCommand::Memories => !self.side_chat && self.memories_feature_enabled(),
@@ -203,6 +219,9 @@ impl ComposerView {
             SlashCommand::Approve => {
                 crate::i18n::format!("批准最近一次自动审查驳回" => "Approve a recent auto-review denial")
             }
+            SlashCommand::CodeReview => crate::i18n::format!(
+                "审查未提交的更改，或与某个分支比较" => "Review uncommitted changes or compare against a branch"
+            ),
             SlashCommand::Compact => match self.context_usage_percent() {
                 Some(usage) => crate::i18n::format!(
                     "压缩此聊天的上下文（已使用 {usage}%）" => "Compact this chat's context ({usage}% full)"
@@ -256,7 +275,9 @@ impl ComposerView {
                 let by_title = fuzzy(&title, &query);
                 let by_id = fuzzy(command.id(), &query).map(|(score, _)| (score, Vec::new()));
                 let (score, matched) = match (by_title, by_id) {
-                    (Some(title), Some(id)) if id.0 > title.0 => id,
+                    // The id may rank the command, but the title still shows
+                    // what matched (the reference's "Code **review**").
+                    (Some(title), Some(id)) if id.0 > title.0 => (id.0, title.1),
                     (Some(title), _) => title,
                     (None, Some(id)) => id,
                     (None, None) => return None,
@@ -321,11 +342,14 @@ impl ComposerView {
         if menu.dismissed.as_ref() == Some(&query) {
             return false;
         }
-        menu.denials || !query.contains(char::is_whitespace) || !self.slash_items(cx).is_empty()
+        menu.denials
+            || menu.review
+            || !query.contains(char::is_whitespace)
+            || !self.slash_items(cx).is_empty()
     }
 
     /// Removes the `/query` token, leaving the rest of the composer text.
-    fn remove_slash_token(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn remove_slash_token(&mut self, cx: &mut Context<Self>) {
         if let Some((range, _)) = self.slash_token(cx) {
             self.prompt_editor
                 .update(cx, |editor, cx| editor.replace_range(range, "", cx));
@@ -350,6 +374,8 @@ impl ComposerView {
         {
             menu.dismissed = None;
         }
+        // The review submenu filters by what is typed after its `/`, so an
+        // edit keeps it; only the denials submenu resets.
         menu.highlighted = 0;
         menu.denials = false;
         cx.notify();
@@ -358,6 +384,7 @@ impl ComposerView {
     fn slash_row_count(&self, cx: &gpui::App) -> usize {
         match &self.slash_menu {
             Some(menu) if menu.denials => self.denial_items().len(),
+            Some(menu) if menu.review => self.review_rows(cx).len(),
             _ => self.slash_items(cx).len(),
         }
     }
@@ -385,6 +412,9 @@ impl ComposerView {
                     menu.denials = false;
                     menu.highlighted = 0;
                 } else {
+                    // As the reference, Escape in the review submenu closes
+                    // the whole menu and leaves its `/` in the composer.
+                    menu.review = false;
                     menu.dismissed = query;
                 }
             }
@@ -404,6 +434,8 @@ impl ComposerView {
         };
         if menu.denials {
             self.select_denial(menu.highlighted, cx);
+        } else if menu.review {
+            self.select_review_row(menu.highlighted, cx);
         } else {
             let Some(item) = self.slash_items(cx).into_iter().nth(menu.highlighted) else {
                 return true;
@@ -421,6 +453,19 @@ impl ComposerView {
                 menu.highlighted = 0;
             }
             cx.notify();
+            return;
+        }
+        if command == SlashCommand::CodeReview {
+            if let Some((range, _)) = self.slash_token(cx) {
+                self.prompt_editor
+                    .update(cx, |editor, cx| editor.replace_range(range, "/", cx));
+            }
+            if let Some(menu) = self.slash_menu.as_mut() {
+                menu.review = true;
+                menu.highlighted = 0;
+                menu.dismissed = None;
+            }
+            self.open_review_menu(cx);
             return;
         }
         self.slash_menu = None;
@@ -450,7 +495,9 @@ impl ComposerView {
                 self.focus_prompt_pending = true;
             }
             SlashCommand::Memories => self.open_memories_dialog(cx),
-            SlashCommand::Approve => unreachable!("opens its submenu above"),
+            SlashCommand::Approve | SlashCommand::CodeReview => {
+                unreachable!("opens its submenu above")
+            }
         }
         cx.emit(ConversationChanged);
         cx.notify();

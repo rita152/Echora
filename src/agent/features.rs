@@ -128,6 +128,21 @@ impl AgentMemoryConfig {
     }
 }
 
+/// How many distinct consolidated chats `memory/status` is asked to require.
+/// The server's own default, sent explicitly so the count shown next to it
+/// can never disagree with the threshold the answer was computed for.
+pub const MEMORY_V2_REQUIRED_THREADS: u32 = 20;
+
+/// `memory/status` for one generation: whether the consolidated (v2) memory
+/// pipeline has seen enough distinct chats to be used.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AgentMemoryStatus {
+    pub generation: u64,
+    pub v2_ready: bool,
+    pub consolidated_threads: u32,
+    pub required_threads: u32,
+}
+
 /// "Enable Codex memories": the feature flag and both memory switches.
 pub fn memory_enable_edits(enabled: bool) -> Vec<AgentConfigEdit> {
     vec![

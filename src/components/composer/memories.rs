@@ -87,7 +87,29 @@ impl ComposerView {
     pub(super) fn open_memories_dialog(&mut self, cx: &mut Context<Self>) {
         self.dialog = Some(ComposerDialog::Memories);
         self.dialog_focus_pending = true;
+        self.load_memory_status(cx);
         cx.notify();
+    }
+
+    /// Whether consolidated memory is ready, shown under the switches. A
+    /// failed read shows nothing and is not retried.
+    fn load_memory_status(&mut self, cx: &mut Context<Self>) {
+        let receiver = self
+            .backend
+            .read_memory_status(crate::agent::MEMORY_V2_REQUIRED_THREADS);
+        cx.spawn(async move |this, cx| {
+            let result = receiver.recv().await;
+            let _ = this.update(cx, |this, cx| {
+                this.memory_status = match result {
+                    Ok(Ok(status)) if status.generation >= this.conversation.runtime.generation => {
+                        Some(status)
+                    }
+                    _ => None,
+                };
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     pub(super) fn toggle_use_memories(&mut self, cx: &mut Context<Self>) {
@@ -285,7 +307,8 @@ impl ComposerView {
             .child(
                 div()
                     .id("composer-memories-dialog")
-                        .relative()
+                    .debug_selector(|| "MEMORIES_DIALOG".to_owned())
+                    .relative()
                     .track_focus(&self.dialog_focus)
                     .role(Role::Dialog)
                     .aria_label(SharedString::from(title.clone()))
@@ -308,6 +331,27 @@ impl ComposerView {
                     }))
                     .child(
                         div()
+                            .id("composer-memories-close")
+                            .debug_selector(|| "MEMORIES_CLOSE".to_owned())
+                            // The reference pins it 16 px inside the dialog's border,
+                            // outside the padding, so it is the dialog's own child.
+                            .absolute()
+                            .top(px(16.0))
+                            .right(px(16.0))
+                            .role(Role::Button)
+                            .aria_label(crate::i18n::format!("关闭对话框" => "Close dialog"))
+                            .size(px(24.0))
+                            .rounded(px(6.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .cursor_pointer()
+                            .hover(move |button| button.bg(theme.sidebar_hover))
+                            .on_click(cx.listener(|this, _, _, cx| this.close_memories_dialog(cx)))
+                            .child(icon("close-dialog", theme.text_tertiary.into()).size(px(16.0))),
+                    )
+                    .child(
+                        div()
                             .flex()
                             .items_start()
                             .justify_between()
@@ -321,25 +365,6 @@ impl ComposerView {
                                     .justify_center()
                                     .child(icon("slash-memories", theme.text.into()).size(px(18.0))),
                             )
-                            .child(
-                                div()
-                                    .id("composer-memories-close")
-                                    // The reference pins it 16 px from the corner.
-                                    .absolute()
-                                    .top(px(16.0))
-                                    .right(px(16.0))
-                                    .role(Role::Button)
-                                    .aria_label(crate::i18n::format!("关闭对话框" => "Close dialog"))
-                                    .size(px(24.0))
-                                    .rounded(px(6.0))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .cursor_pointer()
-                                    .hover(move |button| button.bg(theme.sidebar_hover))
-                                    .on_click(cx.listener(|this, _, _, cx| this.close_memories_dialog(cx)))
-                                    .child(icon("close-dialog", theme.text_tertiary.into()).size(px(16.0))),
-                            ),
                     )
                     .child(
                         div()
@@ -370,9 +395,27 @@ impl ComposerView {
                             .child(use_row)
                             .child(generate_row),
                     )
+                    .when_some(
+                        self.memory_status.map(crate::conversation::memory_status_line),
+                        |dialog, line| {
+                            dialog.child(
+                                div()
+                                    .id("composer-memories-status")
+                                    .debug_selector(|| "MEMORIES_STATUS".to_owned())
+                                    .mt(px(12.0))
+                                    .text_size(px(12.0))
+                                    .line_height(px(16.0))
+                                    .text_color(theme.settings_description)
+                                    .child(crate::i18n::format!(
+                                        "记忆整合：{line}" => "Memory consolidation: {line}"
+                                    )),
+                            )
+                        },
+                    )
                     .child(
                         div()
                             .id("composer-memories-done")
+                            .debug_selector(|| "MEMORIES_DONE".to_owned())
                             .role(Role::Button)
                             .aria_label(crate::i18n::format!("完成" => "Done"))
                             .mt(px(20.0))

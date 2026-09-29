@@ -587,10 +587,14 @@ pub(super) fn command_execution_activity(
                     row_command.actions = vec![CommandExecutionAction::Unknown {
                         command: action_command,
                     }];
+                    // A command the user typed (`!` in the composer) opens
+                    // with its output; toggling flips it like any other.
+                    let user_shell =
+                        command.source == crate::agent::CommandExecutionSource::UserShell;
                     rows.child(command_activity(
                         home_entity.clone(),
                         row_command,
-                        expanded_commands.contains(&row_id),
+                        expanded_commands.contains(&row_id) != user_shell,
                         scroll_handle.clone(),
                         theme,
                     ))
@@ -618,10 +622,13 @@ pub(super) fn command_activity(
     let output_scroll_id: SharedString = format!("command-output-{item_id}").into();
     let hover_group: SharedString = format!("command-activity-{item_id}").into();
     let summary = command_activity_summary(&command);
-    let status_label = match command.status {
-        CommandExecutionStatus::InProgress => crate::i18n::text("运行中"),
-        CommandExecutionStatus::Completed => crate::i18n::text("成功"),
-        CommandExecutionStatus::Failed => crate::i18n::text("失败"),
+    let status_label: SharedString = match command.status {
+        CommandExecutionStatus::InProgress => crate::i18n::text("运行中").into(),
+        CommandExecutionStatus::Completed => crate::i18n::text("成功").into(),
+        CommandExecutionStatus::Failed if command.timed_out => {
+            crate::i18n::format!("超时" => "Timed out").into()
+        }
+        CommandExecutionStatus::Failed => crate::i18n::text("失败").into(),
     };
     let status_icon = match command.status {
         CommandExecutionStatus::Failed => "settings-warning",

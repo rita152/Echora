@@ -19,8 +19,10 @@ mod hooks;
 mod mcp;
 mod message;
 mod plugins;
+mod provider;
 mod queue;
 mod requests;
+mod review;
 mod runtime;
 mod search;
 mod skills;
@@ -50,7 +52,8 @@ pub use activity::{
     AgentImageGeneration, AgentImageGenerationFailure, AgentImageGenerationStatus, AgentImageView,
     AgentMcpToolCall, AgentMcpToolCallStatus, AgentPlan, AgentPlanStep, AgentPlanStepStatus,
     AgentReasoning, AgentReviewMode, AgentSleep, AgentTurnPlan, AgentWebSearch, CommandExecution,
-    CommandExecutionAction, CommandExecutionStatus, LegacySubAgentActivityKind,
+    CommandExecutionAction, CommandExecutionSource, CommandExecutionStatus,
+    LegacySubAgentActivityKind,
 };
 pub use apps::{
     AgentAppBranding, AgentAppInfo, AgentAppMetadata, AgentAppMetadataEntry, AgentAppReview,
@@ -90,8 +93,8 @@ pub use config::{
 pub use events::{AgentConnectionEvent, AgentEvent};
 pub use features::{
     AgentExperimentalFeature, AgentExperimentalFeatureStage, AgentExperimentalFeatures,
-    AgentMemoryConfig, AgentMemoryPreferences, AgentThreadMemoryMode, memory_enable_edits,
-    memory_tool_assisted_edits,
+    AgentMemoryConfig, AgentMemoryPreferences, AgentMemoryStatus, AgentThreadMemoryMode,
+    MEMORY_V2_REQUIRED_THREADS, memory_enable_edits, memory_tool_assisted_edits,
 };
 pub(crate) use file_search::AgentFileSearchSessionControl;
 pub use file_search::{
@@ -142,6 +145,7 @@ pub use plugins::{
     AgentPluginSource, AgentPluginSummary, AgentPluginUninstallRequest, AgentPluginUninstallResult,
     AgentPluginsError, AgentPluginsErrorKind,
 };
+pub use provider::AgentProviderCapabilities;
 pub use queue::{
     AgentQueueAddRequest, AgentQueueReorderRequest, AgentQueueTarget, AgentQueueUpdateRequest,
     AgentQueuedSubmission, AgentThreadQueue,
@@ -166,6 +170,10 @@ pub use requests::{
 pub(crate) use requests::{
     AgentApprovalControl, AgentFileApprovalControl, AgentMcpElicitationControl,
     AgentPermissionsApprovalControl, AgentUserInputControl,
+};
+pub use review::{
+    AgentReviewRequest, AgentReviewTarget, AgentShellCommandRequest, AgentShellCommandStarted,
+    AgentThreadTarget,
 };
 pub use runtime::{
     AgentAuthRecovery, AgentDeprecationNotice, AgentHookOutput, AgentHookPrompt,

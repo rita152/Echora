@@ -27,6 +27,7 @@ impl ComposerView {
     }
 
     pub(super) fn load_permission_catalog(&mut self, cx: &mut Context<Self>) {
+        self.load_provider_capabilities(cx);
         self.permission_catalog_cycle = self.permission_catalog_cycle.wrapping_add(1);
         let cycle = self.permission_catalog_cycle;
         let cwd = self.conversation.cwd.clone();
@@ -61,10 +62,45 @@ impl ComposerView {
                             Some(crate::i18n::text("权限配置连接已关闭").into())
                     }
                 }
+                this.start_pending_review(cx);
                 cx.notify();
             });
         })
         .detach();
+    }
+
+    /// Re-read with the new-chat settings, so a provider change saved in
+    /// the configuration reaches the gated entry points.
+    fn load_provider_capabilities(&mut self, cx: &mut Context<Self>) {
+        let receiver = self.backend.read_provider_capabilities();
+        cx.spawn(async move |this, cx| {
+            let result = receiver.recv().await;
+            let _ = this.update(cx, |this, cx| {
+                let capabilities = match result {
+                    Ok(Ok(capabilities))
+                        if capabilities.generation >= this.conversation.runtime.generation =>
+                    {
+                        Some(capabilities)
+                    }
+                    Ok(Err(error)) => {
+                        eprintln!("modelProvider/capabilities/read 读取失败：{error}");
+                        None
+                    }
+                    _ => None,
+                };
+                if this.provider_capabilities != capabilities {
+                    this.provider_capabilities = capabilities;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Image generation is gated only when the provider says it lacks it.
+    pub fn image_generation_available(&self) -> bool {
+        self.provider_capabilities
+            .is_none_or(|capabilities| capabilities.image_generation)
     }
 
     pub(super) fn load_effective_permissions(&mut self, cx: &mut Context<Self>) {

@@ -156,7 +156,7 @@ impl CodexAppServerManager {
                 if connection.generation != generation {
                     bail!("连接已变化，请重新读取权限配置");
                 }
-                manager.ensure_thread_loaded(&connection, Some(&thread_id), None)?;
+                manager.ensure_thread_loaded_confirmed(&connection, &thread_id)?;
                 let settings = connection
                     .state
                     .lock()

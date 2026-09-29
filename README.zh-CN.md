@@ -59,6 +59,7 @@
 | **侧边探索** | 从主会话派生临时对话，分别控制输入、模型、权限与停止操作。 |
 | **配置 Codex** | 读取有效配置与来源，查看受管限制，编辑已支持的用户层设置，并通过后端回读核验保存结果。 |
 | **钩子、实验性功能与记忆** | 「设置 → 钩子」按来源列出 `hooks/list` 返回的钩子，显示待审核与加载问题摘要，支持逐项信任与全部信任、启用开关（受管钩子始终开启）、详情、刷新，以及打开钩子所在的配置文件。「设置 → 配置」在「实验性质功能（测试版）」中列出服务端的 beta 功能，切换后提示需要重启。「设置 → 个性化」可启用 Codex 记忆、允许从使用工具的聊天中生成记忆，并在确认后删除全部记忆；斜杠菜单的「记忆」设置当前聊天是否使用与生成记忆。 |
+| **代码审查、Shell 命令与分区** | 斜杠菜单的「代码审查」以 `review/start` 审查未提交的更改或当前分支相对基准分支的更改：默认在当前聊天进行；「设置 → Git → 审查结果呈现方式」为「单独」时，在同项目的新聊天中进行。该轮显示「审查模式」，审查面板打开对应 diff。以 `!` 开头的一行通过 `thread/shellCommand` 在聊天的 shell 中运行，不受沙盒限制。自定义侧栏分区位于置顶与项目之间，可新建、重命名、排序、折叠和移除；聊天与项目可通过菜单或拖放移入，也可以直接在分区中新建聊天。 |
 | **选择语言** | 在设置 → 常规 → 语言中切换 English、简体中文或自动检测；切换立即生效并在本地保存。 |
 | **管理账户** | 在账户菜单查看当前 ChatGPT 账户与套餐，未以 ChatGPT 登录时显示所配置模型提供方的名称；后端要求 OpenAI 认证时可通过 Codex 管理的 ChatGPT 登录，也可取消进行中的登录，并在确认后退出登录。 |
 | **管理技能与 MCP** | 读取技能目录并按技能启用／禁用并核验回执；列出 MCP 服务器的状态、认证、工具与服务端扩展字段；重新加载服务器；完成 OAuth 登录并区分等待、成功、失败、取消与断连状态。 |
@@ -118,7 +119,7 @@ Cargo 包和可执行文件目前仍名为 `gpui-chat-clone`，现有构建与�
 
 - **运行中追加输入：** 设置 → 常规 →「跟进处理方式」在引导（`turn/steer`，默认）与排队（`thread/queue/add`）之间选择，`Cmd+Enter` 对单条消息取反，选择保存在 UI 偏好中。排队的消息显示在输入框上方的托盘里，每行可以立即发送（运行中引导进当前轮次并移出队列，空闲时直接开始）、编辑、在新的侧边聊天中打开、删除或拖动排序。与 ChatGPT 一致，编辑会先把消息移出队列，重新提交时排回原位置（没有运行中的轮次也没有其他排队消息时直接发送）；`Cmd+Z` 可在一分钟内恢复删除的消息、30 分钟内恢复编辑中的消息，`Cmd+Shift+Z` 重做。轮次结束后由服务端自行开始下一条；用户停止轮次后队列暂停，直到继续，此时发送新消息会先询问是否清空队列。侧边聊天始终引导。失败输入可连同附件与审查评论恢复，不覆盖后续新草稿，也不自动改发为新轮次。
 - **目标：** 斜杠菜单的「目标」（或输入 `/goal`）打开输入框的「目标」标记，`/goal <目标>` 直接设置。之后服务端会在聊天空闲时自行推进，这些轮次与普通轮次一样流式显示，请求下方显示「设为目标」。托盘显示目标状态与已用时间，提供清除、暂停／恢复和编辑；编辑在右侧面板打开「编辑目标」标签，提供「还原」和「保存」（保存会同时恢复已暂停的目标）。替换已保存的目标前会先确认。停止轮次时先暂停进行中的目标再中断；目标达成后立即离开托盘并自动清除，达成目标的轮次显示「已在 … 内达成目标」，直到开始新的目标。超过 4000 个字符的目标与 ChatGPT 一样保存到 `$CODEX_HOME/attachments` 下的文件，以指针发送。
-- **斜杠菜单：** 在行首或空格后输入 `/` 会在输入框上方打开菜单，提供「目标」「压缩」「计划模式」（服务端提供时）、「批准」（存在可批准的自动复核拒绝时）和「记忆」（记忆功能开启时）；输入的查询按模糊匹配排序，ChatGPT 的其他命令尚未实现。
+- **斜杠菜单：** 在行首或空格后输入 `/` 会在输入框上方打开菜单，提供「代码审查」（Git 项目且输入框没有其他内容时）、「目标」「压缩」「计划模式」（服务端提供时）、「批准」（存在可批准的自动复核拒绝时）和「记忆」（记忆功能开启时）；输入的查询按模糊匹配排序，标题中匹配的部分保持高亮，ChatGPT 的其他命令尚未实现。
 - **协作模式：** 计划与默认模式来自连接的 `collaborationMode/list` 预设，每个连接读取一次；服务端列出计划模式时才提供该选项，模型与推理强度始终使用你的选择。
 - **实时输出与历史：** 实时与恢复后的已完成轮次共用最终答复选择、工作过程折叠、答复操作与文件汇总。文本增量保留 item 身份，完成消息快照校正显示内容；相邻增量以 8 ms 窗口批处理，代码高亮复用已完成行，仅重解析未结束行。已完成轮次折叠最终答复之前的过程消息，追加的用户消息保留原有位置与附件。文件变更按路径汇总并保留原始 patch。历史由 app-server 提供，不伪造缺失的时间、计划步骤快照或自动复核历史。
 - **审批：** 并发请求依次显示，提交后等待服务端释放。响应失败可见且不可重复提交。可查看原始请求补丁，展开和复制长命令。使用 Tab / 方向键导航、Enter 激活、Esc 关闭或拒绝；文件审批的 `Shift+Esc` 拒绝并停止轮次。
@@ -136,6 +137,10 @@ Cargo 包和可执行文件目前仍名为 `gpui-chat-clone`，现有构建与�
 - **在聊天中查找：** 在对话中按 `Cmd+F` 打开查找栏，由 `thread/searchOccurrences` 提供结果（先取前 250 个，还有更多时显示「+」，越过已读结果时继续读取下一页）。匹配在渲染后的消息中高亮，当前结果为橙色；结果所在轮次尚未加载时会重新读取一次历史。服务端无法搜索的临时侧边聊天改为在已加载的消息中本地查找。文件编辑器、终端与 PR 视图保留各自的 `Cmd+F`。
 - **钩子、功能与记忆：** 钩子信任与启用、实验性功能开关和记忆设置都以带版本的用户层 `config/batchWrite` 立即保存并回读；冲突或失败时恢复服务端值并显示错误。运行中的 app-server 保留启动时的功能开关，因此功能更改在新的 Codex 连接上生效。`/memories` 让新聊天随 `thread/start` 发送所选设置；聊天开始后只能更改是否生成记忆（`thread/memoryMode/set`，失败时回滚）。
 - **压缩上下文：** 斜杠菜单的「压缩」或输入 `/compact` 会执行 `thread/compact/start`；轮次运行中会提示无法压缩。压缩按不可 steer 的轮次运行，期间追加输入会如实展示服务端结论，压缩结果沿用既有 contextCompaction 条目展示。
+- **代码审查：** 「代码审查」子菜单列出「审查未提交的更改」，并在「与基准分支比较」下列出默认目标分支和最多 100 个最近的本地分支（不含当前分支）；在保留的 `/` 后继续输入可以过滤，分支加载失败时提供「重试」。审查始终以 inline 方式发送：选「单独」时先建新聊天（`thread/start`，带 `threadSource: code_review` 与当前权限），因为 0.158 拒绝对分页线程使用 detached。轮次运行中不能开始审查。服务端会用另一个永不完成的 turn id 宣告审查轮次，Echora 会丢弃它，不接管这个虚假轮次。恢复的审查轮次与实时一样显示请求文本和「审查模式」标记。
+- **Shell 命令：** 输入框以 `!` 开头时（侧边聊天、编辑队列项和目标草稿除外），底部显示警告标签「Shell · 在沙盒外运行」；按 Enter 发送这一行的其余部分，新聊天会先建立线程。服务端的 user-shell 轮次显示为默认展开的命令卡片，状态有运行中、完成、失败、超时和中断。命令被拒绝时文字放回输入框并提示。ChatGPT 没有这个入口。
+- **自定义分区：** 分区及其中的聊天保存在服务端（`threadSection/*`、`thread/section/move`）；分区顺序、分区内的项目和折叠状态是本地 UI 偏好。移除分区后，其中的聊天回到「最近」。分区头菜单提供「在{分区}中新建聊天」「编辑」「归档聊天」「全部标为已读」「移除分区」；聊天与项目菜单提供「移至分区」和「新建分区…」。
+- **提供方能力与记忆状态：** `modelProvider/capabilities/read` 门控「设置 → 配置」的网页搜索（提供方不支持时只能选「已禁用」，并说明原因）以及图片生成失败后的重试；`memory/status` 在「设置 → 个性化」增加「记忆整合」行，并在「聊天记忆」对话框显示状态。ChatGPT 不展示这两项，均为 Echora 新增。`thread/loaded/list` 在打开线程时核对本地的已加载记录，服务端不再持有该线程时会重新 resume。
 
 </details>
 
@@ -255,6 +260,10 @@ Computer Use 只能驱动 macOS 视作用户应用的 bundle，而且驱动过�
 | `--memories-state=settings-on/settings-off/settings-unavailable/delete-confirm/deleted/delete-failed/slash/dialog-new/dialog-started/dialog-generate-off/rollback` | Codex 记忆设置（`--settings-page=personalization`）及其删除确认与提示、含「记忆」的斜杠菜单，以及新聊天、已开始聊天、关闭生成、更改回滚后的「聊天记忆」对话框。不发送记忆请求。 |
 | `--find-bar-state=open/results/second/capped/none` | 固定的「hello」聊天上的查找栏：空查询、两个结果中的第一个、第二个、首页截断（`+`）与无结果。本地匹配，不发送搜索请求。 |
 | `--slash-menu-state=menu/query/approve/compact-busy` | 列出全部可用命令的斜杠菜单、输入 `/go` 后的查询结果、含两条拒绝的「批准」子菜单，以及轮次运行中选择「压缩」时的危险提示。 |
+| `--review-menu-state=slash/submenu/submenu-branch/loading/failed/escaped`、`--review-turn-state=running/finished`、`--review-delivery-state=inline/detached` | 「代码审查」命令及子菜单（列出本仓库自己的分支）、带「审查模式」标记的审查轮次，以及「设置 → Git → 审查结果呈现方式」（`--settings-page=git-settings`）。不会真正开始审查。 |
+| `--shell-mode-state=typing/running/completed/failed/timeout/interrupted` | `!` Shell 标签与各状态的 user-shell 命令卡片。 |
+| `--capabilities-state=unsupported/supported`、`--memory-status-state=settings-pending/settings-ready/pending/ready` | 受提供方能力门控的网页搜索（`--settings-page=agent`），以及「设置 → 个性化」（`--settings-page=personalization`）或「聊天记忆」对话框中的记忆整合状态。 |
+| `--sections-state=sidebar/hover/menu/thread-menu/dialog-new/dialog-edit` | 两个预置的自定义分区（一个含两个聊天和一个项目，一个为空）、分区头悬停与菜单、聊天菜单中的「移至分区」，以及新建和编辑分区对话框。 |
 | `--auto-review-denial-state=denied/approving/approved/failed` | 被拒绝的自动复核及其批准区域的各个状态；不发送批准请求。 |
 | `--progress-ui-state=running/streaming/completed/interrupted` | 计划、搜索与等待归约；streaming 定时产生更新和完成，running 可中断。 |
 | `--streaming-reply-ui-state=streaming/completed` | 通过归约器按定时 token 突发喂入一段固定回复，配合 `--screenshot-delay-ms=`（开始计帧前按真实时间等待）可截到流式中途的节奏揭示与逐词淡入；completed 会补上完成快照，`--reduce-motion` 则按原样逐条显示、不做节奏与淡入。 |
@@ -307,6 +316,7 @@ node scripts/cdp_pin_reference_layout.mjs --layout=legacy --wait=60
 | 会话用户消息导航轨 | `scripts/capture_user_message_rail_gpui.sh both` 先采集原生侧的静止态与单条悬停态，再以同一视口通过 CDP 重采参考，最后用 `scripts/compare_user_message_rail.py` 逐主题打分。参考侧脚本（`scripts/cdp_capture_user_message_rail.mjs`）通过应用自身的 Appearance 控件切换主题，并用真实指针悬停与点击记录轨道几何、计算样式、各标记宽度、提示卡延迟、预览 DOM 与截图；对比报告给出轨道的 `pixelsWithin2`、悬停态的 `toleranceAdjustedSimilarity`、卡片表面相似度以及两个锚点偏差。`cargo test navigation` 固定标记递减宽度、当前标记规则与预览卡截断点，并用窗口事件与模拟时钟驱动提示轨，固定悬停、关闭宽限、拖动浏览与跳转的时序。动效方面，`scripts/cdp_probe_user_message_rail_motion.mjs` 以固定的指针脚本逐帧记录参考；采集构建用 `--resume-thread=… --user-message-navigation-jump=1 --user-message-rail-motion --screenshot=PATH` 回放同一脚本（写出 `PATH.motion.json`）；`scripts/compare_user_message_rail_motion.py` 对比预览的打开与关闭时间、跳过延迟后的重新打开、标记过渡完成时间、平滑滚动时长、气泡闪烁、拖动浏览时的 `aria-current` 序列、每个标记的预览高度、Alt+方向键的落点以及滚轮路由。 |
 | 跟进队列、目标与自动复核批准 | `python3 scripts/batch1_app_server_probe.py --output artifacts/batch1-baseline-<日期>` 以隔离的 `CODEX_HOME` 和本地假 Responses 端点运行本机 `codex app-server`，记录基线下队列、目标、协作模式与批准的行为，不发模型请求；`--scenario guardian_live` 让假审核拒绝一次提权的 `echo` 再批准该拒绝，在真实的 0.158 服务端上观察批准路径。原生侧用 `--queue-ui-state`、`--goal-ui-state`、`--slash-menu-state`、`--auto-review-denial-state` 采集，`python3 scripts/compare_batch1_captures.py OUT ref.png:echora.png:x0,y0,x1,y1[:name] …` 以同一矩形裁剪两侧（不缩放、不平移）并给出相似度。`cargo test followup_tests`、`cargo test goal_tab` 与 `cargo test batch1` 用脚本化后端驱动输入框、「编辑目标」标签与 manager 流程。 |
 | 轮次设置、聊天内查找、钩子、实验性功能与记忆 | `python3 scripts/batch2_app_server_probe.py --output artifacts/batch2-baseline-<日期>` 以隔离的 `CODEX_HOME` 和假 Responses 端点记录 0.158 基线下 `turn/settings/update`、`thread/searchOccurrences`（分页、游标、大小写与 UTF-16 范围）、用户层与项目层的 `hooks/list`、`experimentalFeature/list`、`thread/memoryMode/set` 与 `memory/reset` 的行为。专用参考实例运行时，`CHATGPT_CDP_HTTP=http://127.0.0.1:PORT node scripts/cdp_capture_batch2.mjs --output=artifacts/batch2` 把两种主题的参考状态采集到 `artifacts/batch2-<主题>-<日期>/reference/`；`ECHORA_CODEX_HOME=<~/.codex 的副本> scripts/capture_batch2_gpui.sh <日期>` 把对应的原生状态采集到 `…/echora/`，并拒绝使用真实的 `~/.codex`。`cargo test batch2`、`cargo test find_tests` 与 `cargo test memories_tests` 用脚本化后端驱动 manager、设置页、查找栏与 `/memories` 流程。 |
+| 代码审查、Shell 命令、提供方能力、记忆状态、已加载线程与自定义分区 | `python3 scripts/batch3_app_server_probe.py --output artifacts/batch3-baseline-<日期>` 以隔离的 `CODEX_HOME` 和假 Responses 端点记录 0.158 基线：`review/start`（含第二个 turn id）、`thread/shellCommand`（失败、超时、中断，以及在运行中的轮次内执行）、各提供方的 `modelProvider/capabilities/read`、`memory/status`、`thread/loaded/list` 分页，以及 `threadSection/update|delete`。`CHATGPT_CDP_HTTP=http://127.0.0.1:端口 node scripts/cdp_capture_batch3.mjs --output=artifacts/batch3` 采集参考状态，不会选中任何审查；`ECHORA_CODEX_HOME=<~/.codex 的副本> scripts/capture_batch3_gpui.sh <日期>` 采集原生状态。`python3 scripts/compare_batch3_captures.py <日期>` 在两侧分别测量面板与文字行；两侧画面对齐时再按同一矩形计算相似度，全程不缩放、不平移。`cargo test batch3` 与 `cargo test sections_tests` 以脚本化后端驱动编解码、manager、输入框、设置、工作区存储与侧栏。 |
 | 图像生成 | `python3 scripts/compare_image_generation_component.py --help`，传入实测等尺寸裁切范围和 DPR。 |
 | 历史诊断 | `python3 scripts/audit_resume_rendering.py --help`；rollout 仅用于离线诊断。 |
 

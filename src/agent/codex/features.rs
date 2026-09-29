@@ -1,17 +1,19 @@
-//! `experimentalFeature/list`, `thread/memoryMode/set` and `memory/reset` for
-//! the baseline CLI schema.
+//! `experimentalFeature/list`, `thread/memoryMode/set`, `memory/reset` and
+//! `memory/status` for the baseline CLI schema.
 
 use anyhow::{Context as _, Result};
 use serde_json::{Map, Value, json};
 
 use super::json::{array, object, optional_string, required_bool, required_enum, required_string};
 use crate::agent::{
-    AgentExperimentalFeature, AgentExperimentalFeatureStage, AgentThreadMemoryMode,
+    AgentExperimentalFeature, AgentExperimentalFeatureStage, AgentMemoryStatus,
+    AgentThreadMemoryMode,
 };
 
 pub(super) const FEATURE_LIST_METHOD: &str = "experimentalFeature/list";
 pub(super) const MEMORY_MODE_SET_METHOD: &str = "thread/memoryMode/set";
 pub(super) const MEMORY_RESET_METHOD: &str = "memory/reset";
+pub(super) const MEMORY_STATUS_METHOD: &str = "memory/status";
 /// The reference's page size.
 pub(super) const FEATURE_PAGE_SIZE: u32 = 100;
 
@@ -104,6 +106,37 @@ pub(super) fn parse_empty_result(response: &Value, method: &str) -> Result<()> {
         method,
     )
     .map(|_| ())
+}
+
+/// `minConsolidatedThreads` must be within 1..=4096; the caller's threshold
+/// is sent as is so the server's range check stays the only authority.
+pub(super) fn memory_status_params(required_threads: u32) -> Value {
+    json!({ "minConsolidatedThreads": required_threads })
+}
+
+pub(super) fn parse_memory_status(
+    generation: u64,
+    required_threads: u32,
+    response: &Value,
+) -> Result<AgentMemoryStatus> {
+    const CONTEXT: &str = "memory/status result";
+    let result = object(
+        response
+            .get("result")
+            .context("memory/status 响应缺少 result")?,
+        CONTEXT,
+    )?;
+    let consolidated = result
+        .get("v2ConsolidatedThreads")
+        .and_then(Value::as_u64)
+        .and_then(|count| u32::try_from(count).ok())
+        .context("memory/status result 缺少 uint32 字段 v2ConsolidatedThreads")?;
+    Ok(AgentMemoryStatus {
+        generation,
+        v2_ready: required_bool(result, "v2Ready", CONTEXT)?,
+        consolidated_threads: consolidated,
+        required_threads,
+    })
 }
 
 #[cfg(test)]

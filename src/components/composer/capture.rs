@@ -181,6 +181,8 @@ impl ComposerView {
                     CommandExecutionStatus::Completed
                 },
                 exit_code: (!running).then_some(0),
+                source: crate::agent::CommandExecutionSource::Agent,
+                timed_out: false,
             }),
         ];
         if !running {
@@ -530,6 +532,8 @@ impl ComposerView {
                 terminal_process_id: None,
                 status: completed_status,
                 exit_code: completed_exit,
+                source: crate::agent::CommandExecutionSource::Agent,
+                timed_out: false,
             },
             CommandExecution {
                 id: "tool-group-read-2".to_owned(),
@@ -544,6 +548,8 @@ impl ComposerView {
                 terminal_process_id: None,
                 status: completed_status,
                 exit_code: completed_exit,
+                source: crate::agent::CommandExecutionSource::Agent,
+                timed_out: false,
             },
             CommandExecution {
                 id: "tool-group-read-3".to_owned(),
@@ -558,6 +564,8 @@ impl ComposerView {
                 terminal_process_id: None,
                 status: completed_status,
                 exit_code: completed_exit,
+                source: crate::agent::CommandExecutionSource::Agent,
+                timed_out: false,
             },
             CommandExecution {
                 id: "tool-group-read-4".to_owned(),
@@ -572,6 +580,8 @@ impl ComposerView {
                 terminal_process_id: None,
                 status: completed_status,
                 exit_code: completed_exit,
+                source: crate::agent::CommandExecutionSource::Agent,
+                timed_out: false,
             },
             CommandExecution {
                 id: "tool-group-read-5".to_owned(),
@@ -586,6 +596,8 @@ impl ComposerView {
                 terminal_process_id: None,
                 status: completed_status,
                 exit_code: completed_exit,
+                source: crate::agent::CommandExecutionSource::Agent,
+                timed_out: false,
             },
             CommandExecution {
                 id: "tool-group-search-1".to_owned(),
@@ -600,6 +612,8 @@ impl ComposerView {
                 terminal_process_id: None,
                 status: completed_status,
                 exit_code: completed_exit,
+                source: crate::agent::CommandExecutionSource::Agent,
+                timed_out: false,
             },
             CommandExecution {
                 id: "tool-group-search-2".to_owned(),
@@ -614,6 +628,8 @@ impl ComposerView {
                 terminal_process_id: None,
                 status: completed_status,
                 exit_code: completed_exit,
+                source: crate::agent::CommandExecutionSource::Agent,
+                timed_out: false,
             },
             CommandExecution {
                 id: "tool-group-search-3".to_owned(),
@@ -628,6 +644,8 @@ impl ComposerView {
                 terminal_process_id: None,
                 status: completed_status,
                 exit_code: completed_exit,
+                source: crate::agent::CommandExecutionSource::Agent,
+                timed_out: false,
             },
             CommandExecution {
                 id: "tool-group-run-1".to_owned(),
@@ -640,6 +658,8 @@ impl ComposerView {
                 terminal_process_id: None,
                 status: completed_status,
                 exit_code: completed_exit,
+                source: crate::agent::CommandExecutionSource::Agent,
+                timed_out: false,
             },
             CommandExecution {
                 id: "tool-group-run-2".to_owned(),
@@ -652,6 +672,8 @@ impl ComposerView {
                 terminal_process_id: None,
                 status: final_status,
                 exit_code: final_exit,
+                source: crate::agent::CommandExecutionSource::Agent,
+                timed_out: false,
             },
         ];
 
@@ -1304,6 +1326,8 @@ impl ComposerView {
 
 #[cfg(feature = "screenshot")]
 mod batch2;
+#[cfg(feature = "screenshot")]
+mod batch3;
 #[cfg(feature = "screenshot")]
 pub(crate) mod capture_find {
     pub(crate) use super::batch2::{FIND_PROMPT, FIND_REPLY};

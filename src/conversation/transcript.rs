@@ -45,12 +45,14 @@ pub(crate) struct ConversationTranscriptTurn {
     pub goal: TurnGoalMarks,
 }
 
-/// The reference's goal marks on one turn: the request was "Sent as goal",
-/// and the goal was achieved in this turn after the given time.
+/// The reference's marks on one turn: the request was "Sent as goal", the
+/// goal was achieved in this turn after the given time, or the turn is a code
+/// review ("Review mode").
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct TurnGoalMarks {
     pub sent_as_goal: bool,
     pub achieved_seconds: Option<i64>,
+    pub review_request: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -355,6 +357,7 @@ impl ConversationState {
                 let mut user_images = Vec::new();
                 let mut assistant_messages = Vec::new();
                 let mut activities = Vec::new();
+                let mut review_request = false;
                 for (item_index, item) in turn.items.iter().enumerate() {
                     match item {
                         ThreadHistoryItem::HookPrompt(prompt) => super::runtime::upsert_prompt(&mut activities, crate::agent::AgentScopedHookPrompt {thread_id:history.thread.thread_id.clone(),turn_id:turn.turn_id.clone(),prompt:prompt.clone()}),
@@ -413,6 +416,8 @@ impl ConversationState {
                             actions,
                             cwd,
                             exit_code,
+                            source,
+                            timed_out,
                         } => activities.push(ConversationActivity::Command(CommandExecution {
                             id: item_id.clone(),
                             command: command.clone(),
@@ -424,6 +429,8 @@ impl ConversationState {
                             terminal_process_id: None,
                             status: *status,
                             exit_code: *exit_code,
+                            source: *source,
+                            timed_out: *timed_out,
                         })),
                         ThreadHistoryItem::FileChange(change) => {
                             activities.push(ConversationActivity::FileChange(
@@ -505,8 +512,17 @@ impl ConversationState {
                         // and both review-mode items into turn activity instead
                         // of giving them a row, for live and restored turns
                         // alike.
-                        ThreadHistoryItem::FunctionCallOutput(_)
-                        | ThreadHistoryItem::ReviewMode(_) => {}
+                        ThreadHistoryItem::FunctionCallOutput(_) => {}
+                        // A review persists no user message: its request is
+                        // derived from the entered item's label.
+                        ThreadHistoryItem::ReviewMode(review) => {
+                            if review.entered && !review_request {
+                                review_request = true;
+                                if user_messages.is_empty() {
+                                    user_messages.push(super::review_request_from_label(&review.review));
+                                }
+                            }
+                        }
                     }
                 }
                 if let Some(error) = &turn.error {
@@ -550,7 +566,10 @@ impl ConversationState {
                         duration_ms: turn.duration_ms,
                         final_message_ids,
                     }),
-                    goal: TurnGoalMarks::default(),
+                    goal: TurnGoalMarks {
+                        review_request,
+                        ..TurnGoalMarks::default()
+                    },
                 }
             })
             .collect();
@@ -564,6 +583,7 @@ impl ConversationState {
             self.assistant_message_time = last.assistant_message_time;
             self.activities = last.activities;
             self.resumed_turn = last.resumed;
+            self.user_message_review = last.goal.review_request;
         } else {
             self.turn_id = None;
             self.phase = ConversationPhase::Empty;
@@ -605,6 +625,7 @@ impl ConversationState {
             goal: TurnGoalMarks {
                 sent_as_goal: std::mem::take(&mut self.user_message_goal),
                 achieved_seconds: self.goal_achieved_seconds.take(),
+                review_request: std::mem::take(&mut self.user_message_review),
             },
         });
         self.activities = pending_elicitations;

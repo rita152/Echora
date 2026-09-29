@@ -29,6 +29,11 @@ pub(super) struct Script {
     pub(super) feature_reads: usize,
     pub(super) writes: Vec<(AgentConfigWrite, ConfigReply)>,
     pub(super) resets: Vec<async_channel::Sender<Result<(), String>>>,
+    /// `memory/status` answers; `None` answers with an error.
+    pub(super) memory_status: Option<crate::agent::AgentMemoryStatus>,
+    pub(super) memory_status_reads: usize,
+    pub(super) capabilities: Option<crate::agent::AgentProviderCapabilities>,
+    pub(super) capability_reads: usize,
 }
 
 #[derive(Default)]
@@ -176,6 +181,37 @@ impl AgentBackend for Backend {
     fn reset_memories(&self) -> async_channel::Receiver<Result<(), String>> {
         let (reply, receiver) = async_channel::bounded(1);
         self.script.lock().unwrap().resets.push(reply);
+        receiver
+    }
+    fn read_memory_status(
+        &self,
+        required_threads: u32,
+    ) -> async_channel::Receiver<Result<crate::agent::AgentMemoryStatus, String>> {
+        let mut script = self.script.lock().unwrap();
+        script.memory_status_reads += 1;
+        let (reply, receiver) = async_channel::bounded(1);
+        reply
+            .send_blocking(
+                script
+                    .memory_status
+                    .map(|status| crate::agent::AgentMemoryStatus {
+                        required_threads,
+                        ..status
+                    })
+                    .ok_or_else(|| "memories unavailable".to_owned()),
+            )
+            .unwrap();
+        receiver
+    }
+    fn read_provider_capabilities(
+        &self,
+    ) -> async_channel::Receiver<Result<crate::agent::AgentProviderCapabilities, String>> {
+        let mut script = self.script.lock().unwrap();
+        script.capability_reads += 1;
+        let (reply, receiver) = async_channel::bounded(1);
+        reply
+            .send_blocking(script.capabilities.ok_or_else(|| "unknown".to_owned()))
+            .unwrap();
         receiver
     }
 }

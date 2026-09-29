@@ -4,6 +4,8 @@ mod appshots;
 mod artwork;
 #[cfg(test)]
 mod batch2_tests;
+#[cfg(test)]
+mod batch3_tests;
 mod browser;
 mod chronicle;
 mod computer_use;
@@ -46,6 +48,8 @@ pub struct ChangeTheme(pub ThemeMode);
 pub struct ChangeLanguage(pub crate::i18n::Language);
 /// The Follow-up behavior segmented control changed.
 pub struct ChangeFollowUpMode(pub crate::workspace::FollowUpMode);
+/// Git → Review delivery changed.
+pub struct ChangeReviewDelivery(pub crate::workspace::ReviewDelivery);
 pub struct ConfigSaveFinished;
 pub use hooks::OpenSettingsFile;
 
@@ -67,6 +71,14 @@ pub struct SettingsView {
     switch_overrides: HashMap<(&'static str, usize, usize), bool>,
     appearance_theme: usize,
     pub(super) follow_up_mode: crate::workspace::FollowUpMode,
+    pub(super) review_delivery: crate::workspace::ReviewDelivery,
+    /// What the configured model provider supports, read with the config.
+    pub(super) provider_capabilities: Option<crate::agent::AgentProviderCapabilities>,
+    /// A capture fixture's capabilities, which a read does not replace.
+    pub(super) provider_capabilities_fixture: bool,
+    /// `memory/status` for the memory card; `None` while unknown or failed.
+    pub(super) memory_status: Option<crate::agent::AgentMemoryStatus>,
+    pub(super) memory_status_cycle: u64,
     language_menu_open: bool,
     language_menu_index: usize,
     language_focus: gpui::FocusHandle,
@@ -127,6 +139,7 @@ impl EventEmitter<CloseSettings> for SettingsView {}
 impl EventEmitter<ChangeTheme> for SettingsView {}
 impl EventEmitter<ChangeLanguage> for SettingsView {}
 impl EventEmitter<ChangeFollowUpMode> for SettingsView {}
+impl EventEmitter<ChangeReviewDelivery> for SettingsView {}
 impl EventEmitter<OpenSettingsFile> for SettingsView {}
 
 impl SettingsView {
@@ -137,6 +150,17 @@ impl SettingsView {
     ) {
         if self.follow_up_mode != mode {
             self.follow_up_mode = mode;
+            cx.notify();
+        }
+    }
+
+    pub fn set_review_delivery(
+        &mut self,
+        delivery: crate::workspace::ReviewDelivery,
+        cx: &mut Context<Self>,
+    ) {
+        if self.review_delivery != delivery {
+            self.review_delivery = delivery;
             cx.notify();
         }
     }
@@ -310,6 +334,11 @@ impl SettingsView {
             switch_overrides: HashMap::new(),
             appearance_theme: if mode == ThemeMode::Dark { 2 } else { 1 },
             follow_up_mode: Default::default(),
+            review_delivery: Default::default(),
+            provider_capabilities: None,
+            provider_capabilities_fixture: false,
+            memory_status: None,
+            memory_status_cycle: 0,
         }
     }
 
@@ -327,6 +356,9 @@ impl SettingsView {
         }
         if matches!(slug, "agent" | "personalization") && !self.features.loading {
             self.refresh_features(cx);
+        }
+        if slug == "personalization" {
+            self.refresh_memory_status(cx);
         }
         self.content_scroll.set_offset(point(px(0.0), px(0.0)));
         self.ensure_plugins_segment_loaded(cx);

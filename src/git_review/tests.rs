@@ -507,3 +507,55 @@ fn origin_labels_follow_the_reference_normalization() {
         assert_eq!(origin_owner_repo(remote), None, "{remote}");
     }
 }
+
+#[test]
+fn review_branches_follow_the_reference_code_review_menu() {
+    let r = Repo::new();
+    r.write("file", b"one");
+    r.commit();
+    // No remote: the default target falls back to `main`, which is the
+    // current branch here and so is left out.
+    assert_eq!(review_branches(&r.0).unwrap(), Vec::<String>::new());
+    for branch in ["older", "newer"] {
+        git(&r.0, &["checkout", "-q", "-b", branch]).unwrap();
+        r.write("file", branch.as_bytes());
+        git(&r.0, &["add", "--all"]).unwrap();
+        // Distinct committer dates keep the recency order deterministic.
+        let date = if branch == "older" {
+            "2001-01-01T00:00:00"
+        } else {
+            "2002-01-01T00:00:00"
+        };
+        let out = Command::new("git")
+            .current_dir(&r.0)
+            .env("GIT_COMMITTER_DATE", date)
+            .args(["commit", "-q", "-m", branch])
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+    }
+    git(&r.0, &["checkout", "-q", "main"]).unwrap();
+    assert_eq!(review_branches(&r.0).unwrap(), ["newer", "older"]);
+
+    // A remote HEAD names the default target, listed first.
+    let remote = Repo::new();
+    remote.write("file", b"remote");
+    remote.commit();
+    git(
+        &r.0,
+        &["remote", "add", "origin", remote.0.to_str().unwrap()],
+    )
+    .unwrap();
+    git(&r.0, &["fetch", "-q", "origin"]).unwrap();
+    git(&r.0, &["remote", "set-head", "origin", "main"]).unwrap();
+    git(&r.0, &["checkout", "-q", "newer"]).unwrap();
+    assert_eq!(
+        review_branches(&r.0).unwrap(),
+        ["origin/main", "main", "older"]
+    );
+    // Without a remote HEAD a `main` branch on the remote still counts.
+    git(&r.0, &["remote", "set-head", "origin", "--delete"]).unwrap();
+    assert_eq!(review_branches(&r.0).unwrap()[0], "origin/main");
+    // Outside a repository the list cannot load.
+    assert!(review_branches(&std::env::temp_dir().join("gpui-not-a-repo")).is_err());
+}

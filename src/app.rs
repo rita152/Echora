@@ -78,6 +78,9 @@ pub struct ChatApp {
     agent_backend: Arc<dyn AgentBackend>,
     workspace_store: Arc<WorkspaceStore>,
     conversation_hosts: HashMap<ConversationKey, ConversationHost>,
+    /// Drafts started by "New chat in {section}": their thread joins the
+    /// section once it is created.
+    draft_sections: HashMap<ConversationKey, crate::agent::ThreadSectionId>,
     active_conversation: ConversationKey,
     next_draft_id: u64,
     mode: ThemeMode,
@@ -220,10 +223,13 @@ impl ChatApp {
         let initial_composer = home.read(cx).composer_entity();
         let initial_cwd = std::env::current_dir().unwrap_or_default();
         let follow_up_mode = workspace_store.snapshot().preferences.follow_up_mode;
+        let review_delivery = workspace_store.snapshot().preferences.review_delivery;
         initial_composer.update(cx, |composer, cx| {
             composer.set_workspace_context(initial_cwd.clone(), None, None, cx);
             composer.set_follow_up_mode(follow_up_mode, cx);
+            composer.set_review_delivery(review_delivery, cx);
         });
+        Self::wire_code_review(&initial_composer, cx);
         cx.subscribe(
             &initial_composer,
             |this, _, event: &crate::components::composer::FollowUpModeToggled, cx| {
@@ -334,6 +340,18 @@ impl ChatApp {
         })
         .detach();
         cx.subscribe(
+            &sidebar,
+            |this, sidebar, event: &crate::components::sidebar::NewChatInSection, cx| {
+                this.close_pull_requests(cx);
+                let (project_id, cwd) =
+                    sidebar.update(cx, |sidebar, _| sidebar.new_conversation_target());
+                this.start_draft(project_id, cwd, cx);
+                this.draft_sections
+                    .insert(this.active_conversation.clone(), event.0.clone());
+            },
+        )
+        .detach();
+        cx.subscribe(
             &settings,
             |this, _, event: &crate::settings::OpenSettingsFile, cx| {
                 this.showing_settings = false;
@@ -382,6 +400,16 @@ impl ChatApp {
             &settings,
             |this, _, event: &crate::settings::ChangeFollowUpMode, cx| {
                 this.apply_follow_up_mode(event.0, cx);
+            },
+        )
+        .detach();
+        settings.update(cx, |settings, cx| {
+            settings.set_review_delivery(workspace_store.snapshot().preferences.review_delivery, cx)
+        });
+        cx.subscribe(
+            &settings,
+            |this, _, event: &crate::settings::ChangeReviewDelivery, cx| {
+                this.apply_review_delivery(event.0, cx);
             },
         )
         .detach();
@@ -483,6 +511,7 @@ impl ChatApp {
             agent_backend,
             workspace_store,
             conversation_hosts,
+            draft_sections: HashMap::new(),
             active_conversation,
             next_draft_id: 2,
             mode,
@@ -543,16 +572,82 @@ impl ChatApp {
         cx.notify();
     }
 
+    /// Persists Git → Review delivery and applies it to every composer and
+    /// the settings control.
+    pub(crate) fn apply_review_delivery(
+        &mut self,
+        delivery: crate::workspace::ReviewDelivery,
+        cx: &mut Context<Self>,
+    ) {
+        self.workspace_store.set_review_delivery(delivery);
+        for host in self.conversation_hosts.values() {
+            host.composer.update(cx, |composer, cx| {
+                composer.set_review_delivery(delivery, cx)
+            });
+        }
+        self.settings.update(cx, |settings, cx| {
+            settings.set_review_delivery(delivery, cx)
+        });
+        cx.notify();
+    }
+
+    /// A detached review opens a new chat of the same project and starts
+    /// there; a started review shows the diff it looks at, as the reference
+    /// opens its review pane.
+    fn wire_code_review(composer: &Entity<ComposerView>, cx: &mut Context<Self>) {
+        cx.subscribe(
+            composer,
+            |this, composer, event: &crate::components::composer::StartDetachedReview, cx| {
+                let (cwd, project_id) = {
+                    let conversation = composer.read(cx);
+                    (
+                        conversation.conversation_cwd(),
+                        conversation.conversation_project_id(),
+                    )
+                };
+                this.start_draft(project_id, cwd, cx);
+                if let Some(host) = this.conversation_hosts.get(&this.active_conversation) {
+                    let target = event.0.clone();
+                    host.composer
+                        .update(cx, |composer, cx| composer.queue_code_review(target, cx));
+                }
+            },
+        )
+        .detach();
+        cx.subscribe(
+            composer,
+            |this, composer, event: &crate::components::composer::CodeReviewStarted, cx| {
+                let active = this
+                    .conversation_hosts
+                    .get(&this.active_conversation)
+                    .is_some_and(|host| host.composer == composer);
+                if !active {
+                    return;
+                }
+                this.open_review(cx);
+                this.ensure_review(cx);
+                if let Some(panel) = this.review_panels.get(&this.active_conversation) {
+                    let scope = event.0.clone();
+                    panel.update(cx, |panel, cx| panel.show_scope(scope, cx));
+                }
+            },
+        )
+        .detach();
+    }
+
     /// A composer for a new conversation host, configured with the current
     /// follow-up default and wired to the queue menu's toggle.
     pub(crate) fn new_host_composer(&mut self, cx: &mut Context<Self>) -> Entity<ComposerView> {
         let backend = self.agent_backend.clone();
         let mode = self.workspace_store.snapshot().preferences.follow_up_mode;
+        let delivery = self.workspace_store.snapshot().preferences.review_delivery;
         let composer = cx.new(|cx| {
             let mut composer = ComposerView::new_with_backend(self.mode, backend, cx);
             composer.set_follow_up_mode(mode, cx);
+            composer.set_review_delivery(delivery, cx);
             composer
         });
+        Self::wire_code_review(&composer, cx);
         cx.subscribe(
             &composer,
             |this, _, event: &crate::components::composer::FollowUpModeToggled, cx| {

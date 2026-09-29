@@ -339,6 +339,8 @@ pub(super) fn parse_history_item(value: &Value) -> Result<ThreadHistoryItem> {
                 actions: execution.actions,
                 cwd: (!execution.cwd.is_empty()).then_some(execution.cwd),
                 exit_code: execution.exit_code,
+                source: execution.source,
+                timed_out: execution.timed_out,
             })
         }
         "fileChange" => Ok(ThreadHistoryItem::FileChange(parse_history_file_change(

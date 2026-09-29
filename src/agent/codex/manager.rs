@@ -15,11 +15,13 @@ mod features;
 mod file_search;
 mod goal;
 mod hooks;
+mod loaded_threads;
 mod mcp;
 mod plugins;
 mod protocol;
 mod queue;
 mod revert;
+mod review;
 mod search;
 mod settings;
 mod side_conversation;
@@ -438,6 +440,8 @@ impl CodexAppServerManager {
             AgentCapability::ThreadMetadataUpdate,
             AgentCapability::ThreadSectionList,
             AgentCapability::ThreadSectionCreate,
+            AgentCapability::ThreadSectionUpdate,
+            AgentCapability::ThreadSectionDelete,
             AgentCapability::ThreadSectionMove,
             AgentCapability::SideConversation,
             AgentCapability::SkillsList,

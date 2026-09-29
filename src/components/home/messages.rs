@@ -339,6 +339,8 @@ pub(super) struct UserMessageContent {
     pub(super) time: String,
     /// The message was sent as the thread goal ("Sent as goal").
     pub(super) goal: bool,
+    /// The message asked for a code review ("Review mode").
+    pub(super) review: bool,
     /// The rail's jump highlight over the bubble, while it plays.
     pub(super) highlight: Option<f32>,
 }
@@ -358,9 +360,11 @@ pub(super) fn current_user_message(
         images: user_images,
         time: user_message_time,
         goal,
+        review,
         highlight,
     } = message;
-    let reserve_footer = reserve_footer_for(continuation, actions_visible_for_capture, goal);
+    let reserve_footer =
+        reserve_footer_for(continuation, actions_visible_for_capture, goal || review);
     let hover_group: SharedString = "user-message-hover".into();
     let copied_user_message = user_message.clone();
     let keyboard_user_message = user_message.clone();
@@ -502,7 +506,8 @@ pub(super) fn current_user_message(
                                     ),
                             )
                         })
-                        .when(goal, |footer| footer.child(sent_as_goal_tag(theme))),
+                        .when(goal, |footer| footer.child(sent_as_goal_tag(theme)))
+                        .when(review, |footer| footer.child(review_mode_tag(theme))),
                 ),
         )
 }
@@ -524,6 +529,20 @@ fn sent_as_goal_tag(theme: Theme) -> impl IntoElement {
     )
     // The footer row already carries the reference's 4px side margin.
     .debug_selector(|| "USER_MESSAGE_SENT_AS_GOAL".to_owned())
+}
+
+/// "Review mode": the reference's text-only 12px description chip, always
+/// visible.
+fn review_mode_tag(theme: Theme) -> impl IntoElement {
+    div()
+        .h_full()
+        .flex()
+        .items_center()
+        .text_size(px(12.0))
+        .line_height(px(16.0))
+        .text_color(theme.text_tertiary)
+        .debug_selector(|| "USER_MESSAGE_REVIEW_MODE".to_owned())
+        .child(crate::i18n::format!("审查模式" => "Review mode"))
 }
 
 /// An icon and a 12px tertiary label, as the reference's goal marks.

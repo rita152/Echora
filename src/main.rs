@@ -1158,6 +1158,26 @@ fn main() {
             .map(|state| (kind, state))
     })
     .collect::<Vec<_>>();
+    // Batch three: /review, review turns, Review delivery, `!` shell mode,
+    // memory status, provider capabilities and custom sections.
+    #[cfg(feature = "screenshot")]
+    let batch3_states = [
+        "review-menu",
+        "review-turn",
+        "review-delivery",
+        "shell-mode",
+        "memory-status",
+        "capabilities",
+        "sections",
+    ]
+    .into_iter()
+    .filter_map(|kind| {
+        let prefix = format!("--{kind}-state=");
+        args.iter()
+            .find_map(|arg| arg.strip_prefix(prefix.as_str()).map(ToOwned::to_owned))
+            .map(|state| (kind, state))
+    })
+    .collect::<Vec<_>>();
     #[cfg(feature = "screenshot")]
     let streaming_reply_ui_state = args.iter().find_map(|arg| {
         arg.strip_prefix("--streaming-reply-ui-state=")
@@ -1728,6 +1748,11 @@ fn main() {
                         for (kind, state) in &batch2_states {
                             app.complete_startup_for_capture(cx);
                             app.set_batch2_for_capture(kind, state, window, cx);
+                        }
+                        #[cfg(feature = "screenshot")]
+                        for (kind, state) in &batch3_states {
+                            app.complete_startup_for_capture(cx);
+                            app.set_batch3_for_capture(kind, state, cx);
                         }
                         if pull_requests_open {
                             app.complete_startup_for_capture(cx);

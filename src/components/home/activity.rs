@@ -163,10 +163,14 @@ pub(super) fn render_activity_stream_unit(
                 image_view_activity(home_entity, images, expanded, show_thinking_tail, theme)
                     .into_any_element()
             }
-            ConversationActivity::ImageGeneration(image) => {
-                image_generation_activity(home_entity, image, thinking_shimmer_progress, theme)
-                    .into_any_element()
-            }
+            ConversationActivity::ImageGeneration(image) => image_generation_activity(
+                home_entity,
+                image,
+                thinking_shimmer_progress,
+                render.image_generation_available,
+                theme,
+            )
+            .into_any_element(),
             ConversationActivity::ContextCompaction(compaction) => {
                 context_compaction_activity(compaction, thinking_shimmer_progress, theme)
                     .into_any_element()

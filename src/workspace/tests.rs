@@ -351,6 +351,8 @@ impl AgentBackend for FakeWorkspaceBackend {
                 actions: Vec::new(),
                 cwd: None,
                 exit_code: None,
+                source: crate::agent::CommandExecutionSource::Agent,
+                timed_out: false,
             },
         }])))
     }

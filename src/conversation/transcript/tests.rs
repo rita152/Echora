@@ -362,6 +362,61 @@ fn history_function_call_output_and_review_mode_keep_no_row_like_live() {
     );
 }
 
+/// A restored review turn reads like the live one: the request derived from
+/// the entered item's label, the "Review mode" mark, the result as the answer.
+#[test]
+fn a_restored_review_turn_shows_its_request_and_review_mark_like_live() {
+    use crate::agent::{AgentEvent, AgentReviewMode};
+    crate::i18n::set_language(crate::i18n::Language::English);
+    let entered = AgentReviewMode {
+        id: "e".into(),
+        review: "current changes".into(),
+        entered: true,
+        completed: true,
+    };
+    let mut restored = ConversationState::default();
+    restored.hydrate_history(progress_history(
+        HistoryTurnStatus::Completed,
+        vec![
+            ThreadHistoryItem::ReviewMode(entered.clone()),
+            ThreadHistoryItem::ReviewMode(AgentReviewMode {
+                id: "x".into(),
+                review: "One small formatting regression.".into(),
+                entered: false,
+                completed: true,
+            }),
+            ThreadHistoryItem::AssistantMessage {
+                item_id: "m".into(),
+                text: "One small formatting regression.".into(),
+                phase: None,
+            },
+        ],
+    ));
+    assert_eq!(
+        restored.user_message.as_deref(),
+        Some("Please review my uncommitted changes")
+    );
+    assert!(restored.user_message_review);
+    assert_eq!(
+        restored.assistant_message,
+        "One small formatting regression."
+    );
+
+    // Observed live without a local request (another client started it).
+    let mut observed = ConversationState::default();
+    observed.begin_external_turn(None);
+    observed.apply_agent_event_batch(vec![AgentEvent::ReviewModeUpdated(entered)]);
+    assert_eq!(
+        observed.user_message.as_deref(),
+        Some("Please review my uncommitted changes")
+    );
+    assert!(observed.user_message_review);
+    // A new turn clears the mark.
+    observed.begin_prompt("next");
+    assert!(!observed.user_message_review);
+    crate::i18n::set_language(crate::i18n::Language::SimplifiedChinese);
+}
+
 #[test]
 fn live_completion_and_resumed_history_produce_identical_turn_presentation() {
     use crate::agent::{AgentEvent as E, AgentTurnIdentity};

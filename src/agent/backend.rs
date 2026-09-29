@@ -45,6 +45,8 @@ pub enum AgentCapability {
     ThreadMetadataUpdate,
     ThreadSectionList,
     ThreadSectionCreate,
+    ThreadSectionUpdate,
+    ThreadSectionDelete,
     ThreadSectionMove,
     SideConversation,
     SkillsList,
@@ -772,6 +774,20 @@ pub trait AgentBackend: Send + Sync {
         unsupported_receiver(AgentCapability::ThreadSectionCreate)
     }
 
+    /// Renames a section; its appearance is left as it is.
+    fn rename_thread_section(
+        &self,
+        _section_id: ThreadSectionId,
+        _name: String,
+    ) -> Receiver<WorkspaceResult<ThreadSection>> {
+        unsupported_receiver(AgentCapability::ThreadSectionUpdate)
+    }
+
+    /// Deletes a section. Its threads stay and become unsectioned.
+    fn delete_thread_section(&self, _section_id: ThreadSectionId) -> Receiver<WorkspaceResult<()>> {
+        unsupported_receiver(AgentCapability::ThreadSectionDelete)
+    }
+
     fn move_thread_to_section(
         &self,
         _thread_id: ThreadId,
@@ -851,6 +867,24 @@ pub trait AgentBackend: Send + Sync {
         unsupported_account_receiver(crate::i18n::text("记忆"))
     }
 
+    /// Whether the consolidated memory pipeline is ready, counted against
+    /// `required_threads` distinct chats.
+    fn read_memory_status(
+        &self,
+        _required_threads: u32,
+    ) -> Receiver<Result<super::AgentMemoryStatus, String>> {
+        unsupported_account_receiver(crate::i18n::text("记忆"))
+    }
+
+    /// What the configured model provider supports on the current connection.
+    fn read_provider_capabilities(
+        &self,
+    ) -> Receiver<Result<super::AgentProviderCapabilities, String>> {
+        unsupported_account_receiver(
+            &crate::i18n::format!("模型提供方能力" => "provider capabilities"),
+        )
+    }
+
     fn list_thread_queue(
         &self,
         _thread_id: ThreadId,
@@ -921,6 +955,24 @@ pub trait AgentBackend: Send + Sync {
     }
 
     fn run_prompt(&self, request: AgentRequest) -> AgentRun;
+
+    /// Starts a code review turn on the request's thread (or a new one).
+    fn run_review(&self, _request: super::AgentReviewRequest) -> AgentRun {
+        let (sender, receiver) = async_channel::bounded(1);
+        let _ = sender.send_blocking(AgentEvent::Failed(crate::i18n::format!(
+            "当前 coding agent 不支持代码审查" => "This coding agent does not support code review"
+        )));
+        AgentRun::new(receiver, None)
+    }
+
+    /// Runs a shell command in the request's thread (or a new one). The
+    /// output arrives in the thread's turn, not on this receiver.
+    fn run_shell_command(
+        &self,
+        _request: super::AgentShellCommandRequest,
+    ) -> Receiver<Result<super::AgentShellCommandStarted, String>> {
+        unsupported_account_receiver(&crate::i18n::format!("Shell 命令" => "shell commands"))
+    }
 }
 
 fn unsupported_receiver<T: Send + 'static>(

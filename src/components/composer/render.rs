@@ -343,7 +343,8 @@ impl ComposerView {
                                                     .when(self.prompt_context.plan_mode == Some(true) && !compact, |button| button.child(crate::i18n::text(" · 计划"))),
                                             )
                                         })
-                                        .children(self.render_goal_chip(theme, cx)),
+                                        .children(self.render_goal_chip(theme, cx))
+                                        .children(self.render_shell_chip(theme, cx)),
                                 )
                                 .child(div().flex_1())
                                 .child(

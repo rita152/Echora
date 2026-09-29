@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use gpui::TestApp;
+use gpui::{AppContext, TestApp};
 
 use super::{ComposerView, dialogs::ComposerDialog};
 use crate::{
@@ -240,4 +240,62 @@ fn a_started_chat_changes_generation_at_once_and_rolls_back_on_failure() {
     reply.send_blocking(Err("late".into())).unwrap();
     f.app.run_until_parked();
     assert_eq!(f.with(|composer, _| composer.toasts().len()), 1);
+}
+
+/// Mounts the composer's overlay the way the app's root does.
+struct OverlayHost {
+    composer: gpui::Entity<ComposerView>,
+}
+
+impl gpui::Render for OverlayHost {
+    fn render(
+        &mut self,
+        window: &mut gpui::Window,
+        cx: &mut gpui::Context<Self>,
+    ) -> impl gpui::IntoElement {
+        use gpui::{ParentElement, Styled};
+        let overlay = self
+            .composer
+            .update(cx, |composer, cx| composer.render_overlay(window, cx));
+        gpui::div()
+            .size_full()
+            .relative()
+            .child(self.composer.clone())
+            .children(overlay)
+    }
+}
+
+#[gpui::test]
+fn the_close_button_sits_in_the_dialog_s_corner_and_closes_it(cx: &mut gpui::TestAppContext) {
+    let backend = Arc::new(Backend {
+        memories_enabled: true,
+        ..Default::default()
+    });
+    let window = cx.add_window(|_, cx| {
+        let source: Arc<dyn AgentBackend> = backend.clone();
+        let composer = cx.new(|cx| ComposerView::new_with_backend(ThemeMode::Dark, source, cx));
+        OverlayHost { composer }
+    });
+    let mut visual = gpui::VisualTestContext::from_window(window.into(), cx);
+    let composer = visual.update(|window, cx| {
+        window.resize(gpui::size(gpui::px(900.0), gpui::px(700.0)));
+        let host = window.root::<OverlayHost>().flatten().unwrap();
+        host.read(cx).composer.clone()
+    });
+    visual.update(|window, cx| {
+        composer.update(cx, |c, cx| c.open_memories_dialog(cx));
+        window.draw(cx).clear(cx);
+    });
+    let dialog = visual.debug_bounds("MEMORIES_DIALOG").unwrap();
+    let close = visual.debug_bounds("MEMORIES_CLOSE").unwrap();
+    // 16 px inside the dialog's 1 px border, outside its 20 px padding: the
+    // reference's close icon centre sits 29 px below the dialog's top edge.
+    assert_eq!(close.top() - dialog.top(), gpui::px(17.0));
+    assert_eq!(dialog.right() - close.right(), gpui::px(17.0));
+    // The whole 24 px button closes it, corner included.
+    let corner = close.origin + gpui::point(gpui::px(2.0), gpui::px(2.0));
+    visual.simulate_click(corner, gpui::Modifiers::default());
+    visual.run_until_parked();
+    let dialog = visual.update(|_, cx| composer.read(cx).dialog.clone());
+    assert_eq!(dialog, None);
 }

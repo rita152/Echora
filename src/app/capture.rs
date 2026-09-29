@@ -587,6 +587,55 @@ impl ChatApp {
         }
         cx.notify();
     }
+    /// Batch three: `--review-menu-state`, `--review-turn-state`,
+    /// `--review-delivery-state`, `--shell-mode-state`,
+    /// `--memory-status-state`, `--capabilities-state`, `--sections-state`.
+    pub fn set_batch3_for_capture(&mut self, kind: &str, state: &str, cx: &mut Context<Self>) {
+        let composer = self.home.read(cx).composer_entity();
+        match kind {
+            "review-menu" => composer.update(cx, |composer, cx| {
+                composer.set_review_menu_for_capture(state, cx)
+            }),
+            "review-turn" => composer.update(cx, |composer, cx| {
+                composer.set_review_turn_for_capture(state, cx)
+            }),
+            "shell-mode" => composer.update(cx, |composer, cx| {
+                composer.set_shell_mode_for_capture(state, cx)
+            }),
+            "memory-status" if state.starts_with("settings") => {
+                let status = state.trim_start_matches("settings-").to_owned();
+                self.settings.update(cx, |settings, cx| {
+                    settings.apply_memory_status_capture_fixture(&status, cx)
+                });
+            }
+            "memory-status" => composer.update(cx, |composer, cx| {
+                composer.set_memory_status_for_capture(state, cx)
+            }),
+            "capabilities" => self.settings.update(cx, |settings, cx| {
+                settings.apply_capabilities_capture_fixture(state, cx)
+            }),
+            "review-delivery" => {
+                let delivery = if state == "detached" {
+                    crate::workspace::ReviewDelivery::Detached
+                } else {
+                    crate::workspace::ReviewDelivery::Inline
+                };
+                self.settings.update(cx, |settings, cx| {
+                    settings.set_review_delivery(delivery, cx)
+                });
+            }
+            "sections" => {
+                self.workspace_store.seed_custom_sections_for_capture();
+                self.sidebar.update(cx, |sidebar, cx| {
+                    sidebar.set_sections_for_capture(state, cx)
+                });
+            }
+            _ => {}
+        }
+        self.home
+            .update(cx, |home, cx| home.refresh_conversation_for_capture(cx));
+        cx.notify();
+    }
     /// `--queue-ui-state`, `--goal-ui-state`, `--auto-review-denial-state`.
     #[cfg(feature = "screenshot")]
     pub fn set_batch1_for_capture(&mut self, kind: &str, state: &str, cx: &mut Context<Self>) {

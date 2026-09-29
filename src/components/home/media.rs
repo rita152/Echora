@@ -64,6 +64,7 @@ pub(super) fn image_generation_failure_copy(image: &AgentImageGeneration) -> (St
 pub(super) fn image_generation_error_activity(
     home_entity: Entity<HomeView>,
     image: AgentImageGeneration,
+    retry_available: bool,
     theme: Theme,
 ) -> gpui::AnyElement {
     let item_id = image.id.clone();
@@ -118,44 +119,47 @@ pub(super) fn image_generation_error_activity(
                         ),
                 ),
         )
-        .child(
-            div()
-                .id(SharedString::from(format!(
-                    "image-generation-retry-{item_id}"
-                )))
-                .debug_selector(|| "image-generation-retry".to_owned())
-                .h(px(36.0))
-                .px(px(14.0))
-                .self_start()
-                .rounded(px(10.0))
-                .border(px(1.0))
-                .border_color(theme.border)
-                .bg(theme.control)
-                .role(Role::Button)
-                .aria_label(crate::i18n::text("重试图像生成"))
-                .focusable()
-                .tab_stop(true)
-                .cursor_pointer()
-                .flex()
-                .items_center()
-                .justify_center()
-                .font_family(".SystemUIFont")
-                .text_size(px(13.0))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(theme.text)
-                .hover(move |button| button.bg(theme.elevated))
-                .on_click(move |_, _, cx| {
-                    retry_home.update(cx, |_, cx| cx.emit(RetryImageGeneration));
-                    cx.stop_propagation();
-                })
-                .on_key_down(move |event, _, cx| {
-                    if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                        key_home.update(cx, |_, cx| cx.emit(RetryImageGeneration));
+        // A provider without image generation cannot retry it.
+        .when(retry_available, |card| {
+            card.child(
+                div()
+                    .id(SharedString::from(format!(
+                        "image-generation-retry-{item_id}"
+                    )))
+                    .debug_selector(|| "image-generation-retry".to_owned())
+                    .h(px(36.0))
+                    .px(px(14.0))
+                    .self_start()
+                    .rounded(px(10.0))
+                    .border(px(1.0))
+                    .border_color(theme.border)
+                    .bg(theme.control)
+                    .role(Role::Button)
+                    .aria_label(crate::i18n::text("重试图像生成"))
+                    .focusable()
+                    .tab_stop(true)
+                    .cursor_pointer()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .font_family(".SystemUIFont")
+                    .text_size(px(13.0))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(theme.text)
+                    .hover(move |button| button.bg(theme.elevated))
+                    .on_click(move |_, _, cx| {
+                        retry_home.update(cx, |_, cx| cx.emit(RetryImageGeneration));
                         cx.stop_propagation();
-                    }
-                })
-                .child(crate::i18n::text("重试")),
-        )
+                    })
+                    .on_key_down(move |event, _, cx| {
+                        if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                            key_home.update(cx, |_, cx| cx.emit(RetryImageGeneration));
+                            cx.stop_propagation();
+                        }
+                    })
+                    .child(crate::i18n::text("重试")),
+            )
+        })
         .into_any_element()
 }
 
@@ -163,6 +167,7 @@ pub(super) fn image_generation_activity(
     home_entity: Entity<HomeView>,
     image: AgentImageGeneration,
     shimmer_progress: f32,
+    retry_available: bool,
     theme: Theme,
 ) -> gpui::AnyElement {
     let item_id = image.id.clone();
@@ -214,7 +219,7 @@ pub(super) fn image_generation_activity(
         if path_missing && failed.load_error.is_none() {
             failed.load_error = Some(crate::i18n::text("生成的图像文件已移动或删除。").to_owned());
         }
-        return image_generation_error_activity(home_entity, failed, theme);
+        return image_generation_error_activity(home_entity, failed, retry_available, theme);
     }
 
     let path = image

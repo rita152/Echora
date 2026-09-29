@@ -79,6 +79,7 @@ impl ComposerView {
                     Err(error) => this.conversation.set_model_catalog_error(error),
                 }
                 cx.emit(ModelCatalogLoadFinished);
+                this.start_pending_review(cx);
                 cx.notify();
             });
         })
@@ -95,6 +96,16 @@ impl ComposerView {
         inverted: bool,
         cx: &mut Context<Self>,
     ) {
+        // `!command` runs in the thread's shell instead of being sent.
+        if !inverted
+            && !self.side_chat
+            && super::shell::shell_command(&raw_prompt).is_some()
+            && self.queue_edit.is_none()
+            && !self.goal_draft
+        {
+            self.submit_shell_command(raw_prompt, cx);
+            return;
+        }
         // Manual context compaction is a composer command, not a chat message:
         // the reference exposes it as the "Compact" slash command and the
         // server answers through the ordinary turn stream.
@@ -426,7 +437,13 @@ impl ComposerView {
                         AgentEvent::ThreadCreated { thread_id } => Some(thread_id.clone()),
                         _ => None,
                     });
+                    let turn_accepted = batch
+                        .iter()
+                        .any(|event| matches!(event, AgentEvent::TurnReady(_)));
                     let finished = this.apply_agent_event_batch(batch);
+                    if this.review_start_cycle == Some(cycle) && (turn_accepted || finished) {
+                        this.review_start_settled(turn_accepted, cx);
+                    }
                     if let Some(thread_id) = created_thread {
                         cx.emit(ConversationThreadCreated { thread_id });
                         this.sync_thread_scoped_state(cx);

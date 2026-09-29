@@ -416,6 +416,18 @@ impl AgentBackend for CodexAppServerBackend {
         self.manager.create_thread_section(name, appearance)
     }
 
+    fn rename_thread_section(
+        &self,
+        section_id: ThreadSectionId,
+        name: String,
+    ) -> Receiver<WorkspaceResult<ThreadSection>> {
+        self.manager.rename_thread_section(section_id, name)
+    }
+
+    fn delete_thread_section(&self, section_id: ThreadSectionId) -> Receiver<WorkspaceResult<()>> {
+        self.manager.delete_thread_section(section_id)
+    }
+
     fn move_thread_to_section(
         &self,
         thread_id: ThreadId,
@@ -474,6 +486,19 @@ impl AgentBackend for CodexAppServerBackend {
 
     fn reset_memories(&self) -> Receiver<Result<(), String>> {
         self.manager.reset_memories()
+    }
+
+    fn read_memory_status(
+        &self,
+        required_threads: u32,
+    ) -> Receiver<Result<crate::agent::AgentMemoryStatus, String>> {
+        self.manager.read_memory_status(required_threads)
+    }
+
+    fn read_provider_capabilities(
+        &self,
+    ) -> Receiver<Result<crate::agent::AgentProviderCapabilities, String>> {
+        self.manager.read_provider_capabilities()
     }
 
     fn update_thread_goal(
@@ -550,5 +575,16 @@ impl AgentBackend for CodexAppServerBackend {
 
     fn run_prompt(&self, request: AgentRequest) -> AgentRun {
         self.manager.run_prompt(request)
+    }
+
+    fn run_review(&self, request: crate::agent::AgentReviewRequest) -> AgentRun {
+        self.manager.run_review(request)
+    }
+
+    fn run_shell_command(
+        &self,
+        request: crate::agent::AgentShellCommandRequest,
+    ) -> Receiver<Result<crate::agent::AgentShellCommandStarted, String>> {
+        self.manager.run_shell_command(request)
     }
 }

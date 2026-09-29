@@ -210,6 +210,71 @@ pub fn checkout(cwd: &Path) -> Checkout {
     }
 }
 
+/// How many recent local branches the code review menu lists, as the
+/// reference asks for.
+const REVIEW_RECENT_BRANCHES: &str = "--count=100";
+
+/// The base branches `/review` offers, in the reference's order: the
+/// repository's default target first, then local branches by most recent
+/// commit, without the current branch or duplicates.
+pub fn review_branches(cwd: &Path) -> Result<Vec<String>> {
+    let current = checkout(cwd).branch().map(str::to_owned);
+    let recent = git(
+        cwd,
+        &[
+            "for-each-ref",
+            REVIEW_RECENT_BRANCHES,
+            "--sort=-committerdate",
+            "refs/heads",
+            "--format=%(refname:short)",
+        ],
+    )?;
+    let default_target = default_review_target(cwd).unwrap_or_else(|| "main".to_owned());
+    let mut branches: Vec<String> = Vec::new();
+    for branch in std::iter::once(default_target).chain(recent.lines().map(str::to_owned)) {
+        let branch = branch.trim().to_owned();
+        if branch.is_empty()
+            || current.as_deref() == Some(branch.as_str())
+            || branches.contains(&branch)
+        {
+            continue;
+        }
+        branches.push(branch);
+    }
+    Ok(branches)
+}
+
+/// `<remote>/<default branch>` of the first remote that knows one: its
+/// `HEAD` symbolic ref, else a `main` or `master` branch on it. `origin` is
+/// asked first.
+fn default_review_target(cwd: &Path) -> Option<String> {
+    let remotes = git_output(cwd, &["remote"])?;
+    let mut remotes = remotes.lines().map(str::trim).collect::<Vec<_>>();
+    remotes.sort_by_key(|remote| *remote != "origin");
+    remotes.into_iter().find_map(|remote| {
+        let prefix = format!("refs/remotes/{remote}/");
+        let head = git_output(cwd, &["symbolic-ref", "--quiet", &format!("{prefix}HEAD")])
+            .and_then(|head| head.strip_prefix(&prefix).map(str::to_owned));
+        let branch = head.or_else(|| {
+            ["main", "master"].into_iter().find_map(|name| {
+                let exists = process::run(
+                    Command::new("git").current_dir(cwd).args([
+                        "show-ref",
+                        "--verify",
+                        "--quiet",
+                        &format!("{prefix}{name}"),
+                    ]),
+                    None,
+                    Duration::from_secs(5),
+                )
+                .is_ok_and(|out| out.status.success());
+                exists.then(|| name.to_owned())
+            })
+        })?;
+        Some(format!("{remote}/{branch}"))
+    })
+}
+
 /// Normalizes a Git remote the way the reference client does: an scp-style
 /// `user@host:path`, any `scheme://` form, embedded credentials, query strings,
 /// and a trailing `.git` all reduce to the last two path segments.

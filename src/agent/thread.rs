@@ -219,6 +219,8 @@ pub enum ThreadHistoryItem {
         actions: Vec<CommandExecutionAction>,
         cwd: Option<String>,
         exit_code: Option<i64>,
+        source: crate::agent::CommandExecutionSource,
+        timed_out: bool,
     },
     FileChange(AgentFileChange),
     ImageView(AgentImageView),

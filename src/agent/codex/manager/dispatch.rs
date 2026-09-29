@@ -690,6 +690,12 @@ impl ManagerInner {
                     // The pending turn/start has no id yet; the message waits
                     // for its response to tell whose it is.
                     TurnRoute::Buffered => return Ok(()),
+                    TurnRoute::Unowned
+                        if method == "turn/started"
+                            && connection.claim_review_alias(thread_id, &turn_id)? =>
+                    {
+                        return Ok(());
+                    }
                     TurnRoute::Unowned if method == "turn/started" => {
                         self.adopt_server_turn(connection, thread_id, &turn_id)?
                     }

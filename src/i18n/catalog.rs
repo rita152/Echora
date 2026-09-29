@@ -652,7 +652,7 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "审查已更改的文件" => "Review changed files",
         "审查文件" => "Review files",
         "审查文件更改" => "Review file changes",
-        "审查结果呈现方式" => "Review presentation",
+        "审查结果呈现方式" => "Review delivery",
         "审核" => "Review",
         "密码管理器" => "Password manager",
         "对全部取消暂存" => "Unstage all",
@@ -705,7 +705,7 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "尚未读取配置" => "Configuration not loaded",
         "尚未连接任何应用" => "No apps connected yet",
         "尽可能在当前聊天中启动 /review，或启动单独的审查聊天" => {
-            "Start /review in the current chat when possible, or in a separate review chat"
+            "Start /review in the current chat when possible or launch a separate review chat"
         }
         "屏幕上下文" => "Screen context",
         "展开" => "Expand",

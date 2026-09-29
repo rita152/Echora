@@ -1163,6 +1163,8 @@ fn command_output_deltas_are_reconciled_with_completion() {
         terminal_process_id: None,
         status: CommandExecutionStatus::InProgress,
         exit_code: None,
+        source: crate::agent::CommandExecutionSource::Agent,
+        timed_out: false,
     })];
     find_command_activity_mut(&mut activities, "exec_1")
         .unwrap()
@@ -1184,6 +1186,8 @@ fn command_output_deltas_are_reconciled_with_completion() {
             terminal_process_id: None,
             status: CommandExecutionStatus::Completed,
             exit_code: Some(0),
+            source: crate::agent::CommandExecutionSource::Agent,
+            timed_out: false,
         },
     );
 
@@ -1217,6 +1221,8 @@ fn terminal_interaction_reuses_the_running_command_activity() {
                 terminal_process_id: None,
                 status: CommandExecutionStatus::InProgress,
                 exit_code: None,
+                source: crate::agent::CommandExecutionSource::Agent,
+                timed_out: false,
             }),
             AgentEvent::CommandTerminalInteraction {
                 item_id: "exec_1".into(),

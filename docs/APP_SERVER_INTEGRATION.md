@@ -18,17 +18,17 @@ node scripts/scan_reference_rpc_methods.mjs /Applications/ChatGPT.app/Contents/R
 
 当前扫描：参考 bundle（ChatGPT 26.924.22138）内嵌 262 个方法名中的 249 个，未出现的 13 个均为客户端请求，明细见 `artifacts/app-server-reference-methods-20260928/reference-method-scan.json`。方法名出现只代表参考客户端包含对应协议封装，不等于该产品流程已启用；未出现也不排除运行时动态拼接方法名。
 
-0.158.0 相对 0.154.0 新增 `account/gatewayOAuth/read|login|cancel`（通知 `account/gatewayOAuth/changed`）、`thread/attachment/add|list|remove`（通知 `thread/attachment/updated`）、`memory/status`、`rollout/compress`、`userVerification/cancel`，并移除 `thread/rollback`；这些新增方法均未接入，客户端不发送，也未加入通知退订。上述两个新通知与其他未接入的服务端通知一样被接受但不解码，并登记连接级诊断，不会断开连接。已有方法的部分载荷字段也有增减（如 `thread/queue/*`、`model/list`、`config/read`），本机 0.158.0 上的批次一、二探针可正常运行，`cargo test agent::codex` 通过（测试使用固定载荷，不等于逐字段核对新版响应）。
+0.158.0 相对 0.154.0 新增 `account/gatewayOAuth/read|login|cancel`（通知 `account/gatewayOAuth/changed`）、`thread/attachment/add|list|remove`（通知 `thread/attachment/updated`）、`memory/status`、`rollout/compress`、`userVerification/cancel`，并移除 `thread/rollback`；其中 `memory/status` 已在批次三接入（见「代码审查、Shell 命令、自定义分区与能力读取」），其余新增方法均未接入，客户端不发送，也未加入通知退订。上述两个新通知与其他未接入的服务端通知一样被接受但不解码，并登记连接级诊断，不会断开连接。已有方法的部分载荷字段也有增减（如 `thread/queue/*`、`model/list`、`config/read`），本机 0.158.0 上的批次一、二探针可正常运行，`cargo test agent::codex` 通过（测试使用固定载荷，不等于逐字段核对新版响应）。
 
 共 **262** 个方法：167 个客户端请求、11 个服务端请求、1 个客户端通知、83 个服务端通知。表中“默认”表示方法出现在默认 schema，“实验”表示仅出现在 experimental schema；字段以 experimental schema 为准。运行时启用 `experimentalApi=true`。
 
 | 状态 | 数量 | 判定 |
 |---|---|---|
-| 已接入 | 142 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
-| 后端已接入 | 4 | 已实现读取或校验，尚无对应可见 UI 调用方或展示 |
+| 已接入 | 148 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
+| 后端已接入 | 5 | 已实现读取或校验，尚无对应可见 UI 调用方或展示 |
 | 部分接入 | 5 | 只支持部分类型、有效变体或限定生命周期窗口 |
 | 兼容退订 | 2 | initialize 按完整方法名退订；不代表对应产品能力已接入 |
-| 未接入 | 109 | 客户端不发送；服务端请求按原 id 回受控回执并保持 generation 与共享连接，同时登记连接级诊断；仅 EOF、崩溃、写失败或致命协议错误终止连接；服务端通知接受但不解码，登记连接级诊断 |
+| 未接入 | 102 | 客户端不发送；服务端请求按原 id 回受控回执并保持 generation 与共享连接，同时登记连接级诊断；仅 EOF、崩溃、写失败或致命协议错误终止连接；服务端通知接受但不解码，登记连接级诊断 |
 
 未接入行的“—”沿用上述规则；带受控回执的服务端请求会另外列出入口，见下段。`tool/requestUserInput` 是兼容别名，不计入本版本 schema 的 252 项。
 
@@ -176,7 +176,7 @@ Composer 在运行中有草稿时显示“追加输入”，无草稿时显示�
 
 ### 斜杠菜单与提示
 
-光标前是一个 `/query` 记号时（`/` 位于行首或空白之后，查询从 `/` 到光标，可含空格），输入框上方 8 px 处浮出菜单：与输入框同宽，16 px 圆角、4 px 内边距、最高 320 px；行 28 px、12 px 圆角，未高亮时 75% 不透明。命令按本地化标题字母序排列，输入查询后按标题与 id 的模糊匹配评分排序，未匹配的标题部分变暗，无结果时显示「无命令」；查询含空格且没有匹配时菜单自动关闭，以便按原文发送；↑↓（及 Ctrl+N/P）移动、Enter 选择、Esc 关闭直到查询改变，选择后只移除光标前的 `/query` 记号，其余文字保留。本客户端提供「目标」「压缩」（仅已有线程，且输入框只有一行 `/…` 时出现；说明带 `min(last.totalTokens, 上下文窗口) / 上下文窗口` 四舍五入后的百分比，用量未知时省略；运行中选择时显示危险提示「聊天期间无法使用 Compact」）、「计划模式」（仅有 plan 预设时）与「批准」（见上节）；参考的其他命令、`@` 触发与技能分组不在本批范围。成功与危险提示显示在对话区顶部居中，最多叠放 3 条、5 秒后消失，可手动关闭；布局与两种配色（危险提示为红色边框 15%／40%、`#fff0f0`／`#280b0a` 底色与感叹号图标）取自参考的 toast。
+光标前是一个 `/query` 记号时（`/` 位于行首或空白之后，查询从 `/` 到光标，可含空格），输入框上方 8 px 处浮出菜单：与输入框同宽，16 px 圆角、4 px 内边距、最高 320 px；行 28 px、12 px 圆角，未高亮时 75% 不透明。命令按本地化标题字母序排列，输入查询后按标题与 id 的模糊匹配评分排序，未匹配的标题部分变暗（由 id 决定排名时仍按标题的匹配部分变暗，与参考的「Code **review**」一致），无结果时显示「无命令」；查询含空格且没有匹配时菜单自动关闭，以便按原文发送；↑↓（及 Ctrl+N/P）移动、Enter 选择、Esc 关闭直到查询改变，选择后只移除光标前的 `/query` 记号，其余文字保留。本客户端提供「代码审查」（见下文「代码审查」）、「目标」「压缩」（仅已有线程，且输入框只有一行 `/…` 时出现；说明带 `min(last.totalTokens, 上下文窗口) / 上下文窗口` 四舍五入后的百分比，用量未知时省略；运行中选择时显示危险提示「聊天期间无法使用 Compact」）、「计划模式」（仅有 plan 预设时）与「批准」（见上节）；参考的其他命令、`@` 触发与技能分组不在本批范围。成功与危险提示显示在对话区顶部居中，最多叠放 3 条、5 秒后消失，可手动关闭；布局与两种配色（危险提示为红色边框 15%／40%、`#fff0f0`／`#280b0a` 底色与感叹号图标）取自参考的 toast。
 
 0.158 参考与本机基线的差异（只实现 0.154 schema 已有字段）：通知多出 `emittedAtMs`；`turn/completed` 携带 summary items；`turn/start` 多出 `environments`、`turnTrigger`、`multiAgentMode`、`responsesapiClientMetadata` 等字段；`turn/steer` 多出 `responsesapiClientMetadata`；`thread/queue/changed` 周期性重复下发。
 
@@ -194,7 +194,21 @@ Composer 在运行中有草稿时显示“追加输入”，无草稿时显示�
 
 ⌘F 只在对话区域（key context `ChatConversation`）获得焦点时打开查找栏，文件编辑器、终端与 PR 面板保留各自的 ⌘F；⌘G／⇧⌘G、Enter／⇧Enter 切换结果，Esc 关闭并把焦点还给输入框。查询停顿 150 ms 后发送 `thread/searchOccurrences {threadId,searchTerm,limit:250}`（searchTerm 去首尾空白，空白查询不发送）；与参考一致只读取第一页，计数显示「{当前} / {总数} 个结果」，还有 nextCursor 时加「+」。越过最后一个已读结果时带 cursor 读取下一页，游标重复即报错停止；读完后回绕到第一个。0.158 每个匹配各占一项（同一条消息重复出现），因此同一 item 的第 n 个结果对应渲染文本中的第 n 个匹配；高亮在 Markdown 文本 run 与用户消息上按不区分大小写的字面匹配绘制，当前结果为橙色、其余为黄色（取自参考）。snippetMatchRange 是 UTF-16 下标，转字节时拒绝越界、倒序和切开代理对的范围。结果所在轮次未加载时复用历史分页重新读取一次，之后仍找不到则标记不可达；临时侧边线程返回 `-32601`，改为在已加载的用户消息和最终回复中本地查找。请求绑定查询周期、threadId 与 generation，旧查询、其他线程或旧连接的回执不改变状态。0.158 实测：游标绑定检索词（换词复用旧游标返回 -32600），未加载但已持久化的线程无需 resume 也可搜索，`turnCursor` 对 `thread/turns/list` 是包含式游标（Echora 暂未直接使用，改为整段历史重读）。
 
-0.158 参考与本机基线在本批方法上的差异：`hooks/list` 在参考中随设置页多次调用并包含更多来源；实验性功能切换改走 `experimentalFeature/enablement/set`；记忆设置另有 `memory/status` 与从 ChatGPT 导入，均不在 0.158 schema 或本批范围内。
+0.158 参考与本机基线在本批方法上的差异：`hooks/list` 在参考中随设置页多次调用并包含更多来源；实验性功能切换改走 `experimentalFeature/enablement/set`；记忆设置另有从 ChatGPT 导入，不在 0.158 schema 或本批范围内；`memory/status` 在批次三接入。
+
+### 代码审查、Shell 命令、自定义分区与能力读取
+
+**代码审查**（`review/start`）：斜杠菜单「代码审查」只在项目目录是 Git 仓库、输入框只有 `/…` 且不在侧边聊天时出现，选择后保留 `/` 并进入子菜单：「审查未提交的更改」，其后是「与基准分支比较」分节，列出默认目标分支（`<remote>/<HEAD>`，否则远端 main／master，都没有时为 main）和按提交时间排列的最近 100 个本地分支，去掉当前分支与重复项；加载中与失败（附「重试」）各有一行。继续输入按子串过滤，Esc 关闭整个菜单；行高 28.57 px、无间距，与参考一致。请求文本按参考写作「请审查我未提交的更改」／「请审查 {当前分支} 相对 {branch} 的更改」，显示为该轮用户消息并带「审查模式」标记。Git 设置「审查结果呈现方式」（内联／单独，保存在本地 UI 偏好 `review_delivery`）决定位置：内联在当前聊天发送；单独且当前聊天已存在时，在同项目新建聊天后再以 inline 发送（0.158 对分页线程拒绝 `delivery:"detached"`，schema 也将其标为弃用）。新聊天中的审查先 `thread/start{threadSource:"code_review"}` 并带上当前权限，因为审查轮次不携带权限。轮次运行中不允许开始审查（提示「聊天期间无法开始代码审查」），开始失败提示「无法开始代码审查」，不自动重试；开始后打开审查面板并切到未提交更改或分支比较。参考不调用 `review/start`：它用普通 `turn/start`（`turnTrigger:code_review`）发送自拼的审查提示词，此处按任务书改用协议方法，界面沿用参考。
+
+0.158 的审查轮次有两个 id：响应与 item、`turn/completed` 使用 R，`turn/started` 却带另一个永不完成的 S（`artifacts/batch3-baseline-20260929/review`）。受管轮次标记为审查后，同一线程的下一个未归属 `turn/started` 被认领为 R 的别名并丢弃，不会被当作服务端发起的新轮次接管；别名在响应前后到达都成立，中断仍发送 R。
+
+**Shell 命令**（`thread/shellCommand`）：Echora 新增，参考没有入口。输入框文本以 `!` 开头（且不在侧边聊天、编辑队列项或目标草稿中）时，输入框底部显示警告色「Shell · 在沙盒外运行」，Enter 发送去掉 `!` 并去除首尾空白后的命令，空命令不发送。回执 `{}` 只表示已接受：空闲线程由服务端发起一轮（无 userMessage）承载 source=userShell 的 commandExecution，由客户端按服务端轮次接管；运行中的模型轮次则把命令并入该轮。命令卡片默认展开，显示运行中、完成、失败（exitCode≠0）、超时（见 Item 表）与中断；停止沿用 `turn/interrupt`。RPC 失败恢复输入框文本并提示。
+
+**自定义分区**（`threadSection/*`、`thread/section/move`）：侧栏顺序为置顶、自定义分区、项目、最近。分区与聊天归属存在服务端（`threadSection/list` 中 Pinned 之外的分区，聊天按 `thread/list{sectionId}` 读取）；分区顺序、分区内的项目与折叠状态存在本地 UI 偏好（`section_order`、`section_projects`、`collapsed_section_ids`），与参考把分区存在本地全局状态再镜像到 app-server 的做法对应。分区头可折叠、可拖动排序，悬停显示选项按钮，菜单为「在{分区}中新建聊天」、「编辑」、「归档聊天」、「全部标为已读」、「移除分区」；聊天与项目菜单增加「移至分区“X”」（当前分区打勾）与「新建分区…」，项目区选项菜单也可新建分区；聊天与项目行可拖入分区，拖回项目或最近区域即移出，空分区显示「将聊天或项目拖到这里」。「新建分区／编辑分区」对话框沿用重命名对话框的 420×185 布局，副标题「按你的方式组织聊天和项目」，Esc 关闭，编辑时空名不可保存。「在{分区}中新建聊天」的草稿在服务端建立线程后移入该分区。刷新以分区 generation 防止迟到的结果覆盖新建或删除。参考账号为 API key 登录，侧栏不显示自定义分区，因此只有代码与协议依据，没有参考截图；对话框以参考的重命名对话框为基准。
+
+**能力读取与记忆整合状态**（`modelProvider/capabilities/read`、`memory/status`）：按任务书作为 Echora 新增行为，参考都不展示。能力在读取配置和权限目录时按 generation 读取，门控见总表；`memory/status` 在打开个性化设置与 `/memories` 对话框时读取，显示见总表。探针记录（fake provider、ollama、lmstudio 全为 true，amazon-bedrock 的 imageGeneration 为 false；新 CODEX_HOME 返回 `v2ConsolidatedThreads:0, v2Ready:false`，记忆关闭时同样返回）见 `artifacts/batch3-baseline-20260929`。
+
+**已加载线程**（`thread/loaded/list`）：服务端的已加载集合是本连接订阅集合的超集（取消订阅后仍列出），不能替代 resume。打开线程时若本连接记录为已加载，先核对服务端是否仍持有：未列出则丢弃本地记录与缓存的线程设置并 resume；读取失败沿用本地记录，分页异常使该 generation 失败。临时侧边线程不核对。
 
 ## Item 与历史兼容
 
@@ -206,7 +220,7 @@ Composer 在运行中有草稿时显示“追加输入”，无草稿时显示�
 | `hookPrompt` | 独立于 Hook 运行记录；fragments 逐项保留 hookRunId/text 及原始顺序。实时开始／完成按 thread/turn/item 原位更新；历史只使用服务端返回的 item，完成标记为未知 | 带“钩子反馈”链接的只读文本气泡，支持长文本展开、正文选择、整段复制和打开现有钩子设置；不创建用户提交、助手最终答复或审批 responder |
 | `agentMessage` | 实时增量全程保留 item.id，按同一 item 合并，完成快照原位校正文本（含缺失 delta、无 started）；已完成 item 的重复完成或迟到 delta 不追加文本。实时与历史均保留 phase，共用最终答复规则：优先取最后一条 final_answer，旧数据回退到最后一条未标注消息。实时完成后使用相同的过程折叠、答复操作与文件汇总 | 仅已完成且可识别最终答复的轮次折叠过程前缀 |
 | `reasoning` | 按 item.id 与 summaryIndex/contentIndex 保存稀疏增量，保留开始／完成时间；不跨 item/index 合并 | 展示 summary，缺省时展示 content；完成后显示耗时 |
-| `commandExecution` | 保留 command、cwd、exitCode、commandActions；旧历史缺少 actions/cwd 时用空列表／线程目录 | 读取、搜索、列目录与 shell 分别显示，输出归属对应命令 |
+| `commandExecution` | 保留 command、cwd、exitCode、commandActions 与 source（agent／userShell／unifiedExecStartup／unifiedExecInteraction，缺省为 agent，未知值报错）；旧历史缺少 actions/cwd 时用空列表／线程目录。failed、exitCode=-1 且输出以 `execution error: Sandbox(Timeout` 开头时记为超时并清空该错误文本 | 读取、搜索、列目录与 shell 分别显示，输出归属对应命令；userShell 命令默认展开，超时显示「超时」 |
 | `fileChange` | 保留 path、kind、diff；实时接受 patchUpdated 和 turn 聚合 diff；历史按路径汇总 | 文件卡及固定历史差异使用原始 patch；本机 Git 面板另由 Git/gh 提供工作区数据 |
 | `imageView` | id/path；同 id 原位更新 | 缩略图与全局原图预览 |
 | `imageGeneration` | 当前 status 为 in_progress/completed/failed，result 必需；读取 nullable revisedPrompt/savedPath/transparentBackground/failure。唯一 typed failure 为 usageLimitExceeded{limitId,resetsAt}；旧命名仅在历史路径兼容 | 优先 savedPath，文件不可用时物化 base64；中断移除未完成 loader，不伪造 failed item |
@@ -218,7 +232,7 @@ Composer 在运行中有草稿时显示“追加输入”，无草稿时显示�
 | `sleep` | durationMs 为 uint64；实时按 started/completed 更新，中断／失败只结束仍在运行的活动 | 等待时长及状态；中断明确标记“原定”时长，不把请求时长称为实际耗时 |
 | `functionCallOutput` | 保留 name、nullable namespace 与 required output；output 为字符串或 responses API 内容项数组，逐项校验 input_text/input_image（含 nullable detail：auto/low/high/original）/input_audio/encrypted_content。历史项一律标记 completed，缺失的可选字段保持 null，不从 rollout 或磁盘补全 | 参考客户端把它并入 turn 活动而不给独立行，GPUI 保持一致；字段留在领域数据中 |
 | `dynamicToolCall` | 保留 tool、nullable namespace、required arguments（schema 为 `true`，任意 JSON 合法，含显式 null）、status（inProgress/completed/failed）、nullable success、nullable contentItems（inputText/inputImage/inputAudio）与 nullable durationMs。历史项一律标记 completed | 按稳定 item.id 原位更新并只保留一行；namespace 为空且工具为 automation_update／load_workspace_dependencies 时不渲染，与参考客户端一致；行样式沿用 MCP 工具行，hover／focus 显示 chevron，Enter／Space 展开 arguments、耗时与内容项 |
-| `enteredReviewMode`、`exitedReviewMode` | 保留 item.id 与 review；entered 由 item.type 推断，历史项一律标记 completed | 参考客户端把两种审查模式并入 turn 活动而不给独立行，GPUI 保持一致；字段留在领域数据中 |
+| `enteredReviewMode`、`exitedReviewMode` | 保留 item.id 与 review；entered 由 item.type 推断，历史项一律标记 completed。entered 标记该轮为审查轮次：直播中忽略服务端的合成提示词 userMessage，历史中据 review 标签（「current changes」「changes against 'X'」）还原请求文本 | 不给独立行；审查轮次的用户消息下方显示「审查模式」，与参考一致，实时与恢复后相同 |
 
 协作枚举、字段校验与历史别名见 `items.rs`；历史解码见 `workspace_protocol.rs`。计划、搜索和等待共享 `progress.rs` 解码；样式、尺寸和交互入口见 README 与组件实现。
 
@@ -308,10 +322,10 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `mcpServer/tool/call` | 默认 | 未接入 | — | — |
 | `mcpServerStatus/list` | 默认 | 已接入 | cursor/limit/detail/threadId；保留 id/name、runtimeStatus、authStatus、错误、工具、资源、模板与全部未知字段；循环游标中止并报错。 | `manager/mcp`、`mcp` |
 | `memory/reset` | 实验 | 已接入 | 与参考一致不带 params；个性化设置「删除」先确认，成功／失败分别提示，不伪造成功。 | `manager/features`、`settings/view/memories` |
-| `memory/status` | 实验 | 未接入 | — | — |
+| `memory/status` | 实验 | 已接入 | `{minConsolidatedThreads:20}`；个性化设置（记忆开启时）的「记忆整合」行与 `/memories` 对话框底部显示「已就绪 · 已整合 N 个聊天」或「尚未就绪 · 已整合 N/20 个聊天」；按 generation 丢弃迟到回执，失败不显示该行。参考只在 Statsig 放行时作为 thread/start 前的探测，不展示，此处为 Echora 新增展示。 | `manager/features`、`conversation/memory` |
 | `mock/experimentalMethod` | 实验 | 未接入 | — | — |
 | `model/list` | 默认 | 已接入 | limit=50、includeHidden=false；遍历 nextCursor，拒绝循环游标；返回模型、默认值、推理强度及服务档位。 | `manager/catalog` |
-| `modelProvider/capabilities/read` | 默认 | 未接入 | — | — |
+| `modelProvider/capabilities/read` | 默认 | 已接入 | params `{}`，随配置读取与权限目录按 generation 读取；webSearch=false 时「网页搜索」只可选关闭并说明「当前模型提供方不支持网页搜索」，imageGeneration=false 时隐藏图片生成失败后的重试；namespaceTools 只保存。读取失败视为未知、不做门控。参考不读取响应字段，此处为 Echora 新增门控。 | `manager/catalog`、`settings/view/configuration` |
 | `permissionProfile/list` | 默认 | 已接入 | cwd、limit=100、遍历 nextCursor，拒绝循环游标及重复 id；消费 id/allowed/description，兼容可选 extends；设置和权限菜单展示，提交前复核 allowed。 | `manager/catalog`、`catalog` |
 | `plugin/install` | 默认 | 已接入 | pluginName + marketplacePath/remoteMarketplaceName（未用一侧显式 null），可选 installAttemptId；120s 操作窗口，成功回执保留 authPolicy 与 appsNeedingAuth；超时与不可读结果分别建模为 TimedOut/Unknown，不自动重试。 | `manager/plugins`、`plugins_catalog` |
 | `plugin/installed` | 默认 | 已接入 | cwds 与 installSuggestionPluginNames；与 `plugin/list` 分别缓存，安装开关状态以该响应为准。 | `manager/plugins`、`plugins` |
@@ -344,7 +358,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `remoteControl/pairing/start` | 实验 | 未接入 | — | — |
 | `remoteControl/pairing/status` | 实验 | 未接入 | — | — |
 | `remoteControl/status/read` | 实验 | 未接入 | — | — |
-| `review/start` | 默认 | 未接入 | 启动模型代码评审；本机 Git 审查面板使用 Git/gh 与已有 turn diff，不调用此方法。 | — |
+| `review/start` | 默认 | 已接入 | `/review` →「代码审查」子菜单：target uncommittedChanges／baseBranch{branch}，始终 `delivery:"inline"`（Detached 为同项目新聊天的 `thread/start{threadSource:code_review}` 后 inline）；响应 turn.id 为受管轮次，`reviewThreadId` 必须等于请求线程；丢弃 `turn/started` 带来的别名轮次 id。成功后打开审查面板对应 diff。 | `manager/review`、`composer/review` |
 | `rollout/compress` | 实验 | 未接入 | — | — |
 | `server/diagnostics` | 实验 | 未接入 | — | — |
 | `skills/config/write` | 默认 | 已接入 | 只提交用户明确修改的 enabled 与单一选择器（插件技能用 name，本机技能用 path）；以服务端 effectiveEnabled 回执为准并复查列表。 | `manager/skills`、`skills` |
@@ -369,7 +383,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/inject_items` | 默认 | 已接入 | 向新侧边线程注入 user message，标记父历史仅供参考；不开始 turn。失败时释放临时 fork，不交付可发送的线程。 | `manager/side_conversation` |
 | `thread/items/list` | 默认 | 已接入 | 按 threadId、nullable turnId 升序分页；补全非 full 的历史轮次。 | `manager/workspace` |
 | `thread/list` | 默认 | 已接入 | 分页读取最近、归档、项目与分区列表；保留前后游标及 projectId/sectionId 的省略、null、值三态。与参考端一致发送 `useStateDbOnly=true`、空 `modelProviders`／`sourceKinds` 与 null `parentThreadId`：缺省时服务端改走 rollout 扫描，只返回最近 10 个且不带游标，侧栏项目与最近聊天会缺行。 | `manager/workspace` |
-| `thread/loaded/list` | 默认 | 未接入 | — | — |
+| `thread/loaded/list` | 默认 | 后端已接入 | 打开线程且本连接记录为已加载时，遍历全部分页（最多 64 页，拒绝重复 id、重复游标与畸形页）核对服务端是否仍持有；未列出则丢弃本地记录并 resume，读取失败沿用本地记录。不以它替代 resume，也无可见 UI。 | `manager/loaded_threads` |
 | `thread/memoryMode/set` | 实验 | 已接入 | threadId/mode（enabled/disabled）绑定 generation 与线程；`/memories` 对已开始的聊天乐观切换「生成记忆」，失败回滚并提示，迟到或旧线程回执丢弃。 | `manager/features`、`conversation/memory` |
 | `thread/metadata/update` | 默认 | 已接入 | projectId 省略表示不变，空字符串表示移出项目，非空 id 表示分配；读取 result.thread。 | `manager/workspace` |
 | `thread/name/set` | 默认 | 已接入 | threadId、name；重命名会话。侧栏双击任务行弹出与参考一致的居中面板：输入框默认全选，取消／关闭／Esc／蒙层不发送请求，保存与 Enter 复用同一提交路径，空或纯空白不发送，超过 60 个字符的名称与参考一致截为前 59 个字符加省略号。 | `manager/workspace`、`components/sidebar` |
@@ -390,18 +404,18 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/revert` | 默认 | 已接入 | 改写最新用户消息时按 beforeTurnId 传该轮 id：把持久化历史替换为该轮之前的前缀，随后仍走 thread/read 与分页路径重载；响应是历史权威来源，校验返回 thread 与请求 threadId 一致并保留可选 turnsBackwardsCursor／itemsBackwardsCursor，不回退本地文件改动。先到的 `thread/reverted` 记为该请求的确认。 | `manager/revert`、`components/composer` |
 | `thread/search` | 实验 | 已接入 | 非空 searchTerm、archived、分页和排序；返回 thread 与 snippet。历史会话搜索弹窗用它检索会话；空查询改用 `threadSection/list` 的置顶分区与 `thread/list`（recency 倒序）拼出前九行。参考实现的弹窗还会合并 ChatGPT 云端会话，app-server 无对应数据。 | `manager/workspace` |
 | `thread/searchOccurrences` | 实验 | 已接入 | threadId/searchTerm（去首尾空白）/limit=250/cursor；UTF-16 snippetMatchRange 转字节并拒绝越界、倒序或切开代理对；游标重复即停止；`-32601`（临时线程）回退本地已加载消息查找；聊天内 ⌘F 查找栏逐项定位与高亮。 | `manager/search`、`conversation/find`、`home/find` |
-| `thread/section/move` | 默认 | 已接入 | threadId、nullable sectionId/beforeThreadId；用于置顶和取消置顶。 | `manager/workspace` |
+| `thread/section/move` | 默认 | 已接入 | threadId、nullable sectionId/beforeThreadId；用于置顶、取消置顶，以及聊天移入／移出自定义分区（菜单「移至分区」或拖放）。 | `manager/workspace` |
 | `thread/settings/update` | 实验 | 已接入 | 主／临时线程按线程队列更新 approvalPolicy、approvalsReviewer、permissions 或 sandboxPolicy；绑定 generation／操作，等待 RPC 成功和匹配的有效权限通知，影响后续轮次；复核者另经 `turn/settings/update` 同步到进行中的轮次。 | `manager/settings`、`permissions` |
-| `thread/shellCommand` | 默认 | 未接入 | — | — |
+| `thread/shellCommand` | 默认 | 已接入 | 输入框以 `!` 开头时为 Shell 模式（警告色「Shell · 在沙盒外运行」）；发送 `{threadId,command}`，新聊天先 `thread/start{threadSource:user}`；回执须为 `{}`，服务端随后发起的轮次按 userShell 命令卡片显示运行中、完成、失败、超时与中断。失败恢复输入并提示。参考没有此入口，为 Echora 新增。 | `manager/review`、`composer/shell` |
 | `thread/start` | 默认 | 已接入 | 首条提示词才新建；发送 cwd、projectId、historyMode=paginated、ephemeral=false、serviceName、model、serviceTier；采用 result.thread.id。 | `manager/turn` |
 | `thread/timeline/list` | 实验 | 未接入 | — | — |
 | `thread/turns/list` | 默认 | 已接入 | 按 threadId 升序分页，itemsView=full；保留实际 itemsView 和双向游标，按需补取 item。 | `manager/workspace` |
 | `thread/unarchive` | 默认 | 已接入 | 按 threadId 取消归档；读取 result.thread 并刷新列表。 | `manager/workspace` |
 | `thread/unsubscribe` | 默认 | 已接入 | 只关闭本应用创建的临时线程；先请求中断自身轮次，接受 unsubscribed/notSubscribed/notLoaded；不影响父线程。 | `manager/side_conversation` |
-| `threadSection/create` | 默认 | 已接入 | name、可选 appearance{icon,color}；返回 section，当前用于建立 Pinned 分区。 | `manager/workspace` |
-| `threadSection/delete` | 默认 | 未接入 | — | — |
+| `threadSection/create` | 默认 | 已接入 | name、可选 appearance{icon,color}；返回 section，用于建立 Pinned 分区与「新建分区」（空名保存为「新分区」）。 | `manager/workspace` |
+| `threadSection/delete` | 默认 | 已接入 | 分区菜单「移除分区」发送 `{sectionId}`；服务端把分区内聊天放回无分区，本地同时移除该分区的项目、顺序与折叠记录。 | `manager/workspace`、`workspace/sections` |
 | `threadSection/list` | 默认 | 已接入 | 遍历分区分页；以服务端 Pinned 的稳定 id 实现置顶。 | `manager/workspace` |
-| `threadSection/update` | 默认 | 未接入 | — | — |
+| `threadSection/update` | 默认 | 已接入 | 「编辑分区」对话框只发送 `{sectionId,name}`（不发 appearance，服务端保留原样），空名不可保存；回执 id 不符视为协议错误。 | `manager/workspace`、`workspace/sections` |
 | `turn/interrupt` | 默认 | 已接入 | 定向 threadId/turnId，每轮最多发送一次；等待真实 interrupted 终态，保持共享连接。 | `manager/turn` |
 | `turn/settings/update` | 实验 | 已接入 | 线程权限更新成功后，若该线程有唯一进行中的轮次且本次带 approvalsReviewer，在同一串行队列里发送 `{threadId,turnId,approvalsReviewer}`；applied 与 targetUnavailable 严格解码，失败只影响当前轮次并提示从下一轮生效。 | `manager/settings`、`turn_settings` |
 | `turn/start` | 默认 | 已接入 | 文本及 localImage 输入、路径上下文、model/effort/serviceTier；选择 plan/default 时 collaborationMode 由本 generation 的预设生成、顶层 model/effort 为 null；新线程首轮附权限字段。可选 clientUserMessageId；以 result.turn.id 建立轮次归属。 | `manager/turn`、`input`、`collaboration` |

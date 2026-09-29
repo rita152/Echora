@@ -299,6 +299,9 @@ impl ConversationState {
                         }
                     }
                 }
+                // A review turn's user item is the server's own review
+                // prompt; the request shown is the review's.
+                AgentEvent::UserMessage { .. } if self.user_message_review => {}
                 AgentEvent::UserMessage {
                     item_id,
                     client_message_id,
@@ -528,6 +531,8 @@ impl ConversationState {
                                 terminal_process_id: None,
                                 status: CommandExecutionStatus::InProgress,
                                 exit_code: None,
+                                source: crate::agent::CommandExecutionSource::Agent,
+                                timed_out: false,
                             }));
                     }
                     if self.phase != ConversationPhase::Stopping {
@@ -553,6 +558,8 @@ impl ConversationState {
                                 terminal_process_id: Some(process_id),
                                 status: CommandExecutionStatus::InProgress,
                                 exit_code: None,
+                                source: crate::agent::CommandExecutionSource::Agent,
+                                timed_out: false,
                             }));
                     }
                     if self.phase != ConversationPhase::Stopping {
@@ -651,7 +658,20 @@ impl ConversationState {
                 // both review-mode items into turn activity rather than giving
                 // them a row of their own, so keep them out of the stream while
                 // retaining the decoded protocol item in history.
-                AgentEvent::FunctionCallOutputUpdated(_) | AgentEvent::ReviewModeUpdated(_) => {}
+                // Entering review mode marks the turn as a review: one this
+                // client did not start (another client, the CLI) takes its
+                // request from the server's label. Both items stay out of the
+                // stream otherwise; the result arrives as an agent message.
+                AgentEvent::ReviewModeUpdated(review) => {
+                    if review.entered && !self.user_message_review {
+                        self.user_message_review = true;
+                        if self.user_message.as_deref().is_none_or(str::is_empty) {
+                            self.user_message =
+                                Some(super::review_request_from_label(&review.review));
+                        }
+                    }
+                }
+                AgentEvent::FunctionCallOutputUpdated(_) => {}
                 AgentEvent::McpToolCallProgress { item_id, message } => {
                     if let Some(tool_call) =
                         find_mcp_tool_call_activity_mut(&mut self.activities, &item_id)

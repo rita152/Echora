@@ -49,6 +49,8 @@ fn computer_use_keeps_its_title_and_chronological_place_inside_command_groups() 
             terminal_process_id: None,
             status: CommandExecutionStatus::Completed,
             exit_code: Some(0),
+            source: crate::agent::CommandExecutionSource::Agent,
+            timed_out: false,
         })
     };
     let activities = vec![

@@ -654,13 +654,33 @@ impl Connection {
         turn_id: &str,
     ) -> Result<(Arc<ManagedTurn>, Vec<Value>)> {
         let (turn, early) = self.bind_turn_registry(thread_id, turn_id)?;
+        let review = turn.review.load(Ordering::Acquire);
+        let mut aliases = HashSet::new();
         let mut foreign = Vec::new();
         let mut own = Vec::new();
         for (id, message) in early {
             if id == turn_id {
                 own.push(message);
+            } else if review
+                && (aliases.contains(&id)
+                    || message.get("method").and_then(Value::as_str) == Some("turn/started"))
+            {
+                // The review's own `turn/started`, under its alias id.
+                aliases.insert(id);
             } else {
                 foreign.push(message);
+            }
+        }
+        if !aliases.is_empty() {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+            for alias in aliases {
+                state.finished_turns.insert(TurnKey {
+                    thread_id: thread_id.to_owned(),
+                    turn_id: alias,
+                });
             }
         }
         // Anything already in the turn's buffer arrived after the drain, so
@@ -722,6 +742,31 @@ impl Connection {
         state.turns.insert(key, turn.clone());
         let early = state.early_messages.remove(thread_id).unwrap_or_default();
         Ok((turn, early))
+    }
+
+    /// A `turn/started` no local turn owns is the alias of the thread's live
+    /// review turn, if it has one: `review/start` announces its turn under a
+    /// second id that no item, approval or completion ever uses. The alias is
+    /// retired at once so any later message for it is ignored, never adopted
+    /// as a server turn that would never complete.
+    pub(super) fn claim_review_alias(&self, thread_id: &str, turn_id: &str) -> Result<bool> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let live_review = state.turns.iter().any(|(key, turn)| {
+            key.thread_id == thread_id
+                && turn.review.load(Ordering::Acquire)
+                && !turn.terminal.load(Ordering::Acquire)
+                && !state.finished_turns.contains(key)
+        });
+        if live_review {
+            state.finished_turns.insert(TurnKey {
+                thread_id: thread_id.to_owned(),
+                turn_id: turn_id.to_owned(),
+            });
+        }
+        Ok(live_review)
     }
 
     pub(super) fn turn_for_key(&self, key: &TurnKey) -> Result<Arc<ManagedTurn>> {

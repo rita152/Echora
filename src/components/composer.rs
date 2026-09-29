@@ -19,7 +19,9 @@ mod permissions;
 mod picker;
 mod render;
 mod requests;
+mod review;
 mod runtime;
+mod shell;
 mod side_chat;
 mod slash_menu;
 mod slash_menu_render;
@@ -34,6 +36,7 @@ pub use followup_edit::OpenQueuedInSideChat;
 pub(crate) use followup_render::TrayTooltip;
 pub use goal::OpenGoalEditor;
 pub(crate) use goal_render::achieved_duration_label;
+pub use review::{CodeReviewStarted, StartDetachedReview};
 pub(crate) use toast::{TOAST_DURATION, ToastKind, VISIBLE_TOASTS, toast_card, toast_stack};
 pub use workspace::WorkspacePresentation;
 
@@ -219,6 +222,19 @@ pub struct ComposerView {
     workspace: WorkspacePresentation,
     checkout_cycle: u64,
     follow_up_mode: crate::workspace::FollowUpMode,
+    review_delivery: crate::workspace::ReviewDelivery,
+    /// The `/review` submenu's base branches, and the read they came from.
+    review_branches: review::ReviewBranches,
+    review_branches_cycle: u64,
+    /// The cycle of a review whose turn has not been accepted yet.
+    review_start_cycle: Option<u64>,
+    /// A review waiting for this conversation's settings to load.
+    pending_review: Option<crate::agent::AgentReviewTarget>,
+    /// What the configured model provider supports; `None` while unknown,
+    /// which gates nothing.
+    provider_capabilities: Option<crate::agent::AgentProviderCapabilities>,
+    /// `memory/status`, read when the memories dialog opens.
+    memory_status: Option<crate::agent::AgentMemoryStatus>,
     /// A queued row loaded into the composer for editing.
     queue_edit: Option<followup_edit::QueueEdit>,
     queue_removal: Option<followup_edit::RemovedQueuedMessage>,
@@ -435,6 +451,13 @@ impl ComposerView {
             workspace: WorkspacePresentation::default(),
             checkout_cycle: 0,
             follow_up_mode: Default::default(),
+            review_delivery: Default::default(),
+            review_branches: Default::default(),
+            review_branches_cycle: 0,
+            review_start_cycle: None,
+            pending_review: None,
+            provider_capabilities: None,
+            memory_status: None,
             queue_edit: None,
             queue_removal: None,
             queue_redo: None,
@@ -663,6 +686,7 @@ impl ComposerView {
         crate::conversation::TurnGoalMarks {
             sent_as_goal: self.conversation.user_message_goal,
             achieved_seconds: self.conversation.goal_achieved_seconds,
+            review_request: self.conversation.user_message_review,
         }
     }
 
@@ -843,6 +867,8 @@ impl ComposerView {}
 
 #[cfg(test)]
 mod approval_tests;
+#[cfg(test)]
+mod batch3_tests;
 #[cfg(test)]
 mod elicitation_tests;
 #[cfg(test)]

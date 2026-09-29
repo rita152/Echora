@@ -160,6 +160,16 @@ impl PromptInput {
 
     /// The rename dialog's title field. The reference opens it with the whole
     /// title selected, so typing replaces the old name outright.
+    /// The New section / Edit section dialog's name field. Like the rename
+    /// field it submits on Enter even when empty (a new section then takes
+    /// the default name).
+    pub fn section_name(mode: ThemeMode, cx: &mut Context<Self>) -> Self {
+        let mut input = Self::rename_chat(mode, "", cx);
+        input.placeholder = crate::i18n::format!("分区名称" => "Section name").into();
+        input.accessible_name = Some(crate::i18n::format!("分区名称" => "Section name").into());
+        input
+    }
+
     pub fn rename_chat(mode: ThemeMode, title: &str, cx: &mut Context<Self>) -> Self {
         let mut input = Self::new(mode, cx);
         input.kind = PromptInputKind::RenameChat;

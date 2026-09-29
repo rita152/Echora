@@ -2,6 +2,10 @@
 //! composer width, 16px radius, 4px padding, at most 320px tall. Rows are
 //! 4×8 padded and 28px tall in the reference window, 12px radius, 75%
 //! opaque until highlighted.
+//!
+//! The Code review submenu follows the reference's own list (DOM capture
+//! `artifacts/batch3-review-*`): 28.6px rows padded 5×8 with a 15px radius
+//! and no gap, full-strength text, and a muted section title padded 8/8/4.
 
 use gpui::{
     AnyElement, Context, HighlightStyle, MouseMoveEvent, Role, SharedString, StyledText, div,
@@ -10,6 +14,7 @@ use gpui::{
 
 use super::{
     ComposerView,
+    review::{ReviewBranches, ReviewRow},
     slash_menu::{DenialItem, SlashItem},
 };
 use crate::{components::icons::icon, theme::Theme, theme::ThemeMode};
@@ -23,6 +28,9 @@ struct MenuColors {
     text: gpui::Hsla,
     muted: gpui::Hsla,
     highlight: gpui::Hsla,
+    /// The review submenu's rows are highlighted a shade lighter.
+    review_highlight: gpui::Hsla,
+    info: gpui::Hsla,
 }
 
 fn menu_colors(theme: Theme, mode: ThemeMode) -> MenuColors {
@@ -36,6 +44,8 @@ fn menu_colors(theme: Theme, mode: ThemeMode) -> MenuColors {
             text,
             muted: rgba(0xffffff80).into(),
             highlight: rgba(0xffffff14).into(),
+            review_highlight: rgba(0xffffff14).into(),
+            info: rgba(0x339cffff).into(),
         },
         ThemeMode::Light => MenuColors {
             surface: rgba(0xffffffff).into(),
@@ -43,6 +53,8 @@ fn menu_colors(theme: Theme, mode: ThemeMode) -> MenuColors {
             text,
             muted: rgba(0x1a1c1f80).into(),
             highlight: rgba(0x1a1c1f0d).into(),
+            review_highlight: rgba(0x1a1c1f0e).into(),
+            info: rgba(0x0285ffff).into(),
         },
     }
 }
@@ -147,7 +159,141 @@ impl ComposerView {
                         .child(item.description),
                 )
             })
+            .when(command.opens_submenu(), |row| {
+                row.when(!has_description, |row| row.child(div().flex_1()))
+                    .child(
+                        icon("slash-submenu-chevron", colors.muted)
+                            .size(px(16.0))
+                            .flex_none(),
+                    )
+            })
             .into_any_element()
+    }
+
+    fn review_row(
+        &self,
+        index: usize,
+        row: ReviewRow,
+        highlighted: bool,
+        colors: &MenuColors,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let title = row.title();
+        let selector = match &row {
+            ReviewRow::Uncommitted => "SLASH_REVIEW_UNCOMMITTED".to_owned(),
+            ReviewRow::Branch(_) => format!("SLASH_REVIEW_BRANCH_{index}"),
+        };
+        div()
+            .id(("slash-review-row", index))
+            .role(Role::MenuItem)
+            .aria_label(SharedString::from(title.clone()))
+            .debug_selector(move || selector.clone())
+            .w_full()
+            .px(px(8.0))
+            .py(px(5.0))
+            .rounded(px(15.0))
+            .flex()
+            .items_center()
+            .text_size(px(13.0))
+            .line_height(px(18.57))
+            .text_color(colors.text)
+            .cursor_pointer()
+            .when(highlighted, |item| item.bg(colors.highlight))
+            .on_mouse_move(cx.listener(move |this, _: &MouseMoveEvent, _, cx| {
+                if let Some(menu) = this.slash_menu.as_mut()
+                    && menu.highlighted != index
+                {
+                    menu.highlighted = index;
+                    cx.notify();
+                }
+            }))
+            .on_click(cx.listener(move |this, _, _, cx| this.select_review_row(index, cx)))
+            .child(div().min_w(px(0.0)).flex_1().truncate().child(title))
+            .into_any_element()
+    }
+
+    /// Uncommitted changes, then the base-branch section with its branches
+    /// or its loading and error states.
+    fn review_rows_elements(
+        &self,
+        highlighted: usize,
+        colors: &MenuColors,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        let rows = self.review_rows(cx);
+        let mut elements = Vec::new();
+        let mut index = 0;
+        let mut rows = rows.into_iter().peekable();
+        if rows.peek() == Some(&ReviewRow::Uncommitted) {
+            let row = rows.next().expect("peeked");
+            elements.push(self.review_row(index, row, highlighted == index, colors, cx));
+            index += 1;
+        }
+        elements.push(
+            div()
+                .w_full()
+                .pt(px(8.0))
+                .px(px(8.0))
+                .pb(px(4.0))
+                .text_size(px(13.0))
+                .line_height(px(18.57))
+                .text_color(colors.muted)
+                .child(crate::i18n::format!("与基准分支比较" => "Review against a base branch"))
+                .into_any_element(),
+        );
+        match &self.review_branches {
+            ReviewBranches::Loading => elements.push(
+                div()
+                    .w_full()
+                    .py(px(8.0))
+                    .flex()
+                    .justify_center()
+                    .text_size(px(12.0))
+                    .line_height(px(16.0))
+                    .text_color(colors.muted)
+                    .child(crate::i18n::format!("正在加载分支…" => "Loading branches…"))
+                    .into_any_element(),
+            ),
+            ReviewBranches::Failed => elements.push(
+                div()
+                    .w_full()
+                    .py(px(8.0))
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .line_height(px(16.0))
+                            .text_color(colors.muted)
+                            .child(
+                                crate::i18n::format!("无法加载分支" => "Unable to load branches"),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .id("slash-review-retry")
+                            .role(Role::Button)
+                            .debug_selector(|| "SLASH_REVIEW_RETRY".to_owned())
+                            .text_size(px(12.0))
+                            .line_height(px(16.0))
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(colors.info)
+                            .cursor_pointer()
+                            .on_click(cx.listener(|this, _, _, cx| this.load_review_branches(cx)))
+                            .child(crate::i18n::format!("重试" => "Retry")),
+                    )
+                    .into_any_element(),
+            ),
+            ReviewBranches::Loaded(_) => {
+                for row in rows {
+                    elements.push(self.review_row(index, row, highlighted == index, colors, cx));
+                    index += 1;
+                }
+            }
+        }
+        elements
     }
 
     fn denial_row(
@@ -205,7 +351,14 @@ impl ComposerView {
         let menu = self.slash_menu.clone()?;
         let colors = menu_colors(theme, self.mode);
         let mut rows: Vec<AnyElement> = Vec::new();
-        if menu.denials {
+        let review = menu.review && !menu.denials;
+        if review {
+            let colors = MenuColors {
+                highlight: colors.review_highlight,
+                ..menu_colors(theme, self.mode)
+            };
+            rows = self.review_rows_elements(menu.highlighted, &colors, cx);
+        } else if menu.denials {
             rows.push(
                 div()
                     .px(px(8.0))
@@ -266,7 +419,7 @@ impl ComposerView {
                     .bg(colors.surface)
                     .flex()
                     .flex_col()
-                    .gap(px(4.0))
+                    .when(!review, |panel| panel.gap(px(4.0)))
                     .children(rows),
             )
             .with_priority(2)

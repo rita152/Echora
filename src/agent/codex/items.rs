@@ -16,7 +16,7 @@ use crate::{
         AgentFunctionCallOutputBody, AgentFunctionCallOutputContentItem, AgentImageDetail,
         AgentImageGeneration, AgentImageGenerationFailure, AgentImageGenerationStatus,
         AgentImageView, AgentMcpToolCall, AgentMcpToolCallStatus, AgentReasoning, AgentReviewMode,
-        CommandExecution, CommandExecutionAction, CommandExecutionStatus,
+        CommandExecution, CommandExecutionAction, CommandExecutionSource, CommandExecutionStatus,
         LegacySubAgentActivityKind,
     },
     media::read_image_dimensions,
@@ -1130,6 +1130,8 @@ pub(super) fn optional_command_action_string(
     }
 }
 
+const TIMEOUT_OUTPUT_PREFIX: &str = "execution error: Sandbox(Timeout";
+
 pub(super) fn parse_command_execution(
     item: &serde_json::Map<String, Value>,
 ) -> Result<CommandExecution> {
@@ -1206,14 +1208,34 @@ pub(super) fn parse_command_execution(
         "failed" | "declined" => CommandExecutionStatus::Failed,
         other => bail!("commandExecution item.status 包含未知值 `{other}`"),
     };
+    // Absent means the schema default, `agent`.
+    let source = match item.get("source") {
+        None => CommandExecutionSource::Agent,
+        Some(Value::String(source)) => match source.as_str() {
+            "agent" => CommandExecutionSource::Agent,
+            "userShell" => CommandExecutionSource::UserShell,
+            "unifiedExecStartup" => CommandExecutionSource::UnifiedExecStartup,
+            "unifiedExecInteraction" => CommandExecutionSource::UnifiedExecInteraction,
+            other => bail!("commandExecution item.source 包含未知值 `{other}`"),
+        },
+        Some(_) => bail!("commandExecution item.source 必须是字符串"),
+    };
+    // A timeout is a failed item whose output is the executor's error text
+    // (`Sandbox(Timeout { .. })`) instead of the command's; what the command
+    // printed before arrived as output deltas and is kept by the reducer.
+    let timed_out = status == CommandExecutionStatus::Failed
+        && exit_code == Some(-1)
+        && output.starts_with(TIMEOUT_OUTPUT_PREFIX);
     Ok(CommandExecution {
         id,
         command: first_action_command.unwrap_or(raw_command),
         actions: parsed_actions,
         cwd,
-        output,
+        output: if timed_out { String::new() } else { output },
         terminal_process_id: None,
         status,
         exit_code,
+        source,
+        timed_out,
     })
 }

@@ -21,6 +21,7 @@ impl ConversationState {
         self.history_error = None;
         self.user_message = Some(normalize_user_message_for_display(prompt));
         self.user_message_goal = false;
+        self.user_message_review = false;
         self.goal_achieved_seconds = None;
         self.external_turn = false;
         self.user_message_time = Some(current_local_time_label());
@@ -57,6 +58,14 @@ impl ConversationState {
         }
         self.user_message = Some(goal_objective.unwrap_or_default());
         self.external_turn = true;
+        cycle
+    }
+
+    /// A code review this client starts: `request` is shown as the user's
+    /// message with the "Review mode" mark.
+    pub(crate) fn begin_review(&mut self, request: &str) -> u64 {
+        let cycle = self.begin_prompt(request);
+        self.user_message_review = true;
         cycle
     }
 
@@ -103,6 +112,7 @@ impl ConversationState {
             self.resumed_turn = last.resumed;
             self.user_message_goal = last.goal.sent_as_goal;
             self.goal_achieved_seconds = last.goal.achieved_seconds;
+            self.user_message_review = last.goal.review_request;
         } else {
             self.turn_id = None;
             self.phase = super::transcript::ConversationPhase::Empty;
