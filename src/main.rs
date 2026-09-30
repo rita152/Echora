@@ -743,6 +743,11 @@ struct ResumedCaptureOptions {
     /// After the screenshot, replay the rail's pointer scenarios and save the
     /// per-frame recording next to it.
     navigation_motion: bool,
+    /// `--batch4-state=<topic>:<state>`, applied once the task is loaded.
+    batch4: Option<&'static str>,
+    /// A batch-four state was applied: wait for its pull requests, checkout
+    /// and summary panel before counting stable frames.
+    batch4_waiting: bool,
 }
 
 #[cfg(feature = "screenshot")]
@@ -751,6 +756,7 @@ impl ResumedCaptureOptions {
         self.scroll_from_bottom.is_none()
             && self.navigation_hover.is_none()
             && self.navigation_jump.is_none()
+            && self.batch4.is_none()
     }
 }
 
@@ -786,6 +792,10 @@ fn schedule_resumed_thread_screenshot(
                         app.set_user_message_navigation_hover_for_capture(Some(index), cx)
                     });
                 }
+                if let Some(state) = remaining.batch4.take() {
+                    app.update(cx, |app, cx| app.set_batch4_for_capture(state, cx));
+                    remaining.batch4_waiting = true;
+                }
                 window.refresh();
                 schedule_resumed_thread_screenshot(
                     window,
@@ -794,6 +804,22 @@ fn schedule_resumed_thread_screenshot(
                     thread_id,
                     deadline,
                     remaining,
+                    RESUMED_THREAD_STABLE_FRAMES,
+                );
+            }
+            Ok(true)
+                if options.batch4_waiting
+                    && Instant::now() < deadline
+                    && !app.read(cx).batch4_capture_ready(cx) =>
+            {
+                window.refresh();
+                schedule_resumed_thread_screenshot(
+                    window,
+                    app,
+                    path,
+                    thread_id,
+                    deadline,
+                    options,
                     RESUMED_THREAD_STABLE_FRAMES,
                 );
             }
@@ -1178,6 +1204,13 @@ fn main() {
             .map(|state| (kind, state))
     })
     .collect::<Vec<_>>();
+    // Batch four: thread attachments, the summary panel and background
+    // terminals, on a resumed fixture thread.
+    #[cfg(feature = "screenshot")]
+    let batch4_state: Option<&'static str> = args.iter().find_map(|arg| {
+        arg.strip_prefix("--batch4-state=")
+            .map(|state| &*Box::leak(state.to_owned().into_boxed_str()))
+    });
     #[cfg(feature = "screenshot")]
     let streaming_reply_ui_state = args.iter().find_map(|arg| {
         arg.strip_prefix("--streaming-reply-ui-state=")
@@ -1920,6 +1953,8 @@ fn main() {
                                     navigation_hover,
                                     navigation_jump,
                                     navigation_motion,
+                                    batch4: batch4_state,
+                                    batch4_waiting: false,
                                 },
                                 RESUMED_THREAD_STABLE_FRAMES,
                             );

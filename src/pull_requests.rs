@@ -9,14 +9,22 @@
 
 pub mod associations;
 pub mod avatars;
+pub mod detection;
 mod gh;
 mod model;
 
-pub use gh::{GhClient, search_users};
-#[cfg(test)]
+pub use gh::{
+    BranchPullRequest, GhClient, PullRequestLiveState, pull_request_for_branch, pull_request_state,
+    search_users,
+};
 pub use model::CiStatus;
 pub use model::{
     ActivityEventKind, ActivityItem, CheckState, Comment, Commit, GroupKind, ListTab,
     NewReviewComment, PullRequestDetail, PullRequestFilter, PullRequestGroup, PullRequestStatus,
     PullRequestSummary, ReviewThread, StatusFilter, StatusIcon, User, filter_groups, format_count,
 };
+
+/// A GitHub timestamp as the reference's compact age ("2d", "5h").
+pub fn age_since(timestamp: &str) -> String {
+    model::relative_age(timestamp, chrono::Utc::now())
+}

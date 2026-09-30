@@ -925,6 +925,9 @@ pub struct SidebarView {
     /// True while the main content area shows the Pull Requests page.
     pull_requests_open: bool,
     local_error: Option<String>,
+    /// Threads whose rows this frame drew; their pull requests are loaded.
+    rendered_threads: RefCell<Vec<ThreadSummary>>,
+    requested_pull_request_threads: Vec<(ThreadId, PathBuf, Option<String>)>,
 }
 
 impl SidebarView {
@@ -986,6 +989,22 @@ impl SidebarView {
                     }
                     cx.notify();
                 });
+            }
+        })
+        .detach();
+        // Open pull requests and attachments go stale; the rows re-check them
+        // every half minute (each check is local unless something is stale).
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(30))
+                    .await;
+                if this
+                    .update(cx, |this, _| this.requested_pull_request_threads.clear())
+                    .is_err()
+                {
+                    break;
+                }
             }
         })
         .detach();
@@ -1056,6 +1075,8 @@ impl SidebarView {
             archived_open: false,
             pull_requests_open: false,
             local_error: None,
+            rendered_threads: RefCell::new(Vec::new()),
+            requested_pull_request_threads: Vec::new(),
         }
     }
 
@@ -1224,6 +1245,15 @@ impl SidebarView {
             return;
         }
         self.thread_hover_card = Some(thread_id);
+        cx.notify();
+    }
+
+    /// The pointer on a task row: its hover actions replace the chip, and
+    /// its card opens.
+    #[cfg(feature = "screenshot")]
+    pub fn hover_thread_for_capture(&mut self, thread: &str, cx: &mut Context<Self>) {
+        self.open_thread_hover_card_for_capture(thread, cx);
+        self.hovered_thread_id = self.thread_hover_card.clone();
         cx.notify();
     }
 
@@ -1914,6 +1944,28 @@ impl SidebarView {
         });
     }
 
+    /// Loads what the chips of the rows just drawn need, off the UI thread,
+    /// whenever the drawn rows (or their checkout and branch) change.
+    fn request_rendered_pull_requests(&mut self) {
+        let threads = std::mem::take(&mut *self.rendered_threads.borrow_mut());
+        let signature: Vec<(ThreadId, PathBuf, Option<String>)> = threads
+            .iter()
+            .map(|thread| {
+                (
+                    thread.thread_id.clone(),
+                    thread.cwd.clone(),
+                    thread.git.branch.clone(),
+                )
+            })
+            .collect();
+        if signature == self.requested_pull_request_threads {
+            return;
+        }
+        self.requested_pull_request_threads = signature;
+        let store = self.store.clone();
+        std::thread::spawn(move || store.request_thread_pull_requests(&threads));
+    }
+
     fn thread_row(
         &self,
         thread: &ThreadSummary,
@@ -2014,19 +2066,32 @@ impl SidebarView {
                 cx.reduce_motion(),
             )
         });
+        // The reference's idle indicator: the thread's pull request, shown
+        // only while the chat is idle and read, and hidden under the row's
+        // hover actions. It has no tooltip and no click of its own.
+        self.rendered_threads.borrow_mut().push(thread.clone());
+        let chip = (!active && !unread && !status_error && !archived)
+            .then(|| match self.snapshot.thread_pull_request_chip(thread) {
+                crate::workspace::ChipPullRequest::Show { state, .. } => {
+                    Some(crate::workspace::chip_icon(&state))
+                }
+                _ => None,
+            })
+            .flatten();
         let trailing_rail = div()
             .ml(px(3.0))
             .flex_none()
             .when(hovered, |rail| rail.w(px(48.0)).min_w(px(48.0)))
-            .when((active || unread) && !hovered, |rail| {
+            .when((active || unread || chip.is_some()) && !hovered, |rail| {
                 rail.w(px(25.0)).min_w(px(25.0))
             })
             .when(status_error && !hovered && !active, |rail| {
                 rail.w(px(16.0)).min_w(px(16.0))
             })
-            .when(!hovered && !active && !unread && !status_error, |rail| {
-                rail.w(px(0.0)).min_w(px(0.0))
-            });
+            .when(
+                !hovered && !active && !unread && !status_error && chip.is_none(),
+                |rail| rail.w(px(0.0)).min_w(px(0.0)),
+            );
         // Task rows rename through the modal panel the reference shows on
         // double click, so the row itself always draws the title canvas.
         let title = div()
@@ -2134,6 +2199,33 @@ impl SidebarView {
                         .items_center()
                         .justify_center()
                         .child(div().size(px(8.0)).rounded_full().bg(theme.activity_badge)),
+                )
+            })
+            .when_some(chip.filter(|_| !hovered), |row, status| {
+                row.child(
+                    div()
+                        .id(SharedString::from(format!("thread-pr-chip-{thread_id}")))
+                        .debug_selector({
+                            let thread_id = thread_id.clone();
+                            move || format!("THREAD_PR_CHIP_{thread_id}")
+                        })
+                        // Where the row's last hover action sits (the
+                        // reference's chip box is 204..224 of a row ending
+                        // at 232).
+                        .absolute()
+                        .right(px(8.0))
+                        .top(px(5.0))
+                        .size(px(20.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            crate::components::pull_requests::PullRequestsView::status_glyph(
+                                status,
+                                crate::components::pull_requests::PrTheme::for_mode(self.mode),
+                                14.0,
+                            ),
+                        ),
                 )
             })
             .when(status_error && !hovered && !unread, |row| {
@@ -2815,6 +2907,109 @@ impl SidebarView {
                         ),
                 )
             })
+            .when_some(
+                self.hover_card_pull_request(thread, theme, cx),
+                |card, rows| card.children(rows),
+            )
+    }
+
+    /// The reference's hover-card `pr` section: the chip's pull request (its
+    /// title, or its state) opening the pull request, and a "Merge conflicts"
+    /// row when GitHub reports them.
+    fn hover_card_pull_request(
+        &self,
+        thread: &ThreadSummary,
+        theme: Theme,
+        cx: &mut Context<Self>,
+    ) -> Option<Vec<gpui::AnyElement>> {
+        let crate::workspace::ChipPullRequest::Show { url, state } =
+            self.snapshot.thread_pull_request_chip(thread)
+        else {
+            return None;
+        };
+        let pr_theme = crate::components::pull_requests::PrTheme::for_mode(self.mode);
+        let label = if state.summary.title.trim().is_empty() {
+            match state.summary.status {
+                crate::pull_requests::PullRequestStatus::Draft => {
+                    crate::i18n::format!("草稿 PR" => "Draft PR")
+                }
+                crate::pull_requests::PullRequestStatus::Open => {
+                    crate::i18n::format!("开启的 PR" => "Open PR")
+                }
+                crate::pull_requests::PullRequestStatus::Merged => {
+                    crate::i18n::format!("已合并的 PR" => "Merged PR")
+                }
+                crate::pull_requests::PullRequestStatus::Closed => {
+                    crate::i18n::format!("已关闭的 PR" => "Closed PR")
+                }
+            }
+        } else {
+            state.summary.title.clone()
+        };
+        let row = |id: String, glyph: Div, text: String| {
+            div()
+                .id(SharedString::from(id))
+                .w_full()
+                .min_w(px(0.0))
+                .h(px(THREAD_HOVER_ROW_HEIGHT))
+                .flex()
+                .items_center()
+                .gap(px(THREAD_HOVER_PROJECT_GAP))
+                .rounded(px(6.0))
+                .child(
+                    div()
+                        .flex_none()
+                        .w(px(THREAD_HOVER_PROJECT_ICON))
+                        .h(px(THREAD_HOVER_ROW_HEIGHT))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(glyph),
+                )
+                .child(
+                    div()
+                        .min_w(px(0.0))
+                        .flex_1()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_overflow(gpui::TextOverflow::Truncate("…".into()))
+                        .font(hover_card_font(crate::theme::UI_BODY_FONT_WEIGHT))
+                        .text_size(px(13.0))
+                        .line_height(px(THREAD_HOVER_ROW_HEIGHT))
+                        .text_color(theme.text)
+                        .child(text),
+                )
+        };
+        let thread_id = thread.thread_id.clone();
+        let link = row(
+            format!("thread-hover-pr-{thread_id}"),
+            crate::components::pull_requests::PullRequestsView::status_glyph(
+                crate::workspace::chip_icon(&state),
+                pr_theme,
+                14.0,
+            ),
+            label.clone(),
+        )
+        .role(gpui::Role::Button)
+        .aria_label(label)
+        .cursor_pointer()
+        .hover(move |style| style.bg(pr_theme.row_hover))
+        .on_click(cx.listener(move |_, _, _, cx| {
+            cx.stop_propagation();
+            cx.open_url(&url);
+        }));
+        let mut rows = vec![link.into_any_element()];
+        if state.summary.has_conflicts {
+            rows.push(
+                row(
+                    format!("thread-hover-pr-conflicts-{thread_id}"),
+                    div().child(icon("settings-warning", pr_theme.chart_red.into()).size(px(14.0))),
+                    crate::i18n::format!("合并冲突" => "Merge conflicts"),
+                )
+                .into_any_element(),
+            );
+        }
+        Some(rows)
     }
 
     /// A read-only hover card row: icon column plus a single text line.
@@ -4204,6 +4399,7 @@ impl SidebarView {
 
 impl Render for SidebarView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.rendered_threads.borrow_mut().clear();
         if std::mem::take(&mut self.scroll_to_bottom) {
             self.scroll.scroll_to_bottom();
         }
@@ -4378,6 +4574,7 @@ impl Render for SidebarView {
                     .child(self.thread_hover_card(&thread, project.as_ref(), theme, cx)),
             ));
         }
+        self.request_rendered_pull_requests();
         sidebar
     }
 }
@@ -4547,6 +4744,7 @@ mod tests {
                 updated_at: 2,
                 recency_at: Some(3),
                 activity: ThreadActivity::Idle,
+                git: Default::default(),
             });
             response(Ok(Page::single(threads.into_iter().collect())))
         }
@@ -4842,6 +5040,7 @@ mod tests {
                 updated_at: 0,
                 recency_at: None,
                 activity,
+                git: Default::default(),
             }
         }
         let threads = [

@@ -65,6 +65,56 @@ pub struct UiPreferences {
     pub section_projects: BTreeMap<ThreadSectionId, Vec<ProjectId>>,
     #[serde(default)]
     pub collapsed_section_ids: BTreeSet<ThreadSectionId>,
+    /// Pull requests attached to threads, mirrored from the server's
+    /// attachments and read only when the server has none (an older CLI),
+    /// like the reference's `pull-request-attachment-records-v3`: at most
+    /// [`ATTACHMENT_RECORD_THREAD_LIMIT`] threads, most recently written last.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pull_request_attachment_records: Vec<PullRequestAttachmentRecord>,
+    /// When backfill first ran here, in epoch milliseconds; used only when the
+    /// ChatGPT app has not recorded its own cutoff.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull_request_backfill_cutoff_at: Option<i64>,
+    /// Threads backfill is done with here (found, not found, or a PR the user
+    /// removed), at most [`BACKFILL_COMPLETED_LIMIT`], oldest first. Joined
+    /// with the ChatGPT app's own list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pull_request_backfill_completed: Vec<ThreadId>,
+    /// The user unpinned the thread summary panel. Stored inverted so the
+    /// default is pinned, like the reference's global
+    /// `app-shell-summary-panel-pinned` (default true).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub summary_panel_unpinned: bool,
+    /// Summary panel sections the user expanded or collapsed, by section key;
+    /// absent keys use the section's default.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub summary_section_expanded: BTreeMap<String, bool>,
+}
+
+pub const ATTACHMENT_RECORD_THREAD_LIMIT: usize = 100;
+pub const ATTACHMENT_RECORD_PER_THREAD_LIMIT: usize = 100;
+pub const BACKFILL_COMPLETED_LIMIT: usize = 100;
+
+/// One thread's pull requests as last read (or written locally when the server
+/// has no attachments).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestAttachmentRecord {
+    pub thread_id: ThreadId,
+    pub pull_requests: Vec<RecordedPullRequest>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordedPullRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub head_branch: Option<String>,
+    /// Epoch milliseconds; the newest is the thread's current pull request.
+    pub touched_at: i64,
 }
 
 /// `Inline` starts the review in the current chat; `Detached` starts a new

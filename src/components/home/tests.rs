@@ -1073,6 +1073,7 @@ fn resumed_historical_tool_group_keeps_its_disclosure_state() {
             updated_at: 2,
             recency_at: Some(2),
             activity: ThreadActivity::Idle,
+            git: Default::default(),
         },
         turns: vec![
             command_turn("historical-turn", "historical-command", "first"),
@@ -1162,6 +1163,7 @@ fn dense_resumed_tool_group_preserves_row_height_and_scrolls_instead_of_overlapp
             updated_at: 2,
             recency_at: Some(2),
             activity: ThreadActivity::Idle,
+            git: Default::default(),
         },
         turns: vec![
             ThreadTurn {

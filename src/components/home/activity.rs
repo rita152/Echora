@@ -70,6 +70,7 @@ pub(super) fn render_activity_stream_unit(
                     disclosure_progress,
                     chevron_progress,
                     scroll_handle,
+                    background_commands: render.disclosures.background_commands.clone(),
                 },
                 expanded_commands,
                 command_scroll_handles,
@@ -301,6 +302,7 @@ pub(super) fn render_activity_stream_unit(
                 command,
                 expanded_commands,
                 command_scroll_handles,
+                &render.disclosures.background_commands,
                 theme,
             )
             .into_any_element(),

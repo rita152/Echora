@@ -10,6 +10,13 @@ timestamped log so the wire dialogue can be quoted as evidence.
 Usage:
     app_server_wire_shim.py --real /path/to/codex --log /path/to/wire.jsonl -- ARGS...
 
+With `P0_WIRE_FAULTS=<file>` the client-to-server direction consults that
+JSON file before forwarding each request: `{"<method>": {"delayMs": N}}`
+holds the request (and every request after it) back for N ms, `{"<method>": {"error": {"code": ..,
+"message": ..}}}` answers it with that error instead of forwarding it. The
+file is re-read on every request, so a capture can switch faults on and off
+while the instance runs; without the variable nothing is changed.
+
 The log holds one JSON object per line:
 {"at": ..., "dir": "c2s"|"s2c", "origin": ..., "line": "..."}.
 stderr of the child is forwarded unchanged and never mixed into the log.
@@ -25,6 +32,11 @@ import signal
 import subprocess
 import sys
 import threading
+import time
+
+# Serialises writes into one descriptor: a faulted request is answered on the
+# app's stdout from the client-side pump while the server pump writes there.
+SINK_LOCKS: dict[int, threading.Lock] = {}
 
 
 def stamp():
@@ -71,7 +83,47 @@ def write_all(fd, data):
         view = view[written:]
 
 
-def pump(source_fd, sink_fd, log, direction):
+def load_faults():
+    path = os.environ.get("P0_WIRE_FAULTS")
+    if not path:
+        return {}
+    try:
+        with open(path, encoding="utf-8") as handle:
+            faults = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    return faults if isinstance(faults, dict) else {}
+
+
+def apply_fault(raw, log, reply_fd, reply_lock):
+    """Returns False when the request was answered here instead of forwarded."""
+    if not os.environ.get("P0_WIRE_FAULTS"):
+        return True
+    try:
+        message = json.loads(raw)
+    except ValueError:
+        return True
+    if not isinstance(message, dict) or "id" not in message or "method" not in message:
+        return True
+    fault = load_faults().get(message["method"])
+    if not isinstance(fault, dict):
+        return True
+    delay = fault.get("delayMs")
+    if isinstance(delay, (int, float)) and delay > 0:
+        log.write("meta", json.dumps({"fault": "delay", "method": message["method"], "delayMs": delay}))
+        time.sleep(delay / 1000)
+    error = fault.get("error")
+    if isinstance(error, dict):
+        reply = json.dumps({"id": message["id"], "error": error}).encode()
+        log.write("meta", json.dumps({"fault": "error", "method": message["method"]}))
+        log.write("s2c", reply.decode())
+        with reply_lock:
+            write_all(reply_fd, reply + b"\n")
+        return False
+    return True
+
+
+def pump(source_fd, sink_fd, log, direction, fault=None):
     """Copy one direction until EOF; JSONL text is also logged line by line.
 
     The raw file descriptors are used on purpose: a buffered reader would block
@@ -94,7 +146,10 @@ def pump(source_fd, sink_fd, log, direction):
                 raw, buffer = buffer.split(b"\n", 1)
                 for part in raw.split(b"\r"):
                     log.write(direction, part.decode("utf-8", "replace"))
-                write_all(sink_fd, raw + b"\n")
+                if fault is not None and not fault(raw):
+                    continue
+                with SINK_LOCKS.setdefault(sink_fd, threading.Lock()):
+                    write_all(sink_fd, raw + b"\n")
         if buffer:
             log.write(direction, buffer.decode("utf-8", "replace"))
             write_all(sink_fd, buffer)
@@ -125,14 +180,17 @@ def main():
         bufsize=0,
     )
 
+    stdout_fd = sys.stdout.fileno()
+    reply_lock = SINK_LOCKS.setdefault(stdout_fd, threading.Lock())
     to_child = threading.Thread(
         target=pump,
         args=(sys.stdin.fileno(), child.stdin.fileno(), log, "c2s"),
+        kwargs={"fault": lambda raw: apply_fault(raw, log, stdout_fd, reply_lock)},
         daemon=True,
     )
     from_child = threading.Thread(
         target=pump,
-        args=(child.stdout.fileno(), sys.stdout.fileno(), log, "s2c"),
+        args=(child.stdout.fileno(), stdout_fd, log, "s2c"),
         daemon=True,
     )
     to_child.start()

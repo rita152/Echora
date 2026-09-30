@@ -107,6 +107,7 @@ pub(super) fn tool_activity_group(
         disclosure_progress,
         chevron_progress,
         scroll_handle,
+        background_commands,
     } = disclosure;
     if let [ConversationActivity::Command(command)] = group.activities.as_slice()
         && command_activity_row_count(command) == 1
@@ -116,6 +117,7 @@ pub(super) fn tool_activity_group(
             command.clone(),
             expanded_commands,
             command_scroll_handles,
+            &background_commands,
             theme,
         );
     }
@@ -202,6 +204,7 @@ pub(super) fn tool_activity_group(
                 command,
                 expanded_commands,
                 command_scroll_handles,
+                &background_commands,
                 theme,
             )),
             ConversationActivity::FileChange(file_change) => {
@@ -542,13 +545,45 @@ pub(super) fn static_command_action_activity(
         )
 }
 
+/// The reference's background terminal labels (`toolSummaryForCmd.*`):
+/// no elapsed time, and the command when there is one.
+pub(super) fn background_command_label(
+    mark: super::context::BackgroundMark,
+    command: &str,
+) -> String {
+    use super::context::BackgroundMark;
+    let command = command.split_whitespace().collect::<Vec<_>>().join(" ");
+    match (mark, command.is_empty()) {
+        (BackgroundMark::Running, false) => crate::i18n::format!(
+            "已启动后台终端 {command}" => "Started background terminal with {command}"
+        ),
+        (BackgroundMark::Running, true) => {
+            crate::i18n::format!("已启动后台终端" => "Started background terminal")
+        }
+        (BackgroundMark::Finished, false) => {
+            crate::i18n::format!("已运行 {command}" => "Ran {command}")
+        }
+        (BackgroundMark::Finished, true) => {
+            crate::i18n::format!("后台终端已结束" => "Background terminal finished")
+        }
+        (BackgroundMark::Stopped, false) => crate::i18n::format!(
+            "后台终端已停止 {command}" => "Background terminal stopped with {command}"
+        ),
+        (BackgroundMark::Stopped, true) => {
+            crate::i18n::format!("后台终端已停止" => "Background terminal stopped")
+        }
+    }
+}
+
 pub(super) fn command_execution_activity(
     home_entity: Entity<HomeView>,
     command: CommandExecution,
     expanded_commands: &HashSet<String>,
     command_scroll_handles: &HashMap<String, ScrollHandle>,
+    background_commands: &HashMap<String, super::context::BackgroundMark>,
     theme: Theme,
 ) -> Div {
+    let background = background_commands.get(&command.id).copied();
     let execution_id = command.id.clone();
     let actions = if command.actions.is_empty() {
         vec![CommandExecutionAction::Unknown {
@@ -596,6 +631,7 @@ pub(super) fn command_execution_activity(
                         row_command,
                         expanded_commands.contains(&row_id) != user_shell,
                         scroll_handle.clone(),
+                        background,
                         theme,
                     ))
                 }
@@ -616,12 +652,16 @@ pub(super) fn command_activity(
     command: CommandExecution,
     expanded: bool,
     scroll_handle: ScrollHandle,
+    background: Option<super::context::BackgroundMark>,
     theme: Theme,
 ) -> Div {
     let item_id = command.id.clone();
     let output_scroll_id: SharedString = format!("command-output-{item_id}").into();
     let hover_group: SharedString = format!("command-activity-{item_id}").into();
-    let summary = command_activity_summary(&command);
+    let mut summary = command_activity_summary(&command);
+    if let Some(mark) = background {
+        summary.text = background_command_label(mark, &command.command);
+    }
     let status_label: SharedString = match command.status {
         CommandExecutionStatus::InProgress => crate::i18n::text("运行中").into(),
         CommandExecutionStatus::Completed => crate::i18n::text("成功").into(),

@@ -73,6 +73,7 @@ fn progress_history(status: HistoryTurnStatus, items: Vec<ThreadHistoryItem>) ->
             updated_at: 0,
             recency_at: None,
             activity: ThreadActivity::Idle,
+            git: Default::default(),
         },
         turns: vec![ThreadTurn {
             turn_id: "turn".into(),
@@ -207,6 +208,7 @@ fn steer_history_preserves_interleaved_messages_and_attachments() {
             updated_at: 2,
             recency_at: Some(2),
             activity: ThreadActivity::Idle,
+            git: Default::default(),
         },
         turns: vec![ThreadTurn {
             turn_id: "turn".into(),

@@ -473,6 +473,7 @@ fn history_restore_normalizes_current_and_prior_user_messages() {
             updated_at: 2,
             recency_at: Some(2),
             activity: ThreadActivity::Idle,
+            git: Default::default(),
         },
         turns: vec![
             ThreadTurn {
@@ -1627,6 +1628,7 @@ fn collaboration_history_hydrates_without_unsupported_warning() {
             updated_at: 2,
             recency_at: Some(2),
             activity: ThreadActivity::Idle,
+            git: Default::default(),
         },
         turns: vec![ThreadTurn {
             turn_id: "turn_1".into(),

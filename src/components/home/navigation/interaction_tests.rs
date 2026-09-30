@@ -79,6 +79,7 @@ fn history_with_steering(steered: Option<usize>) -> ThreadHistory {
             updated_at: 2,
             recency_at: Some(2),
             activity: ThreadActivity::Idle,
+            git: Default::default(),
         },
         turns: (0..TURNS).map(turn).collect(),
         next_turn_cursor: None,

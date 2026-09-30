@@ -1,6 +1,7 @@
 pub mod activity;
 mod loaders;
 mod preferences;
+mod pull_requests;
 mod sections;
 
 use std::{
@@ -29,6 +30,10 @@ pub use preferences::{
     UiPreferences, preferred_language,
 };
 use preferences::{PreferenceStore, default_preferences_path};
+pub use pull_requests::{
+    BranchLookup, ChipPullRequest, GitCheckout, ThreadPullRequest, ThreadPullRequestsState,
+    chip_icon, remote_repository,
+};
 pub use sections::{CustomSection, SectionItem};
 
 /// One row of the chat search dialog: the thread plus the match snippet the
@@ -118,6 +123,8 @@ pub struct WorkspaceSnapshot {
     pub preference_error: Option<String>,
     pub pending: BTreeSet<WorkspaceOperation>,
     pub preferences: UiPreferences,
+    /// Pull requests attached to threads and what GitHub says about them.
+    pub pull_requests: ThreadPullRequestsState,
 }
 
 impl WorkspaceSnapshot {
@@ -136,6 +143,7 @@ impl WorkspaceSnapshot {
             preference_error: None,
             pending: BTreeSet::new(),
             preferences,
+            pull_requests: ThreadPullRequestsState::default(),
         }
     }
 
@@ -242,6 +250,7 @@ impl WorkspaceStore {
             deleted_project_ids: Mutex::new(HashSet::new()),
             viewed_thread: Mutex::new(None),
         });
+        store.initialize_pull_request_backfill();
         Self::listen_for_backend_events(&store);
         store
     }
@@ -373,6 +382,7 @@ impl WorkspaceStore {
                 self.update_thread_overlay(&thread_id, |overlay| overlay.deleted = true);
                 self.update(|snapshot| remove_thread(snapshot, &thread_id));
                 self.mark_threads_read(std::slice::from_ref(&thread_id));
+                self.forget_thread_pull_requests(&thread_id);
             }
             AgentConnectionEvent::ThreadNameUpdated { thread_id, name } => {
                 self.update_thread_overlay(&thread_id, |overlay| overlay.name = Some(name.clone()));
@@ -461,7 +471,11 @@ impl WorkspaceStore {
             | AgentConnectionEvent::ThreadGoalUpdated { .. }
             | AgentConnectionEvent::ThreadGoalCleared { .. }
             | AgentConnectionEvent::ThreadQueueChanged { .. }
+            | AgentConnectionEvent::BackgroundCommandUpdated { .. }
             | AgentConnectionEvent::AccountRateLimitsUpdated(_) => {}
+            AgentConnectionEvent::ThreadAttachmentUpdated(update) => {
+                self.attachment_updated(update);
+            }
         }
     }
 
@@ -1081,6 +1095,7 @@ impl WorkspaceStore {
                     Some(project_id) => crate::agent::AgentOptionalField::Value(project_id),
                     None => crate::agent::AgentOptionalField::Null,
                 },
+                ..Default::default()
             },
         );
         let store = Arc::clone(self);
@@ -1323,6 +1338,22 @@ impl WorkspaceStore {
 
     pub fn set_review_delivery(&self, delivery: preferences::ReviewDelivery) {
         self.update(|snapshot| snapshot.preferences.review_delivery = delivery);
+        self.save_preferences();
+    }
+    /// The thread summary panel's global pin, like the reference's
+    /// `app-shell-summary-panel-pinned`.
+    pub fn set_summary_panel_pinned(&self, pinned: bool) {
+        self.update(|snapshot| snapshot.preferences.summary_panel_unpinned = !pinned);
+        self.save_preferences();
+    }
+
+    pub fn set_summary_section_expanded(&self, key: &str, expanded: bool) {
+        self.update(|snapshot| {
+            snapshot
+                .preferences
+                .summary_section_expanded
+                .insert(key.to_owned(), expanded);
+        });
         self.save_preferences();
     }
     pub fn set_skip_side_chat_close_confirmation(&self, skip: bool) {

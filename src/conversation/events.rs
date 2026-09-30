@@ -96,6 +96,11 @@ impl ConversationState {
             // itself, because both need the view to start work.
             AgentConnectionEvent::TurnStarted { .. }
             | AgentConnectionEvent::ThreadQueueChanged { .. } => return false,
+            // Attachments are workspace data (sidebar chips, summary panel).
+            AgentConnectionEvent::ThreadAttachmentUpdated(_) => return false,
+            AgentConnectionEvent::BackgroundCommandUpdated { thread_id, .. } => {
+                Some(thread_id.as_str())
+            }
             // Account surfaces are connection-scoped: they never belong to a
             // conversation, so they are not routed into one.
             AgentConnectionEvent::AccountUpdated(_)
@@ -146,6 +151,9 @@ impl ConversationState {
                 thread_id,
             } => return self.goal.observe_cleared(*generation, thread_id),
             _ => {}
+        }
+        if let AgentConnectionEvent::BackgroundCommandUpdated { turn_id, event, .. } = event {
+            return self.apply_background_command_event(&turn_id, event);
         }
         if let AgentConnectionEvent::McpElicitationRequested { request, responder } = event {
             return self.mcp_elicitation_requested(request, responder);
@@ -211,7 +219,9 @@ impl ConversationState {
             | AgentConnectionEvent::ThreadGoalUpdated { .. }
             | AgentConnectionEvent::ThreadGoalCleared { .. }
             | AgentConnectionEvent::TurnStarted { .. }
-            | AgentConnectionEvent::ThreadQueueChanged { .. } => {
+            | AgentConnectionEvent::ThreadQueueChanged { .. }
+            | AgentConnectionEvent::ThreadAttachmentUpdated(_)
+            | AgentConnectionEvent::BackgroundCommandUpdated { .. } => {
                 unreachable!("reduced before turn projection")
             }
         };

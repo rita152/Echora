@@ -321,6 +321,59 @@ fn dragging_a_chat_onto_a_section_moves_it_and_onto_recents_takes_it_out(
     );
 }
 
+#[gpui::test]
+fn the_pull_request_chip_shows_on_an_idle_row_and_hides_under_its_hover_actions(
+    cx: &mut gpui::TestAppContext,
+) {
+    use crate::pull_requests::{
+        CiStatus, PullRequestLiveState, PullRequestStatus, PullRequestSummary,
+    };
+    let mut h = Harness::open(cx);
+    let url = "https://github.com/openai/codex/pull/7";
+    h.store.seed_thread_pull_request_for_test(
+        "c",
+        url,
+        PullRequestLiveState {
+            summary: PullRequestSummary {
+                number: 7,
+                title: "Seeded".into(),
+                repository: "openai/codex".into(),
+                head_branch: "feat".into(),
+                base_branch: "main".into(),
+                additions: 1,
+                deletions: 1,
+                status: PullRequestStatus::Open,
+                age: String::new(),
+                author: "me".into(),
+                author_avatar_url: None,
+                url: url.into(),
+                can_merge: false,
+                has_conflicts: false,
+                ci_status: CiStatus::Passing,
+            },
+            head_repository: Some("openai/codex".into()),
+            merged_at: None,
+            closed_at: None,
+        },
+    );
+    h.draw();
+    let chip = h.bounds("THREAD_PR_CHIP_c");
+    let row = h.bounds("THREAD_ROW_c");
+    // 20 px, 8 px in from the row's right edge and 5 px below its top.
+    assert_eq!(chip.size.width, px(20.0));
+    assert_eq!(
+        row.origin.x + row.size.width - (chip.origin.x + chip.size.width),
+        px(8.0)
+    );
+    assert_eq!(chip.origin.y - row.origin.y, px(5.0));
+    assert!(h.visual.debug_bounds("THREAD_PR_CHIP_a").is_none());
+    // The row's hover actions take its place; leaving brings it back.
+    h.hover("THREAD_ROW_c");
+    assert!(h.visual.debug_bounds("THREAD_PR_CHIP_c").is_none());
+    h.hover("THREAD_ROW_a");
+    assert!(h.visual.debug_bounds("THREAD_PR_CHIP_c").is_some());
+}
+
 fn drag(visual: &mut VisualTestContext, from: Point<gpui::Pixels>, to: Point<gpui::Pixels>) {
     visual.simulate_mouse_move(from, None, Modifiers::default());
     visual.simulate_mouse_down(from, MouseButton::Left, Modifiers::default());

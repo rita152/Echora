@@ -494,6 +494,17 @@ impl CodexAppServerManager {
                     params.insert("projectId".into(), Value::String(project_id));
                 }
             }
+            // Only the branch of `gitInfo` is written, as the reference does;
+            // the server keeps the omitted sha and origin.
+            match update.git_branch {
+                AgentOptionalField::Unspecified => {}
+                AgentOptionalField::Null => {
+                    params.insert("gitInfo".into(), json!({ "branch": null }));
+                }
+                AgentOptionalField::Value(branch) => {
+                    params.insert("gitInfo".into(), json!({ "branch": branch }));
+                }
+            }
             let response = connection.request("thread/metadata/update", Value::Object(params))?;
             validate_workspace_response(
                 &connection,

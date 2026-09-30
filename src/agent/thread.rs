@@ -107,6 +107,14 @@ pub struct ThreadSummary {
     pub updated_at: i64,
     pub recency_at: Option<i64>,
     pub activity: ThreadActivity,
+    /// The Git branch and origin the server recorded for the thread.
+    pub git: ThreadGitInfo,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ThreadGitInfo {
+    pub branch: Option<String>,
+    pub origin_url: Option<String>,
 }
 
 // The backend supports every protocol sort mode even though the current UI only
@@ -293,6 +301,9 @@ pub struct ThreadMetadataUpdate {
     /// assigns the thread to a project. Concrete adapters own the wire
     /// representation for the clear operation.
     pub project: AgentOptionalField<ProjectId>,
+    /// `Value` records the thread's current Git branch, `Null` clears it, and
+    /// `Unspecified` keeps it.
+    pub git_branch: AgentOptionalField<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

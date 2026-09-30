@@ -4,6 +4,7 @@
 mod account;
 mod activity;
 mod apps;
+mod attachments;
 mod auto_approval;
 mod backend;
 mod catalog;
@@ -60,6 +61,13 @@ pub use apps::{
     AgentAppScreenshot, AgentAppToolSummary, AgentAppsError, AgentAppsErrorKind,
     AgentAppsInstalledRequest, AgentAppsListRequest, AgentAppsPage, AgentAppsReadRequest,
     AgentAppsReadResult, AgentInstalledApp, AgentInstalledApps,
+};
+pub use attachments::{
+    AgentAttachmentAddOutcome, AgentAttachmentAddRequest, AgentAttachmentAdded,
+    AgentAttachmentContent, AgentAttachmentError, AgentAttachmentOperation,
+    AgentAttachmentRemoveRequest, AgentAttachmentUpdate, AgentPullRequestAttachment,
+    AgentPullRequestProvider, AgentPullRequestRef, AgentThreadAttachment, AgentThreadAttachments,
+    AgentWorktreeAttachment, PULL_REQUEST_ATTACHMENT_TYPE, WORKTREE_ATTACHMENT_TYPE,
 };
 pub use auto_approval::{
     AgentAutoApprovalReview, AgentAutoApprovalReviewAction, AgentAutoApprovalReviewKey,
@@ -197,8 +205,8 @@ pub use status::{
 pub use thread::{
     AgentThreadRevert, AgentThreadRevertOutcome, CreateProject, FilterValue, HistoryItemDetail,
     HistoryTurnStatus, Page, PageRequest, Project, ProjectChange, ProjectId, SortDirection,
-    ThreadActivity, ThreadHistory, ThreadHistoryItem, ThreadHistoryItemEntry, ThreadId,
-    ThreadListRequest, ThreadMetadataUpdate, ThreadSearchResult, ThreadSection,
+    ThreadActivity, ThreadGitInfo, ThreadHistory, ThreadHistoryItem, ThreadHistoryItemEntry,
+    ThreadId, ThreadListRequest, ThreadMetadataUpdate, ThreadSearchResult, ThreadSection,
     ThreadSectionAppearance, ThreadSectionId, ThreadSortKey, ThreadSummary, ThreadTurn,
     UpdateProject, UserMessageAttachment,
 };

@@ -75,6 +75,17 @@ impl ChatApp {
                 ReviewEvent::PreferencesChanged(p) => {
                     s.workspace_store.set_review_preferences(p.clone())
                 }
+                ReviewEvent::PullRequestCreated {
+                    url,
+                    root,
+                    head_branch,
+                } => s.attach_created_pull_request(
+                    composer.clone(),
+                    url.clone(),
+                    root.clone(),
+                    head_branch.clone(),
+                    cx,
+                ),
             })
             .detach();
             if let Some(host) = self.conversation_hosts.get(&key) {

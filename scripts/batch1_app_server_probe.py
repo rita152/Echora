@@ -139,7 +139,7 @@ class FakeResponses(http.server.BaseHTTPRequestHandler):
 
 
 class Server:
-    def __init__(self, home: Path, cwd: Path, log: list[dict]):
+    def __init__(self, home: Path, cwd: Path, log: list[dict], config: tuple[str, ...] = ()):
         self.log = log
         self.queue: queue.Queue = queue.Queue()
         self.notifications: list[dict] = []
@@ -148,7 +148,7 @@ class Server:
         env["CODEX_HOME"] = str(home)
         self.stderr = (home / "app-server.stderr.log").open("w")
         self.process = subprocess.Popen(
-            ["codex", "app-server", "--stdio"],
+            ["codex", "app-server", *config, "--stdio"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=self.stderr,

@@ -18,5 +18,6 @@ pub mod pull_requests;
 pub mod review_panel;
 pub mod side_chat;
 pub mod sidebar;
+pub mod summary_panel;
 pub mod terminal;
 pub mod user_input_request;

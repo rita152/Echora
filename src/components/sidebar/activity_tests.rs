@@ -84,6 +84,7 @@ impl ActivityBackend {
             updated_at: at,
             recency_at: Some(at),
             activity,
+            git: Default::default(),
         }
     }
 }
@@ -475,4 +476,36 @@ fn archive_chats_asks_first_then_archives_the_priority_chats() {
         vec!["thread/archive:running".to_owned()]
     );
     assert_eq!(fixture.sections()[0], ("priority".to_owned(), Vec::new()));
+}
+
+#[test]
+fn worktree_glyph_follows_the_reference_path_rule() {
+    use super::is_codex_worktree_path as is_worktree;
+    use std::path::Path;
+    let home = Path::new("/Users/me/.codex");
+    for cwd in [
+        "/Users/me/.codex/worktrees/abcd/repo",
+        "/tmp/x/.codex/worktrees/1/repo",
+        "/Users/me/.codex-workspaces/worktrees/2/repo",
+        "/Users/me/.codex-workspaces/instances/7/worktrees/2/repo",
+        "/Users/me/Library/Application Support/OpenAI/Codex/workspaces/worktrees/3",
+        "/Users/me/Library/Application Support/OpenAI/Codex/workspaces/instances/i/worktrees/3",
+        "/Volumes/SSD/worktrees/feature",
+    ] {
+        assert!(
+            is_worktree(
+                Path::new(cwd),
+                Some(home),
+                Some(Path::new("/Volumes/SSD/worktrees"))
+            ),
+            "{cwd}"
+        );
+    }
+    for cwd in [
+        "/Users/me/src/worktrees/repo",
+        "/Users/me/.codex",
+        "/Users/me/src/repo",
+    ] {
+        assert!(!is_worktree(Path::new(cwd), Some(home), None), "{cwd}");
+    }
 }

@@ -1,3 +1,4 @@
+mod background_terminal_tab;
 mod file_icons;
 mod goal_tab;
 
@@ -36,6 +37,7 @@ struct Document {
     path: PathBuf,
     plan: Option<crate::agent::AgentPlan>,
     goal: Option<goal_tab::GoalTab>,
+    terminal: Option<background_terminal_tab::BackgroundTerminalTab>,
     editor: Option<Entity<FileEditor>>,
     saved: Option<TextFile>,
     error: Option<String>,
@@ -52,7 +54,7 @@ impl Document {
     fn label(&self) -> String {
         if self.plan.is_some() {
             crate::i18n::text("套餐").to_owned()
-        } else if self.goal.is_some() {
+        } else if self.goal.is_some() || self.terminal.is_some() {
             self.path.to_string_lossy().into_owned()
         } else {
             self.path
@@ -179,7 +181,7 @@ impl FilePanel {
     pub fn open_documents(&self) -> Vec<String> {
         self.documents
             .iter()
-            .filter(|d| d.plan.is_none() && d.goal.is_none())
+            .filter(|d| d.plan.is_none() && d.goal.is_none() && d.terminal.is_none())
             .map(|d| d.path.to_string_lossy().into_owned())
             .collect()
     }
@@ -349,6 +351,7 @@ impl FilePanel {
                 path: PathBuf::from(crate::i18n::text("套餐")),
                 plan: Some(plan),
                 goal: None,
+                terminal: None,
                 editor: None,
                 saved: None,
                 error: None,
@@ -396,6 +399,7 @@ impl FilePanel {
         self.documents.push(Document {
             plan: None,
             goal: None,
+            terminal: None,
             id,
             path: path.clone(),
             editor: None,
@@ -634,7 +638,7 @@ impl FilePanel {
         let Some(d) = self.documents.iter().find(|d| d.id == id) else {
             return;
         };
-        if d.saving || d.plan.is_some() || d.goal.is_some() {
+        if d.saving || d.plan.is_some() || d.goal.is_some() || d.terminal.is_some() {
             return;
         }
         let path = d.path.clone();
@@ -873,6 +877,8 @@ impl Render for FilePanel {
                             icon("plan", theme.text_tertiary.into())
                         } else if d.goal.is_some() {
                             icon("goal-chip", theme.text_tertiary.into())
+                        } else if d.terminal.is_some() {
+                            icon("panel-terminal", theme.text_tertiary.into())
                         } else {
                             file_icon(&d.path, self.mode)
                         })
@@ -1103,6 +1109,8 @@ impl Render for FilePanel {
                                 .object_fit(ObjectFit::Contain),
                         ),
                 );
+            } else if let Some(tab) = &d.terminal {
+                content = content.child(background_terminal_tab::body(tab, theme));
             } else if let Some(plan) = &d.plan {
                 if let Some(preview) = &d.markdown {
                     content = content.child(
@@ -1384,7 +1392,12 @@ impl Render for FilePanel {
             .child(tabs)
             .map(|panel| match goal_toolbar {
                 Some(goal_toolbar) => panel.child(goal_toolbar),
-                None if self.current().is_some_and(|d| d.plan.is_some()) => panel,
+                None if self
+                    .current()
+                    .is_some_and(|d| d.plan.is_some() || d.terminal.is_some()) =>
+                {
+                    panel
+                }
                 None => panel.child(toolbar),
             })
             .child(
@@ -1395,7 +1408,12 @@ impl Render for FilePanel {
                     .overflow_hidden()
                     .flex()
                     .child(content)
-                    .when(self.tree_open && !goal_active, |b| b.child(tree)),
+                    .when(
+                        self.tree_open
+                            && !goal_active
+                            && !self.current().is_some_and(|d| d.terminal.is_some()),
+                        |b| b.child(tree),
+                    ),
             );
         if let Some(id) = self.pending_close
             && let Some(d) = self.documents.iter().find(|d| d.id == id)

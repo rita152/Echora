@@ -1,11 +1,11 @@
 //! Render behavior and presentation for the application shell.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use gpui::{
     Animation, AnimationExt, BoxShadow, Context, Div, Focusable, IntoElement, KeyDownEvent,
-    MouseButton, ObjectFit, Render, Role, StyleRefinement, Transformation, Window, canvas, div,
-    hsla, linear_color_stop, linear_gradient, point, prelude::*, px, radians, rgba,
+    MouseButton, ObjectFit, Render, Role, SharedString, StyleRefinement, Transformation, Window,
+    canvas, div, hsla, linear_color_stop, linear_gradient, point, prelude::*, px, radians, rgba,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -19,6 +19,9 @@ use crate::{
         file_panel::OpenWorkspaceFile,
         home::{NextUserMessage, PreviousUserMessage},
         icons::icon,
+        summary_panel::{
+            SUMMARY_PANEL_ANIMATION, SUMMARY_PANEL_GUTTER, SUMMARY_PANEL_WIDTH, SummaryDisplayMode,
+        },
     },
     theme::{CHAT_CONTENT_HORIZONTAL_GUTTER, Theme, ThemeMode, ui_font},
 };
@@ -30,6 +33,16 @@ use super::{
     ToggleTerminal,
     sidebar::{conversation_titlebar_leading_edge, sidebar_trigger_left, titlebar_leading_edge},
 };
+
+/// The pinned summary island: 6 px (`pe-1.5`) from the chat column's right
+/// edge and just below the thread header, where the reference draws it.
+const SUMMARY_PANEL_TOP: f32 = 52.0;
+const SUMMARY_PANEL_RIGHT: f32 = 6.0;
+
+/// The reference's spring settles like a quintic ease-out.
+fn ease_out_quint(progress: f32) -> f32 {
+    1.0 - (1.0 - progress).powi(5)
+}
 
 /// `_MainContentTopFade`: `h-4`, from `--color-surface` to transparent.
 const MAIN_CONTENT_TOP_FADE: f32 = 16.0;
@@ -364,6 +377,50 @@ impl Render for ChatApp {
                 revealed_sidebar_width,
             ))
         };
+        let window_active = window.is_window_active();
+        if window_active && !self.window_was_active {
+            self.summary_panel.read(cx).refresh_on_focus();
+        }
+        self.window_was_active = window_active;
+        // The summary panel follows the chat column's width: pinned beside it
+        // (shifting it left when there is little room), or a popover.
+        let main_width = viewport_width
+            - revealed_sidebar_width
+            - if self.right_panel.open {
+                f32::from(right_panel_width)
+            } else {
+                0.0
+            };
+        let summary_mode = SummaryDisplayMode::for_main_width(main_width);
+        let summary_available = resumed_title.is_some() && !review_fullscreen;
+        let summary_shown = summary_available
+            && self.summary_panel_visible(summary_mode)
+            && self.summary_panel.read(cx).has_content(cx);
+        let summary_shift = summary_shown && summary_mode == SummaryDisplayMode::Shift;
+        let summary_serial = self.summary_reveal_serial;
+        let reduce_motion = cx.reduce_motion();
+        let summary_island = summary_shown.then(|| {
+            div()
+                .id("thread-summary-panel-slot")
+                .absolute()
+                .top(px(SUMMARY_PANEL_TOP))
+                .right(px(SUMMARY_PANEL_RIGHT))
+                .child(self.summary_panel.clone())
+                .with_animation(
+                    SharedString::from(format!("summary-reveal-{summary_serial}")),
+                    Animation::new(if reduce_motion {
+                        Duration::from_millis(1)
+                    } else {
+                        SUMMARY_PANEL_ANIMATION
+                    })
+                    .with_easing(ease_out_quint),
+                    |slot, progress| {
+                        slot.opacity(progress).right(px(
+                            SUMMARY_PANEL_RIGHT - SUMMARY_PANEL_WIDTH * (1.0 - progress)
+                        ))
+                    },
+                )
+        });
         div()
             .id(if self.showing_settings {
                 "app-shell-settings"
@@ -590,6 +647,10 @@ impl Render for ChatApp {
                                             // column. Max-width content remains unchanged on wide
                                             // windows because HomeView still centers it internally.
                                             .px(px(CHAT_CONTENT_HORIZONTAL_GUTTER))
+                                            // Shift mode: the chat column moves 153 px left.
+                                            .when(summary_shift, |main| {
+                                                main.pr(px(CHAT_CONTENT_HORIZONTAL_GUTTER + SUMMARY_PANEL_GUTTER))
+                                            })
                                             .bg(theme.surface)
                                             .relative()
                                             .child(
@@ -603,6 +664,7 @@ impl Render for ChatApp {
                                                     ).into_any_element()
                                                 },
                                             )
+                                            .when_some(summary_island, |main, island| main.child(island))
                                             .when_some(toasts, |main, toasts| main.child(toasts)),
                                     ))
                                     .when(self.right_panel.open, |row| {
@@ -921,6 +983,31 @@ impl Render for ChatApp {
                             // content area and shows no panel controls there.
                             .when(!self.showing_pull_requests, |controls| {
                                 controls
+                            .when(summary_available, |controls| {
+                                // Echora's own top bar; the reference's pinned
+                                // label is "Toggle pinned summary", its overlay
+                                // one "Toggle summary".
+                                let label = if summary_mode == SummaryDisplayMode::Overlay {
+                                    crate::i18n::format!("切换摘要" => "Toggle summary")
+                                } else {
+                                    crate::i18n::format!("切换固定摘要" => "Toggle pinned summary")
+                                };
+                                controls.child(
+                                    titlebar_icon_button(
+                                        "summary-panel",
+                                        false,
+                                        self.summary_panel_visible(summary_mode),
+                                        theme,
+                                    )
+                                    .role(Role::Button)
+                                    .aria_label(label)
+                                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        cx.stop_propagation();
+                                        this.toggle_summary_panel(summary_mode, cx);
+                                    })),
+                                )
+                            })
                             .child(
                                 titlebar_icon_button(
                                     "right-sidebar",

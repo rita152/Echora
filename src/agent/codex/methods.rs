@@ -59,7 +59,6 @@ pub(super) const UNINTEGRATED_SERVER_NOTIFICATION_METHODS: &[&str] = &[
     "mcpServer/event/stream/notification",
     "process/exited",
     "process/outputDelta",
-    "thread/attachment/updated",
     "thread/environment/connected",
     "thread/environment/disconnected",
     "thread/realtime/closed",
@@ -141,6 +140,7 @@ pub(super) fn is_defined_server_method(method: &str) -> bool {
             | "thread/goal/updated"
             | "thread/goal/cleared"
             | "thread/queue/changed"
+            | "thread/attachment/updated"
     )
 }
 
@@ -196,6 +196,7 @@ pub(super) fn ensure_server_method_is_defined(message: &Value) -> Result<()> {
             super::goal::parse_notification(message).map(|_| ())
         }
         "thread/queue/changed" => super::queue::parse_changed(message).map(|_| ()),
+        "thread/attachment/updated" => super::attachments::parse_updated(message).map(|_| ()),
         // Account notifications are connection-scoped: the manager reduces them
         // into the generation's account snapshot, so validation here keeps the
         // same strictness as every other decoded payload.

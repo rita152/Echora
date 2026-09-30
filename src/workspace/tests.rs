@@ -41,6 +41,7 @@ fn thread(id: &str, project_id: Option<&str>) -> ThreadSummary {
         updated_at: 2,
         recency_at: Some(3),
         activity: ThreadActivity::Idle,
+        git: Default::default(),
     }
 }
 

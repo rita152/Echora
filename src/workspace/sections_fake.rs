@@ -67,6 +67,7 @@ pub(crate) fn thread(
         updated_at: 2,
         recency_at: Some(3),
         activity: ThreadActivity::Idle,
+        git: Default::default(),
     }
 }
 

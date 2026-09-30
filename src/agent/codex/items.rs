@@ -1226,13 +1226,20 @@ pub(super) fn parse_command_execution(
     let timed_out = status == CommandExecutionStatus::Failed
         && exit_code == Some(-1)
         && output.starts_with(TIMEOUT_OUTPUT_PREFIX);
+    // A unified-exec command that keeps running after its tool call yielded
+    // names its process; the item then outlives its turn.
+    let process_id = match item.get("processId") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(process_id)) => Some(process_id.clone()),
+        Some(_) => bail!("commandExecution item.processId 必须是字符串或 null"),
+    };
     Ok(CommandExecution {
         id,
         command: first_action_command.unwrap_or(raw_command),
         actions: parsed_actions,
         cwd,
         output: if timed_out { String::new() } else { output },
-        terminal_process_id: None,
+        terminal_process_id: process_id,
         status,
         exit_code,
         source,

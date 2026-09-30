@@ -29,7 +29,11 @@ pub(super) struct DisclosureRenderState {
         crate::agent::AgentAutoApprovalReviewKey,
         Entity<crate::components::auto_approval::AutoApprovalReviewView>,
     >,
+    /// Command items running (or run) as background terminals.
+    pub(super) background_commands: Rc<HashMap<String, BackgroundMark>>,
 }
+
+pub(super) use crate::conversation::BackgroundMark;
 
 #[derive(Clone)]
 pub(super) struct ConversationRenderContext {
@@ -116,6 +120,7 @@ pub(super) struct ToolGroupDisclosure {
     pub(super) disclosure_progress: f32,
     pub(super) chevron_progress: f32,
     pub(super) scroll_handle: ScrollHandle,
+    pub(super) background_commands: Rc<HashMap<String, BackgroundMark>>,
 }
 
 pub(super) struct NoticePresentation {

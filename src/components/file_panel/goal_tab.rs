@@ -114,6 +114,7 @@ impl FilePanel {
             id,
             path: PathBuf::from(crate::i18n::format!("编辑目标" => "Edit goal")),
             plan: None,
+            terminal: None,
             goal: Some(GoalTab {
                 thread_id: goal.thread_id.clone(),
                 saved: text.to_owned(),

@@ -199,6 +199,108 @@ fn search(query: &str) -> Result<Vec<PullRequestSummary>> {
     Ok(results)
 }
 
+/// The live state of one pull request, for the sidebar chip and the thread
+/// summary panel: the same fields the reference's `gh-pr-summary` query reads.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PullRequestLiveState {
+    pub summary: PullRequestSummary,
+    /// `owner/name` of the head repository; a fork's differs from the base.
+    pub head_repository: Option<String>,
+    pub merged_at: Option<String>,
+    pub closed_at: Option<String>,
+}
+
+/// The state of `owner/repository#number` on github.com, or `None` when the
+/// pull request does not exist or cannot be seen. Other hosts are not read.
+pub fn pull_request_state(
+    owner: &str,
+    repository: &str,
+    number: u64,
+) -> Result<Option<PullRequestLiveState>> {
+    let value = graphql(
+        &format!(
+            "query($owner: String!, $name: String!, $number: Int!) {{ repository(owner: $owner, name: $name) {{ pullRequest(number: $number) {{ {SEARCH_FIELDS} mergedAt closedAt headRepository {{ nameWithOwner }} }} }} }}"
+        ),
+        &[
+            ("owner", Value::from(owner)),
+            ("name", Value::from(repository)),
+            ("number", Value::from(number)),
+        ],
+    );
+    let value = match value {
+        Ok(value) => value,
+        // GitHub reports a missing pull request as a GraphQL error.
+        Err(error) if format!("{error:#}").contains("Could not resolve to a") => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let Some(node) = value
+        .pointer("/data/repository/pullRequest")
+        .filter(|node| !node.is_null())
+    else {
+        return Ok(None);
+    };
+    Ok(Some(PullRequestLiveState {
+        summary: summary_from(node),
+        head_repository: node
+            .pointer("/headRepository/nameWithOwner")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        merged_at: text(node, "mergedAt"),
+        closed_at: text(node, "closedAt"),
+    }))
+}
+
+/// The pull request the reference finds for a branch: this account's pull
+/// requests with that head, an open one first, otherwise a merged one; a pull
+/// request closed without merging is ignored.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BranchPullRequest {
+    pub url: String,
+    pub head_branch: String,
+}
+
+pub fn pull_request_for_branch(root: &Path, branch: &str) -> Result<Option<BranchPullRequest>> {
+    let raw = gh(
+        &[
+            "pr",
+            "list",
+            "--head",
+            branch,
+            "--author",
+            "@me",
+            "--state",
+            "all",
+            "--json",
+            "number,url,state,headRefName",
+        ],
+        None,
+        Some(root),
+    )?;
+    let listed: Value =
+        serde_json::from_str(&raw).context(crate::i18n::text("无法解析 gh 输出"))?;
+    let candidates: Vec<&Value> = listed
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter(|item| text(item, "headRefName").as_deref() == Some(branch))
+                .collect()
+        })
+        .unwrap_or_default();
+    let pick = |state: &str| {
+        candidates
+            .iter()
+            .find(|item| text(item, "state").as_deref() == Some(state))
+            .and_then(|item| {
+                Some(BranchPullRequest {
+                    url: text(item, "url")?,
+                    head_branch: text(item, "headRefName")?,
+                })
+            })
+    };
+    Ok(pick("OPEN").or_else(|| pick("MERGED")))
+}
+
 /// Search qualifiers the reference treats as choosing the relationship or the
 /// lifecycle itself (`mvi`/`oAn`): typing them replaces the view's own.
 const RELATIONSHIP_QUALIFIERS: &[&str] = &[

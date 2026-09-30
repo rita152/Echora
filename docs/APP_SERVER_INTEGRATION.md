@@ -18,17 +18,17 @@ node scripts/scan_reference_rpc_methods.mjs /Applications/ChatGPT.app/Contents/R
 
 当前扫描：参考 bundle（ChatGPT 26.924.22138）内嵌 262 个方法名中的 249 个，未出现的 13 个均为客户端请求，明细见 `artifacts/app-server-reference-methods-20260928/reference-method-scan.json`。方法名出现只代表参考客户端包含对应协议封装，不等于该产品流程已启用；未出现也不排除运行时动态拼接方法名。
 
-0.158.0 相对 0.154.0 新增 `account/gatewayOAuth/read|login|cancel`（通知 `account/gatewayOAuth/changed`）、`thread/attachment/add|list|remove`（通知 `thread/attachment/updated`）、`memory/status`、`rollout/compress`、`userVerification/cancel`，并移除 `thread/rollback`；其中 `memory/status` 已在批次三接入（见「代码审查、Shell 命令、自定义分区与能力读取」），其余新增方法均未接入，客户端不发送，也未加入通知退订。上述两个新通知与其他未接入的服务端通知一样被接受但不解码，并登记连接级诊断，不会断开连接。已有方法的部分载荷字段也有增减（如 `thread/queue/*`、`model/list`、`config/read`），本机 0.158.0 上的批次一、二探针可正常运行，`cargo test agent::codex` 通过（测试使用固定载荷，不等于逐字段核对新版响应）。
+0.158.0 相对 0.154.0 新增 `account/gatewayOAuth/read|login|cancel`（通知 `account/gatewayOAuth/changed`）、`thread/attachment/add|list|remove`（通知 `thread/attachment/updated`）、`memory/status`、`rollout/compress`、`userVerification/cancel`，并移除 `thread/rollback`；其中 `memory/status` 已在批次三接入（见「代码审查、Shell 命令、自定义分区与能力读取」），`thread/attachment/add|list|remove` 与通知 `thread/attachment/updated` 已在批次四接入（见「线程附件与后台终端」），其余新增方法均未接入，客户端不发送，也未加入通知退订。`account/gatewayOAuth/changed` 与其他未接入的服务端通知一样被接受但不解码，并登记连接级诊断，不会断开连接。已有方法的部分载荷字段也有增减（如 `thread/queue/*`、`model/list`、`config/read`），本机 0.158.0 上的批次一、二探针可正常运行，`cargo test agent::codex` 通过（测试使用固定载荷，不等于逐字段核对新版响应）。
 
 共 **262** 个方法：167 个客户端请求、11 个服务端请求、1 个客户端通知、83 个服务端通知。表中“默认”表示方法出现在默认 schema，“实验”表示仅出现在 experimental schema；字段以 experimental schema 为准。运行时启用 `experimentalApi=true`。
 
 | 状态 | 数量 | 判定 |
 |---|---|---|
-| 已接入 | 148 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
+| 已接入 | 153 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
 | 后端已接入 | 5 | 已实现读取或校验，尚无对应可见 UI 调用方或展示 |
 | 部分接入 | 5 | 只支持部分类型、有效变体或限定生命周期窗口 |
 | 兼容退订 | 2 | initialize 按完整方法名退订；不代表对应产品能力已接入 |
-| 未接入 | 102 | 客户端不发送；服务端请求按原 id 回受控回执并保持 generation 与共享连接，同时登记连接级诊断；仅 EOF、崩溃、写失败或致命协议错误终止连接；服务端通知接受但不解码，登记连接级诊断 |
+| 未接入 | 97 | 客户端不发送；服务端请求按原 id 回受控回执并保持 generation 与共享连接，同时登记连接级诊断；仅 EOF、崩溃、写失败或致命协议错误终止连接；服务端通知接受但不解码，登记连接级诊断 |
 
 未接入行的“—”沿用上述规则；带受控回执的服务端请求会另外列出入口，见下段。`tool/requestUserInput` 是兼容别名，不计入本版本 schema 的 252 项。
 
@@ -210,6 +210,20 @@ Composer 在运行中有草稿时显示“追加输入”，无草稿时显示�
 
 **已加载线程**（`thread/loaded/list`）：服务端的已加载集合是本连接订阅集合的超集（取消订阅后仍列出），不能替代 resume。打开线程时若本连接记录为已加载，先核对服务端是否仍持有：未列出则丢弃本地记录与缓存的线程设置并 resume；读取失败沿用本地记录，分页异常使该 generation 失败。临时侧边线程不核对。
 
+### 线程附件与后台终端
+
+以 ChatGPT 26.924.22138 为参考、0.158.0 探针为协议依据（`artifacts/batch4-baseline-20260929`）。
+
+**附件数据**（`thread/attachment/*`）：附件以 `(threadId, attachmentType, identityKey)` 为身份，只能加到已落盘的线程（刚 `thread/start` 未跑轮次、ephemeral 或未知线程回 -32602），同身份再 add 返回原记录（`existing`，不推通知），fork 复制附件，`thread/delete` 清空；`updated` 在 RPC 响应之后广播给所有已初始化连接。Echora 只解析 `pull_request`（url 必须是 PR 地址）与 `worktree`（root／workspaceRoot 非空），其余类型原样保留、不参与展示。附件读取成功后镜像到本地 UI 偏好（`pull_request_attachment_records`，最多 100 个线程）；服务端回 -32601 时读写该镜像，参考以 app-server 版本（≥0.155.0-alpha.2）门控，二者等价。
+
+**PR 关联**：侧栏线程行在空闲、已读且未悬停时，于标题右侧显示 20×20 的 PR 状态图标（草稿、open、merged、closed，以及检查失败、进行中、通过时的红／黄／绿点），悬停与聚焦时让位给行操作，没有 tooltip 和点击；行悬停卡片增加 PR 行（有冲突时再加「Merge conflicts」）。图标按参考的挑选顺序在已附 PR 中选择（最新优先，open 且同分支同仓库者胜出，merged／closed 仍会显示）；状态由 `gh` 在后台取得，带超时、去重，失败则不显示，open 的 PR 每分钟刷新。线程早于回填截止时间且没有附件记录时，按线程分支查 PR 显示，并做一次回填：`gh pr list --head <branch> --author @me --state all`，优先 OPEN、其次 MERGED，找到即 add，找不到记入已完成列表（截止时间与已完成列表先读 ChatGPT 全局状态、只读，缺失时写 Echora 偏好 `pull_request_backfill_cutoff_at`／`pull_request_backfill_completed`，上限 100）。自动识别只在 `item/completed` 的成功命令（非 userShell）或 exec 类动态工具调用中解析 `cd`、`git -C`、`env`、`VAR=`、`bash -c` 包装：push 让 PR 状态失效并刷新 Git 元数据，checkout／switch 刷新元数据并写线程分支；识别本身从不写附件。PR 页「Open chat」与参考一样只读 ChatGPT 的 chat associations，不读附件。worktree 图标仍按 cwd 路径判定（`$CODEX_HOME/worktrees`、ChatGPT 配置的 worktree 根与参考的路径正则）；worktree 附件不改变任何展示。
+
+**摘要侧栏**：顶部栏右侧新增按钮（沿用 Echora 现有顶部栏样式），pinned 时为「Toggle pinned summary」，切换全局固定开关（默认固定，存 `summary_panel_unpinned`）；主区宽度 w 下以 t=(w−736)/2 决定位置：t<180 为浮层（按钮开关，「Toggle summary」），t<400 时对话左移 153 px，否则放在右侧留白。侧栏宽 300、距顶 52、距右 6，出现时 0.3 s 淡入滑入。已实现的分区：环境（仓库名；分支行，点击打开审查面板；同根同分支的已附 PR；分支有本账号 open／merged PR 且未附加时的「Existing pull request · Attach」，成功提示可「Undo」）、「Pull requests」（不属于任何环境的附件）与「Background processes」。分区标题可折叠，折叠时显示「· N」，展开状态全局保存（`summary_section_expanded`）。PR 行菜单为「View PR」（复制链接、在 GitHub 中打开）、「Code changes +a −d」、「Status」与「Remove PR from task」；「View PR」打开 Echora 的 Pull Requests 页该 PR，无状态时打开浏览器。长标签按参考在末尾 16 px 渐隐。
+
+**后台终端**（`thread/backgroundTerminals/clean`）：轮次结束后仍在运行、带 processId 的 commandExecution 即后台终端（0.158 的 unified exec 启动项）。它们的迟到 `outputDelta` 与 `item/completed` 携带原 turnId，经连接事件更新原卡片，不再丢弃。「Background processes」列出这些命令，前 6 行之后为「Show N more／Show less」；悬停或键盘聚焦显示停止按钮（「Stop all background terminals」），点击或按 Delete／Backspace 对整个线程 clean，在途时被点击行显示 spinner、其余按钮禁用；点击行在右侧面板打开终端标签，显示聚合输出（无输出时「No output yet」），进程结束后行消失、标签保留最终输出。命令卡片：运行中「Started background terminal with {command}」，已结束「Ran {command}」（无命令时「Background terminal finished」），clean 成功到服务端完成之间「Background terminal stopped with {command}」。clean 响应 `{}` 后服务端推送 `item/completed`（failed，exitCode −1）；未知线程回 -32600。与参考一致，停止按钮只在没有进行中轮次时改走 clean（不发 `turn/interrupt`）；有进行中轮次时照旧 interrupt。
+
+与参考的差异与后续项：列表页大小为 99（见总表）；环境分区的 Actions 与分支 Git actions 菜单、PR 菜单的 Repair／Merge／Add to chat、Status 子菜单、托管 worktree 的创建与归档、模型动态工具 `attach_artifact` 等以及其他摘要分区未实现；PR 实时状态只查询 github.com。参考截图无法覆盖 in_progress／ready、「Existing pull request」、回填与 stopped 过渡文案，只有单元与交互测试。
+
 ## Item 与历史兼容
 
 实时 `item/started`／`item/completed` 与历史恢复支持下表类型。未知实时类型报错，未知历史类型保留为 `ThreadHistoryItem::Unsupported`。本机 schema 共 19 个 ThreadItem 变体，全部已有实时／历史编解码与领域状态支持；相邻版本的两个别名（collabToolCall、image_generation）不计入这 19 项。
@@ -366,10 +380,10 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `skills/list` | 默认 | 已接入 | cwds/forceReload；保留 scope、interface、dependencies、errors 与未知字段；本版 schema 无 cursor，若服务端返回 nextCursor 则带重复游标校验地跟随。 | `manager/skills`、`skills` |
 | `thread/approveGuardianDeniedAction` | 默认 | 已接入 | 仅 denied 复核；event 由原样保存的复核通知 params 按参考映射派生（snake_case，缺省与 null 区分）；入口为拒绝块的「批准」与斜杠菜单的「批准」子菜单；每会话一个在途请求，已批准的 reviewId 不重发，成功提示「已记录批准」，绑定 generation。 | `manager/auto_review`、`auto_approval` |
 | `thread/archive` | 默认 | 已接入 | 按 threadId 归档；通知与列表合并规则见“连接与状态”。 | `manager/workspace` |
-| `thread/attachment/add` | 默认 | 未接入 | — | — |
-| `thread/attachment/list` | 默认 | 未接入 | — | — |
-| `thread/attachment/remove` | 默认 | 未接入 | — | — |
-| `thread/backgroundTerminals/clean` | 实验 | 未接入 | — | — |
+| `thread/attachment/add` | 默认 | 已接入 | 唯一写入：PR url 规范化后以参考逐字节一致的 identityKey（`["host","owner","repo",n]` JSON）与 payload `{url,root,headBranch}`（缺值为 null）发送；乐观加入、失败回滚、成功后记入回填已完成列表并重读；`existing` 按成功处理。入口：回填、审查面板创建 PR 后、摘要侧栏「Existing pull request · Attach」（Undo 走 remove）。-32601 时改写本地镜像。 | `manager/attachments`、`workspace/pull_requests` |
+| `thread/attachment/list` | 默认 | 已接入 | `{threadId,cursor,limit:99}` 翻完所有页（0.158 在 limit≥100 时截到 100 条且 nextCursor=null），拒绝重复 id、重复游标与畸形页，最多 64 页；绑定 generation 与 threadId，1 分钟内复用，读取期间到达的 updated 使结果作废重读；-32601 视为不支持并读本地镜像。消费点：侧栏 PR 标记、行悬停卡片、摘要侧栏。 | `manager/attachments`、`workspace/pull_requests` |
+| `thread/attachment/remove` | 默认 | 已接入 | 先重读，按 PR 身份匹配出附件后乐观移除并逐个发送 `{threadId,attachmentType,identityKey}`，成功后记入回填已完成列表，失败回滚并提示「Could not remove task attachment」。入口：摘要侧栏 PR 行菜单「Remove PR from task」与 Attach 的 Undo。 | `manager/attachments`、`workspace/pull_requests` |
+| `thread/backgroundTerminals/clean` | 实验 | 已接入 | `{threadId}`，绑定 generation；在途／成功／失败三态，同一时间一个请求，不重复提交、不自动重试。入口：摘要侧栏「Background processes」行的停止按钮（失败 toast「Unable to stop background terminals」）与没有进行中轮次时的停止兜底（失败只记日志）。命令最终状态以服务端 `item/completed` 为准。 | `shell`、`composer/background`、`summary_panel` |
 | `thread/backgroundTerminals/list` | 实验 | 未接入 | — | — |
 | `thread/backgroundTerminals/terminate` | 实验 | 未接入 | — | — |
 | `thread/compact/start` | 默认 | 已接入 | 手动压缩；composer 的 `/compact` 命令触发，只发送 threadId 并要求响应 result 为对象。压缩按不可 steer 的轮次运行，期间追加输入按 `activeTurnNotSteerable{turnKind:compact}` 如实展示为提交失败，完成经既有 turn／item 事件与 contextCompaction 活动收束。 | `manager/compact`、`components/composer` |
@@ -385,7 +399,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/list` | 默认 | 已接入 | 分页读取最近、归档、项目与分区列表；保留前后游标及 projectId/sectionId 的省略、null、值三态。与参考端一致发送 `useStateDbOnly=true`、空 `modelProviders`／`sourceKinds` 与 null `parentThreadId`：缺省时服务端改走 rollout 扫描，只返回最近 10 个且不带游标，侧栏项目与最近聊天会缺行。 | `manager/workspace` |
 | `thread/loaded/list` | 默认 | 后端已接入 | 打开线程且本连接记录为已加载时，遍历全部分页（最多 64 页，拒绝重复 id、重复游标与畸形页）核对服务端是否仍持有；未列出则丢弃本地记录并 resume，读取失败沿用本地记录。不以它替代 resume，也无可见 UI。 | `manager/loaded_threads` |
 | `thread/memoryMode/set` | 实验 | 已接入 | threadId/mode（enabled/disabled）绑定 generation 与线程；`/memories` 对已开始的聊天乐观切换「生成记忆」，失败回滚并提示，迟到或旧线程回执丢弃。 | `manager/features`、`conversation/memory` |
-| `thread/metadata/update` | 默认 | 已接入 | projectId 省略表示不变，空字符串表示移出项目，非空 id 表示分配；读取 result.thread。 | `manager/workspace` |
+| `thread/metadata/update` | 默认 | 已接入 | projectId 省略表示不变，空字符串表示移出项目，非空 id 表示分配；`gitInfo:{branch}` 记录线程分支（每次非排队发送成功后、自动识别到 checkout／switch 后、审查面板创建 PR 后，且线程目录的 git 根与分支所在根一致时），与参考 `updateThreadGitBranch` 相同；读取 result.thread 与 `gitInfo.branch/originUrl`。 | `manager/workspace` |
 | `thread/name/set` | 默认 | 已接入 | threadId、name；重命名会话。侧栏双击任务行弹出与参考一致的居中面板：输入框默认全选，取消／关闭／Esc／蒙层不发送请求，保存与 Enter 复用同一提交路径，空或纯空白不发送，超过 60 个字符的名称与参考一致截为前 59 个字符加省略号。 | `manager/workspace`、`components/sidebar` |
 | `thread/queue/add` | 实验 | 已接入 | 运行中且跟进方式为排队（或 ⌘⏎ 取反）时发送 input 与新的 clientUserMessageId，重新提交编辑时同样用新 id；⌘Z 恢复与侧边聊天失败放回时沿用原 id 与原 input；返回的 clientUserMessageId 必须一致；草稿快照按该 id 保留。 | `manager/queue`、`queue` |
 | `thread/queue/delete` | 实验 | 已接入 | 删除、清空队列、开始编辑、在侧边聊天中打开与立即发送（引导成功后）使用；deleted=false 原样返回，立即发送路径视为错误，其余路径视为已不在队列、不再编辑或移动。 | `manager/queue`、`queue` |
@@ -501,7 +515,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `serverRequest/resolved` | 默认 | 已接入 | 按原类型 requestId 找到所属轮次，再核对 thread/item/kind，释放命令／文件／权限审批或输入 responder 与活动 owner。已知同线程的重复及终态后迟到通知幂等忽略；未知 id 或错配 thread 报错；过期 handle 始终不可回复。 | `manager/dispatch`、`manager/connection`、`requests`、`registry` |
 | `skills/changed` | 默认 | 已接入 | 作为失效信号使技能缓存过期并重新执行 `skills/list`；不携带可消费载荷，不覆盖较新的本地写入结果，也不清空用户正在编辑的状态。 | `manager/dispatch` |
 | `thread/archived` | 默认 | 已接入 | 按 threadId 移除最近、项目及置顶条目，刷新归档；覆盖迟到快照。 | `manager/dispatch` |
-| `thread/attachment/updated` | 默认 | 未接入 | — | — |
+| `thread/attachment/updated` | 默认 | 已接入 | 服务端广播给所有连接，按 threadId 使对应缓存失效并重读；只处理 `pull_request` 与 `worktree`，PR `deleted` 先记入回填已完成列表；忽略 schema 之外的 `emittedAtMs`。 | `manager/dispatch`、`workspace/pull_requests` |
 | `thread/closed` | 默认 | 已接入 | 从当前 generation 的已加载集合移除并发布关闭状态；侧边聊天保留消息，禁用发送。 | `manager/dispatch` |
 | `thread/compacted` | 默认 | 兼容退订 | 按本机 schema 的 Deprecated: Use ContextCompaction item type instead 说明退订；继续通过 contextCompaction item 展示，避免双重活动。 | `runtime::OPT_OUT_NOTIFICATION_METHODS` |
 | `thread/deleted` | 默认 | 已接入 | 按 threadId 从所有集合移除；迟到列表不得恢复已删除线程。 | `manager/dispatch` |
@@ -543,6 +557,8 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 修改方法、有效变体、兼容别名或失败处理时，同步更新本表与对应测试；升级 CLI 时核对四个 schema union（ClientRequest、ServerRequest、ClientNotification、ServerNotification），保持方法唯一、方向／API 分类和状态统计一致。只有形成表中声明的产品路径后才标记“已接入”。
 
 批次一（协作模式、服务端排队、线程目标、自动复核批准）的本机基线行为可用 `python3 scripts/batch1_app_server_probe.py --output artifacts/batch1-baseline-<日期>` 复现：它以隔离的 CODEX_HOME 和本地假 Responses 端点运行 PATH 上的 `codex app-server`，不发真实模型请求；截图对比用 `python3 scripts/compare_batch1_captures.py`。批次二（轮次设置、查找、钩子、实验性功能、记忆）的基线用 `python3 scripts/batch2_app_server_probe.py --output artifacts/batch2-baseline-<日期>` 复现，同样不发真实模型请求；参考截图用 `node scripts/cdp_capture_batch2.mjs`（专用参考实例），Echora 截图用 `ECHORA_CODEX_HOME=<~/.codex 的副本> scripts/capture_batch2_gpui.sh <日期>`。
+
+批次四（线程附件与后台终端）的协议基线用 `python3 scripts/batch4_app_server_probe.py --output artifacts/batch4-baseline-<日期>` 复现（fake provider，含多连接广播与进程重启场景）；参考 fixture 由 `python3 scripts/batch4_reference_fixture.py` 写入参考实例的隔离 CODEX_HOME 克隆，参考截图用 `node scripts/cdp_capture_batch4.mjs`（专用参考实例，停止中与失败状态经 `CHATGPT_REFERENCE_WIRE_FAULTS` 注入），Echora 截图用 `ECHORA_CODEX_HOME=<该克隆的副本> scripts/capture_batch4_gpui.sh <日期>`，对比用 `python3 scripts/compare_batch4_captures.py <日期>`。
 
 `scripts/verify_integration_table.mjs` 直接用 CLI schema 重新推导方法集合、默认／实验归属、方法唯一性、口径表统计、合计行、`runtime::OPT_OUT_NOTIFICATION_METHODS` 与 `methods::UNINTEGRATED_SERVER_NOTIFICATION_METHODS`，发现任何结构性不一致都以非零状态退出；`artifacts/app-server-schema` 缺失时会先用本机 `codex` 生成临时副本，因此可在干净检出上直接运行。
 

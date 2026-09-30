@@ -125,6 +125,20 @@ pub enum AgentConnectionEvent {
         generation: u64,
         thread_id: ThreadId,
     },
+    /// An attachment of one thread was created or deleted. Invalidation only:
+    /// the attachments are re-read with `thread/attachment/list`. The server
+    /// broadcasts it to every connection, for any thread.
+    ThreadAttachmentUpdated(super::attachments::AgentAttachmentUpdate),
+    /// A command item of a turn that already ended changed: a background
+    /// terminal printed more output, or ended (by itself or after
+    /// `thread/backgroundTerminals/clean`). `event` is the command's
+    /// `CommandOutputDelta`, `CommandTerminalInteraction` or `CommandCompleted`.
+    BackgroundCommandUpdated {
+        generation: u64,
+        thread_id: ThreadId,
+        turn_id: String,
+        event: AgentEvent,
+    },
     McpElicitationRequested {
         request: AgentMcpElicitationRequest,
         responder: AgentMcpElicitationHandle,

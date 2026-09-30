@@ -24,13 +24,49 @@ pub(crate) struct ComposerToast {
     id: u64,
     pub(crate) kind: ToastKind,
     pub(crate) text: String,
+    /// The label of the toast's action button (the reference's "Undo").
+    pub(crate) action: Option<String>,
 }
+
+/// What a toast's action button does; run once, then the toast closes.
+pub(crate) type ToastAction = std::rc::Rc<dyn Fn(&mut gpui::Window, &mut gpui::App)>;
 
 impl ComposerView {
     pub(super) fn show_toast(&mut self, kind: ToastKind, text: String, cx: &mut Context<Self>) {
+        self.push_toast(kind, text, None, cx);
+    }
+
+    /// A toast shown for another surface of this conversation (the summary
+    /// panel), optionally with an action button such as "Undo".
+    pub(crate) fn show_panel_toast(
+        &mut self,
+        kind: ToastKind,
+        text: String,
+        action: Option<(String, ToastAction)>,
+        cx: &mut Context<Self>,
+    ) {
+        self.push_toast(kind, text, action, cx);
+    }
+
+    fn push_toast(
+        &mut self,
+        kind: ToastKind,
+        text: String,
+        action: Option<(String, ToastAction)>,
+        cx: &mut Context<Self>,
+    ) {
         self.next_toast_id += 1;
         let id = self.next_toast_id;
-        self.toasts.push(ComposerToast { id, kind, text });
+        let label = action.as_ref().map(|(label, _)| label.clone());
+        if let Some((_, handler)) = action {
+            self.toast_actions.insert(id, handler);
+        }
+        self.toasts.push(ComposerToast {
+            id,
+            kind,
+            text,
+            action: label,
+        });
         let overflow = self.toasts.len().saturating_sub(VISIBLE_TOASTS);
         self.toasts.drain(..overflow);
         let timer = cx.background_executor().timer(TOAST_DURATION);
@@ -44,6 +80,7 @@ impl ComposerView {
 
     fn dismiss_toast(&mut self, id: u64, cx: &mut Context<Self>) {
         self.toasts.retain(|toast| toast.id != id);
+        self.toast_actions.remove(&id);
         cx.notify();
     }
 
@@ -57,16 +94,33 @@ impl ComposerView {
             return None;
         }
         let dark = self.mode == ThemeMode::Dark;
-        let toasts = self.toasts().iter().map(|toast| {
-            let id = toast.id;
-            toast_card(
-                id,
-                toast.kind,
-                &toast.text,
-                dark,
-                cx.listener(move |this, _, _, cx| this.dismiss_toast(id, cx)),
-            )
-        });
+        let toasts: Vec<_> = self
+            .toasts()
+            .iter()
+            .map(|toast| {
+                let id = toast.id;
+                let card = toast_card(
+                    id,
+                    toast.kind,
+                    &toast.text,
+                    dark,
+                    cx.listener(move |this, _, _, cx| this.dismiss_toast(id, cx)),
+                );
+                match (&toast.action, self.toast_actions.get(&id).cloned()) {
+                    (Some(label), Some(handler)) => card.child(toast_action_button(
+                        id,
+                        label,
+                        toast.kind,
+                        dark,
+                        cx.listener(move |this, _, window, cx| {
+                            handler(window, cx);
+                            this.dismiss_toast(id, cx);
+                        }),
+                    )),
+                    _ => card,
+                }
+            })
+            .collect();
         Some(toast_stack(toasts))
     }
 }
@@ -163,6 +217,38 @@ pub(crate) fn toast_card(
                 .on_click(on_close)
                 .child(icon("close-dialog", text.into()).size(px(16.))),
         )
+}
+
+/// The toast's action, a text button after its label.
+fn toast_action_button(
+    id: u64,
+    label: &str,
+    kind: ToastKind,
+    dark: bool,
+    on_click: impl Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
+) -> gpui::Stateful<gpui::Div> {
+    let text = match (kind, dark) {
+        (ToastKind::Success, false) => rgba(0x00a240ff),
+        (ToastKind::Success, true) => rgba(0x40c977ff),
+        (ToastKind::Danger, false) => rgba(0xe02e2aff),
+        (ToastKind::Danger, true) => rgba(0xff6764ff),
+    };
+    div()
+        .id(("composer-toast-action", id))
+        .role(Role::Button)
+        .aria_label(label.to_owned())
+        .h(px(24.))
+        .px(px(8.))
+        .flex_none()
+        .rounded_full()
+        .flex()
+        .items_center()
+        .text_color(text)
+        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .cursor_pointer()
+        .hover(move |button| button.bg(gpui::Rgba { a: 0.08, ..text }))
+        .on_click(on_click)
+        .child(label.to_owned())
 }
 
 /// Top-centre, 8px from the top, toasts stacked 8px apart.

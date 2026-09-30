@@ -56,6 +56,10 @@
 #                                 log below.
 #   CHATGPT_REFERENCE_WIRE_ORIGIN label recorded in every wire log line
 #                                 (default reference)
+#   CHATGPT_REFERENCE_WIRE_FAULTS optional JSON file (under $HOME) the shim reads
+#                                 before forwarding each request, to delay or
+#                                 fail one method during a capture; see
+#                                 scripts/p0/app_server_wire_shim.py
 set -eu
 
 port="${CHATGPT_REFERENCE_PORT:-9335}"
@@ -127,6 +131,9 @@ if [ -n "$wire_log_dir" ]; then
   cp "$script_dir/p0/app_server_wire_shim.py" "$shim_dir/app_server_wire_shim.py"
   chmod +x "$shim_dir/codex"
   wire_export="export PATH='$shim_dir:$PATH'; export CODEX_CLI_PATH='$shim_dir/codex'; export P0_WIRE_LOG_DIR='$wire_log_dir'; export P0_WIRE_ORIGIN='${CHATGPT_REFERENCE_WIRE_ORIGIN:-reference}';"
+  if [ -n "${CHATGPT_REFERENCE_WIRE_FAULTS:-}" ]; then
+    wire_export="$wire_export export P0_WIRE_FAULTS='$CHATGPT_REFERENCE_WIRE_FAULTS';"
+  fi
 fi
 
 mkdir -p "$log_dir"

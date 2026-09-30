@@ -5,6 +5,7 @@ mod account;
 mod approval_capture;
 mod approvals;
 mod apps;
+mod attachments;
 mod auto_approval;
 mod backend;
 mod catalog;

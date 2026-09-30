@@ -313,8 +313,9 @@ pub struct CommandExecution {
     pub actions: Vec<CommandExecutionAction>,
     pub cwd: String,
     pub output: String,
-    /// Set by a terminal-interaction notification while a background process
-    /// remains associated with this command item.
+    /// The process this command item runs in: the item's `processId`, or the
+    /// one a terminal-interaction notification named. A command that has one
+    /// can keep running in the background after its turn ends.
     pub terminal_process_id: Option<String>,
     pub status: CommandExecutionStatus,
     pub exit_code: Option<i64>,

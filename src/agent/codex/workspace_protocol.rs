@@ -16,8 +16,8 @@ use super::{
 use crate::agent::{
     AgentFileChange, AgentFileChangeEntry, AgentFileChangeKind, AgentFileChangeStatus,
     AgentImageView, AgentThreadActiveFlag, FilterValue, HistoryItemDetail, HistoryTurnStatus,
-    Project, SortDirection, ThreadActivity, ThreadHistoryItem, ThreadListRequest, ThreadSection,
-    ThreadSectionAppearance, ThreadSummary, ThreadTurn, UserMessageAttachment,
+    Project, SortDirection, ThreadActivity, ThreadGitInfo, ThreadHistoryItem, ThreadListRequest,
+    ThreadSection, ThreadSectionAppearance, ThreadSummary, ThreadTurn, UserMessageAttachment,
     normalize_user_message_for_display,
 };
 
@@ -175,6 +175,21 @@ pub(super) fn parse_thread_summary(value: &Value) -> Result<ThreadSummary> {
         updated_at: integer_field(value, "updatedAt", "thread")?,
         recency_at: optional_nullable_integer_field(value, "recencyAt", "thread")?,
         activity: parse_thread_activity(object_field(value, "status", "thread")?)?,
+        git: parse_thread_git_info(value)?,
+    })
+}
+
+/// `thread.gitInfo`: null or absent when the thread's cwd was not a Git
+/// checkout; each field is itself nullable.
+fn parse_thread_git_info(value: &Value) -> Result<ThreadGitInfo> {
+    let git = match value.as_object().and_then(|object| object.get("gitInfo")) {
+        None | Some(Value::Null) => return Ok(ThreadGitInfo::default()),
+        Some(git @ Value::Object(_)) => git,
+        Some(_) => bail!("thread.gitInfo 必须是对象或 null"),
+    };
+    Ok(ThreadGitInfo {
+        branch: optional_nullable_string_field(git, "branch", "thread.gitInfo")?,
+        origin_url: optional_nullable_string_field(git, "originUrl", "thread.gitInfo")?,
     })
 }
 

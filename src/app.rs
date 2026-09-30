@@ -11,6 +11,7 @@ mod right_panel;
 mod side_chat;
 mod sidebar;
 mod state;
+mod summary;
 mod workspace_panels;
 
 use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
@@ -121,6 +122,15 @@ pub struct ChatApp {
     account_focus_pending: bool,
     /// Keyboard focus inside the account dialog.
     account_choice: usize,
+    /// The thread summary panel beside the active chat.
+    summary_panel: Entity<crate::components::summary_panel::SummaryPanel>,
+    /// Overlay mode (a narrow chat column): the header button's popover.
+    summary_popover_open: bool,
+    /// Bumped on each toggle so the island's entrance animation restarts.
+    summary_reveal_serial: u64,
+    /// Window activation seen by the last frame; regaining it refreshes the
+    /// current chat's attachments.
+    window_was_active: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -506,6 +516,10 @@ impl ChatApp {
             }
         })
         .detach();
+        let summary_panel = cx.new(|cx| {
+            crate::components::summary_panel::SummaryPanel::new(mode, workspace_store.clone(), cx)
+        });
+        Self::wire_summary_panel(&summary_panel, cx);
         Self {
             codex_app_server,
             agent_backend,
@@ -550,6 +564,10 @@ impl ChatApp {
             account_focus: cx.focus_handle(),
             account_focus_pending: false,
             account_choice: 0,
+            summary_panel,
+            summary_popover_open: false,
+            summary_reveal_serial: 0,
+            window_was_active: true,
         }
     }
 
@@ -671,8 +689,28 @@ impl ChatApp {
         .detach();
         cx.subscribe(
             &composer,
+            |this, _, event: &crate::components::composer::GitActionsDetected, _| {
+                this.workspace_store.apply_git_actions(
+                    event.thread_id.clone(),
+                    event.thread_cwd.clone(),
+                    event.actions.clone(),
+                );
+            },
+        )
+        .detach();
+        cx.subscribe(
+            &composer,
+            |this, _, event: &crate::components::composer::SyncThreadGitBranch, _| {
+                this.workspace_store
+                    .sync_thread_git_branch(event.thread_id.clone(), event.cwd.clone());
+            },
+        )
+        .detach();
+        cx.subscribe(
+            &composer,
             |this, composer, _: &crate::components::composer::ConversationChanged, cx| {
                 this.sync_goal_tabs(&composer, cx);
+                this.sync_background_terminal_tabs(&composer, cx);
             },
         )
         .detach();
@@ -698,6 +736,8 @@ impl ChatApp {
         self.chat_search.update(cx, |search, cx| {
             search.set_mode(self.mode, cx);
         });
+        self.summary_panel
+            .update(cx, |panel, cx| panel.set_mode(self.mode, cx));
         self.home.update(cx, |home, cx| {
             home.set_mode(self.mode, cx);
         });

@@ -57,6 +57,8 @@ impl ChatApp {
         }
         self.home
             .update(cx, |home, cx| home.set_composer(composer, cx));
+        self.summary_popover_open = false;
+        self.sync_summary_panel(cx);
         cx.notify();
     }
     /// Names every conversation after the project it targets, so the home
@@ -235,6 +237,9 @@ impl ChatApp {
                         host.cwd = history.thread.cwd.clone();
                         host.project_id = history.thread.project_id.clone();
                     }
+                    if this.active_conversation == key {
+                        this.sync_summary_panel(cx);
+                    }
                     composer.update(cx, |composer, cx| composer.hydrate_history(history, cx));
                     if this.active_conversation == key
                         && this.right_panel.mode == Some(RightPanelMode::Review)
@@ -296,6 +301,7 @@ impl ChatApp {
         );
         #[cfg(not(test))]
         self.workspace_store.refresh_all();
+        self.sync_summary_panel(cx);
         cx.notify();
     }
 }

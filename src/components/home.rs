@@ -1850,6 +1850,7 @@ impl Render for HomeView {
             }
             self.conversation_cache_dirty = false;
         }
+        let background_commands = Rc::new(self.composer.read(cx).background_marks());
         let reasoning_disclosure_progress = self
             .reasoning_disclosure_transitions
             .iter()
@@ -1954,6 +1955,7 @@ impl Render for HomeView {
                         command_scroll_handles: self.command_scroll_handles.clone(),
                         expanded_collaborations: self.expanded_collaborations.clone(),
                         auto_review_views: self.auto_review_views.clone(),
+                        background_commands: background_commands.clone(),
                     }),
                 },
                 self.composer.clone(),
@@ -1998,6 +2000,7 @@ impl Render for HomeView {
                         command_scroll_handles: self.command_scroll_handles.clone(),
                         expanded_collaborations: self.expanded_collaborations.clone(),
                         auto_review_views: self.auto_review_views.clone(),
+                        background_commands: background_commands.clone(),
                     }),
                 },
                 transcript,

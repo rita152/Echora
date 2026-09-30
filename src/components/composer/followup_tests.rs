@@ -1023,6 +1023,7 @@ fn opening_a_chat_claims_its_running_server_turn_and_rebuilds_it_from_the_stream
             updated_at: 2,
             recency_at: Some(2),
             activity: crate::agent::ThreadActivity::Idle,
+            git: Default::default(),
         },
         turns: vec![
             history_turn("old", HistoryTurnStatus::Completed),
@@ -1075,6 +1076,7 @@ fn a_chat_that_is_already_running_does_not_claim_a_server_turn() {
             updated_at: 2,
             recency_at: Some(2),
             activity: crate::agent::ThreadActivity::Idle,
+            git: Default::default(),
         },
         turns: Vec::new(),
         next_turn_cursor: None,

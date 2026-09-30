@@ -69,6 +69,7 @@ fn thread(id: &str, activity: ThreadActivity) -> ThreadSummary {
         updated_at: 0,
         recency_at: None,
         activity,
+        git: Default::default(),
     }
 }
 

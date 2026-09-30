@@ -192,15 +192,80 @@ fn weekday_label(start_ms: i64) -> &'static str {
     })
 }
 
-/// The reference prints the worktree glyph after a chat that runs in a
-/// Codex-managed worktree (`$CODEX_HOME/worktrees/...`).
+/// The reference prints the worktree glyph after a chat whose working
+/// directory is a Codex-managed worktree. Like the reference's `Kae`, this
+/// is decided by the path alone (not by the thread's `worktree` attachment):
+/// under the configured worktree root, `$CODEX_HOME/worktrees`, or any
+/// `.codex/worktrees`, `.codex-workspaces[/instances/<id>]/worktrees` or
+/// `OpenAI/Codex/workspaces[/instances/<id>]/worktrees` directory.
 fn runs_in_codex_worktree(thread: &ThreadSummary) -> bool {
     let home = std::env::var_os("CODEX_HOME")
         .map(std::path::PathBuf::from)
         .or_else(|| {
             std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".codex"))
         });
-    home.is_some_and(|home| thread.cwd.starts_with(home.join("worktrees")))
+    // Read once: the setting belongs to the desktop app and rarely changes.
+    static CONFIGURED: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
+    let configured = CONFIGURED.get_or_init(|| home.as_deref().and_then(configured_worktree_root));
+    is_codex_worktree_path(&thread.cwd, home.as_deref(), configured.as_deref())
+}
+
+pub(crate) fn is_codex_worktree_path(
+    cwd: &std::path::Path,
+    codex_home: Option<&std::path::Path>,
+    configured_root: Option<&std::path::Path>,
+) -> bool {
+    if configured_root.is_some_and(|root| cwd.starts_with(root))
+        || codex_home.is_some_and(|home| cwd.starts_with(home.join("worktrees")))
+    {
+        return true;
+    }
+    let parts: Vec<&str> = cwd
+        .components()
+        .filter_map(|component| component.as_os_str().to_str())
+        .collect();
+    parts.iter().enumerate().any(|(index, part)| {
+        if *part != "worktrees" || index == 0 {
+            return false;
+        }
+        let before = &parts[..index];
+        let ends = |suffix: &[&str]| before.ends_with(suffix);
+        let instance = |base: &[&str]| {
+            before.len() >= base.len() + 2
+                && before[before.len() - 2] == "instances"
+                && &before[before.len() - 2 - base.len()..before.len() - 2] == base
+        };
+        ends(&[".codex"])
+            || ends(&[".codex-workspaces"])
+            || instance(&[".codex-workspaces"])
+            || ends(&["OpenAI", "Codex", "workspaces"])
+            || instance(&["OpenAI", "Codex", "workspaces"])
+    })
+}
+
+/// `[desktop] git-worktree-root` of the Codex config, the reference's
+/// `worktreeRoot` setting.
+fn configured_worktree_root(codex_home: &std::path::Path) -> Option<std::path::PathBuf> {
+    let config = std::fs::read_to_string(codex_home.join("config.toml")).ok()?;
+    let mut in_desktop = false;
+    for line in config.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_desktop = line == "[desktop]";
+            continue;
+        }
+        if !in_desktop {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if key.trim().trim_matches('"') == "git-worktree-root" {
+            let value = value.trim().trim_matches('"').trim();
+            return (!value.is_empty()).then(|| std::path::PathBuf::from(value));
+        }
+    }
+    None
 }
 
 fn now_ms() -> i64 {

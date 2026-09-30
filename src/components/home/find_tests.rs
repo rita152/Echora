@@ -98,6 +98,7 @@ fn history() -> ThreadHistory {
             updated_at: 2,
             recency_at: Some(2),
             activity: ThreadActivity::Idle,
+            git: Default::default(),
         },
         turns: vec![
             turn(0, "hello", "Hello! I'm here."),

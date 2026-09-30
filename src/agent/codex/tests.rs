@@ -34,6 +34,7 @@ use crate::agent::{
 };
 
 mod batch3;
+mod batch4;
 
 struct FailingWriter;
 

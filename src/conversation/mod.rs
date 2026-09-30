@@ -5,6 +5,8 @@ pub(crate) use permissions::PermissionChange;
 
 mod activity;
 mod auto_approval;
+mod background;
+pub(crate) use background::{BackgroundCleanState, BackgroundMark, BackgroundTerminal};
 mod elicitation;
 mod events;
 mod find;

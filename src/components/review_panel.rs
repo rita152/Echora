@@ -41,9 +41,19 @@ pub enum ReviewEvent {
     Close,
     AddTab,
     Fullscreen,
-    OpenFile { path: String, line: Option<usize> },
+    OpenFile {
+        path: String,
+        line: Option<usize>,
+    },
     CommentsChanged(Vec<Comment>),
     PreferencesChanged(crate::workspace::ReviewPreferences),
+    /// `gh pr create` succeeded: the pull request, the checkout root and the
+    /// branch it was created from, for the chat to attach.
+    PullRequestCreated {
+        url: String,
+        root: PathBuf,
+        head_branch: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -842,6 +852,17 @@ impl ReviewPanel {
         self.operation_error = None;
         let snapshot = self.snapshot.clone();
         let scope = self.scope.clone();
+        // The branch a pull request is created from: a new one, or the head.
+        let created_from = match &op {
+            Mutation::PullRequest(options) => Some((
+                snapshot.root.clone(),
+                options
+                    .branch
+                    .clone()
+                    .unwrap_or_else(|| snapshot.branch.clone()),
+            )),
+            _ => None,
+        };
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
@@ -856,6 +877,13 @@ impl ReviewPanel {
                         if s.pr_open && message.starts_with("https://") {
                             cx.open_url(&message);
                             s.show_notice(crate::i18n::text("已创建 Pull Request").into(), cx);
+                            if let Some((root, head_branch)) = created_from.clone() {
+                                cx.emit(ReviewEvent::PullRequestCreated {
+                                    url: message.clone(),
+                                    root,
+                                    head_branch,
+                                });
+                            }
                         } else {
                             s.show_notice(message, cx);
                         }

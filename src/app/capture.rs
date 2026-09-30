@@ -657,6 +657,70 @@ impl ChatApp {
             .update(cx, |home, cx| home.refresh_conversation_for_capture(cx));
         cx.notify();
     }
+    /// `--batch4-state=<topic>:<state>` on a resumed fixture thread:
+    /// `chips:hover-failing|hover-merged` (a hovered row and its card),
+    /// `panel:closed|reopened|section-hover|pr-row-hover|pr-actions-menu|
+    /// unmatched-pr-hover`, and `background:section|row-hover|row-focus|
+    /// card-running|terminal-tab|stopping|stop-failed|card-stopped|
+    /// card-finished`.
+    #[cfg(feature = "screenshot")]
+    pub fn set_batch4_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
+        let (topic, state) = state.split_once(':').unwrap_or(("", state));
+        match topic {
+            "chips" => {
+                let title = match state {
+                    "hover-failing" => Some("Fixture PR failing"),
+                    "hover-merged" => Some("Fixture PR merged"),
+                    _ => None,
+                };
+                if let Some(title) = title {
+                    self.sidebar.update(cx, |sidebar, cx| {
+                        sidebar.hover_thread_for_capture(title, cx)
+                    });
+                }
+            }
+            "panel" => match state {
+                // The header button flips the global pin, as a click would.
+                "closed" => self.workspace_store.set_summary_panel_pinned(false),
+                "open" | "reopened" => self.workspace_store.set_summary_panel_pinned(true),
+                state => self
+                    .summary_panel
+                    .update(cx, |panel, cx| panel.set_capture_state(state, cx)),
+            },
+            "background" => {
+                let composer = self
+                    .conversation_hosts
+                    .get(&self.active_conversation)
+                    .map(|host| host.composer.clone());
+                let fixture = match state {
+                    "stopping" | "stop-failed" => state,
+                    "card-stopped" => "stopped",
+                    "card-finished" => "finished",
+                    _ => "running",
+                };
+                if let Some(composer) = composer {
+                    composer.update(cx, |composer, cx| {
+                        composer.set_background_for_capture(fixture, cx)
+                    });
+                }
+                if matches!(state, "row-hover" | "row-focus" | "terminal-tab") {
+                    self.summary_panel
+                        .update(cx, |panel, cx| panel.set_capture_state(state, cx));
+                }
+                self.home
+                    .update(cx, |home, cx| home.refresh_conversation_for_capture(cx));
+            }
+            _ => {}
+        }
+        cx.notify();
+    }
+    /// The batch-four state is drawn: its row exists and no pull request,
+    /// branch lookup or checkout is still loading.
+    #[cfg(feature = "screenshot")]
+    pub fn batch4_capture_ready(&self, cx: &gpui::App) -> bool {
+        self.summary_panel.read(cx).capture_ready()
+            && self.workspace_store.snapshot().pull_requests.is_idle()
+    }
     pub fn set_streaming_reply_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
         self.home.update(cx, |view, cx| {
             view.set_streaming_reply_for_capture(state, cx)

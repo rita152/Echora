@@ -622,7 +622,7 @@ impl PullRequestsView {
     /// The pull request state glyph at `size`, tinted like the reference's
     /// `text-purple` / `text-chart-red` / `text-codex-description`, with the
     /// merge-readiness dot drawn over open pull requests.
-    pub(super) fn status_glyph(status: StatusIcon, theme: PrTheme, size: f32) -> Div {
+    pub(crate) fn status_glyph(status: StatusIcon, theme: PrTheme, size: f32) -> Div {
         let (name, color, dot) = match status {
             StatusIcon::Merged => ("pr-status-merged", theme.purple, None),
             StatusIcon::Closed => ("pr-status-closed", theme.chart_red, None),
@@ -656,7 +656,7 @@ impl PullRequestsView {
     }
 
     /// `+x -y` in the reference's tabular, tightly tracked digits.
-    pub(super) fn diff_stats(
+    pub(crate) fn diff_stats(
         additions: u64,
         deletions: u64,
         added: gpui::Rgba,

@@ -163,6 +163,8 @@ pub(super) struct ConnectionState {
     /// the matching thread/reverted notification already arrived, because the
     /// notification may precede the response.
     pub(super) pending_reverts: HashMap<String, bool>,
+    /// Thread attachments read in this generation, with their revisions.
+    pub(super) attachments: super::attachments::AttachmentCache,
     settled_reverts: HashMap<String, ()>,
     settled_revert_order: VecDeque<String>,
 }

@@ -722,3 +722,36 @@ fn agent_message_phase(item: &serde_json::Map<String, Value>) -> Result<Option<S
         Some(_) => bail!("agentMessage item.phase 必须是字符串或 null"),
     }
 }
+
+/// A command message that belongs to a turn which already ended: a background
+/// terminal's later output (`outputDelta`, `terminalInteraction`) or its end
+/// (`item/completed` of a `commandExecution`). Every other late turn message
+/// stays inert and yields `None`.
+pub(super) fn background_command_event(message: &Value) -> Result<Option<AgentEvent>> {
+    match message.get("method").and_then(Value::as_str) {
+        Some("item/commandExecution/outputDelta") => Ok(Some(AgentEvent::CommandOutputDelta {
+            item_id: required_notification_string(message, "itemId")?,
+            delta: required_notification_string(message, "delta")?,
+        })),
+        Some("item/commandExecution/terminalInteraction") => {
+            Ok(Some(AgentEvent::CommandTerminalInteraction {
+                item_id: required_notification_string(message, "itemId")?,
+                process_id: required_notification_string(message, "processId")?,
+                wrote_stdin: !required_notification_string(message, "stdin")?.is_empty(),
+            }))
+        }
+        Some("item/completed")
+            if message.pointer("/params/item/type").and_then(Value::as_str)
+                == Some("commandExecution") =>
+        {
+            let item = message
+                .pointer("/params/item")
+                .and_then(Value::as_object)
+                .context("item/completed 缺少对象 item")?;
+            let command = parse_command_execution(item)
+                .map_err(|error| turn_item_protocol_error(message, error))?;
+            Ok(Some(AgentEvent::CommandCompleted(command)))
+        }
+        _ => Ok(None),
+    }
+}

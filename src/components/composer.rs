@@ -2,6 +2,7 @@
 use crate::agent::CodexAppServerBackend;
 
 mod auto_review;
+mod background;
 mod capture;
 mod context;
 mod dialogs;
@@ -9,6 +10,8 @@ mod dictation;
 mod followup;
 mod followup_edit;
 mod followup_render;
+mod git_actions;
+pub use git_actions::{GitActionsDetected, SyncThreadGitBranch};
 mod goal;
 mod goal_render;
 mod layout;
@@ -37,7 +40,9 @@ pub(crate) use followup_render::TrayTooltip;
 pub use goal::OpenGoalEditor;
 pub(crate) use goal_render::achieved_duration_label;
 pub use review::{CodeReviewStarted, StartDetachedReview};
-pub(crate) use toast::{TOAST_DURATION, ToastKind, VISIBLE_TOASTS, toast_card, toast_stack};
+pub(crate) use toast::{
+    TOAST_DURATION, ToastAction, ToastKind, VISIBLE_TOASTS, toast_card, toast_stack,
+};
 pub use workspace::WorkspacePresentation;
 
 use std::{path::PathBuf, sync::Arc};
@@ -254,6 +259,7 @@ pub struct ComposerView {
     codex_home: Option<std::path::PathBuf>,
     slash_menu: Option<slash_menu::SlashMenu>,
     toasts: Vec<toast::ComposerToast>,
+    toast_actions: std::collections::HashMap<u64, toast::ToastAction>,
     next_toast_id: u64,
     /// Objective shown as the request of the turn the server starts for it.
     pending_goal_bubble: Option<String>,
@@ -470,6 +476,7 @@ impl ComposerView {
             codex_home: crate::agent::codex_home(),
             slash_menu: None,
             toasts: Vec::new(),
+            toast_actions: Default::default(),
             next_toast_id: 0,
             pending_goal_bubble: None,
             goal_after_first_turn: None,
@@ -730,6 +737,15 @@ impl ComposerView {
                 return false;
             }
             _ => {}
+        }
+        if let AgentConnectionEvent::BackgroundCommandUpdated {
+            thread_id,
+            event: completed,
+            ..
+        } = &event
+            && self.conversation.thread_id.as_ref() == Some(thread_id)
+        {
+            self.report_git_actions(std::slice::from_ref(completed), cx);
         }
         let goal_event = matches!(
             event,

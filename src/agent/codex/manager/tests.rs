@@ -34,6 +34,7 @@ mod auto_approval;
 mod batch1;
 mod batch2;
 mod batch3;
+mod batch4;
 mod config;
 mod elicitation;
 mod manage;
@@ -1108,6 +1109,7 @@ fn workspace_rpc_surface_matches_the_01521_experimental_schema() {
         "thread-a".to_owned(),
         ThreadMetadataUpdate {
             project: AgentOptionalField::Null,
+            git_branch: Default::default(),
         },
     );
     let request = assert_workspace_request(&mut endpoint, "thread/metadata/update");

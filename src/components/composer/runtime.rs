@@ -440,7 +440,11 @@ impl ComposerView {
                     let turn_accepted = batch
                         .iter()
                         .any(|event| matches!(event, AgentEvent::TurnReady(_)));
+                    this.report_git_actions(&batch, cx);
                     let finished = this.apply_agent_event_batch(batch);
+                    if turn_accepted && created_thread.is_none() {
+                        this.sync_git_branch_after_send(cx);
+                    }
                     if this.review_start_cycle == Some(cycle) && (turn_accepted || finished) {
                         this.review_start_settled(turn_accepted, cx);
                     }
@@ -494,6 +498,11 @@ impl ComposerView {
         if self.conversation.stop_generation() {
             cx.emit(ConversationChanged);
             cx.notify();
+        } else {
+            // The reference's stop fallback: with no turn in progress, Stop
+            // cleans the thread's background terminals instead of
+            // interrupting; a failure is only logged.
+            self.clean_background_terminals(None, false, cx);
         }
     }
     pub fn retry_image_generation(&mut self, cx: &mut Context<Self>) {

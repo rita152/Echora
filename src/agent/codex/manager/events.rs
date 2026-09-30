@@ -219,7 +219,9 @@ pub(super) fn connection_event_key(event: &AgentConnectionEvent) -> String {
             format!("thread-goal:{thread_id}")
         }
         AgentConnectionEvent::TurnStarted { .. }
-        | AgentConnectionEvent::ThreadQueueChanged { .. } => {
+        | AgentConnectionEvent::ThreadQueueChanged { .. }
+        | AgentConnectionEvent::ThreadAttachmentUpdated(_)
+        | AgentConnectionEvent::BackgroundCommandUpdated { .. } => {
             unreachable!("transient connection events are never stored")
         }
         AgentConnectionEvent::AccountUpdated(_) => "account".to_owned(),
@@ -237,5 +239,7 @@ fn is_transient_connection_event(event: &AgentConnectionEvent) -> bool {
             | AgentConnectionEvent::ThreadReverted { .. }
             | AgentConnectionEvent::TurnStarted { .. }
             | AgentConnectionEvent::ThreadQueueChanged { .. }
+            | AgentConnectionEvent::ThreadAttachmentUpdated(_)
+            | AgentConnectionEvent::BackgroundCommandUpdated { .. }
     )
 }

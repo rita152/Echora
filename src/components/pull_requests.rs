@@ -22,7 +22,7 @@ use std::{collections::HashSet, path::PathBuf, sync::Arc, time::Duration};
 
 use gpui::{Context, Entity, EventEmitter, FocusHandle, Focusable, Window, prelude::*};
 
-use self::theme::PrTheme;
+pub(crate) use self::theme::PrTheme;
 use super::file_editor::FileEditor;
 use super::prompt_input::PromptInput;
 use crate::{

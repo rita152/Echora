@@ -2,6 +2,7 @@
 
 mod account;
 mod apps;
+mod attachments;
 mod auto_review;
 mod catalog;
 mod collaboration;

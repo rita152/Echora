@@ -366,6 +366,23 @@ impl ManagerInner {
                 self.publish_connection_event(event);
                 Ok(())
             }
+            super::super::attachments::ATTACHMENT_UPDATED_METHOD => {
+                let updated = super::super::attachments::parse_updated(message)?;
+                if let Ok(mut state) = connection.state.lock() {
+                    state.attachments.invalidate(&updated.thread_id);
+                }
+                self.publish_connection_event(AgentConnectionEvent::ThreadAttachmentUpdated(
+                    crate::agent::AgentAttachmentUpdate {
+                        generation: connection.generation,
+                        thread_id: updated.thread_id,
+                        attachment_id: updated.attachment_id,
+                        attachment_type: updated.attachment_type,
+                        identity_key: updated.identity_key,
+                        operation: updated.operation,
+                    },
+                ));
+                Ok(())
+            }
             super::super::queue::QUEUE_CHANGED_METHOD => {
                 let thread_id = super::super::queue::parse_changed(message)?;
                 self.publish_connection_event(AgentConnectionEvent::ThreadQueueChanged {
@@ -680,6 +697,20 @@ impl ManagerInner {
                         turn_id: turn_id.clone(),
                     });
                 if finished {
+                    // A background terminal outlives its turn: its later output
+                    // and its end still name the finished turn. Everything else
+                    // late stays inert.
+                    if let Some(event) = super::super::dispatch::background_command_event(message)?
+                    {
+                        self.publish_connection_event(
+                            AgentConnectionEvent::BackgroundCommandUpdated {
+                                generation: connection.generation,
+                                thread_id: thread_id.to_owned(),
+                                turn_id,
+                                event,
+                            },
+                        );
+                    }
                     return Ok(());
                 }
                 // A turn the server started by itself (goal continuation, queue

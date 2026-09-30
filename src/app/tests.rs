@@ -956,6 +956,7 @@ fn history_fixture(thread_id: &str, message: &str) -> ThreadHistory {
             updated_at: 2,
             recency_at: Some(2),
             activity: ThreadActivity::Idle,
+            git: Default::default(),
         },
         turns: vec![ThreadTurn {
             turn_id: format!("turn-{thread_id}"),

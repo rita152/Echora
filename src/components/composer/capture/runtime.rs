@@ -52,6 +52,7 @@ impl ComposerView {
                     updated_at: 0,
                     recency_at: None,
                     activity: ThreadActivity::Idle,
+                    git: Default::default(),
                 },
                 turns: vec![ThreadTurn {
                     turn_id: turn.into(),

@@ -885,6 +885,40 @@ pub trait AgentBackend: Send + Sync {
         )
     }
 
+    /// Every attachment of one thread (`force` skips the one-minute cache).
+    /// `Unsupported` means the server has no attachments at all.
+    fn list_thread_attachments(
+        &self,
+        _thread_id: ThreadId,
+        _force: bool,
+    ) -> Receiver<Result<super::AgentThreadAttachments, super::AgentAttachmentError>> {
+        unsupported_attachment_receiver()
+    }
+
+    fn add_thread_attachment(
+        &self,
+        _request: super::AgentAttachmentAddRequest,
+    ) -> Receiver<Result<super::AgentAttachmentAdded, super::AgentAttachmentError>> {
+        unsupported_attachment_receiver()
+    }
+
+    fn remove_thread_attachment(
+        &self,
+        _request: super::AgentAttachmentRemoveRequest,
+    ) -> Receiver<Result<(), super::AgentAttachmentError>> {
+        unsupported_attachment_receiver()
+    }
+
+    /// Stops every background terminal of a thread, on the generation that
+    /// ran them. Each command's end arrives as its own completion.
+    fn clean_background_terminals(
+        &self,
+        _thread_id: ThreadId,
+        _generation: u64,
+    ) -> Receiver<Result<(), String>> {
+        unsupported_account_receiver(&crate::i18n::format!("后台终端" => "background terminals"))
+    }
+
     fn list_thread_queue(
         &self,
         _thread_id: ThreadId,
@@ -986,6 +1020,13 @@ fn unsupported_receiver<T: Send + 'static>(
 fn unsupported_account_receiver<T: Send + 'static>(action: &str) -> Receiver<Result<T, String>> {
     let (sender, receiver) = async_channel::bounded(1);
     let _ = sender.send_blocking(Err(crate::i18n::format!("当前 coding agent 不支持{action}" => "This coding agent does not support {action}")));
+    receiver
+}
+
+fn unsupported_attachment_receiver<T: Send + 'static>()
+-> Receiver<Result<T, super::AgentAttachmentError>> {
+    let (sender, receiver) = async_channel::bounded(1);
+    let _ = sender.send_blocking(Err(super::AgentAttachmentError::Unsupported));
     receiver
 }
 

@@ -516,6 +516,39 @@ impl AgentBackend for CodexAppServerBackend {
         self.manager.clear_thread_goal(thread_id, generation)
     }
 
+    fn list_thread_attachments(
+        &self,
+        thread_id: ThreadId,
+        force: bool,
+    ) -> Receiver<Result<crate::agent::AgentThreadAttachments, crate::agent::AgentAttachmentError>>
+    {
+        self.manager.list_thread_attachments(thread_id, force)
+    }
+
+    fn add_thread_attachment(
+        &self,
+        request: crate::agent::AgentAttachmentAddRequest,
+    ) -> Receiver<Result<crate::agent::AgentAttachmentAdded, crate::agent::AgentAttachmentError>>
+    {
+        self.manager.add_thread_attachment(request)
+    }
+
+    fn remove_thread_attachment(
+        &self,
+        request: crate::agent::AgentAttachmentRemoveRequest,
+    ) -> Receiver<Result<(), crate::agent::AgentAttachmentError>> {
+        self.manager.remove_thread_attachment(request)
+    }
+
+    fn clean_background_terminals(
+        &self,
+        thread_id: ThreadId,
+        generation: u64,
+    ) -> Receiver<Result<(), String>> {
+        self.manager
+            .clean_background_terminals(thread_id, generation)
+    }
+
     fn list_thread_queue(
         &self,
         thread_id: ThreadId,
