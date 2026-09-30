@@ -79,6 +79,9 @@ pub struct SettingsView {
     /// `memory/status` for the memory card; `None` while unknown or failed.
     pub(super) memory_status: Option<crate::agent::AgentMemoryStatus>,
     pub(super) memory_status_cycle: u64,
+    /// Connection-scoped config warnings, oldest first, as the reference
+    /// lists them under the agent defaults.
+    pub(super) config_warnings: Vec<crate::agent::AgentConfigWarning>,
     language_menu_open: bool,
     language_menu_index: usize,
     language_focus: gpui::FocusHandle,
@@ -275,6 +278,10 @@ impl SettingsView {
                             this.apply_app_list_updated(cx);
                             true
                         }
+                        crate::agent::AgentConnectionEvent::ConfigWarning(warning) => {
+                            this.apply_config_warning(warning.clone(), cx);
+                            true
+                        }
                         _ => true,
                     })
                     .is_ok();
@@ -339,6 +346,7 @@ impl SettingsView {
             provider_capabilities_fixture: false,
             memory_status: None,
             memory_status_cycle: 0,
+            config_warnings: Vec::new(),
         }
     }
 

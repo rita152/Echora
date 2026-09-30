@@ -2504,6 +2504,35 @@ fn thread_token_usage_updates_gpui_state_without_ending_the_turn() {
 }
 
 #[test]
+fn replayed_config_warnings_stay_out_of_every_conversation() {
+    let mut app = TestApp::new();
+    let warning = AgentConfigWarning {
+        summary: "Codex is ignoring 1 unrecognized configuration setting.".into(),
+        details: Some("`preferred_auth_method` is ignored.".into()),
+        path: Some("/tmp/codex/config.toml".into()),
+        line: None,
+        column: None,
+    };
+    // Every opened conversation subscribes and receives the snapshot replay;
+    // none of them, bound to a thread or not, may add the card.
+    for thread_id in [None, Some("thr_a"), Some("thr_b")] {
+        let composer = app.new_entity(|cx| ComposerView::new(ThemeMode::Dark, cx));
+        app.update_entity(&composer, |composer, _| {
+            composer.conversation.thread_id = thread_id.map(Into::into);
+            assert!(
+                !composer.apply_scoped_connection_event(AgentConnectionEvent::ConfigWarning(
+                    warning.clone()
+                ))
+            );
+        });
+        assert!(app.read_entity(&composer, |composer, _| {
+            composer.conversation.activities.is_empty()
+                && composer.conversation.pending_connection_events.is_empty()
+        }));
+    }
+}
+
+#[test]
 fn account_connection_events_stay_out_of_a_running_conversation() {
     let mut app = TestApp::new();
     let composer = app.new_entity(|cx| ComposerView::new(ThemeMode::Dark, cx));
@@ -2614,16 +2643,11 @@ fn server_notices_stay_visible_and_non_terminal_until_failed_completion() {
                 details: Some("2 秒后重试".into()),
                 will_retry: true,
             },
+            // The config warning is connection scoped and stays out of the
+            // timeline.
             ConversationActivity::Warning {
                 message: "上下文窗口即将用尽".into(),
             },
-            ConversationActivity::ConfigWarning(AgentConfigWarning {
-                summary: "配置值已弃用".into(),
-                details: Some("请迁移到新键".into()),
-                path: Some("/tmp/project/config.toml".into()),
-                line: Some(8),
-                column: Some(4),
-            }),
         ]
     );
 

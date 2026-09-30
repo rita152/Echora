@@ -11,11 +11,14 @@ use crate::agent::{
 
 /// No moderation-metadata product exists in this client, and context
 /// compaction is driven by its item, not the deprecated duplicate
-/// notification. Goal and queue notifications are consumed; `skills/changed`
-/// and `app/list/updated` are cache invalidation signals for the settings
+/// notification. Like the reference, `warning` is opted out: app-server
+/// repeats the connection's `configWarning` as a `warning` on every thread
+/// start and resume, and the reference shows neither in a conversation.
+/// Goal and queue notifications are consumed; `skills/changed` and
+/// `app/list/updated` are cache invalidation signals for the settings
 /// surfaces. Never apply this policy to requests.
 pub(super) const OPT_OUT_NOTIFICATION_METHODS: &[&str] =
-    &["turn/moderationMetadata", "thread/compacted"];
+    &["turn/moderationMetadata", "thread/compacted", "warning"];
 
 pub(super) const RUNTIME_METHODS: &[&str] = &[
     "modelProvider/authRecoveryStarted",

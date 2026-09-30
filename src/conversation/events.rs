@@ -77,6 +77,10 @@ impl ConversationState {
             AgentConnectionEvent::SkillsChanged { .. }
             | AgentConnectionEvent::AppListUpdated { .. }
             | AgentConnectionEvent::McpOauthLoginCompleted(_) => return false,
+            // Config warnings describe the whole connection and are replayed
+            // to every subscriber; like the reference they belong to the
+            // configuration settings page, not to each opened conversation.
+            AgentConnectionEvent::ConfigWarning(_) => return false,
             AgentConnectionEvent::ThreadStatusChanged(status) => Some(status.thread_id.as_str()),
             AgentConnectionEvent::ThreadTokenUsageUpdated(usage) => Some(usage.thread_id.as_str()),
             AgentConnectionEvent::ThreadSettingsUpdated { thread_id, .. } => {
@@ -89,7 +93,6 @@ impl ConversationState {
             | AgentConnectionEvent::McpElicitationFailed { thread_id, .. } => {
                 Some(thread_id.as_str())
             }
-            AgentConnectionEvent::ConfigWarning(_) => None,
             AgentConnectionEvent::ThreadGoalUpdated { thread_id, .. }
             | AgentConnectionEvent::ThreadGoalCleared { thread_id, .. } => Some(thread_id.as_str()),
             // The composer takes server-started turns and queue invalidations
@@ -184,7 +187,6 @@ impl ConversationState {
             }
             AgentConnectionEvent::GuardianWarning(warning) => AgentEvent::GuardianWarning(warning),
             AgentConnectionEvent::Warning { message, .. } => AgentEvent::Warning { message },
-            AgentConnectionEvent::ConfigWarning(warning) => AgentEvent::ConfigWarning(warning),
             AgentConnectionEvent::McpServerStartupStatusUpdated(updated) => {
                 AgentEvent::McpServerStartupStatusUpdated(updated.status)
             }
@@ -212,7 +214,8 @@ impl ConversationState {
             | AgentConnectionEvent::SkillsChanged { .. }
             | AgentConnectionEvent::AppListUpdated { .. }
             | AgentConnectionEvent::McpOauthLoginCompleted(_)
-            | AgentConnectionEvent::ThreadProjectUpdated { .. } => return false,
+            | AgentConnectionEvent::ThreadProjectUpdated { .. }
+            | AgentConnectionEvent::ConfigWarning(_) => return false,
             AgentConnectionEvent::McpElicitationRequested { .. }
             | AgentConnectionEvent::McpElicitationResolved { .. }
             | AgentConnectionEvent::McpElicitationFailed { .. }
@@ -371,10 +374,8 @@ impl ConversationState {
                     self.activities
                         .push(ConversationActivity::Warning { message });
                 }
-                AgentEvent::ConfigWarning(warning) => {
-                    self.activities
-                        .push(ConversationActivity::ConfigWarning(warning));
-                }
+                // Connection-scoped: shown on the configuration settings page.
+                AgentEvent::ConfigWarning(_) => {}
                 AgentEvent::McpServerStartupStatusUpdated(status) => {
                     let key = (status.thread_id.clone(), status.name.clone());
                     let changed = self.mcp_server_startup_statuses.get(&key) != Some(&status);

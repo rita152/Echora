@@ -5,7 +5,154 @@ use gpui::{Context, IntoElement, div, prelude::*, px};
 use super::SettingsView;
 use crate::{settings::PageSpec, theme::Theme};
 
+/// The reference keeps the newest notices only.
+const CONFIG_WARNING_LIMIT: usize = 20;
+/// CDP 2026-09-30, Configuration → Agent defaults: the warning banner is
+/// `rounded-[25px]` with `16px 12px 16px 20px` padding, an 18px icon 12px
+/// before a 706px text column, and the actions 32px after it.
+const CONFIG_WARNING_RADIUS: f32 = 25.0;
+const CONFIG_WARNING_ICON_SIZE: f32 = 18.0;
+const CONFIG_WARNING_ICON_GAP: f32 = 12.0;
+const CONFIG_WARNING_ACTION_GAP: f32 = 32.0;
+const CONFIG_WARNING_BUTTON_HEIGHT: f32 = 24.0;
+
 impl SettingsView {
+    /// A repeated warning moves to the end instead of being listed twice.
+    pub(super) fn apply_config_warning(
+        &mut self,
+        warning: crate::agent::AgentConfigWarning,
+        cx: &mut Context<Self>,
+    ) {
+        self.config_warnings.retain(|existing| existing != &warning);
+        self.config_warnings.push(warning);
+        let overflow = self
+            .config_warnings
+            .len()
+            .saturating_sub(CONFIG_WARNING_LIMIT);
+        self.config_warnings.drain(..overflow);
+        cx.notify();
+    }
+    /// The reference's warning banner: `bg-surface` under a 30%
+    /// `background-warning-surface` wash (resolved here to the painted
+    /// color), a 0.5px ring and two soft shadows. The summary and details are
+    /// small Markdown, so a backticked key renders as inline code.
+    fn config_warning_card(
+        &self,
+        warning: &crate::agent::AgentConfigWarning,
+        index: usize,
+        theme: Theme,
+    ) -> gpui::AnyElement {
+        let dark = self.mode == crate::theme::ThemeMode::Dark;
+        let (surface, ring) = if dark {
+            (gpui::rgba(0x1c1613ff), gpui::rgba(0xffffff28))
+        } else {
+            (gpui::rgba(0xfefcfbff), gpui::rgba(0x1a1c1f1e))
+        };
+        let details = warning
+            .details
+            .as_deref()
+            .filter(|details| !details.trim().is_empty());
+        let file = warning.path.as_deref().map(|path| {
+            let location = match (warning.line, warning.column) {
+                (Some(line), Some(column)) => {
+                    crate::i18n::format!("（第 {line} 行，第 {column} 列）" => " (line {line}, column {column})")
+                }
+                _ => String::new(),
+            };
+            crate::i18n::format!("文件：`{path}`{location}" => "File: `{path}`{location}")
+        });
+        let mut label = format!(
+            "{}：{}",
+            crate::i18n::text("Codex 配置警告"),
+            warning.summary
+        );
+        for part in details.iter().copied().chain(file.as_deref()) {
+            label.push_str(&format!("；{}", part.replace('`', "")));
+        }
+        let markdown = |part: &str, slot: &str| {
+            crate::components::markdown::render_notice_markdown(
+                part,
+                theme,
+                &format!("config-warning-{index}-{slot}"),
+                theme.text,
+            )
+        };
+        let text = div()
+            .min_w(px(0.))
+            .flex_1()
+            .flex()
+            .flex_col()
+            .child(markdown(&warning.summary, "summary"))
+            .when_some(details, |text, details| {
+                text.child(markdown(details, "details"))
+            })
+            .when_some(file.as_deref(), |text, file| {
+                text.child(markdown(file, "file"))
+            });
+        let open = warning.path.clone().map(|path| {
+            let path = std::path::PathBuf::from(path);
+            div()
+                .id(("config-warning-open", index))
+                .role(gpui::Role::Button)
+                .aria_label(crate::i18n::format!("打开配置文件 {}" => "Open configuration file {}", path.display()))
+                .h(px(CONFIG_WARNING_BUTTON_HEIGHT))
+                .px(px(8.))
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(9999.))
+                .border(px(1.))
+                .border_color(theme.border)
+                .bg(theme.command_surface)
+                .text_size(px(13.))
+                .line_height(px(18.))
+                .text_color(theme.text)
+                .cursor_pointer()
+                .hover(|button| button.bg(theme.sidebar_hover))
+                .on_click(move |_, _, cx| cx.open_with_system(&path))
+                .child(crate::i18n::text("打开文件"))
+        });
+        div()
+            .id(("config-warning", index))
+            .role(gpui::Role::Alert)
+            .aria_label(label)
+            .w_full()
+            .pt(px(16.))
+            .pb(px(16.))
+            .pl(px(20.))
+            .pr(px(12.))
+            .flex()
+            .items_center()
+            .gap(px(CONFIG_WARNING_ICON_GAP))
+            .rounded(px(CONFIG_WARNING_RADIUS))
+            .bg(surface)
+            .shadow(vec![
+                gpui::BoxShadow::new(px(0.), px(0.), ring.into()).spread_radius(px(0.5)),
+                gpui::BoxShadow::new(px(0.), px(0.), gpui::rgba(0x0000000d).into())
+                    .blur_radius(px(2.)),
+                gpui::BoxShadow::new(px(0.), px(4.), gpui::rgba(0x00000005).into())
+                    .blur_radius(px(6.)),
+            ])
+            .child(
+                // `pt-0.5` over the 18px glyph: a 20px column, centered.
+                div().pt(px(2.)).flex_none().child(
+                    crate::components::icons::icon("settings-warning", theme.warning.into())
+                        .size(px(CONFIG_WARNING_ICON_SIZE)),
+                ),
+            )
+            .child(
+                div()
+                    .min_w(px(0.))
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .gap(px(CONFIG_WARNING_ACTION_GAP))
+                    .child(text)
+                    .children(open),
+            )
+            .into_any_element()
+    }
     pub(super) fn agent_row(
         &self,
         title: &'static str,
@@ -186,6 +333,18 @@ impl SettingsView {
             )
         })
         .collect();
+        // Section content stacks with a 6px gap: the warnings sit 15.5px
+        // under the header, and the source row keeps its own 6px top, so it
+        // is 12px under the last warning and 21.5px under a bare header.
+        let warnings = (!self.config_warnings.is_empty()).then(|| {
+            div().mt(px(15.5)).flex().flex_col().gap(px(6.)).children(
+                self.config_warnings
+                    .iter()
+                    .enumerate()
+                    .map(|(index, warning)| self.config_warning_card(warning, index, theme)),
+            )
+        });
+        let source_gap = if warnings.is_some() { 12. } else { 21.5 };
         let mut content = div()
             .w_full()
             .max_w(px(768.))
@@ -215,9 +374,10 @@ impl SettingsView {
                     .font_weight(gpui::FontWeight(500.))
                     .child(crate::i18n::text("智能体默认设置")),
             )
+            .children(warnings)
             .child(
                 div()
-                    .mt(px(21.5))
+                    .mt(px(source_gap))
                     .flex()
                     .items_center()
                     .justify_between()

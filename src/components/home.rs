@@ -74,7 +74,6 @@ use conversation::{
     sync_list_item_count,
 };
 use landing::home;
-use notices::ConfigWarningFile;
 use reasoning::{ReasoningDisclosureTransition, reasoning_body_text};
 use streaming::{STREAMING_REVEAL_TICK, StreamingReveal};
 use timeline::{
@@ -264,7 +263,6 @@ const NOTICE_ERROR_GAP: f32 = 12.0;
 const NOTICE_WARNING_GAP: f32 = 16.0;
 const NOTICE_ERROR_CONTENT_GAP: f32 = 6.0;
 const NOTICE_WARNING_CONTENT_GAP: f32 = 8.0;
-const NOTICE_BUTTON_HEIGHT: f32 = 24.0;
 const COLLABORATION_ROW_HEIGHT: f32 = 20.0;
 const COLLABORATION_ICON_SIZE: f32 = 16.0;
 const COLLABORATION_TEXT_SIZE: f32 = 14.0;

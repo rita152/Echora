@@ -294,11 +294,11 @@ fn runtime_deprecation_nullability_and_exact_notification_policy() {
             .iter()
             .collect::<std::collections::HashSet<_>>()
             .len(),
-        2
+        3
     );
     assert_eq!(
         OPT_OUT_NOTIFICATION_METHODS,
-        ["turn/moderationMetadata", "thread/compacted"]
+        ["turn/moderationMetadata", "thread/compacted", "warning"]
     );
     for consumed in [
         "thread/goal/updated",
@@ -311,6 +311,9 @@ fn runtime_deprecation_nullability_and_exact_notification_policy() {
     // neither is opted out any more.
     assert!(!OPT_OUT_NOTIFICATION_METHODS.contains(&"skills/changed"));
     assert!(!OPT_OUT_NOTIFICATION_METHODS.contains(&"app/list/updated"));
+    // The per-thread `warning` copy is opted out; the connection's config
+    // warning still arrives for the configuration settings page.
+    assert!(!OPT_OUT_NOTIFICATION_METHODS.contains(&"configWarning"));
     for method in [
         "item/started",
         "item/completed",

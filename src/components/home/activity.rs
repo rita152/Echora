@@ -10,8 +10,7 @@ use super::{
     mcp::mcp_tool_call_activity,
     media::{image_generation_activity, image_view_activity},
     notices::{
-        ConfigWarningFile, context_compaction_activity, notice_activity, retrying_error_activity,
-        web_search_activity,
+        context_compaction_activity, notice_activity, retrying_error_activity, web_search_activity,
     },
     reasoning::reasoning_activity,
     timeline::{ActivityStreamUnit, activity_stream_units},
@@ -329,7 +328,6 @@ pub(super) fn render_activity_stream_unit(
                 NoticePresentation {
                     summary: message,
                     details,
-                    file: None,
                     accessible_kind: crate::i18n::text("Codex 错误"),
                     outer_gap: NOTICE_ERROR_GAP,
                     content_gap: NOTICE_ERROR_CONTENT_GAP,
@@ -342,7 +340,6 @@ pub(super) fn render_activity_stream_unit(
                 NoticePresentation {
                     summary: message,
                     details: None,
-                    file: None,
                     accessible_kind: crate::i18n::text("Codex 警告"),
                     outer_gap: NOTICE_WARNING_GAP,
                     content_gap: NOTICE_WARNING_CONTENT_GAP,
@@ -351,31 +348,10 @@ pub(super) fn render_activity_stream_unit(
                 theme,
             )
             .into_any_element(),
-            ConversationActivity::ConfigWarning(warning) => {
-                let file = warning.path.map(|path| ConfigWarningFile {
-                    path,
-                    line: warning.line,
-                    column: warning.column,
-                });
-                notice_activity(
-                    NoticePresentation {
-                        summary: warning.summary,
-                        details: warning.details,
-                        file,
-                        accessible_kind: crate::i18n::text("Codex 配置警告"),
-                        outer_gap: NOTICE_WARNING_GAP,
-                        content_gap: NOTICE_WARNING_CONTENT_GAP,
-                    },
-                    index,
-                    theme,
-                )
-                .into_any_element()
-            }
             ConversationActivity::Error { message } => notice_activity(
                 NoticePresentation {
                     summary: message,
                     details: None,
-                    file: None,
                     accessible_kind: crate::i18n::text("Codex turn 失败"),
                     outer_gap: NOTICE_ERROR_GAP,
                     content_gap: NOTICE_ERROR_CONTENT_GAP,

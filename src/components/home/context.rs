@@ -7,7 +7,7 @@ use std::{
 
 use gpui::{Entity, ListState, ScrollHandle};
 
-use super::{ConfigWarningFile, ConversationListRow, HomeView};
+use super::{ConversationListRow, HomeView};
 use crate::{
     agent::UserMessageAttachment,
     conversation::{ConversationActivity, ConversationPhase, ResumedTurnPresentation},
@@ -126,7 +126,6 @@ pub(super) struct ToolGroupDisclosure {
 pub(super) struct NoticePresentation {
     pub(super) summary: String,
     pub(super) details: Option<String>,
-    pub(super) file: Option<ConfigWarningFile>,
     pub(super) accessible_kind: &'static str,
     pub(super) outer_gap: f32,
     pub(super) content_gap: f32,

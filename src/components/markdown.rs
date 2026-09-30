@@ -756,9 +756,24 @@ pub fn render_pull_request_comment_markdown(
     line_clamp: Option<MarkdownLineClamp>,
 ) -> Div {
     let source = strip_html_comments(source);
-    let document = parse_markdown(&source);
-    let mut style = MarkdownRenderStyle::new(theme);
+    let mut style = small_markdown_style(theme);
     style.line_clamp = line_clamp;
+    render_small_markdown(&source, style, scope)
+}
+
+/// Settings notices (config warnings) use the same small text style, in the
+/// banner's text color: their inline code inherits it instead of the
+/// assistant's code color. Every newline is a line break, as the reference
+/// renders the multi-line summary.
+pub fn render_notice_markdown(source: &str, theme: Theme, scope: &str, text: Rgba) -> Div {
+    let mut style = small_markdown_style(theme);
+    style.palette.text = text;
+    style.palette.inline_code_text = text;
+    render_small_markdown(&source.replace('\n', "\\\n"), style, scope)
+}
+
+fn small_markdown_style(theme: Theme) -> MarkdownRenderStyle {
+    let mut style = MarkdownRenderStyle::new(theme);
     style.centered_measure = false;
     // Every block metric derives from the 13px `--markdown-space` (3.25px)
     // and `--markdown-line-height` (1.625em).
@@ -781,6 +796,11 @@ pub fn render_pull_request_comment_markdown(
     style.layout.inline_code_flow_height = PULL_REQUEST_COMMENT_LINE_HEIGHT + 1.0;
     style.layout.inline_code_line_height = 14.0;
     style.body_weight = PULL_REQUEST_BODY_WEIGHT;
+    style
+}
+
+fn render_small_markdown(source: &str, style: MarkdownRenderStyle, scope: &str) -> Div {
+    let document = parse_markdown(source);
     render_block_sequence(
         &document.blocks,
         style,
@@ -2909,6 +2929,42 @@ mod tests {
                         .debug_selector(|| "mention-line".to_owned()),
                 )
         }
+    }
+
+    struct NoticeLines;
+    impl gpui::Render for NoticeLines {
+        fn render(
+            &mut self,
+            _: &mut gpui::Window,
+            _: &mut gpui::Context<Self>,
+        ) -> impl gpui::IntoElement {
+            let theme = Theme::for_mode(ThemeMode::Dark);
+            div().w(px(706.0)).child(
+                render_notice_markdown(
+                    "Codex is ignoring 1 setting.\n  user (config.toml): `key` is ignored.",
+                    theme,
+                    "notice",
+                    theme.text,
+                )
+                .debug_selector(|| "notice".to_owned()),
+            )
+        }
+    }
+
+    /// The config warning summary breaks at its newline, as the reference's
+    /// `<br>`, and its inline-code line is 1px taller (CDP: 64.375px for the
+    /// three-line settings banner).
+    #[gpui::test]
+    fn notice_markdown_breaks_lines_at_newlines(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|_, _| NoticeLines);
+        let mut visual = gpui::VisualTestContext::from_window(window.into(), cx);
+        visual.update(|window, cx| window.draw(cx).clear(cx));
+        let notice = visual.debug_bounds("notice").unwrap();
+        let height = f32::from(notice.size.height);
+        assert!(
+            (height - (PULL_REQUEST_COMMENT_LINE_HEIGHT * 2.0 + 1.0)).abs() <= 0.5,
+            "notice={notice:?}"
+        );
     }
 
     #[gpui::test]

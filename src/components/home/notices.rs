@@ -1,21 +1,12 @@
 //! Notices presentation and interaction for the conversation view.
 
-use std::path::PathBuf;
-
 use gpui::{BoxShadow, Div, IntoElement, ObjectFit, Role, SharedString, div, prelude::*, px, rgba};
 
 use super::{
-    NOTICE_BUTTON_HEIGHT, NOTICE_ICON_SIZE, NOTICE_LINE_HEIGHT, NOTICE_RADIUS, NOTICE_TEXT_SIZE,
-    TOOL_GROUP_ICON_SIZE, animation::shimmer_label, context::NoticePresentation,
+    NOTICE_ICON_SIZE, NOTICE_LINE_HEIGHT, NOTICE_RADIUS, NOTICE_TEXT_SIZE, TOOL_GROUP_ICON_SIZE,
+    animation::shimmer_label, context::NoticePresentation,
 };
 use crate::{components::icons::icon, theme::Theme};
-
-#[derive(Clone)]
-pub(super) struct ConfigWarningFile {
-    pub(super) path: String,
-    pub(super) line: Option<u64>,
-    pub(super) column: Option<u64>,
-}
 
 pub(super) fn retrying_error_activity(
     index: usize,
@@ -69,31 +60,16 @@ pub(super) fn notice_activity(
     let NoticePresentation {
         summary,
         details,
-        file,
         accessible_kind,
         outer_gap,
         content_gap,
     } = notice;
-    let file_label = file.as_ref().map(|file| {
-        let mut label = crate::i18n::format!("文件：{}" => "File: {}", file.path);
-        match (file.line, file.column) {
-            (Some(line), Some(column)) => {
-                label.push_str(&crate::i18n::format!("（第 {line} 行，第 {column} 列）" => "(line {line}, column {column})"));
-            }
-            (Some(line), None) => label.push_str(&crate::i18n::format!("（第 {line} 行）" => "(line {line})")),
-            _ => {}
-        }
-        label
-    });
     let mut accessible_label = format!("{accessible_kind}：{summary}");
     if let Some(details) = details
         .as_deref()
         .filter(|details| !details.trim().is_empty())
     {
         accessible_label.push_str(&format!("；{details}"));
-    }
-    if let Some(file_label) = &file_label {
-        accessible_label.push_str(&format!("；{file_label}"));
     }
     let content = div()
         .min_w(px(0.0))
@@ -108,10 +84,7 @@ pub(super) fn notice_activity(
         .when_some(
             details.filter(|details| !details.trim().is_empty()),
             |content, details| content.child(div().text_color(theme.text_secondary).child(details)),
-        )
-        .when_some(file_label, |content, file_label| {
-            content.child(div().text_color(theme.text_secondary).child(file_label))
-        });
+        );
 
     div()
         .id(("conversation-notice", index))
@@ -136,32 +109,6 @@ pub(super) fn notice_activity(
                 .flex_none(),
         )
         .child(content)
-        .when_some(file, |notice, file| {
-            let path = PathBuf::from(&file.path);
-            notice.child(
-                div()
-                    .id(("config-warning-open", index))
-                    .role(Role::Button)
-                    .aria_label(crate::i18n::format!("打开配置文件 {}" => "Open configuration file {}", file.path))
-                    .h(px(NOTICE_BUTTON_HEIGHT))
-                    .px(px(8.0))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(9999.0))
-                    .border(px(1.0))
-                    .border_color(theme.border)
-                    .bg(theme.command_surface)
-                    .text_size(px(NOTICE_TEXT_SIZE))
-                    .line_height(px(18.0))
-                    .text_color(theme.text)
-                    .cursor_pointer()
-                    .hover(|button| button.bg(theme.sidebar_hover))
-                    .on_click(move |_, _, cx| cx.open_with_system(&path))
-                    .child(crate::i18n::text("打开文件")),
-            )
-        })
 }
 
 /// The same warning card as timeline notices, mounted by the composer instead.
@@ -170,7 +117,6 @@ pub(crate) fn thread_owner_warning(theme: Theme) -> impl IntoElement {
         NoticePresentation {
             summary: crate::i18n::text("此会话正由另一个 app-server 使用，请释放后重试。").into(),
             details: None,
-            file: None,
             accessible_kind: crate::i18n::text("Codex 警告"),
             outer_gap: super::NOTICE_WARNING_GAP,
             content_gap: super::NOTICE_WARNING_CONTENT_GAP,

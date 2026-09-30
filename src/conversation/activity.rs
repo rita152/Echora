@@ -2,11 +2,10 @@
 
 use crate::{
     agent::{
-        AgentCollaboration, AgentConfigWarning, AgentContextCompaction, AgentFileChange,
-        AgentFileSystemAccess, AgentFileSystemPath, AgentFileSystemSpecialPath,
-        AgentImageGeneration, AgentImageGenerationStatus, AgentImageView, AgentMcpToolCall,
-        AgentOptionalField, AgentPermissionRequestProfile, AgentReasoning, CommandExecution,
-        CommandExecutionStatus,
+        AgentCollaboration, AgentContextCompaction, AgentFileChange, AgentFileSystemAccess,
+        AgentFileSystemPath, AgentFileSystemSpecialPath, AgentImageGeneration,
+        AgentImageGenerationStatus, AgentImageView, AgentMcpToolCall, AgentOptionalField,
+        AgentPermissionRequestProfile, AgentReasoning, CommandExecution, CommandExecutionStatus,
     },
     components::{
         approval::ApprovalCardViewModel,
@@ -98,7 +97,6 @@ pub(crate) enum ConversationActivity {
     Warning {
         message: String,
     },
-    ConfigWarning(AgentConfigWarning),
     Error {
         message: String,
     },

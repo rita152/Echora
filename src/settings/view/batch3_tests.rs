@@ -1,5 +1,6 @@
-//! Git → Review delivery, the memory consolidation status and the web search
-//! row that provider capabilities gate, against the scripted settings backend.
+//! Git → Review delivery, the memory consolidation status, the web search
+//! row that provider capabilities gate and the config warnings listed on the
+//! configuration page, against the scripted settings backend.
 
 use serde_json::json;
 
@@ -160,4 +161,41 @@ fn a_provider_without_web_search_gates_every_option_but_off() {
         unknown.with(|s, _| s.provider_unsupported_reason("web_search", &json!("live"))),
         None
     );
+}
+
+#[test]
+fn config_warnings_are_listed_once_on_the_configuration_page() {
+    let warning = |summary: &str| crate::agent::AgentConfigWarning {
+        summary: summary.into(),
+        details: Some("`preferred_auth_method` is ignored.".into()),
+        path: Some(super::test_backend::USER_CONFIG.into()),
+        line: None,
+        column: None,
+    };
+    let mut f = Fixture::new("agent", |script| {
+        script.connection_events = vec![
+            crate::agent::AgentConnectionEvent::ConfigWarning(warning("unrecognized")),
+            crate::agent::AgentConnectionEvent::ConfigWarning(warning("deprecated")),
+        ];
+    });
+    assert_eq!(
+        f.with(|s, _| s.config_warnings.clone()),
+        vec![warning("unrecognized"), warning("deprecated")]
+    );
+    // A repeated warning moves to the end instead of being listed twice, and
+    // only the newest twenty are kept.
+    f.with(|s, cx| s.apply_config_warning(warning("unrecognized"), cx));
+    assert_eq!(
+        f.with(|s, _| s.config_warnings.clone()),
+        vec![warning("deprecated"), warning("unrecognized")]
+    );
+    f.with(|s, cx| {
+        for index in 0..25 {
+            s.apply_config_warning(warning(&format!("warning {index}")), cx);
+        }
+    });
+    let kept = f.with(|s, _| s.config_warnings.clone());
+    assert_eq!(kept.len(), 20);
+    assert_eq!(kept.first(), Some(&warning("warning 5")));
+    assert_eq!(kept.last(), Some(&warning("warning 24")));
 }

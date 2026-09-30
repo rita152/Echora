@@ -24,10 +24,10 @@ node scripts/scan_reference_rpc_methods.mjs /Applications/ChatGPT.app/Contents/R
 
 | 状态 | 数量 | 判定 |
 |---|---|---|
-| 已接入 | 153 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
+| 已接入 | 152 | 表中声明的产品行为已连通协议、领域数据和 UI／副作用；不表示消费全部可选字段 |
 | 后端已接入 | 5 | 已实现读取或校验，尚无对应可见 UI 调用方或展示 |
 | 部分接入 | 5 | 只支持部分类型、有效变体或限定生命周期窗口 |
-| 兼容退订 | 2 | initialize 按完整方法名退订；不代表对应产品能力已接入 |
+| 兼容退订 | 3 | initialize 按完整方法名退订；不代表对应产品能力已接入 |
 | 未接入 | 97 | 客户端不发送；服务端请求按原 id 回受控回执并保持 generation 与共享连接，同时登记连接级诊断；仅 EOF、崩溃、写失败或致命协议错误终止连接；服务端通知接受但不解码，登记连接级诊断 |
 
 未接入行的“—”沿用上述规则；带受控回执的服务端请求会另外列出入口，见下段。`tool/requestUserInput` 是兼容别名，不计入本版本 schema 的 252 项。
@@ -258,7 +258,7 @@ Composer 在运行中有草稿时显示“追加输入”，无草稿时显示�
 
 ## 运行时观察与能力协商
 
-初始化保持 `experimentalApi=true`、`requestAttestation=false`，发送精确的 `optOutNotificationMethods` 两项：`turn/moderationMetadata`、`thread/compacted`。目标与队列通知已接入，见上文；`skills/changed` 与 `app/list/updated` 不在退订名单中：设置页分别把它们当作技能目录与应用目录的失效信号。默认 schema 与 experimental schema 均包含这些通知方法；逐项理由见总表。退订只作用于通知，不能屏蔽请求、响应或错误；未实现或未知的服务端请求按原 id 回受控回执（方法特定结果、`-32601` 或 `-32602`）并保持 generation 与共享连接，处置登记在连接级诊断中；只有 EOF、崩溃、写失败或致命协议错误才进入连接失败处理。不会退订 item/started 或 item/completed；未接入的服务端通知接受但不解码并登记诊断，schema 之外的方法不被忽略。
+初始化保持 `experimentalApi=true`、`requestAttestation=false`，发送精确的 `optOutNotificationMethods` 三项：`turn/moderationMetadata`、`thread/compacted`、`warning`。目标与队列通知已接入，见上文；`skills/changed` 与 `app/list/updated` 不在退订名单中：设置页分别把它们当作技能目录与应用目录的失效信号。默认 schema 与 experimental schema 均包含这些通知方法；逐项理由见总表。退订只作用于通知，不能屏蔽请求、响应或错误；未实现或未知的服务端请求按原 id 回受控回执（方法特定结果、`-32601` 或 `-32602`）并保持 generation 与共享连接，处置登记在连接级诊断中；只有 EOF、崩溃、写失败或致命协议错误才进入连接失败处理。不会退订 item/started 或 item/completed；未接入的服务端通知接受但不解码并登记诊断，schema 之外的方法不被忽略。
 
 Hook、认证恢复和 hookPrompt 快照通过带 generation 的观察通道交付。Hook 以 threadId/optional turnId/run.id 区分身份；缺省与 null 共同使用独立的无轮次键，同一 run.id 可以跨轮次存在，不把无 turnId 的记录迁移到前台或已知轮次。认证恢复以 threadId/turnId/provider 区分身份。两者可以早于 turn/start 响应，也可以晚于 turn/completed；不会建立或结束 turn。重复事件原位更新；服务端完成、终态 status 和较新完成时间不会被迟到 started 回退。turn 完成／中断／失败只收束该 turn 的本地等待；无 turnId 的 Hook 继续独立存在，在线程关闭或连接失效时本地收束。原始 status、message、output、时间和是否实际收到 completed 始终保留。
 
@@ -325,7 +325,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `fuzzyFileSearch/sessionStop` | 实验 | 已接入 | 关闭弹窗、切换模式或切换会话时结束会话；会话 id 保留有上限的退休标记，迟到通知保持惰性。 | `manager` |
 | `fuzzyFileSearch/sessionUpdate` | 实验 | 已接入 | 每次输入变化更新查询；结果经 sessionUpdated 通知返回，按 cycle 丢弃过期响应。 | `manager` |
 | `hooks/list` | 默认 | 已接入 | cwds 为当前项目根与其他已知项目根；按 generation 校验每项 cwd、事件／来源／handler／trustStatus 枚举、绝对 sourcePath 与非负超时；钩子设置页按参考分组显示来源、摘要、问题与逐项信任／启用，写入 `hooks.state."<key>".{trusted_hash,enabled}` 后重新读取。 | `manager/hooks`、`hooks` |
-| `initialize` | 默认 | 已接入 | 每个连接 generation 一次；发送 clientInfo、experimentalApi=true、requestAttestation=false；按完整方法名退订两项通知，列表见运行时能力协商。 | `manager` |
+| `initialize` | 默认 | 已接入 | 每个连接 generation 一次；发送 clientInfo、experimentalApi=true、requestAttestation=false；按完整方法名退订三项通知，列表见运行时能力协商。 | `manager` |
 | `marketplace/add` | 默认 | 已接入 | source（必填）与可选 refName/sparsePaths；来源文本只来自用户在“添加”面板的输入；成功/失败/超时/结果未知四态分离，结果未知不自动重试。 | `manager/plugins`、`plugins_catalog` |
 | `marketplace/remove` | 默认 | 已接入 | marketplaceName；先确认再发送，失败保留意图可显式重试，成功后强制重读目录。 | `manager/plugins`、`plugins_catalog` |
 | `marketplace/upgrade` | 默认 | 已接入 | marketplaceName 可空（空即由服务端选择全部）；逐条保留 selectedMarketplaces、upgradedRoots 与 errors。 | `manager/plugins`、`plugins_catalog` |
@@ -475,8 +475,8 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `app/list/updated` | 默认 | 已接入 | 只作缓存失效信号：载荷仍完整解码（形状变化照样报错），但不覆盖屏幕上已有目录、不清空进行中的操作；应用分段可见时才重新执行 `app/list`。 | `manager/dispatch`、`apps` |
 | `autoApprovalReview/strictReviewRequired` | 默认 | 已接入 | 按 thread/turn/startedAtMs 保存独立复核提示，同一时间去重；只展示额外安全检查状态，无 request id 或人工审批 responder，不改变 turn 终态。 | `auto_approval`、`manager/dispatch` |
 | `command/exec/outputDelta` | 默认 | 未接入 | — | — |
-| `configWarning` | 默认 | 已接入 | 应用级 summary 及可选 details/path/range；无活动轮次仍显示配置警告。 | `manager/dispatch`、`notifications` |
-| `deprecationNotice` | 默认 | 后端已接入 | 应用级 summary 与 optional/nullable details；无活动线程也接收、去重并向新订阅者重放。独立于会话内容保存。当前 ChatGPT 接收并保存该通知，未观察到首页／会话页可见提示；GPUI 不新增无参考的提示卡。 | `runtime`、`manager/events` |
+| `configWarning` | 默认 | 已接入 | 应用级 summary 及可选 details/path/range；进入连接事件快照并向新订阅者重放。与参考一致只在设置「配置」页「智能体默认设置」下列出（相同条目去重移到末尾，保留最近 20 条，可打开文件），不写入任何会话时间线。 | `manager/dispatch`、`notifications`、`settings/view/agent` |
+| `deprecationNotice` | 默认 | 后端已接入 | 应用级 summary 与 optional/nullable details；无活动线程也接收、去重并向新订阅者重放。独立于会话内容保存。ChatGPT 把它与 `configWarning` 存入同一列表，只在设置「配置」页列出，首页／会话页无可见提示；GPUI 设置页暂未列出 deprecation。 | `runtime`、`manager/events` |
 | `error` | 默认 | 已接入 | 定向轮次的 error.message、details、willRetry；显示错误信息，终态仍等待 turn/completed。 | `notifications` |
 | `externalAgentConfig/import/completed` | 默认 | 未接入 | — | — |
 | `externalAgentConfig/import/progress` | 默认 | 未接入 | — | — |
@@ -548,7 +548,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `turn/moderationMetadata` | 默认 | 兼容退订 | 完整方法名退订；metadata 为任意 JSON，当前无消费路径。保留 error、model/safetyBuffering/updated、model/verification 等已接入状态，不用 metadata 推定成功或终态。 | `runtime::OPT_OUT_NOTIFICATION_METHODS` |
 | `turn/plan/updated` | 默认 | 已接入 | 独立 turn 步骤快照与 explanation；输入框上方显示步骤进度，悬停／点击／键盘查看步骤。 | `progress`、`dispatch` |
 | `turn/started` | 默认 | 已接入 | 要求 turn.status=inProgress；可早于 turn/start 响应，验证后使所属会话进入流式状态。没有本地 owner 时（目标推进、队列推进、queue/start）接管为服务端轮次并经 `TurnStarted` 交给会话；会话忙时排队到当前轮次结束再接上。 | `notifications`、`manager/turn`、`manager/external_turn` |
-| `warning` | 默认 | 已接入 | message、可选 threadId；应用级警告无活动轮次仍可见，线程级只进入目标 Composer。 | `manager/dispatch`、`notifications` |
+| `warning` | 默认 | 兼容退订 | 与参考一致按完整方法名退订：0.158 在每次 thread/start、thread/resume 时把连接级 `configWarning` 的同一文本再发成线程级 `warning`，参考会话页不显示任何 `warning`。解码与按 threadId 路由仍保留，服务端未遵守退订时只进入目标 Composer。 | `runtime::OPT_OUT_NOTIFICATION_METHODS`、`manager/dispatch` |
 | `windows/worldWritableWarning` | 默认 | 未接入 | — | — |
 | `windowsSandbox/setupCompleted` | 默认 | 未接入 | — | — |
 

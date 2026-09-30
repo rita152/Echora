@@ -34,11 +34,15 @@ pub(super) struct Script {
     pub(super) memory_status_reads: usize,
     pub(super) capabilities: Option<crate::agent::AgentProviderCapabilities>,
     pub(super) capability_reads: usize,
+    /// Replayed to every connection event subscriber, like the hub snapshots.
+    pub(super) connection_events: Vec<AgentConnectionEvent>,
 }
 
 #[derive(Default)]
 pub(super) struct Backend {
     pub(super) script: Arc<Mutex<Script>>,
+    /// Keeps each subscription open for the lifetime of the test.
+    subscribers: Mutex<Vec<async_channel::Sender<AgentConnectionEvent>>>,
 }
 
 pub(super) fn snapshot(config: &Value, version: u64) -> AgentConfigSnapshot {
@@ -108,7 +112,12 @@ impl Script {
 
 impl AgentBackend for Backend {
     fn subscribe_connection_events(&self) -> async_channel::Receiver<AgentConnectionEvent> {
-        async_channel::unbounded().1
+        let (sender, receiver) = async_channel::unbounded();
+        for event in &self.script.lock().unwrap().connection_events {
+            let _ = sender.send_blocking(event.clone());
+        }
+        self.subscribers.lock().unwrap().push(sender);
+        receiver
     }
     fn load_model_catalog(&self) -> async_channel::Receiver<Result<AgentModelCatalog, String>> {
         async_channel::bounded(1).1

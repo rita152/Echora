@@ -25,7 +25,11 @@ fn runtime_notifications_before_start_and_after_completion_do_not_steal_or_end_t
         .unwrap();
     assert_eq!(
         opt_out,
-        &vec![json!("turn/moderationMetadata"), json!("thread/compacted")]
+        &vec![
+            json!("turn/moderationMetadata"),
+            json!("thread/compacted"),
+            json!("warning")
+        ]
     );
     assert!(!opt_out.contains(&json!("thread/goal/cleared")));
     // Skills and app-catalog invalidation are both consumed by the settings
