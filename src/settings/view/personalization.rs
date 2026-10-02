@@ -3,10 +3,7 @@
 use gpui::{Context, IntoElement, div, prelude::*, px};
 
 use super::SettingsView;
-use crate::{
-    settings::PageSpec,
-    theme::{Theme, ThemeMode},
-};
+use crate::{settings::PageSpec, theme::Theme};
 
 impl SettingsView {
     pub(super) fn personalization_content(
@@ -15,11 +12,6 @@ impl SettingsView {
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let link_color = match self.mode {
-            ThemeMode::Light => gpui::rgba(0x339cffff),
-            ThemeMode::Dark => gpui::rgba(0x99ceffff),
-        };
-
         let memory_card = self.memory_card(theme, cx);
 
         div()
@@ -59,12 +51,7 @@ impl SettingsView {
                             .child(crate::i18n::format!(
                                 "配置 Codex 在本地上管理记忆的方式。" =>
                                 "Configure how Codex manages memory for Local."
-                            ))
-                            .child(
-                                div()
-                                    .text_color(link_color)
-                                    .child(crate::i18n::text("了解更多")),
-                            ),
+                            )),
                     ),
             )
             .child(div().mt(px(12.0)).child(memory_card))
