@@ -48,11 +48,11 @@ impl ChatApp {
                     cx.notify();
                 }
                 ReviewEvent::AddTab => {
+                    // "+" opens a New tab, which is the browser's.
                     s.deactivate_review(cx);
                     s.right_panel.fullscreen = false;
-                    s.right_panel.mode = None;
                     s.right_panel.diff_review = None;
-                    cx.notify();
+                    s.open_browser_tab(None, cx);
                 }
                 ReviewEvent::Fullscreen => {
                     s.right_panel.fullscreen = !s.right_panel.fullscreen;

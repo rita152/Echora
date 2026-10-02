@@ -87,13 +87,15 @@ impl ChatApp {
             cx.notify();
             return;
         }
-        self.right_panel.mode = None;
+        // The reference's panel opens on a New tab: the browser's launcher
+        // page with the tools and suggested sites.
+        self.right_panel.mode = Some(RightPanelMode::Browser);
         self.right_panel.subagent = None;
         self.right_panel.subagent_menu_open = false;
         self.right_panel.diff_review = None;
         self.right_panel.focused_item = 0;
         self.right_panel.keyboard_focus = false;
-        self.right_panel.focus_pending = true;
+        self.ensure_browser(cx);
         cx.notify();
     }
     pub(super) fn close_right_panel(&mut self, cx: &mut Context<Self>) {
@@ -111,8 +113,12 @@ impl ChatApp {
                         | RightPanelMode::Files
                         | RightPanelMode::Review
                         | RightPanelMode::SideChat
+                        | RightPanelMode::Browser
                 )
             );
+            if let Some(panel) = self.browser_panels.get(&self.active_conversation) {
+                panel.read(cx).hide_pages();
+            }
             if !matches!(
                 self.right_panel.mode,
                 Some(
@@ -120,6 +126,7 @@ impl ChatApp {
                         | RightPanelMode::Files
                         | RightPanelMode::Review
                         | RightPanelMode::SideChat
+                        | RightPanelMode::Browser
                 )
             ) {
                 self.right_panel.mode = None;
@@ -168,6 +175,9 @@ impl ChatApp {
         }
         if mode == RightPanelMode::Review {
             self.ensure_review(cx);
+        }
+        if mode == RightPanelMode::Browser {
+            self.ensure_browser(cx);
         }
         self.right_panel.subagent = None;
         self.right_panel.subagent_menu_open = false;
@@ -767,6 +777,16 @@ impl ChatApp {
                     theme,
                     cx,
                 )
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(|_, _, cx| cx.stop_propagation());
+        }
+
+        if self.right_panel.mode == Some(RightPanelMode::Browser)
+            && let Some(browser) = self.browser_panels.get(&self.active_conversation)
+        {
+            let card = div().child(browser.clone());
+            return self
+                .right_panel_slot(panel_width, fullscreen, card, theme, cx)
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(|_, _, cx| cx.stop_propagation());
         }

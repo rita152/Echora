@@ -1,3 +1,4 @@
+mod browser;
 mod capture;
 mod conversations;
 mod goal;
@@ -50,6 +51,7 @@ use crate::{
     },
     components::{
         account::{AccountDialog, AccountLoadStatus, AccountView},
+        browser::{BrowserPanel, BrowserStore},
         chat_search::{ChatSearchView, OpenFile, OpenFolder, SelectChat, StartNewChat},
         composer::{
             ComposerView, ConversationThreadCreated, ModelCatalogLoadFinished,
@@ -102,6 +104,13 @@ pub struct ChatApp {
     capture_pull_requests_locked: bool,
     sidebar_layout: SidebarLayoutState,
     terminal_panels: HashMap<ConversationKey, Entity<TerminalPanel>>,
+    /// The in-app browser of each chat, sharing one history and download list.
+    browser_panels: HashMap<ConversationKey, Entity<BrowserPanel>>,
+    browser_store: Entity<BrowserStore>,
+    /// Capture-only: the browser state to show, applied again to whichever
+    /// chat's browser becomes current (a resumed thread arrives later).
+    #[cfg(feature = "screenshot")]
+    browser_capture: Option<capture::BrowserCapture>,
     file_panels: HashMap<ConversationKey, Entity<FilePanel>>,
     review_panels: HashMap<ConversationKey, Entity<ReviewPanel>>,
     plan_export_error: Option<String>,
@@ -552,6 +561,10 @@ impl ChatApp {
             capture_pull_requests_locked: false,
             sidebar_layout: SidebarLayoutState::default(),
             terminal_panels: HashMap::new(),
+            browser_panels: HashMap::new(),
+            browser_store: cx.new(BrowserStore::new),
+            #[cfg(feature = "screenshot")]
+            browser_capture: None,
             file_panels: HashMap::new(),
             review_panels: HashMap::new(),
             plan_export_error: None,
@@ -732,6 +745,9 @@ impl ChatApp {
             panel.update(cx, |panel, cx| panel.set_mode(self.mode, cx));
         }
         for panel in self.terminal_panels.values() {
+            panel.update(cx, |panel, cx| panel.set_mode(self.mode, cx));
+        }
+        for panel in self.browser_panels.values() {
             panel.update(cx, |panel, cx| panel.set_mode(self.mode, cx));
         }
         for panel in self.side_chat_panels.values() {

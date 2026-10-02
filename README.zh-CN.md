@@ -54,6 +54,7 @@
 | **开始对话** | 空白会话显示项目标题和输入框，不显示占位建议。 |
 | **处理文件** | 浏览本地文件树、筛选路径、多标签编辑、预览 Markdown 和图片，以及通过文件链接定位到行。 |
 | **使用终端** | 在会话目录运行本机 shell，支持多标签、回看、文字选择和剪贴板。 |
+| **浏览网页** | 与 ChatGPT 一样，右侧面板打开即是“新标签页”：上方是“工具”（审查、终端、侧边聊天、文件），下方是最常访问的网站，可忽略（并可撤消）。每个聊天有自己的浏览器标签页，随聊天保存，显示时才重新加载。工具栏包括返回、前进与重新加载，地址栏会内联补全访问过的地址，并给出历史页面与网页搜索建议，其余输入按网址或 Google 搜索打开；另有下载弹层与选项菜单（页面内查找、打印、缩放、截图到剪贴板、下载、清除 Cookie、缓存或下载历史记录）。网页由 WebKit 渲染并跟随应用主题：链接可在新标签页打开，网页自身的右键菜单提供新标签页、外部浏览器、复制链接、返回/前进/重新加载与检查；加载失败或页面崩溃时显示 ChatGPT 的错误页，可重新加载。聊天中的链接在此浏览器中打开。 |
 | **审查与交付** | 查看 Git diff、逐行评论、暂存、还原、提交、创建分支、推送，并通过本机 `gh` 创建 PR。 |
 | **浏览 Pull Request** | 打开侧边栏 `Pull requests` 页面：列表与过滤、Summary、Activity、提交与检查、带文件树的 diff、行内评论，以及从变更统计按钮打开的 Review 标签页。 |
 | **侧边探索** | 从主会话派生临时对话，分别控制输入、模型、权限与停止操作。 |
@@ -104,7 +105,9 @@ Cargo 包和可执行文件目前仍名为 `gpui-chat-clone`，现有构建与�
 | 切换终端 | 右侧面板 → 终端；`Ctrl+反引号` |
 | 打开文件 | 右侧面板 → 文件；`Cmd+P` |
 | 打开 Git 审查 | 右侧面板 → 审查；`Ctrl+Shift+G` |
-| 打开侧边聊天 | 右侧面板菜单；`Option+Cmd+S` |
+| 打开侧边聊天 | 右侧面板 → 新标签页 → 侧边聊天；`Option+Cmd+S` |
+| 打开浏览器标签页 | 右侧面板（打开即为新标签页）、标签条的 `+`；`Cmd+T` |
+| 浏览器地址栏、重新加载、前进后退、查找、缩放 | `Cmd+L`、`Cmd+R`、`Cmd+[` / `Cmd+]`、`Cmd+F`（`Cmd+G` / `Cmd+Shift+G`）、`Cmd+=` / `Cmd+-` / `Cmd+0`；`Cmd+W` 关闭标签页 |
 | 打开设置 | 账户菜单 → 设置；`Cmd+,` |
 | 登录 / 退出登录 | 账户菜单 → 登录行（后端要求 OpenAI 认证时显示），或在应用内确认后 `退出登录`；`Esc` 关闭菜单 |
 | 发送 / 向活动轮次追加输入 | `Enter`；`Shift+Enter` 换行；`Cmd+Enter` 对单条消息使用相反的跟进处理方式 |
@@ -131,6 +134,7 @@ Cargo 包和可执行文件目前仍名为 `gpui-chat-clone`，现有构建与�
 - **文件编辑：** 停止输入约 400 ms 后自动保存，撤销 / 重做也写回磁盘。保留 UTF-8 BOM、CRLF 和权限，保存前检查外部修改。文本上限 2 MiB，单行上限 64 KiB；仅访问本机文件。
 - **Git 审查：** 范围包括上一轮、未提交、未暂存、已暂存、已提交和分支，分支使用 merge-base。支持统一 / 拆分差异、文字差异、上下文展开和逐行评论。写入前校验 worktree 与 index；还原新增文件时，在 worktree Git 目录的 `gpui-discarded/` 下保留备份。
 - **Pull requests：** 页面通过已认证的 `gh` 读写 GitHub。筛选、审阅者搜索、摘要、活动、检查与提交范围均使用 GitHub 数据。差异在统一、分栏与自动（仅对同时有增删的文件分栏）布局间切换，支持词级高亮、Markdown 预览、浮层文件树及行内评论；文件链接打开 GitHub 上所选提交的内容。Code 标签只标注 hunk 之间未改动的行数；从变更统计打开的 Review 标签会读取所显示文件的全文，每次展开 100 行，统计最后一个 hunk 之后的行数，并可在 `Commits` 菜单中把差异范围切换为全部改动或单个提交。写入失败保留草稿，提交中防止重复请求，成功后从 GitHub 刷新。“Draft description in chat” 打开预填的会话，发送前可检查内容。窄窗口在列表与详情之间切换，提供返回按钮。收起侧栏后，列表头部以及占满页面的详情或 Review 标签从红绿灯与侧栏按钮之后开始，与 ChatGPT 一致。列表与详情正文只在经典滚动条下预留滚动条槽位，macOS 叠加滚动条下不预留。
+- **浏览器：** 网页是放在 GPUI 视图之上、覆盖面板内容区的 `WKWebView`；网页上方的 GPUI 浮层（地址建议、菜单、查找栏、缩放提示条）会在网页上切出圆角“洞”，保持可见、可点击；切到其他工具、聊天、设置或出现窗口级对话框时网页隐藏。Cookie 与网站数据保存在 WebKit 为本应用提供的默认存储中；历史记录、已忽略的推荐与各聊天的标签页保存在 `~/Library/Application Support/GPUI/browser/`（可用 `GPUI_BROWSER_DATA_DIR` 覆盖）。下载保存到 `~/Downloads`。ChatGPT 中依赖 Chromium 的部分暂不可用：Chrome 扩展与扩展工具栏、导入 Chrome 或 Atlas 的 Cookie 与密码、密码管理器、设备工具栏、批注模式与网站工具、历史记录页与浏览器设置、网站权限提示（由 WebKit 自带的面板询问）、标签页静音，以及由智能体操控浏览器。
 - **面板生命周期：** 收起面板或切换会话保留状态，shell 与临时侧边聊天不跨应用退出恢复。标签可拖动排序，有消息的侧边聊天关闭前需要确认。连接失效后仍可查看和复制消息。
 - **活动视图：** 进行中与待处理状态来自 Echora 自身 app-server 连接上的 `thread/status/changed`，因此在其他客户端（例如 ChatGPT 应用）中运行的聊天不会在这里显示为进行中。app-server 没有已读状态：聊天不在主区域显示时，若轮次结束或请求批准／输入，由 Echora 自己记为未读并随 UI 偏好保存；打开该聊天或使用“全部标为已读”后恢复为已读。“定时任务”选项会保存，但目前没有线程来源能识别定时任务运行，因此不影响列表；参考实现的一次性引导气泡与 `⌘1`–`⌘9` 行快捷键尚未实现。
 - **聊天搜索：** 弹窗先列出置顶聊天，再按最近顺序补足，最多九行；输入后经 app-server `thread/search` 检索。参考实现还会通过自身的检索服务合并 ChatGPT 云端会话，app-server 不提供该数据，因此命中较多时结果集合与排序可能不同。`Search files`（或 `⌘P`）把同一弹窗切到文件搜索：为当前会话工作目录打开一个 `fuzzyFileSearch` 会话，边输入边接收 `sessionUpdated` 结果，按服务端返回的下标高亮命中，选中后在文件面板打开。服务端不支持会话时回退到一次性 `fuzzyFileSearch` 请求。
@@ -170,17 +174,18 @@ GPUI 应用 · 项目 · 会话 · 原生面板
 | [src/conversation/](src/conversation/) | 会话状态、事件归约、流式批处理与历史恢复，不持有 GPUI Entity 或 Context。 |
 | [src/configuration.rs](src/configuration.rs) | 配置草稿、保存回执与回读核验，使用 `src/agent/config.rs` 的领域类型。 |
 | [src/i18n.rs](src/i18n.rs)、[src/i18n/](src/i18n/) | UI 语言选择、系统区域检测及应用文案翻译；不依赖 GPUI 或具体适配器。 |
-| [src/components/](src/components/) | 侧栏、Composer、时间线、审批、MCP 请求、Markdown、文件、终端、审查、Pull Requests 页面、聊天搜索、账户菜单与侧边聊天的渲染和交互。 |
+| [src/components/](src/components/) | 侧栏、Composer、时间线、审批、MCP 请求、Markdown、文件、终端、审查、Pull Requests 页面、聊天搜索、账户菜单、侧边聊天与浏览器面板（标签页、工具栏、新标签页、菜单）的渲染和交互。 |
 | [src/git_review.rs](src/git_review.rs)、[src/git_review/](src/git_review/) | Git/gh 操作、diff、版本校验、进程回收与评论，不依赖 GPUI 或具体 Agent 适配器。 |
 | [src/pull_requests.rs](src/pull_requests.rs)、[src/pull_requests/](src/pull_requests/) | 通过本机 `gh` 读写 Pull Request 的模型、头像与分支关联，不依赖 GPUI。 |
 | [src/skills.rs](src/skills.rs)、[src/mcp.rs](src/mcp.rs)、[src/plugins.rs](src/plugins.rs)、[src/apps.rs](src/apps.rs) | 技能、MCP 服务器、插件与应用的管理状态：快照、刷新周期与待确认的写入意图，不依赖 GPUI。 |
+| [src/browser.rs](src/browser.rs)、[src/browser/](src/browser/) | 不依赖 GPUI 的内置浏览器：地址输入规则、历史与建议、保存的标签页、错误页、注入网页的脚本，以及 `WKWebView` 桥接（其他平台与测试中为无头替身）。 |
 | [src/app.rs](src/app.rs)、[src/app/](src/app/) | 服务装配、会话 host、面板挂载、项目创建与图片预览。 |
 | [src/settings/](src/settings/)、[src/media.rs](src/media.rs)、[src/typography.rs](src/typography.rs) | 设置页面、通用媒体工具、字体与字体验收。 |
 | [src/theme.rs](src/theme.rs)、[src/assets.rs](src/assets.rs)、[src/stream_capture.rs](src/stream_capture.rs) | 浅色与深色主题 token、运行时资源解析与实时轮次采集。 |
 
 macOS 的 UI 偏好默认保存到 `~/Library/Application Support/GPUI/ui-preferences.json`，可用 `GPUI_UI_PREFERENCES_PATH` 指定验收专用文件。后端配置不写入 UI 偏好。
 
-GPUI 依赖固定在 [Cargo.toml](Cargo.toml) 的同一 Zed revision。`vendor/gpui`、`vendor/gpui_macos` 和 `vendor/gpui_apple` 保留文本、选择、虚拟列表与 Metal 合成修正，升级时需一并复核。`vendor/block` 修正 `block` crate 的 Objective-C 运行时符号声明，避免 Rust 的 future-incompatibility 诊断。OpenAI Sans 从本机已有 ChatGPT 安装读取，缺失时回退系统字体；仓库不分发该字体。
+GPUI 依赖固定在 [Cargo.toml](Cargo.toml) 的同一 Zed revision。`vendor/gpui`、`vendor/gpui_macos` 和 `vendor/gpui_apple` 保留文本、选择、虚拟列表与 Metal 合成修正，升级时需一并复核。`vendor/gpui_macos` 还让 GPUI 视图在原生视图（浏览器网页）取得键盘后能重新成为第一响应者。`vendor/block` 修正 `block` crate 的 Objective-C 运行时符号声明，避免 Rust 的 future-incompatibility 诊断。OpenAI Sans 从本机已有 ChatGPT 安装读取，缺失时回退系统字体；仓库不分发该字体。
 
 ## 开发与验证
 
@@ -250,6 +255,7 @@ Computer Use 只能驱动 macOS 视作用户应用的 bundle，而且驱动过�
 | `--file-panel-root=/absolute/workspace --open-file=/absolute/file` | 真实文件编辑、保存与冲突检查；使用专用测试文件。 |
 | `--review-root=/absolute/repository --review-filter=src/example.rs [--review-menu=scope\|options\|branch]` | 真实 Git 审查；截图等待 diff 就绪。加上 menu 参数会打开其中一个审查弹层，便于固定状态截图。 |
 | `--settings-page=appearance` | 直接打开设置页，slug 即 `src/settings/spec.rs` 中各页面的 `slug` 字段。 |
+| `--browser-state=new-tab/address/page/menu/clear-data/find/zoom/tab-menu/downloads/error [--browser-url=URL] [--browser-page-snapshot=/absolute/page.png] [--right-panel-width=PX]` | 浏览器的固定状态（`address` 输入 “exa”；`error` 加载一个被拒绝的本机端口）。`render_to_image` 不包含原生网页，因此 `--browser-page-snapshot` 另存网页快照及其位置与浮层洞，再用 `scripts/compose_browser_capture.py capture.png page.png out.png` 合成。可把 `GPUI_BROWSER_DATA_DIR` 指向夹具历史的副本。 |
 | `--language=en\|zh-CN\|auto` | 指定本次启动的 UI 语言；截图验收时明确指定，以保证可复现。 |
 | `--chat-search-state=initial\|selected\|hover\|scroll\|files-empty\|files-result\|files-loading` | 以固定状态打开历史会话搜索弹窗用于截图。`--chat-search-query=` 会先执行一次真实检索（无命中时显示空状态）；`--chat-search-index=` 指定选中行，`scroll` 状态下则是以像素计的滚动偏移。`files-*` 状态显示带固定结果的文件搜索形态。 |
 | `--image-generation-ui-state=running/completed/failed/load-error` | 固定图像生成状态；完成态另传 `--image-generation-path=/absolute/image.png`。 |

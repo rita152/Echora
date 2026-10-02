@@ -39,6 +39,9 @@ pub enum PromptInputKind {
     /// The Pull Requests search field: an 18px box inside the reference's
     /// pill, 14px type on an 18px line, `placeholder:text-tertiary`.
     PullRequestSearch,
+    /// The in-app browser's address field: a 28px box with `ps-2`, 13px type
+    /// on an 18px line, and the reference's centred `placeholder:text-tertiary`.
+    BrowserAddress,
 }
 
 gpui::actions!(
@@ -134,6 +137,45 @@ impl PromptInput {
         input.kind = PromptInputKind::PullRequestSearch;
         input.placeholder = placeholder.into();
         input
+    }
+
+    /// The browser toolbar's address field.
+    pub fn browser_address(
+        mode: ThemeMode,
+        placeholder: impl Into<SharedString>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut input = Self::new(mode, cx);
+        input.kind = PromptInputKind::BrowserAddress;
+        input.placeholder = placeholder.into();
+        input.accessible_name = Some(input.placeholder.clone());
+        input
+    }
+
+    /// Replaces the text and selects `selection` (byte offsets), without a
+    /// change event: the address bar's inline completion and the URL it shows
+    /// when focused.
+    pub fn set_text_with_selection(
+        &mut self,
+        text: impl Into<SharedString>,
+        selection: Range<usize>,
+        cx: &mut Context<Self>,
+    ) {
+        self.content = text.into();
+        self.marked_range = None;
+        self.last_layout = None;
+        self.selected_range = self.normalized_range(selection);
+        self.selection_reversed = false;
+        self.horizontal_scroll = 0.0;
+        cx.notify();
+    }
+
+    pub fn selected_range(&self) -> Range<usize> {
+        self.selected_range.clone()
+    }
+
+    pub fn is_composing(&self) -> bool {
+        self.marked_range.is_some()
     }
 
     /// Borderless single-line field used by the chat search dialog.
@@ -709,6 +751,8 @@ struct PromptTextElement {
     placeholder_color: gpui::Hsla,
     selection_color: gpui::Hsla,
     caret_visible: bool,
+    /// The browser address field centres its placeholder in the pill.
+    center_placeholder: bool,
     font_size: f32,
     font_weight: FontWeight,
     line_height: f32,
@@ -716,6 +760,8 @@ struct PromptTextElement {
 
 struct PromptPrepaint {
     line: ShapedLine,
+    /// Shift of a centred placeholder from the field's leading edge.
+    placeholder_offset: f32,
     cursor: Option<PaintQuad>,
     selection: Option<PaintQuad>,
     horizontal_scroll: f32,
@@ -872,8 +918,14 @@ impl Element for PromptTextElement {
                 self.text_color,
             )
         });
+        let placeholder_offset = if empty && self.center_placeholder {
+            ((viewport_width - f32::from(line.width())) / 2.0).max(0.0)
+        } else {
+            0.0
+        };
         PromptPrepaint {
             line,
+            placeholder_offset,
             cursor,
             selection,
             horizontal_scroll,
@@ -903,7 +955,7 @@ impl Element for PromptTextElement {
             .line
             .paint(
                 point(
-                    bounds.origin.x - px(state.horizontal_scroll),
+                    bounds.origin.x - px(state.horizontal_scroll) + px(state.placeholder_offset),
                     bounds.origin.y,
                 ),
                 px(self.line_height),
@@ -942,7 +994,9 @@ impl PromptInput {
             PromptInputKind::Composer => "prompt-input",
             PromptInputKind::RenameChat => "rename-chat-input",
             PromptInputKind::PullRequestSearch => "pull-request-search-input",
+            PromptInputKind::BrowserAddress => "browser-address-input",
         };
+        let browser_address = self.kind == PromptInputKind::BrowserAddress;
         let pull_request_search = self.kind == PromptInputKind::PullRequestSearch;
         let height = match self.kind {
             PromptInputKind::InlineOther => 28.0,
@@ -953,6 +1007,7 @@ impl PromptInput {
             // text is centred in the remaining 34px.
             PromptInputKind::RenameChat => 36.0,
             PromptInputKind::PullRequestSearch => 18.0,
+            PromptInputKind::BrowserAddress => 28.0,
         };
         let horizontal_padding = match self.kind {
             PromptInputKind::InlineOther => 0.0,
@@ -961,6 +1016,7 @@ impl PromptInput {
             PromptInputKind::Composer => 4.0,
             PromptInputKind::RenameChat => 10.0,
             PromptInputKind::PullRequestSearch => 0.0,
+            PromptInputKind::BrowserAddress => 8.0,
         };
         let top_padding = match self.kind {
             PromptInputKind::InlineOther => 4.0,
@@ -968,6 +1024,7 @@ impl PromptInput {
             PromptInputKind::MessageEdit => 0.0,
             PromptInputKind::Composer => 1.0,
             PromptInputKind::PullRequestSearch => 0.0,
+            PromptInputKind::BrowserAddress => 5.0,
             // (34 - 18.5714) / 2 measured from the reference's content box.
             PromptInputKind::RenameChat => (34.0 - RENAME_CHAT_LINE_HEIGHT) / 2.0,
         };
@@ -979,7 +1036,7 @@ impl PromptInput {
             },
             _ => rgba(0x539af84d),
         };
-        let font_size = if inline {
+        let font_size = if inline || browser_address {
             13.0
         } else if pull_request_search {
             14.0
@@ -995,7 +1052,7 @@ impl PromptInput {
         };
         let line_height = if chat_search {
             CHAT_SEARCH_LINE_HEIGHT
-        } else if pull_request_search {
+        } else if pull_request_search || browser_address {
             18.0
         } else if self.kind == PromptInputKind::RenameChat {
             RENAME_CHAT_LINE_HEIGHT
@@ -1050,6 +1107,7 @@ impl PromptInput {
                             placeholder_color,
                             selection_color: selection_color.into(),
                             caret_visible: progress < 0.55,
+                            center_placeholder: browser_address,
                             font_size,
                             font_weight,
                             line_height,
@@ -1069,7 +1127,10 @@ impl Render for PromptInput {
         } else if self.kind == PromptInputKind::RenameChat {
             // CDP: the dialog's field uses `placeholder:text-tertiary`.
             theme.text_tertiary
-        } else if self.kind == PromptInputKind::PullRequestSearch {
+        } else if matches!(
+            self.kind,
+            PromptInputKind::PullRequestSearch | PromptInputKind::BrowserAddress
+        ) {
             // CDP: `placeholder:text-tertiary`, rgba(255,255,255,0.498) in dark.
             match self.mode {
                 ThemeMode::Light => rgba(0x1a1c1f7e),

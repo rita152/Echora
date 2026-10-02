@@ -1741,6 +1741,13 @@ fn render_inline_boxes(
                             }),
                             cx,
                         );
+                    } else if super::browser::opens_in_browser(&destination) {
+                        window.dispatch_action(
+                            Box::new(super::browser::OpenLinkInBrowser {
+                                url: destination.clone(),
+                            }),
+                            cx,
+                        );
                     } else {
                         cx.open_url(&destination);
                     }

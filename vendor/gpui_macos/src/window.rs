@@ -288,6 +288,15 @@ unsafe fn build_classes() {
                 accepts_first_mouse as extern "C" fn(&Object, Sel, id) -> BOOL,
             );
 
+            // Echora hosts native views (the in-app browser's WKWebView) beside
+            // this view. Once one of them takes the keyboard, a click back on
+            // GPUI content must make this view first responder again, which
+            // AppKit only does for views that accept it.
+            decl.add_method(
+                sel!(acceptsFirstResponder),
+                yes as extern "C" fn(&Object, Sel) -> BOOL,
+            );
+
             decl.add_method(
                 sel!(_opaqueRectForWindowMoveWhenInTitlebar),
                 opaque_rect_for_window_move_when_in_titlebar

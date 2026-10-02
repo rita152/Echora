@@ -55,6 +55,9 @@ impl ChatApp {
         if self.right_panel.open && self.right_panel.mode == Some(RightPanelMode::Review) {
             self.ensure_review(cx);
         }
+        if self.right_panel.open && self.right_panel.mode == Some(RightPanelMode::Browser) {
+            self.show_browser(false, cx);
+        }
         self.home
             .update(cx, |home, cx| home.set_composer(composer, cx));
         self.summary_popover_open = false;
@@ -287,6 +290,11 @@ impl ChatApp {
         }
         if let Some(panel) = self.terminal_panels.remove(&draft_key) {
             self.terminal_panels.insert(real_key.clone(), panel);
+        }
+        if let Some(panel) = self.browser_panels.remove(&draft_key) {
+            // From now on the chat's tabs are saved with it.
+            panel.update(cx, |panel, cx| panel.set_chat(thread_id.to_string(), cx));
+            self.browser_panels.insert(real_key.clone(), panel);
         }
         if let Some(panel) = self.review_panels.remove(&draft_key) {
             self.review_panels.insert(real_key.clone(), panel);

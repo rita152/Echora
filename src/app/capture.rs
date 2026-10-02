@@ -19,6 +19,16 @@ use crate::{
     components::file_change::captured_diff_review_fixture,
 };
 
+/// Capture-only: the browser state to show, applied again to whichever chat's
+/// browser becomes current (a resumed thread arrives after startup).
+#[cfg(feature = "screenshot")]
+pub(super) struct BrowserCapture {
+    state: String,
+    url: Option<String>,
+    snapshot: Option<PathBuf>,
+    applied_to: Option<ConversationKey>,
+}
+
 impl ChatApp {
     #[cfg(feature = "screenshot")]
     pub(crate) fn live_capture_status(
@@ -53,6 +63,50 @@ impl ChatApp {
                 eprintln!("审批回放失败：{error:#}");
                 cx.quit();
             }
+        }
+    }
+    /// Opens the Browser in one of its capture states (see
+    /// `BrowserPanel::capture_state`).
+    #[cfg(feature = "screenshot")]
+    pub fn capture_browser(
+        &mut self,
+        state: &str,
+        url: Option<String>,
+        snapshot: Option<PathBuf>,
+        cx: &mut Context<Self>,
+    ) {
+        self.complete_startup_for_capture(cx);
+        self.browser_capture = Some(BrowserCapture {
+            state: state.to_owned(),
+            url,
+            snapshot,
+            applied_to: None,
+        });
+        self.right_panel.open = true;
+        self.select_right_panel_item(1, cx);
+        cx.notify();
+    }
+
+    /// Shows the capture's browser state in the current chat's browser once.
+    #[cfg(feature = "screenshot")]
+    pub(super) fn apply_browser_capture(&mut self, cx: &mut Context<Self>) {
+        let key = self.active_conversation.clone();
+        let Some(capture) = self.browser_capture.as_mut() else {
+            return;
+        };
+        if capture.applied_to.as_ref() == Some(&key) {
+            return;
+        }
+        capture.applied_to = Some(key.clone());
+        let (state, url, snapshot) = (
+            capture.state.clone(),
+            capture.url.clone(),
+            capture.snapshot.clone(),
+        );
+        if let Some(panel) = self.browser_panels.get(&key) {
+            panel.update(cx, |panel, cx| {
+                panel.capture_state(&state, url, snapshot, cx)
+            });
         }
     }
     #[cfg(feature = "screenshot")]
@@ -267,6 +321,12 @@ impl ChatApp {
     }
     /// Renders the sidebar at a persisted width, as the reference app does
     /// when the user has dragged it away from the default.
+    /// The right panel's width as if its divider had been dragged there.
+    #[cfg(feature = "screenshot")]
+    pub fn set_right_panel_width_for_capture(&mut self, width: f32, cx: &mut Context<Self>) {
+        self.right_panel.width = Some(width);
+        cx.notify();
+    }
     pub fn set_sidebar_width_for_capture(&mut self, width: f32, cx: &mut Context<Self>) {
         let width = width.clamp(super::SIDEBAR_MIN_WIDTH, super::SIDEBAR_MAX_WIDTH);
         self.sidebar

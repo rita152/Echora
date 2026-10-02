@@ -567,7 +567,7 @@ fn remaining_titlebar_panel_toggle_uses_its_full_hit_area() {
 }
 
 #[test]
-fn right_panel_menu_supports_keyboard_selection() {
+fn right_panel_opens_on_the_browser_new_tab() {
     let mut app = TestApp::new();
     let mut window = app.open_window_with_options(
         WindowOptions {
@@ -580,12 +580,26 @@ fn right_panel_menu_supports_keyboard_selection() {
         |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
     );
 
+    // As the reference's panel, it opens on a New tab: the browser's page
+    // of tools and suggested sites.
     window.update(|chat, _, cx| chat.open_right_panel(cx));
     window.draw();
-    window.simulate_keystroke("down");
-    window.simulate_keystroke("down");
-    assert_eq!(window.read(|chat, _| chat.right_panel.focused_item), 1);
-    window.simulate_keystroke("enter");
+    assert_eq!(
+        window.read(|chat, _| chat.right_panel.mode),
+        Some(super::RightPanelMode::Browser)
+    );
+    let tabs = window.read(|chat, cx| {
+        chat.browser_panels[&chat.active_conversation]
+            .read(cx)
+            .tab_summaries()
+    });
+    let new_tab = crate::i18n::format!("新标签页" => "New tab");
+    assert_eq!(tabs, vec![(new_tab, String::new())]);
+
+    // Closing and reopening keeps the browser and its tab.
+    window.update(|chat, _, cx| chat.toggle_right_panel(cx));
+    window.update(|chat, _, cx| chat.toggle_right_panel(cx));
+    window.draw();
     assert_eq!(
         window.read(|chat, _| chat.right_panel.mode),
         Some(super::RightPanelMode::Browser)
@@ -593,7 +607,7 @@ fn right_panel_menu_supports_keyboard_selection() {
 }
 
 #[test]
-fn right_panel_card_chrome_lets_the_pointer_reach_the_launcher() {
+fn right_panel_card_chrome_lets_the_pointer_reach_the_new_tab_tools() {
     let mut app = TestApp::new();
     let mut window = app.open_window_with_options(
         WindowOptions {
@@ -608,17 +622,48 @@ fn right_panel_card_chrome_lets_the_pointer_reach_the_launcher() {
     window.update(|chat, _, cx| chat.open_right_panel(cx));
     window.draw();
 
-    // The default 360 px card spans x 1080..1432 and y 8..892; under its
-    // 46 px toolbar the five 40 px launcher rows (4 px apart) are centred,
-    // so Browser's row runs from y=409 to y=449.
-    let browser = point(px(1256.0), px(429.0));
-    window.simulate_mouse_move(browser);
-    assert_eq!(window.read(|chat, _| chat.right_panel.focused_item), 1);
-    window.simulate_click(browser, MouseButton::Left);
+    // The default card spans x 1080..1432 from y=8. Under its 46 px tab strip
+    // and 48 px toolbar the New tab page starts at y=102; 32 px of padding,
+    // the 18.57 px "Tools" heading and a 16 px gap put the 40 px rows (4 px
+    // apart, one column at this width) at 168.6, so Terminal runs from 212.6
+    // to 252.6.
+    window.simulate_click(point(px(1256.0), px(232.0)), MouseButton::Left);
+    window.draw();
     assert_eq!(
         window.read(|chat, _| chat.right_panel.mode),
-        Some(super::RightPanelMode::Browser)
+        Some(super::RightPanelMode::Terminal)
     );
+}
+
+#[test]
+fn links_and_new_tab_shortcut_open_in_the_browser() {
+    let mut app = TestApp::new();
+    let mut window = app.open_window_with_options(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: point(px(0.0), px(0.0)),
+                size: size(px(1440.0), px(900.0)),
+            })),
+            ..Default::default()
+        },
+        |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
+    );
+    window.draw();
+    window.update(|chat, _, cx| chat.open_browser_tab(Some("https://example.net/".to_owned()), cx));
+    window.draw();
+    window.update(|chat, _, cx| chat.open_browser_tab(None, cx));
+    window.draw();
+    assert!(window.read(|chat, _| chat.right_panel.open));
+    let tabs = window.read(|chat, cx| {
+        chat.browser_panels[&chat.active_conversation]
+            .read(cx)
+            .tab_summaries()
+    });
+    // The empty New tab took the link; ⌘T then added a second tab.
+    assert_eq!(tabs.len(), 2);
+    assert_eq!(tabs[0].1, "https://example.net/");
+    let new_tab = crate::i18n::format!("新标签页" => "New tab");
+    assert_eq!(tabs[1], (new_tab, String::new()));
 }
 
 #[test]

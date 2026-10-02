@@ -293,6 +293,8 @@ impl Render for ChatApp {
             self.right_panel.focus_pending = false;
         }
         self.sync_viewed_thread(cx);
+        self.normalize_right_panel_mode(cx);
+        self.sync_browser_pages(cx);
         let sidebar_width = self.sidebar.read(cx).width();
         // The rename panel is a window-level dialog: the sidebar owns the task
         // it belongs to, the shell paints the scrim and the card.
@@ -477,6 +479,14 @@ impl Render for ChatApp {
                 if !stepped {
                     cx.propagate();
                 }
+            }))
+            .on_action(cx.listener(|this, link: &crate::components::browser::OpenLinkInBrowser, _, cx| {
+                this.open_browser_tab(Some(link.url.clone()), cx);
+                cx.stop_propagation();
+            }))
+            .on_action(cx.listener(|this, _: &crate::components::browser::NewBrowserTab, _, cx| {
+                this.open_browser_tab(None, cx);
+                cx.stop_propagation();
             }))
             .on_action(cx.listener(|this, _: &OpenSideChat, _, cx| {
                 this.right_panel.open = true;

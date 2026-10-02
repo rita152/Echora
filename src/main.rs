@@ -2,6 +2,7 @@ mod agent;
 mod app;
 mod apps;
 mod assets;
+mod browser;
 mod components;
 mod configuration;
 mod conversation;
@@ -1505,7 +1506,11 @@ fn main() {
             components::home::init_runtime_keyboard(cx);
             components::home::init_navigation_keyboard(cx);
             components::home::init_find_keyboard(cx);
-            cx.bind_keys([gpui::KeyBinding::new("cmd-p", app::OpenFiles, None)]);
+            components::browser::init(cx);
+            cx.bind_keys([
+                gpui::KeyBinding::new("cmd-p", app::OpenFiles, None),
+                gpui::KeyBinding::new("cmd-t", components::browser::NewBrowserTab, None),
+            ]);
             let display_id = display_index
                 .and_then(|index| cx.displays().get(index).map(|display| display.id()));
             let bounds =
@@ -1607,8 +1612,28 @@ fn main() {
                         if right_panel_open {
                             app.open_right_panel(cx);
                         }
+                        #[cfg(feature = "screenshot")]
+                        if let Some(state) =
+                            args.iter().find_map(|a| a.strip_prefix("--browser-state="))
+                        {
+                            let url = args
+                                .iter()
+                                .find_map(|a| a.strip_prefix("--browser-url="))
+                                .map(ToOwned::to_owned);
+                            let snapshot = args
+                                .iter()
+                                .find_map(|a| a.strip_prefix("--browser-page-snapshot="))
+                                .map(PathBuf::from);
+                            app.capture_browser(state, url, snapshot, cx);
+                        }
                         if let Some(width) = sidebar_width {
                             app.set_sidebar_width_for_capture(width, cx);
+                        }
+                        #[cfg(feature = "screenshot")]
+                        if let Some(width) = args.iter().find_map(|a| {
+                            a.strip_prefix("--right-panel-width=")?.parse::<f32>().ok()
+                        }) {
+                            app.set_right_panel_width_for_capture(width, cx);
                         }
                         if sidebar_collapsed {
                             app.collapse_sidebar_for_capture(cx);

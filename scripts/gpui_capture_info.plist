@@ -20,5 +20,24 @@
   <false/>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <!-- The in-app browser loads any site, including plain http and local
+       servers, like a browser rather than an app talking to its own API. -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoadsInWebContent</key>
+    <true/>
+    <key>NSAllowsLocalNetworking</key>
+    <true/>
+  </dict>
+  <!-- WebKit asks macOS for these when a page requests them; without a
+       usage string the system terminates the app instead of prompting. -->
+  <key>NSCameraUsageDescription</key>
+  <string>Websites in the built-in browser can ask to use your camera.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Websites in the built-in browser can ask to use your microphone.</string>
+  <key>NSLocationUsageDescription</key>
+  <string>Websites in the built-in browser can ask for your location.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>Websites in the built-in browser can ask for your location.</string>
 </dict>
 </plist>
