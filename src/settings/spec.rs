@@ -1,83 +1,40 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ControlSpec {
-    None,
-    Switch(bool),
-    Button(&'static str),
-    Select(&'static str),
-    Value(&'static str),
-    Shortcut(&'static str),
-    Segmented(&'static [&'static str], usize),
-    Danger(&'static str),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RowSpec {
-    pub title: &'static str,
-    pub subtitle: &'static str,
-    pub control: ControlSpec,
-}
-
-impl RowSpec {
-    pub const fn new(title: &'static str, subtitle: &'static str, control: ControlSpec) -> Self {
-        Self {
-            title,
-            subtitle,
-            control,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SectionSpec {
-    pub title: &'static str,
-    pub subtitle: &'static str,
-    pub rows: &'static [RowSpec],
-}
-
-impl SectionSpec {
-    pub const fn new(
-        title: &'static str,
-        subtitle: &'static str,
-        rows: &'static [RowSpec],
-    ) -> Self {
-        Self {
-            title,
-            subtitle,
-            rows,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PageKind {
-    Standard,
-    Profile,
-    KeyboardShortcuts,
-}
-
+/// One entry of the settings navigation. The page body is rendered by its view;
+/// the slug is what `--settings-page` and `SettingsView::select` accept.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PageSpec {
     pub slug: &'static str,
     pub label: &'static str,
-    pub intro: &'static str,
-    pub kind: PageKind,
-    pub sections: &'static [SectionSpec],
 }
 
-impl PageSpec {
-    pub const fn new(
-        slug: &'static str,
-        label: &'static str,
-        intro: &'static str,
-        kind: PageKind,
-        sections: &'static [SectionSpec],
-    ) -> Self {
-        Self {
-            slug,
-            label,
-            intro,
-            kind,
-            sections,
-        }
-    }
-}
+/// Only pages backed by real data: each one reads or writes the app-server
+/// configuration, the plugin and hook directories, or a persisted UI preference.
+pub const PAGES: &[PageSpec] = &[
+    PageSpec {
+        slug: "general-settings",
+        label: "常规",
+    },
+    PageSpec {
+        slug: "appearance",
+        label: "外观",
+    },
+    PageSpec {
+        slug: "agent",
+        label: "配置",
+    },
+    PageSpec {
+        slug: "personalization",
+        label: "个性化",
+    },
+    PageSpec {
+        slug: "plugins-settings",
+        label: "插件",
+    },
+    PageSpec {
+        slug: "hooks-settings",
+        label: "钩子",
+    },
+    PageSpec {
+        slug: "git-settings",
+        label: "Git",
+    },
+];

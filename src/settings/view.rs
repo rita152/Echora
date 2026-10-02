@@ -1,24 +1,15 @@
 mod agent;
 mod appearance;
-mod appshots;
-mod artwork;
 #[cfg(test)]
 mod batch2_tests;
 #[cfg(test)]
 mod batch3_tests;
-mod browser;
-mod chronicle;
-mod computer_use;
 mod configuration;
-mod connections;
-mod controls;
-mod data_controls;
 mod dynamic;
-mod environments;
 mod features;
+mod general;
 mod git;
 mod hooks;
-mod keyboard;
 mod language;
 mod memories;
 mod navigation;
@@ -28,10 +19,8 @@ mod plugins_actions;
 mod plugins_catalog;
 mod plugins_mcp;
 mod plugins_skills;
-mod profile;
 #[cfg(test)]
 mod test_backend;
-mod worktrees;
 
 use std::collections::HashMap;
 
@@ -40,7 +29,7 @@ use gpui::{
     svg,
 };
 
-use super::{PageKind, PageSpec, page, pages};
+use super::{PageSpec, page, pages};
 use crate::theme::{Theme, ThemeMode, UI_FONT_FAMILY};
 
 pub struct CloseSettings;
@@ -68,7 +57,6 @@ pub struct SettingsView {
     selected: &'static str,
     nav_scroll: ScrollHandle,
     content_scroll: ScrollHandle,
-    switch_overrides: HashMap<(&'static str, usize, usize), bool>,
     appearance_theme: usize,
     pub(super) follow_up_mode: crate::workspace::FollowUpMode,
     pub(super) review_delivery: crate::workspace::ReviewDelivery,
@@ -338,7 +326,6 @@ impl SettingsView {
             selected: "general-settings",
             nav_scroll: ScrollHandle::new(),
             content_scroll: ScrollHandle::new(),
-            switch_overrides: HashMap::new(),
             appearance_theme: if mode == ThemeMode::Dark { 2 } else { 1 },
             follow_up_mode: Default::default(),
             review_delivery: Default::default(),
@@ -462,27 +449,16 @@ impl SettingsView {
         &self,
         page: &'static PageSpec,
         theme: Theme,
-        viewport_width: f32,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        match page.kind {
-            PageKind::Profile => self.profile_content(theme, viewport_width),
-            PageKind::KeyboardShortcuts => self.keyboard_content(page, theme, cx),
-            _ if page.slug == "appearance" => self.appearance_content(page, theme, cx),
-            _ if page.slug == "appshots" => self.appshots_content(page, theme, cx),
-            _ if page.slug == "computer-use" => self.computer_use_content(page, theme, cx),
-            _ if page.slug == "personalization" => self.personalization_content(page, theme, cx),
-            _ if page.slug == "chronicle" => self.chronicle_content(page, theme),
-            _ if page.slug == "plugins-settings" => self.plugins_content(page, theme, cx),
-            _ if page.slug == "hooks-settings" => self.hooks_content(page, theme, cx),
-            _ if page.slug == "connections" => self.connections_content(page, theme, cx),
-            _ if page.slug == "browser-use" => self.browser_content(page, theme, cx),
-            _ if page.slug == "agent" => self.agent_content(page, theme, cx),
-            _ if page.slug == "git-settings" => self.git_content(page, theme, cx),
-            _ if page.slug == "local-environments" => self.local_environments_content(page, theme),
-            _ if page.slug == "worktrees" => self.worktrees_content(page, theme, cx),
-            _ if page.slug == "data-controls" => self.data_controls_content(page, theme),
-            PageKind::Standard => self.standard_content(page, theme, cx).into_any_element(),
+        match page.slug {
+            "appearance" => self.appearance_content(page, theme, cx),
+            "personalization" => self.personalization_content(page, theme, cx),
+            "plugins-settings" => self.plugins_content(page, theme, cx),
+            "hooks-settings" => self.hooks_content(page, theme, cx),
+            "agent" => self.agent_content(page, theme, cx),
+            "git-settings" => self.git_content(page, theme, cx),
+            _ => self.general_content(page, theme, cx),
         }
     }
 }
@@ -508,7 +484,6 @@ impl Render for SettingsView {
             f32::from(viewport.height),
             window.scale_factor(),
         );
-        let viewport_width = f32::from(window.viewport_size().width);
         let selected =
             page(self.selected).unwrap_or_else(|| pages().next().expect("settings pages"));
         let nav_scroll = self.nav_scroll.clone();
@@ -661,45 +636,19 @@ impl Render for SettingsView {
                             .gap(px(16.0))
                             .child(self.nav_group(
                                 crate::i18n::text("个人"),
-                                &[
-                                    "general-settings",
-                                    "profile",
-                                    "appearance",
-                                    "voice",
-                                    "agent",
-                                    "personalization",
-                                    "keyboard-shortcuts",
-                                ],
+                                &["general-settings", "appearance", "agent", "personalization"],
                                 theme,
                                 cx,
                             ))
                             .child(self.nav_group(
                                 crate::i18n::text("集成"),
-                                &[
-                                    "computer-use",
-                                    "chronicle",
-                                    "appshots",
-                                    "plugins-settings",
-                                    "browser-use",
-                                ],
+                                &["plugins-settings"],
                                 theme,
                                 cx,
                             ))
                             .child(self.nav_group(
                                 crate::i18n::text("编码"),
-                                &[
-                                    "hooks-settings",
-                                    "connections",
-                                    "git-settings",
-                                    "local-environments",
-                                    "worktrees",
-                                ],
-                                theme,
-                                cx,
-                            ))
-                            .child(self.nav_group(
-                                crate::i18n::text("已归档"),
-                                &["data-controls"],
+                                &["hooks-settings", "git-settings"],
                                 theme,
                                 cx,
                             )),
@@ -717,7 +666,7 @@ impl Render for SettingsView {
                     .track_scroll(&content_scroll)
                     .pl(px(40.0))
                     .pr(px(55.0))
-                    .child(self.content(selected, theme, viewport_width, cx)),
+                    .child(self.content(selected, theme, cx)),
             )
             .children(
                 (selected.slug == "plugins-settings")

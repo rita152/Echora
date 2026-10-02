@@ -1,6 +1,6 @@
 //! Personalization settings presentation.
 
-use gpui::{Context, IntoElement, div, prelude::*, px, svg};
+use gpui::{Context, IntoElement, div, prelude::*, px};
 
 use super::SettingsView;
 use crate::{
@@ -15,19 +15,9 @@ impl SettingsView {
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let instruction = &page.sections[0].rows[0];
-        let personality = &page.sections[2].rows[0];
         let link_color = match self.mode {
             ThemeMode::Light => gpui::rgba(0x339cffff),
             ThemeMode::Dark => gpui::rgba(0x99ceffff),
-        };
-        let textarea_border = match self.mode {
-            ThemeMode::Light => gpui::rgba(0x1a1c1f1f),
-            ThemeMode::Dark => gpui::rgba(0xffffff1f),
-        };
-        let warning_fill = match self.mode {
-            ThemeMode::Light => gpui::rgba(0xfffcfbff),
-            ThemeMode::Dark => gpui::rgba(0x1c1613ff),
         };
 
         let memory_card = self.memory_card(theme, cx);
@@ -78,93 +68,10 @@ impl SettingsView {
                     ),
             )
             .child(div().mt(px(12.0)).child(memory_card))
-            .child(
-                div()
-                    .mt(px(39.0))
-                    .flex()
-                    .items_start()
-                    .justify_between()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .text_size(px(16.0))
-                                    .line_height(px(24.875))
-                                    .font_weight(gpui::FontWeight(500.0))
-                                    .child(crate::i18n::text(instruction.title)),
-                            )
-                            .child(
-                                div()
-                                    .mt(px(2.0))
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(4.0))
-                                    .text_size(px(13.0))
-                                    .line_height(px(18.0))
-                                    .text_color(theme.settings_description)
-                                    .child(crate::i18n::text(
-                                        "向 ChatGPT 提供适用于此主机上所有聊天的额外说明和上下文。",
-                                    ))
-                                    .child(
-                                        div()
-                                            .text_color(link_color)
-                                            .child(crate::i18n::text("了解更多")),
-                                    ),
-                            ),
-                    )
-                    .child(div().opacity(0.4).child(self.reference_button(
-                        crate::i18n::text("保存"),
-                        46.0,
-                        None,
-                        false,
-                        theme,
-                    ))),
-            )
-            .child(
-                div()
-                    .mt(px(12.0))
-                    .h(px(147.9375))
-                    .rounded(px(10.0))
-                    .border_1()
-                    .border_color(textarea_border)
-                    .px(px(10.0))
-                    .py(px(8.0))
-                    .text_size(px(13.0))
-                    .line_height(px(18.0))
-                    .text_color(theme.text_tertiary)
-                    .child(crate::i18n::text("添加自定义指令…")),
-            )
-            .child(
-                div()
-                    .mt(px(39.0))
-                    .h(px(37.125))
-                    .px(px(12.0))
-                    .rounded(px(20.0))
-                    .bg(warning_fill)
-                    .flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .child(
-                        svg()
-                            .path("icons/settings-warning.svg")
-                            .size(px(20.0))
-                            .flex_none()
-                            .text_color(theme.warning),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(13.0))
-                            .line_height(px(18.0))
-                            .text_color(theme.text)
-                            .child(crate::i18n::text(page.sections[2].subtitle)),
-                    ),
-            )
-            .child(div().mt(px(6.0)).child(self.agent_card(
+            .child(div().mt(px(39.0)).child(self.agent_card(
                 vec![self.agent_row(
-                    personality.title,
-                    personality.subtitle,
+                    crate::i18n::text("个性"),
+                    crate::i18n::text("选择 ChatGPT 回复的默认语气"),
                     self.config_control("personality", theme, cx),
                     true,
                     theme,

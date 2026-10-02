@@ -249,7 +249,7 @@ Computer Use 只能驱动 macOS 视作用户应用的 bundle，而且驱动过�
 | `--markdown-file=/absolute/path/to/sample.txt` | 独立 Markdown 窗口，无需 app-server；可搭配 `--window-width=480` 检查窄窗。 |
 | `--file-panel-root=/absolute/workspace --open-file=/absolute/file` | 真实文件编辑、保存与冲突检查；使用专用测试文件。 |
 | `--review-root=/absolute/repository --review-filter=src/example.rs [--review-menu=scope\|options\|branch]` | 真实 Git 审查；截图等待 diff 就绪。加上 menu 参数会打开其中一个审查弹层，便于固定状态截图。 |
-| `--settings-page=appearance` | 直接打开设置页，slug 即 `src/settings/catalog_*.rs` 中各页面的 `slug` 字段。 |
+| `--settings-page=appearance` | 直接打开设置页，slug 即 `src/settings/spec.rs` 中各页面的 `slug` 字段。 |
 | `--language=en\|zh-CN\|auto` | 指定本次启动的 UI 语言；截图验收时明确指定，以保证可复现。 |
 | `--chat-search-state=initial\|selected\|hover\|scroll\|files-empty\|files-result\|files-loading` | 以固定状态打开历史会话搜索弹窗用于截图。`--chat-search-query=` 会先执行一次真实检索（无命中时显示空状态）；`--chat-search-index=` 指定选中行，`scroll` 状态下则是以像素计的滚动偏移。`files-*` 状态显示带固定结果的文件搜索形态。 |
 | `--image-generation-ui-state=running/completed/failed/load-error` | 固定图像生成状态；完成态另传 `--image-generation-path=/absolute/image.png`。 |
@@ -308,7 +308,7 @@ node scripts/cdp_pin_reference_layout.mjs --layout=legacy --wait=60
 | 审查 / 侧边聊天 | `node scripts/cdp_capture_review.mjs artifacts/review-reference`；`node scripts/cdp_capture_side_chat.mjs artifacts/side-chat reference` |
 | 审查弹层 | `node scripts/cdp_capture_review_menus.mjs --output=artifacts/review-menus` 采集比较范围、查看选项与分支选择三个弹层，双主题并附带计算样式；`python3 scripts/compare_review_menus.py --reference DIR --gpui DIR --output DIR --scale 2` 逐像素比对两侧截图，输出裁切图、差异图与报告 |
 | 账户菜单、退出登录 | `node scripts/cdp_capture_account.mjs --output artifacts/account-phase/chatgpt-reference --theme=light`；`scripts/capture_account_gpui.sh`；`python3 scripts/compare_account_phase.py` |
-| 设置矩阵 | `CHATGPT_CDP_HTTP="$CHATGPT_CDP_HTTP" node scripts/extract_chatgpt_settings.cjs` 把参考端 18 个设置页（简体中文界面）保存为 `chat-reference/settings/` 下的 HTML 快照，供后续步骤读取；`./node_modules/.bin/electron scripts/verify_chatgpt_settings.cjs`；`REFRESH_SETTINGS_REFERENCES=1 scripts/capture_settings_matrix.sh`；`python3 scripts/verify_settings_matrix.py` |
+| 设置矩阵 | `CHATGPT_CDP_HTTP="$CHATGPT_CDP_HTTP" node scripts/extract_chatgpt_settings.cjs` 把参考端 18 个设置页（简体中文界面）保存为 `chat-reference/settings/` 下的 HTML 快照（Echora 只保留接入真实数据的设置页，页内也只保留读写真实状态的行，因此只采集并比对仍与参考布局一致的页面：配置、插件、钩子），供后续步骤读取；`./node_modules/.bin/electron scripts/verify_chatgpt_settings.cjs`；`REFRESH_SETTINGS_REFERENCES=1 scripts/capture_settings_matrix.sh`；`python3 scripts/verify_settings_matrix.py` |
 | 已合并 Phase 1–4 局部组件门禁 | `python3 scripts/stage4/compare_merge_gate.py`（需要 `artifacts/merge-four-worktrees/` 下的专用 ChatGPT/GPUI 截图；每个局部组件阈值为 99%） |
 | 侧栏项目悬停卡片 | `CHATGPT_CDP_HTTP="$CHATGPT_CDP_HTTP" node scripts/cdp_capture_project_hover.mjs --output=artifacts/project-hover/reference` 悬停真实行后采集参考卡片（几何、计算样式、图标与截图）；`--project-hover-card=NAME --screenshot=artifacts/project-hover/gpui/light-card.png` 采集本机卡片；`python3 scripts/compare_project_hover.py --reference artifacts/project-hover/reference --gpui artifacts/project-hover/gpui --output artifacts/project-hover/compare` 逐主题打分。`cargo test project_hover` 走与真实悬停相同的指针路径（延迟出现、停留在卡片上保持打开、移开后关闭）。 |
 | 侧栏任务悬停卡片 | `scripts/capture_thread_hover_gpui.sh both` 在设置了 `CHATGPT_CDP_HTTP` 时刷新参考采集，用 `--thread-hover-card=TITLE` 采集两个主题，再由 `scripts/compare_thread_hover.py` 逐主题打分：报告 `pixelConsistency`、`pixelsWithin2`、`pixelsWithin12`、仓库统一的 `toleranceAdjustedSimilarity` 以及卡片的纵向锚点偏差。卡片在指针进入项目任务行 240 ms 后出现，指针停留在卡片上时保持打开，与参考一致地对不属于任何项目的“最近”行不显示卡片；`cargo test thread_hover` 走同一指针路径。 |

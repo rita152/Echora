@@ -12,6 +12,13 @@ canonical_slugs='[
   "chronicle", "appshots", "plugins-settings", "browser-use", "hooks-settings",
   "connections", "git-settings", "local-environments", "worktrees", "data-controls"
 ]'
+# Echora keeps only the settings pages backed by real data and, within them, only
+# the rows that read or write real state. The reference still has all 18 pages
+# (the manifest and HTML snapshots above); General, Appearance, Personalization,
+# and Git differ from it by design, so only the pages that still match are compared.
+echora_slugs='[
+  "agent", "plugins-settings", "hooks-settings"
+]'
 mkdir -p artifacts/settings-matrix/{reference,actual,diff}/{light,dark}
 # A minimal low-resolution app bundle makes AppKit expose a stable 1x backing
 # scale on Retina Macs. Launching the bare executable can race between a 1x and
@@ -58,12 +65,13 @@ if ! jq -e --argjson expected "$canonical_slugs" '
   exit 2
 fi
 
-slugs=(${(f)"$(jq -r '.[]' <<< "$canonical_slugs")"})
+reference_slugs=(${(f)"$(jq -r '.[]' <<< "$canonical_slugs")"})
+slugs=(${(f)"$(jq -r '.[]' <<< "$echora_slugs")"})
 for theme in light dark; do
   html_count=$(find "chat-reference/settings/$theme" -mindepth 1 -maxdepth 1 \
     | wc -l | tr -d ' ')
-  if (( html_count != ${#slugs} )); then
-    echo "invalid Electron HTML set for $theme: found $html_count, expected ${#slugs}" >&2
+  if (( html_count != ${#reference_slugs} )); then
+    echo "invalid Electron HTML set for $theme: found $html_count, expected ${#reference_slugs}" >&2
     exit 2
   fi
   for slug in $slugs; do

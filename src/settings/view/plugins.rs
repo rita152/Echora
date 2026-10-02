@@ -62,7 +62,7 @@ impl SettingsView {
                                     .text_size(px(14.0))
                                     .line_height(px(21.0))
                                     .text_color(theme.text_tertiary)
-                                    .child(crate::i18n::text(page.sections[0].title)),
+                                    .child(crate::i18n::text("管理插件、技能和 MCP")),
                             ),
                     )
                     .child(
