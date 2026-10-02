@@ -749,7 +749,9 @@ fn pinning_uses_the_dedicated_section_and_persists_no_workspace_shadow() {
             .pending
             .contains(&WorkspaceOperation::PinThread("thread-a".to_owned()))
     });
-    wait_until(|| path.exists());
+    // The file can already exist from an earlier save, taken before the
+    // refresh recorded the pinned section; wait for the save that carries it.
+    wait_until(|| fs::read_to_string(&path).is_ok_and(|saved| saved.contains("pinned-section")));
     assert!(
         backend
             .calls()

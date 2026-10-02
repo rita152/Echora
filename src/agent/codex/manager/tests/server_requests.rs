@@ -2,7 +2,7 @@
 //! interactive requests. The connection, its pending RPCs, and the active turns
 //! must survive every one of them.
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::*;
 use crate::agent::codex::client_tools::{
@@ -84,6 +84,24 @@ fn attestation_generate(id: Value) -> Value {
 
 fn diagnostics(manager: &CodexAppServerManager) -> Vec<ServerRequestDiagnostic> {
     manager.inner.server_request_diagnostics()
+}
+
+/// A controlled reply is written before its diagnostic is recorded, so a test
+/// that reads the record right after receiving the last reply has to wait for
+/// it. On timeout the current record is returned, and the caller's assertions
+/// report what is actually there.
+fn diagnostics_when(
+    manager: &CodexAppServerManager,
+    ready: impl Fn(&[ServerRequestDiagnostic]) -> bool,
+) -> Vec<ServerRequestDiagnostic> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let recorded = diagnostics(manager);
+        if ready(&recorded) || Instant::now() >= deadline {
+            return recorded;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
 }
 
 /// A registry whose tool genuinely produces content items, used to cover the
@@ -577,7 +595,7 @@ fn invalid_controlled_params_answer_minus_32602_and_keep_the_connection() {
         assert_eq!(response["error"]["code"], -32602, "{response}");
         assert!(response.get("result").is_none());
     }
-    let recorded = diagnostics(&manager);
+    let recorded = diagnostics_when(&manager, |recorded| recorded.len() >= 5);
     assert_eq!(recorded.len(), 5);
     assert!(
         recorded
@@ -725,7 +743,12 @@ fn diagnostics_keep_a_capped_generation_scoped_record() {
         assert_eq!(endpoint.recv()["error"]["code"], -32601);
     }
 
-    let recorded = diagnostics(&manager);
+    let last = AgentServerRequestId::Number((total - 1) as i64);
+    let recorded = diagnostics_when(&manager, |recorded| {
+        recorded
+            .last()
+            .is_some_and(|entry| entry.request_id == last)
+    });
     assert_eq!(recorded.len(), limit);
     assert_eq!(
         recorded[0].request_id,
@@ -773,7 +796,7 @@ fn diagnostics_record_controlled_replies_without_their_payload_content() {
     }));
     assert_eq!(endpoint.recv()["id"], json!("82"));
 
-    let recorded = diagnostics(&manager);
+    let recorded = diagnostics_when(&manager, |recorded| recorded.len() >= 2);
     assert_eq!(recorded.len(), 2);
     let tool = &recorded[0];
     assert_eq!(tool.method, "item/tool/call");
