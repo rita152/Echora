@@ -12,8 +12,13 @@ pub(super) struct ScrollAnchor {
 #[derive(Clone)]
 enum AnchorKind {
     Header,
-    Hunk(String),
-    Line { old: bool, number: u32 },
+    /// The unmodified-lines separator before a hunk (`hunks.len()` after the
+    /// last one).
+    Gap(usize),
+    Line {
+        old: bool,
+        number: u32,
+    },
     Body,
     Comment(u64),
     Draft,
@@ -48,19 +53,10 @@ impl ReviewPanel {
         let row = self.rows.get(offset.item_ix)?;
         let (file, kind) = match row {
             Row::Header(file) => (Some(*file), AnchorKind::Header),
-            Row::Hunk(file, hunk) => (
-                Some(*file),
-                AnchorKind::Hunk(
-                    self.snapshot
-                        .files
-                        .get(*file)?
-                        .hunks
-                        .get(*hunk)?
-                        .header
-                        .clone(),
-                ),
-            ),
-            Row::Code { file, left, right } => {
+            Row::Gap { file, hunk, .. } => (Some(*file), AnchorKind::Gap(*hunk)),
+            Row::Code {
+                file, left, right, ..
+            } => {
                 let line = right.as_ref().or(left.as_ref())?;
                 let (old, number) = if let Some(n) = line.new {
                     (false, n)
@@ -69,7 +65,7 @@ impl ReviewPanel {
                 };
                 (Some(*file), AnchorKind::Line { old, number })
             }
-            Row::Binary(file) | Row::Empty(file) | Row::Preview(file) => {
+            Row::Binary(file) | Row::Empty(file) | Row::Preview(file) | Row::End(file) => {
                 (Some(*file), AnchorKind::Body)
             }
             Row::Comment(id) => (None, AnchorKind::Comment(*id)),
@@ -92,18 +88,23 @@ impl ReviewPanel {
                 .and_then(|path| self.snapshot.files.iter().position(|f| &f.path == path));
             let exact = self.rows.iter().position(|row| match (&anchor.kind, row) {
                 (AnchorKind::Header, Row::Header(i)) => Some(*i) == file,
-                (AnchorKind::Body, Row::Binary(i) | Row::Empty(i) | Row::Preview(i)) => {
-                    Some(*i) == file
-                }
-                (AnchorKind::Hunk(header), Row::Hunk(i, h)) => {
-                    Some(*i) == file && self.snapshot.files[*i].hunks[*h].header == *header
-                }
+                (
+                    AnchorKind::Body,
+                    Row::Binary(i) | Row::Empty(i) | Row::Preview(i) | Row::End(i),
+                ) => Some(*i) == file,
+                (
+                    AnchorKind::Gap(hunk),
+                    Row::Gap {
+                        file: i, hunk: h, ..
+                    },
+                ) => Some(*i) == file && h == hunk,
                 (
                     AnchorKind::Line { old, number },
                     Row::Code {
                         file: i,
                         left,
                         right,
+                        ..
                     },
                 ) => {
                     Some(*i) == file

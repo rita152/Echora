@@ -817,7 +817,7 @@ impl PullRequestsView {
 
 /// `disambiguated-digits tabular-nums tracking-tight`: SF's alternate
 /// digits, tabular figures, and -0.025em letter spacing.
-pub(super) fn stats_font_features() -> gpui::FontFeatures {
+pub(crate) fn stats_font_features() -> gpui::FontFeatures {
     gpui::FontFeatures(std::sync::Arc::new(vec![
         ("tnum".into(), 1),
         ("cv01".into(), 1),

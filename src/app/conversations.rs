@@ -32,31 +32,14 @@ impl ChatApp {
         self.deactivate_side_chat(cx);
         self.active_conversation = key;
         self.update_chat_search_roots(cx);
-        if self.right_panel.open
-            && matches!(self.right_panel.mode, Some(RightPanelMode::SideChat) | None)
-        {
-            if self
-                .side_chat_panels
-                .get(&self.active_conversation)
-                .is_some_and(|panel| !panel.read(cx).is_empty())
-            {
-                self.right_panel.mode = Some(RightPanelMode::SideChat);
-                self.ensure_side_chat(false, cx);
-            } else if self.right_panel.mode == Some(RightPanelMode::SideChat) {
-                self.right_panel.mode = None;
+        // Each chat has its own tabs: an open panel shows the chat's
+        // selected tab, or a New tab for a chat without any.
+        if self.right_panel.open {
+            self.reconcile_panel_tabs(None, cx);
+            match self.active_panel_tab() {
+                Some(tab) => self.show_panel_tab(tab, cx),
+                None => self.open_new_panel_tab(cx),
             }
-        }
-        if self.right_panel.open && self.right_panel.mode == Some(RightPanelMode::Files) {
-            self.ensure_files(cx);
-        }
-        if self.right_panel.open && self.right_panel.mode == Some(RightPanelMode::Terminal) {
-            self.ensure_terminal(cx);
-        }
-        if self.right_panel.open && self.right_panel.mode == Some(RightPanelMode::Review) {
-            self.ensure_review(cx);
-        }
-        if self.right_panel.open && self.right_panel.mode == Some(RightPanelMode::Browser) {
-            self.show_browser(false, cx);
         }
         self.home
             .update(cx, |home, cx| home.set_composer(composer, cx));

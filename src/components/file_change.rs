@@ -2105,7 +2105,7 @@ pub fn render_diff_review_panel(
                         .min_w(px(0.0))
                         .flex_1()
                         .truncate()
-                        .child(crate::i18n::text("审查")),
+                        .child(crate::i18n::text("变更")),
                 )
                 .child(
                     div()

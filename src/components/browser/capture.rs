@@ -100,12 +100,17 @@ impl BrowserPanel {
                     self.step_zoom(1, cx);
                 }
                 "tab-menu" => {
+                    // The tab strip belongs to the right panel now: open the
+                    // menu where a right click on the first tab would, 26px
+                    // above the address field's row.
                     if let (Some(tab), Some(bounds)) =
-                        (self.active_tab(), self.anchor_bounds("tabs"))
+                        (self.active_tab(), self.anchor_bounds("address"))
                     {
                         self.menu = Some(PanelMenu::Tab(tab.id));
-                        self.menu_anchor =
-                            Some(bounds.origin + gpui::point(gpui::px(40.), gpui::px(26.)));
+                        self.menu_anchor = Some(gpui::point(
+                            bounds.origin.x - gpui::px(60.),
+                            bounds.origin.y - gpui::px(22.),
+                        ));
                     }
                 }
                 _ => {}

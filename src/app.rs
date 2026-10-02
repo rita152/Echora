@@ -3,6 +3,7 @@ mod capture;
 mod conversations;
 mod goal;
 mod image_preview;
+mod panel_tabs;
 mod permissions;
 mod plan;
 mod project_creation;
@@ -118,6 +119,17 @@ pub struct ChatApp {
     file_close_prompt_open: bool,
     terminal_return_focus_pending: bool,
     right_panel: RightPanelState,
+    /// Each chat's right-panel tabs.
+    panel_tabs: HashMap<ConversationKey, panel_tabs::PanelTabs>,
+    panel_tab_scroll: gpui::ScrollHandle,
+    /// After a close, the tabs keep this slot width until the pointer leaves
+    /// the strip, so the next close button stays under it.
+    panel_tab_frozen_width: Option<f32>,
+    /// The tab under the pointer, whose hairlines the strip hides.
+    panel_tab_hovered: Option<usize>,
+    /// What the strip drew last, so tool notifications redraw it only when
+    /// it changes.
+    panel_tab_signature: u64,
     image_preview: ImagePreviewState,
     permission_confirmation_open: bool,
     permission_confirmation_focus: gpui::FocusHandle,
@@ -170,7 +182,7 @@ const RIGHT_PANEL_ITEMS: &[(RightPanelMode, &str, &str, &str)] = &[
     (RightPanelMode::Browser, "浏览器", "⌘T", "panel-browser"),
     (RightPanelMode::Terminal, "终端", "⌃`", "panel-terminal"),
     (RightPanelMode::Files, "文件", "⌘P", "panel-files"),
-    (RightPanelMode::Review, "审查", "⌃⇧G", "panel-review"),
+    (RightPanelMode::Review, "变更", "⌃⇧G", "panel-review"),
 ];
 const SIDEBAR_MAX_WIDTH: f32 = 480.0;
 const RIGHT_PANEL_MIN_WIDTH: f32 = 320.0;
@@ -572,6 +584,11 @@ impl ChatApp {
             file_close_prompt_open: false,
             terminal_return_focus_pending: false,
             right_panel: RightPanelState::new(cx),
+            panel_tabs: HashMap::new(),
+            panel_tab_scroll: gpui::ScrollHandle::new(),
+            panel_tab_frozen_width: None,
+            panel_tab_hovered: None,
+            panel_tab_signature: 0,
             image_preview: ImagePreviewState::new(cx),
             permission_confirmation_open: false,
             permission_confirmation_focus: cx.focus_handle(),

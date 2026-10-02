@@ -10,7 +10,7 @@ use gpui::{
 
 use super::{
     CONVERSATION_BOTTOM_EPSILON, CONVERSATION_CONTENT_MAX_WIDTH, CONVERSATION_LIST_OVERDRAW,
-    CONVERSATION_TOP_INSET, HomeView, OpenDiffReview,
+    HomeView, OpenDiffReview,
     activity::{activity_stream, render_activity_stream_unit},
     animation::thinking_shimmer,
     context::ConversationRenderContext,
@@ -210,6 +210,7 @@ pub(super) fn conversation(
     render: ConversationRenderContext,
     rows: Rc<Vec<ConversationListRow>>,
     conversation_list: ListState,
+    top_inset: f32,
     bottom_inset: f32,
 ) -> impl IntoElement {
     let home_entity = render.home_entity.clone();
@@ -465,7 +466,7 @@ pub(super) fn conversation(
             .into_any_element()
     })
     .size_full()
-    .pt(px(CONVERSATION_TOP_INSET))
+    .pt(px(top_inset))
     .pb(px(bottom_inset));
 
     div()

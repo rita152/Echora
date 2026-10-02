@@ -205,7 +205,7 @@ fn myers(old: &[&str], new: &[&str]) -> Vec<(Change, usize)> {
 }
 
 /// The changed spans (byte ranges) of `deleted` and of `added`.
-pub(super) fn changed_spans(deleted: &str, added: &str) -> (Vec<Range<usize>>, Vec<Range<usize>>) {
+pub(crate) fn changed_spans(deleted: &str, added: &str) -> (Vec<Range<usize>>, Vec<Range<usize>>) {
     let deleted = deleted.strip_suffix('\n').unwrap_or(deleted);
     let added = added.strip_suffix('\n').unwrap_or(added);
     let utf16 = |text: &str| text.encode_utf16().count();

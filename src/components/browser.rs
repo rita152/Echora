@@ -15,7 +15,6 @@ mod menus;
 mod new_tab;
 mod page;
 mod store;
-mod tab_strip;
 #[cfg(test)]
 mod tests;
 mod theme;
@@ -30,7 +29,7 @@ use std::{
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable, Image,
-    ImageFormat, KeyBinding, Pixels, Window, canvas, div, prelude::*,
+    ImageFormat, KeyBinding, Pixels, Point, Window, canvas, div, prelude::*,
 };
 
 pub use store::{BrowserStore, DownloadState};
@@ -141,8 +140,6 @@ pub enum BrowserPanelEvent {
         text: String,
         undo_site: Option<String>,
     },
-    /// The last tab closed; the panel has a fresh New tab for next time.
-    Closed,
 }
 
 /// A failed or crashed page, drawn by GPUI in the tab's content area.
@@ -282,6 +279,8 @@ pub struct BrowserPanel {
     /// The app covers the panel with a dialog: the page is hidden.
     occluded: bool,
     side_chat_available: bool,
+    /// The chat has a Changes tab, so the New tab page leaves it out.
+    changes_open: bool,
     /// Overlays over the page this frame, in window coordinates.
     holes: Rc<RefCell<Vec<WebViewHole>>>,
     /// The panel's width last frame, for the toolbar's container queries.
@@ -367,6 +366,7 @@ impl BrowserPanel {
             focus_address_pending: false,
             occluded: false,
             side_chat_available: false,
+            changes_open: false,
             holes: Rc::new(RefCell::new(Vec::new())),
             panel_width: Rc::new(Cell::new(0.)),
             page_frame: Rc::new(Cell::new(None)),
@@ -379,10 +379,9 @@ impl BrowserPanel {
             hovered_tile: None,
             labels: menu_labels(),
         };
+        // The right panel's tab strip owns which tabs exist: a panel starts
+        // with the chat's saved pages only, and opens New tabs on request.
         panel.restore_session(cx);
-        if panel.tabs.is_empty() {
-            panel.push_tab(BrowserTab::new(0));
-        }
         panel
     }
 
@@ -393,7 +392,15 @@ impl BrowserPanel {
         let Some(session) = self.store.read(cx).session(chat) else {
             return;
         };
+        let active = session
+            .tabs
+            .get(session.active)
+            .map(|saved| saved.url.clone());
         for saved in session.tabs {
+            // The reference keeps pages across launches, not empty New tabs.
+            if saved.url.is_empty() {
+                continue;
+            }
             let mut tab = BrowserTab::new(0);
             if !saved.url.is_empty() {
                 tab.pending_url = Some(saved.url.clone());
@@ -403,7 +410,9 @@ impl BrowserPanel {
             tab.custom_title = saved.custom_title;
             self.push_tab(tab);
         }
-        self.active = session.active.min(self.tabs.len().saturating_sub(1));
+        self.active = active
+            .and_then(|url| self.tabs.iter().position(|tab| tab.url == url))
+            .unwrap_or(0);
     }
 
     fn save_session(&self, cx: &mut Context<Self>) {
@@ -597,10 +606,11 @@ impl BrowserPanel {
         })
     }
 
-    /// Opens a new tab with `url` (or the New tab page), activates it and
-    /// focuses its address field when it has no page.
-    pub fn new_tab(&mut self, url: Option<String>, cx: &mut Context<Self>) {
+    /// Opens a new tab with `url` (or the New tab page) after the others,
+    /// activates it and focuses its address field when it has no page.
+    pub fn new_tab(&mut self, url: Option<String>, cx: &mut Context<Self>) -> u64 {
         let index = self.insert_tab(self.tabs.len(), BrowserTab::new(0));
+        let id = self.tabs[index].id;
         self.activate(index, cx);
         match url {
             Some(url) => self.navigate(url, cx),
@@ -608,6 +618,66 @@ impl BrowserPanel {
         }
         self.save_session(cx);
         cx.notify();
+        id
+    }
+
+    /// The panel's tabs, in its own order.
+    pub fn tab_ids(&self) -> Vec<u64> {
+        self.tabs.iter().map(|tab| tab.id).collect()
+    }
+
+    pub fn active_tab_id(&self) -> Option<u64> {
+        self.active_tab().map(|tab| tab.id)
+    }
+
+    /// Whether `id` still shows the New tab page.
+    pub fn is_new_tab(&self, id: u64) -> bool {
+        self.tab_index(id)
+            .is_some_and(|index| self.tabs[index].is_new_tab())
+    }
+
+    /// A tab's strip label and favicon.
+    pub fn tab_label(&self, id: u64) -> Option<(String, Option<Arc<Image>>)> {
+        let tab = &self.tabs[self.tab_index(id)?];
+        Some((tab.page_title(), tab.favicon.clone()))
+    }
+
+    /// The rename field shown in place of a tab's title.
+    pub fn renaming(&self, id: u64) -> Option<Entity<PromptInput>> {
+        self.rename
+            .as_ref()
+            .filter(|(renaming, _)| *renaming == id)
+            .map(|(_, input)| input.clone())
+    }
+
+    /// Opens tab `id`'s context menu at a window position.
+    pub fn open_tab_menu(&mut self, id: u64, position: Point<Pixels>, cx: &mut Context<Self>) {
+        self.menu = Some(PanelMenu::Tab(id));
+        self.menu_anchor = Some(position);
+        cx.notify();
+    }
+
+    /// Shows tab `id` when the strip selects it.
+    pub fn select_tab_id(&mut self, id: u64, cx: &mut Context<Self>) {
+        if let Some(index) = self.tab_index(id)
+            && index != self.active
+        {
+            self.select_tab(index, cx);
+        }
+    }
+
+    pub fn close_tab_id(&mut self, id: u64, cx: &mut Context<Self>) {
+        if let Some(index) = self.tab_index(id) {
+            self.close_tab(index, cx);
+        }
+    }
+
+    /// The New tab page leaves out Changes while the chat has a Changes tab.
+    pub fn set_changes_open(&mut self, open: bool, cx: &mut Context<Self>) {
+        if self.changes_open != open {
+            self.changes_open = open;
+            cx.notify();
+        }
     }
 
     /// Shows the panel's current tab; a panel opened from the app without a
@@ -677,13 +747,11 @@ impl BrowserPanel {
             self.rename = None;
         }
         if self.tabs.is_empty() {
-            self.push_tab(BrowserTab::new(0));
             self.active = 0;
             self.menu = None;
             self.close_find(cx);
             self.sync_address_text(cx);
             self.save_session(cx);
-            cx.emit(BrowserPanelEvent::Closed);
             cx.notify();
             return;
         }
@@ -1350,7 +1418,6 @@ impl Render for BrowserPanel {
                     cx.propagate();
                 }
             }))
-            .child(self.render_tab_strip(theme, cx))
             .child(self.render_toolbar(theme, window, cx))
             .child(self.render_content(theme, window, cx))
             .children(self.render_find_bar(theme, cx))

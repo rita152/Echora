@@ -278,6 +278,7 @@ impl ReviewPanel {
                         .text_color(t.text_secondary)
                         .child(match &confirm {
                             Some(Mutation::Discard(path)) => crate::i18n::format!("这将还原 {path} 中的更改。" => "This will restore changes in {path}."),
+                            Some(Mutation::DiscardHunk { path, .. }) => crate::i18n::format!("这将还原 {path} 中的这个差异块。" => "This will revert this hunk in {path}."),
                             _ => crate::i18n::text("这将还原当前列表中的所有文件更改。").into(),
                         }),
                 )

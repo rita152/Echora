@@ -7,7 +7,7 @@ use gpui::{
     size,
 };
 
-use super::{BrowserPanel, BrowserPanelEvent, BrowserStore, PanelMenu};
+use super::{BrowserPanel, BrowserStore, PanelMenu};
 use crate::{
     browser::{
         session::{SavedSession, SavedTab},
@@ -38,7 +38,15 @@ fn open_panel(
             })),
             ..Default::default()
         },
-        move |_, cx| BrowserPanel::new(ThemeMode::Dark, store, chat, cx),
+        move |_, cx| {
+            // As the right panel opens a browser: on its saved pages, or on a
+            // New tab when it has none.
+            let mut panel = BrowserPanel::new(ThemeMode::Dark, store, chat, cx);
+            if panel.tabs.is_empty() {
+                panel.new_tab(None, cx);
+            }
+            panel
+        },
     );
     window.draw();
     window
@@ -210,30 +218,23 @@ fn a_failed_load_shows_the_error_page_until_reload_succeeds() {
     assert!(window.read(|panel, _| panel.showing_page()));
 }
 
+/// The right panel's strip owns the tabs: closing the browser's last tab
+/// leaves it without one, and a New tab can open again afterwards.
 #[test]
-fn closing_the_last_tab_closes_the_panel_and_keeps_a_new_tab() {
+fn closing_the_last_tab_leaves_no_tab_until_one_opens() {
     let mut app = TestApp::new();
     let store = app.new_entity(|_| BrowserStore::in_memory());
     let mut window = open_panel(&mut app, None, store);
-    let root = window.root();
-    let events = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-    let seen = events.clone();
-    app.update(|cx| {
-        cx.subscribe(&root, move |_, event: &BrowserPanelEvent, _| {
-            seen.borrow_mut().push(event.clone())
-        })
-        .detach()
-    });
     window.update(|panel, _, cx| panel.new_tab(Some("https://example.net/".into()), cx));
     settle(&mut app, &mut window);
     assert_eq!(window.read(|panel, _| panel.tabs.len()), 2);
     window.update(|panel, _, cx| panel.close_tab(1, cx));
     window.update(|panel, _, cx| panel.close_tab(0, cx));
     app.run_until_parked();
-    assert!(events.borrow().contains(&BrowserPanelEvent::Closed));
-    let (count, fresh) =
-        window.read(|panel, _| (panel.tabs.len(), panel.active_tab().unwrap().is_new_tab()));
-    assert_eq!((count, fresh), (1, true));
+    assert!(window.read(|panel, _| panel.tabs.is_empty()));
+    let id = window.update(|panel, _, cx| panel.new_tab(None, cx));
+    assert!(window.read(|panel, _| panel.is_new_tab(id)));
+    assert_eq!(window.read(|panel, _| panel.active_tab_id()), Some(id));
 }
 
 #[test]

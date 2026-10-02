@@ -1,10 +1,11 @@
 //! Snapshot-derived metrics and bounded syntax runs for the virtual diff viewport.
+//! Lines take the reference's Codex code theme and its `word-alt` spans.
 //!
 //! Scrolling, selection, and hover may redraw the same line many times. Parsing
 //! it again or searching the entire file for its word-diff partner is unnecessary.
 
 use super::*;
-use crate::{components::markdown::file_editor_runs, theme::Theme};
+use crate::components::{diff_syntax, diff_words};
 use gpui::TextRun;
 use std::{collections::VecDeque, ops::Range, rc::Rc, sync::Weak};
 
@@ -43,8 +44,8 @@ pub(super) struct RenderCache {
     pub(super) tree: file_tree::TreeCache,
     pub(super) tree_scroll: gpui::UniformListScrollHandle,
     mode: Option<ThemeMode>,
-    languages: Vec<Option<String>>,
-    words: HashMap<LineKey, Range<usize>>,
+    languages: Vec<Option<&'static str>>,
+    words: HashMap<LineKey, Vec<Range<usize>>>,
     syntax: HashMap<LineKey, CachedSyntax>,
     order: VecDeque<LineKey>,
     syntax_bytes: usize,
@@ -65,12 +66,7 @@ impl RenderCache {
             self.max_line_width = 0.;
             let mut largest_line = 1;
             for (file_index, file) in snapshot.files.iter().enumerate() {
-                self.languages.push(
-                    std::path::Path::new(&file.path)
-                        .extension()
-                        .and_then(|s| s.to_str())
-                        .map(str::to_owned),
-                );
+                self.languages.push(diff_syntax::language_for(&file.path));
                 for hunk in &file.hunks {
                     for line in &hunk.lines {
                         self.max_line_width = self
@@ -97,14 +93,10 @@ impl RenderCache {
                         for offset in 0..(added - start).min(i - added) {
                             let old = &hunk.lines[start + offset];
                             let new = &hunk.lines[added + offset];
-                            self.words.insert(
-                                LineKey::new(file_index, old),
-                                changed_span(&old.text, &new.text),
-                            );
-                            self.words.insert(
-                                LineKey::new(file_index, new),
-                                changed_span(&new.text, &old.text),
-                            );
+                            let (old_spans, new_spans) =
+                                diff_words::changed_spans(&old.text, &new.text);
+                            self.words.insert(LineKey::new(file_index, old), old_spans);
+                            self.words.insert(LineKey::new(file_index, new), new_spans);
                         }
                     }
                 }
@@ -126,11 +118,14 @@ impl RenderCache {
         self.syntax_bytes = 0;
     }
 
-    pub(super) fn word_span(&self, file: usize, line: &Line) -> Option<Range<usize>> {
-        self.words.get(&LineKey::new(file, line)).cloned()
+    pub(super) fn word_spans(&self, file: usize, line: &Line) -> Vec<Range<usize>> {
+        self.words
+            .get(&LineKey::new(file, line))
+            .cloned()
+            .unwrap_or_default()
     }
 
-    pub(super) fn syntax_runs(&mut self, file: usize, line: &Line, theme: Theme) -> Rc<SyntaxRuns> {
+    pub(super) fn syntax_runs(&mut self, file: usize, line: &Line) -> Rc<SyntaxRuns> {
         let key = LineKey::new(file, line);
         if let Some(cached) = self.syntax.get(&key) {
             if cached.text == line.text {
@@ -145,10 +140,10 @@ impl RenderCache {
         {
             self.parses += 1;
         }
-        let runs = Rc::new(file_editor_runs(
+        let runs = Rc::new(diff_syntax::code_spans(
             &line.text,
-            self.languages.get(file).and_then(|v| v.as_deref()),
-            theme,
+            self.languages.get(file).copied().flatten(),
+            self.mode.unwrap_or(ThemeMode::Dark),
         ));
         let bytes = line.text.len() + runs.len() * std::mem::size_of::<(Range<usize>, TextRun)>();
         // Very large individual lines can be displayed, but do not evict the
@@ -177,23 +172,6 @@ impl RenderCache {
         self.order.push_back(key);
         runs
     }
-}
-
-fn changed_span(a: &str, b: &str) -> Range<usize> {
-    let prefix = a
-        .chars()
-        .zip(b.chars())
-        .take_while(|(a, b)| a == b)
-        .map(|(a, _)| a.len_utf8())
-        .sum::<usize>();
-    let suffix = a[prefix..]
-        .chars()
-        .rev()
-        .zip(b[prefix..].chars().rev())
-        .take_while(|(a, b)| a == b)
-        .map(|(a, _)| a.len_utf8())
-        .sum::<usize>();
-    prefix..a.len() - suffix
 }
 
 #[cfg(test)]
@@ -248,16 +226,18 @@ mod tests {
         let mut cache = RenderCache::default();
         cache.prepare(&original, ThemeMode::Dark);
         let line = &original.files[0].hunks[0].lines[1];
-        let dark = Theme::for_mode(ThemeMode::Dark);
-        let first = cache.syntax_runs(0, line, dark);
+        let first = cache.syntax_runs(0, line);
         for _ in 0..20 {
             cache.prepare(&original, ThemeMode::Dark);
-            assert!(Rc::ptr_eq(&first, &cache.syntax_runs(0, line, dark)));
+            assert!(Rc::ptr_eq(&first, &cache.syntax_runs(0, line)));
         }
         assert_eq!(cache.parses, 1);
-        assert_eq!(*first, file_editor_runs(&line.text, Some("rs"), dark));
+        assert_eq!(
+            *first,
+            diff_syntax::code_spans(&line.text, Some("rs"), ThemeMode::Dark)
+        );
         cache.prepare(&original, ThemeMode::Light);
-        let light = cache.syntax_runs(0, line, Theme::for_mode(ThemeMode::Light));
+        let light = cache.syntax_runs(0, line);
         assert_ne!(*first, *light);
         let changed = snapshot(
             "diff --git a/a.rs b/a.rs\n--- a/a.rs\n+++ b/a.rs\n@@ -1 +1 @@\n-let old = 1;\n+let changed = 3;\n",
@@ -265,8 +245,8 @@ mod tests {
         cache.prepare(&changed, ThemeMode::Dark);
         let line = &changed.files[0].hunks[0].lines[1];
         assert_eq!(
-            *cache.syntax_runs(0, line, dark),
-            file_editor_runs(&line.text, Some("rs"), dark)
+            *cache.syntax_runs(0, line),
+            diff_syntax::code_spans(&line.text, Some("rs"), ThemeMode::Dark)
         );
         assert_eq!(cache.parses, 3);
     }
@@ -286,7 +266,6 @@ mod tests {
                     kind: LineKind::Added,
                     text: "x".repeat(8192),
                 },
-                Theme::for_mode(ThemeMode::Dark),
             );
         }
         assert!(cache.syntax_bytes <= MAX_SYNTAX_BYTES);
@@ -302,18 +281,12 @@ mod tests {
         let mut cache = RenderCache::default();
         cache.prepare(&source, ThemeMode::Dark);
         let lines = &source.files[0].hunks[0].lines;
-        assert_eq!(cache.word_span(0, &lines[0]), Some(0..3));
-        assert_eq!(cache.word_span(0, &lines[1]), Some(0..3));
-        assert_eq!(cache.word_span(0, &lines[2]), None);
-        assert_eq!(cache.word_span(0, &lines[3]), None);
+        assert_eq!(cache.word_spans(0, &lines[0]), vec![0..3]);
+        assert_eq!(cache.word_spans(0, &lines[1]), vec![0..3]);
+        assert!(cache.word_spans(0, &lines[2]).is_empty());
+        assert!(cache.word_spans(0, &lines[3]).is_empty());
         let deep = &source.files[0].hunks[1].lines[1];
-        assert_eq!(&deep.text[cache.word_span(0, deep).unwrap()], "changed");
+        assert_eq!(&deep.text[cache.word_spans(0, deep)[0].clone()], "changed");
         assert!(cache.gutter_width >= 5. * 7.2246 + 18.);
-        assert_eq!(
-            changed_span("相同🙂", "相同🙂"),
-            "相同🙂".len().."相同🙂".len()
-        );
-        let a = "前🙂后";
-        assert_eq!(&a[changed_span(a, "前中文后")], "🙂");
     }
 }

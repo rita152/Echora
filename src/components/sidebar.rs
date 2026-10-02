@@ -26,7 +26,7 @@ use crate::{
         prompt_input::{PromptInput, PromptSubmitted},
     },
     git_review::ProjectRepo,
-    theme::{Theme, ThemeMode},
+    theme::{Theme, ThemeMode, composite_over},
     workspace::{
         WorkspaceSnapshot, WorkspaceStore, activity::ActivitySession, project_id_for_thread,
     },
@@ -557,16 +557,6 @@ fn hover_card_surface(theme: Theme) -> gpui::Rgba {
 fn account_menu_surface(theme: Theme) -> gpui::Rgba {
     let sidebar = composite_over(theme.sidebar_surface, theme.surface_under);
     composite_over(theme.project_hover_surface, sidebar)
-}
-
-fn composite_over(over: gpui::Rgba, under: gpui::Rgba) -> gpui::Rgba {
-    let (a, rest) = (over.a, 1.0 - over.a);
-    gpui::Rgba {
-        r: over.r * a + under.r * rest,
-        g: over.g * a + under.g * rest,
-        b: over.b * a + under.b * rest,
-        a: 1.0,
-    }
 }
 
 /// `ring-border ring-[0.5px]` resolves to two 0.5 px rings of the hairline

@@ -3,25 +3,23 @@
 
 use std::rc::Rc;
 
-use gpui::{Context, prelude::*};
+use gpui::{Context, Entity, prelude::*};
 
-use super::{ChatApp, ConversationKey, state::RightPanelMode};
+use super::{
+    ChatApp, ConversationKey,
+    panel_tabs::{PanelTab, TabPlacement},
+    state::RightPanelMode,
+};
 use crate::components::{
     browser::{BrowserPanel, BrowserPanelEvent, BrowserTool},
     composer::{ToastAction, ToastKind},
 };
 
 impl ChatApp {
-    /// Shows the active chat's browser, creating it (with its saved tabs) on
-    /// first use. Opening it on a New tab puts the keyboard in the address
-    /// field; switching chats with the browser shown leaves focus alone.
-    pub(super) fn ensure_browser(&mut self, cx: &mut Context<Self>) {
-        self.show_browser(true, cx);
-    }
-
-    pub(super) fn show_browser(&mut self, focus_address: bool, cx: &mut Context<Self>) {
-        self.deactivate_review(cx);
-        self.terminal_return_focus_pending = false;
+    /// The active chat's browser, created (with its saved pages) on first
+    /// use. Its tabs reach the right panel's strip through
+    /// [`ChatApp::reconcile_panel_tabs`].
+    pub(super) fn browser_panel(&mut self, cx: &mut Context<Self>) -> Entity<BrowserPanel> {
         let key = self.active_conversation.clone();
         if !self.browser_panels.contains_key(&key) {
             let chat = match &key {
@@ -35,45 +33,66 @@ impl ChatApp {
                 this.handle_browser_event(event.clone(), cx)
             })
             .detach();
+            cx.observe(&panel, |this, _, cx| this.reconcile_panel_tabs(None, cx))
+                .detach();
             self.browser_panels.insert(key.clone(), panel);
         }
         let side_chat_available = self
             .conversation_hosts
             .get(&key)
             .is_some_and(|host| host.composer.read(cx).side_chat_configuration().is_some());
-        self.browser_panels[&key].update(cx, |panel, cx| {
-            panel.set_side_chat_available(side_chat_available, cx);
-            if focus_address {
-                panel.focus_new_tab_address(cx);
-            }
+        let panel = self.browser_panels[&key].clone();
+        panel.update(cx, |panel, cx| {
+            panel.set_side_chat_available(side_chat_available, cx)
         });
-        self.right_panel.focus_pending = false;
-        #[cfg(feature = "screenshot")]
-        self.apply_browser_capture(cx);
+        panel
     }
 
-    /// ⌘T, the review tab strip's "+": a New tab in the browser.
+    /// ⌘T: a New tab; a chat link: a page in the selected New tab, or in a
+    /// new tab after the others.
     pub(super) fn open_browser_tab(&mut self, url: Option<String>, cx: &mut Context<Self>) {
         self.right_panel.open = true;
-        self.select_right_panel_item(1, cx);
-        let key = self.active_conversation.clone();
-        if let Some(panel) = self.browser_panels.get(&key) {
-            panel.update(cx, |panel, cx| match url {
-                Some(url) => panel.open_url(url, cx),
-                None => panel.new_tab(None, cx),
-            });
+        let panel = self.browser_panel(cx);
+        let reuse = match self.active_panel_tab() {
+            Some(PanelTab::Browser(id)) if panel.read(cx).is_new_tab(id) => Some(id),
+            _ => None,
+        };
+        match (url, reuse) {
+            (Some(url), Some(id)) => {
+                panel.update(cx, |panel, cx| {
+                    panel.select_tab_id(id, cx);
+                    panel.open_url(url, cx);
+                });
+                self.reconcile_panel_tabs(None, cx);
+                self.show_panel_tab(PanelTab::Browser(id), cx);
+            }
+            (url, _) => {
+                let id = panel.update(cx, |panel, cx| panel.new_tab(url, cx));
+                self.place_panel_tab(PanelTab::Browser(id), TabPlacement::Append, cx);
+            }
         }
         cx.notify();
     }
 
     fn handle_browser_event(&mut self, event: BrowserPanelEvent, cx: &mut Context<Self>) {
         match event {
-            BrowserPanelEvent::OpenTool(tool) => match tool {
-                BrowserTool::Review => self.open_review(cx),
-                BrowserTool::Terminal => self.select_right_panel_item(2, cx),
-                BrowserTool::SideChat => self.select_right_panel_item(0, cx),
-                BrowserTool::Files => self.select_right_panel_item(3, cx),
-            },
+            // A tool picked on a New tab takes that tab's place.
+            BrowserPanelEvent::OpenTool(tool) => {
+                let mode = match tool {
+                    BrowserTool::Review => RightPanelMode::Review,
+                    BrowserTool::Terminal => RightPanelMode::Terminal,
+                    BrowserTool::SideChat => RightPanelMode::SideChat,
+                    BrowserTool::Files => RightPanelMode::Files,
+                };
+                let placement = self
+                    .panel_tabs
+                    .get(&self.active_conversation)
+                    .filter(|state| matches!(state.active_tab(), Some(PanelTab::Browser(_))))
+                    .map_or(TabPlacement::Append, |state| {
+                        TabPlacement::Replace(state.active)
+                    });
+                self.open_panel_tool(mode, placement, cx);
+            }
             BrowserPanelEvent::Toast {
                 danger,
                 text,
@@ -97,26 +116,8 @@ impl ChatApp {
                     });
                 }
             }
-            BrowserPanelEvent::Closed => {
-                if self.right_panel.open && self.right_panel.mode == Some(RightPanelMode::Browser) {
-                    self.close_right_panel(cx);
-                }
-            }
         }
         cx.notify();
-    }
-
-    /// An open panel with nothing selected shows the browser's New tab, as
-    /// the reference's panel opens on its launcher tab.
-    pub(super) fn normalize_right_panel_mode(&mut self, cx: &mut Context<Self>) {
-        if self.right_panel.open
-            && self.right_panel.mode.is_none()
-            && self.right_panel.subagent.is_none()
-            && self.right_panel.diff_review.is_none()
-        {
-            self.right_panel.mode = Some(RightPanelMode::Browser);
-            self.ensure_browser(cx);
-        }
     }
 
     /// Native pages sit above GPUI's view, so every frame hides the pages

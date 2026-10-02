@@ -1,6 +1,9 @@
 use super::render::{addition_color, deletion_color};
 use super::*;
-use crate::{components::icons::icon, theme::Theme};
+use crate::{
+    components::{icons::icon, viewer_header},
+    theme::Theme,
+};
 use gpui::{
     ClipboardItem, Div, MouseButton, Render, Role, SharedString, Stateful, div, prelude::*, rgba,
 };
@@ -62,15 +65,11 @@ pub(super) enum Action {
     Collapse,
     Split,
     Tree,
-    Close,
-    AddTab,
-    Fullscreen,
     Jump(usize),
     Toggle(usize),
     Copy(String),
     Open(usize),
-    OpenTab(String),
-    Reveal(usize),
+    OpenExternal(usize),
     Mutation(Mutation),
     Confirm(Mutation),
     Commit,
@@ -89,6 +88,10 @@ pub(super) enum Action {
     Viewed(usize),
     NewBranch(bool),
 }
+
+/// Header menus open at the bottom of their 32px capsule: the header's 8px
+/// padding and the capsule.
+const HEADER_MENU_TOP: f32 = 8. + 32.;
 
 /// ChatGPT paints these popups with `bg-surface-elevated-secondary/90` over the
 /// review pane, which composites to `surface-elevated` at 90% — the same value
@@ -111,7 +114,7 @@ fn menu_separator(t: Theme) -> Div {
 
 impl ReviewPanel {
     pub(super) fn action(&mut self, a: Action, w: &mut Window, cx: &mut Context<Self>) {
-        if matches!(&a,Action::Open(i)|Action::Reveal(i)|Action::Viewed(i)|Action::Toggle(i)|Action::Jump(i)|Action::Context(i)|Action::Menu(Menu::File(i)) if *i>=self.snapshot.files.len())
+        if matches!(&a,Action::Open(i)|Action::OpenExternal(i)|Action::Viewed(i)|Action::Toggle(i)|Action::Jump(i)|Action::Context(i)|Action::Menu(Menu::File(i)) if *i>=self.snapshot.files.len())
         {
             return;
         }
@@ -193,17 +196,18 @@ impl ReviewPanel {
                 self.rebuild(cx);
             }
             Action::Tree => self.tree_open = !self.tree_open,
-            Action::Close => cx.emit(ReviewEvent::Close),
-            Action::AddTab => cx.emit(ReviewEvent::AddTab),
-            Action::Fullscreen => cx.emit(ReviewEvent::Fullscreen),
             Action::Jump(i) => self.jump_to(i, cx),
-            Action::Toggle(i) => self.toggle_file(i, cx),
+            Action::Toggle(i) => {
+                self.menu = None;
+                self.toggle_file(i, cx)
+            }
             Action::Copy(s) => {
                 cx.write_to_clipboard(ClipboardItem::new_string(s));
                 self.menu = None;
                 self.show_notice(crate::i18n::text("已复制").into(), cx);
             }
             Action::Viewed(i) => {
+                self.menu = None;
                 let f = &self.snapshot.files[i];
                 if self.viewed.remove(&f.path).is_some() {
                     self.collapsed.remove(&f.path);
@@ -213,7 +217,6 @@ impl ReviewPanel {
                 }
                 self.rebuild(cx);
             }
-            Action::OpenTab(path) => cx.emit(ReviewEvent::OpenFile { path, line: None }),
             Action::Open(i) => {
                 let file = &self.snapshot.files[i];
                 cx.emit(ReviewEvent::OpenFile {
@@ -222,11 +225,8 @@ impl ReviewPanel {
                 });
                 self.menu = None;
             }
-            Action::Reveal(i) => {
-                let _ = std::process::Command::new("open")
-                    .arg("-R")
-                    .arg(self.snapshot.root.join(&self.snapshot.files[i].path))
-                    .spawn();
+            Action::OpenExternal(i) => {
+                cx.open_with_system(&self.snapshot.root.join(&self.snapshot.files[i].path));
                 self.menu = None;
             }
             Action::Mutation(op) => self.mutate(op, cx),
@@ -327,40 +327,29 @@ impl ReviewPanel {
         cx.notify();
     }
 
-    pub(super) fn button(
+    /// The shared hit target of every review control: its accessible name,
+    /// focus ring, tooltip, and mouse and keyboard activation.
+    pub(super) fn control(
         &self,
         id: impl Into<SharedString>,
-        label: impl Into<SharedString>,
-        glyph: Option<&'static str>,
+        label: SharedString,
         a: Action,
         cx: &Context<Self>,
     ) -> Stateful<Div> {
         let t = Theme::for_mode(self.mode);
-        let label = label.into();
         let hint = label.clone();
         let key_action = a.clone();
         div()
             .id(id.into())
             .role(Role::Button)
-            .aria_label(label.clone())
+            .aria_label(label)
             .focusable()
             .tab_stop(true)
-            .h(px(28.))
-            // Callers also use 20px icon buttons. Padding must not squeeze
-            // their 16px glyphs; keep the default toolbar hit area at 28px.
-            .px(px(if glyph.is_some() { 0. } else { 8. }))
-            .when(glyph.is_some(), |b| b.w(px(28.)))
             .flex_none()
             .flex()
             .items_center()
             .justify_center()
-            .gap(px(4.))
-            .rounded(px(12.5))
-            .text_size(px(13.))
-            .line_height(px(18.))
             .cursor_pointer()
-            .text_color(t.text_secondary)
-            .hover(move |s| s.bg(t.sidebar_hover).text_color(t.text))
             .focus_visible(move |s| s.border_1().border_color(t.accent))
             .tooltip(move |_, cx| cx.new(|_| ReviewTooltip(hint.clone())).into())
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -378,28 +367,97 @@ impl ReviewPanel {
                     }
                 }
             }))
+    }
+
+    pub(super) fn button(
+        &self,
+        id: impl Into<SharedString>,
+        label: impl Into<SharedString>,
+        glyph: Option<&'static str>,
+        a: Action,
+        cx: &Context<Self>,
+    ) -> Stateful<Div> {
+        let t = Theme::for_mode(self.mode);
+        let label = label.into();
+        self.control(id, label.clone(), a, cx)
+            .h(px(28.))
+            // Callers also use 20px icon buttons. Padding must not squeeze
+            // their 16px glyphs; keep the default toolbar hit area at 28px.
+            .px(px(if glyph.is_some() { 0. } else { 8. }))
+            .when(glyph.is_some(), |b| b.w(px(28.)))
+            .gap(px(4.))
+            .rounded(px(12.5))
+            .text_size(px(13.))
+            .line_height(px(18.))
+            .text_color(t.text_secondary)
+            .hover(move |s| s.bg(t.sidebar_hover).text_color(t.text))
             .when_some(glyph, |b, g| {
                 b.child(icon(g, t.text_secondary.into()).size(px(16.)).flex_none())
             })
             .when(glyph.is_none(), |b| b.child(label))
     }
 
-    pub(super) fn dropdown_button(
+    /// A 28px round control inside a header capsule: a tertiary glyph, the
+    /// ghost hover, and the accent wash while its option is on or its menu
+    /// is open.
+    pub(super) fn capsule_button(
         &self,
         id: impl Into<SharedString>,
         label: impl Into<SharedString>,
+        glyph: impl IntoElement,
+        pressed: bool,
+        a: Action,
+        cx: &Context<Self>,
+    ) -> Stateful<Div> {
+        let t = Theme::for_mode(self.mode);
+        let (_, pressed_bg) = viewer_header::pressed(self.mode);
+        let open = matches!(&a, Action::Menu(menu) if self.menu.as_ref() == Some(menu));
+        self.control(id, label.into(), a, cx)
+            .size(px(viewer_header::CONTROL_SIZE))
+            .rounded_full()
+            .when(pressed, |b| b.bg(pressed_bg))
+            .when(!pressed, |b| {
+                b.when(open, |b| b.bg(t.sidebar_hover))
+                    .hover(move |s| s.bg(t.sidebar_hover))
+            })
+            .child(glyph)
+    }
+
+    /// The glyph of a capsule control, in the pressed accent when on.
+    pub(super) fn capsule_glyph(&self, name: &'static str, pressed: bool) -> gpui::Svg {
+        let t = Theme::for_mode(self.mode);
+        let (accent, _) = viewer_header::pressed(self.mode);
+        icon(name, if pressed { accent } else { t.text_tertiary }.into())
+            .size(px(16.))
+            .flex_none()
+    }
+
+    /// The comparison source trigger: `px-3 pe-1.5` 13px text and its chevron.
+    fn source_button(
+        &self,
+        id: &'static str,
+        label: String,
         menu: Menu,
         cx: &Context<Self>,
     ) -> Stateful<Div> {
         let t = Theme::for_mode(self.mode);
-        let id = id.into();
-        let debug = id.to_string();
-        // Keep the chevron off the text baseline and inside the same mouse /
-        // keyboard hit target as the label, in both toolbar rows.
-        self.button(id, label, None, Action::Menu(menu), cx)
-            .debug_selector(move || debug.clone())
+        let open = self.menu.as_ref() == Some(&menu);
+        self.control(id, label.clone().into(), Action::Menu(menu), cx)
+            .debug_selector(move || id.to_owned())
+            .h(px(28.))
+            .min_w(px(0.))
+            .pl(px(12.))
+            .pr(px(6.))
+            .gap(px(4.))
+            .rounded_full()
+            .text_size(px(13.))
+            .line_height(px(20.))
+            .text_color(t.text)
+            .when(open, |b| b.bg(t.sidebar_hover))
+            .hover(move |s| s.bg(t.sidebar_hover))
+            .child(div().min_w(px(0.)).truncate().child(label))
             .child(
-                icon("chevron-down", t.text_secondary.into())
+                icon("chevron-down", t.text.into())
                     .size(px(12.))
                     .flex_none(),
             )
@@ -413,8 +471,6 @@ impl ReviewPanel {
     }
 
     pub(super) fn menu_entries(&self, menu: &Menu) -> Vec<MenuEntry> {
-        let toggle =
-            |on: bool, yes: &str, no: &str| -> String { if on { yes.into() } else { no.into() } };
         match menu {
             // ChatGPT divides the comparison sources into "turn" / "working
             // tree" / "history" groups and ticks the active one.
@@ -456,82 +512,116 @@ impl ReviewPanel {
                 entries[current].trailing = Some("check");
                 entries
             }
-            Menu::View => vec![
-                MenuEntry::new(crate::i18n::text("刷新"), Action::Refresh)
-                    .leading("review-refresh"),
-                MenuEntry::new(
-                    toggle(
-                        self.wrap,
-                        crate::i18n::text("禁用自动换行"),
-                        crate::i18n::text("启用自动换行"),
-                    ),
-                    Action::Wrap,
-                )
-                .leading("review-word-wrap"),
-                MenuEntry::new(
-                    if self.split {
-                        crate::i18n::text("切换到统一差异视图")
-                    } else {
-                        crate::i18n::text("切换到拆分差异视图")
-                    },
-                    Action::Split,
-                )
-                .leading("review-split-diff"),
-                MenuEntry::new(
-                    if self.collapsed.len() == self.snapshot.files.len()
-                        && !self.snapshot.files.is_empty()
-                    {
-                        crate::i18n::text("展开全部差异")
-                    } else {
-                        crate::i18n::text("折叠全部差异")
-                    },
-                    Action::Collapse,
-                )
-                .leading("review-collapse-all"),
-                MenuEntry::new(
-                    toggle(
+            // The reference's `Changes options`. A narrow header folds its
+            // Refresh, Word wrap, diff layout and Collapse controls in here.
+            // Echora keeps its commit and pull request flows below them; the
+            // reference reaches those from the task summary instead.
+            Menu::View => {
+                let check = |on: bool, entry: MenuEntry| {
+                    if on { entry.trailing("check") } else { entry }
+                };
+                let mut entries = Vec::new();
+                if !self.wide_header() {
+                    entries.extend([
+                        MenuEntry::new(crate::i18n::text("刷新"), Action::Refresh)
+                            .leading("review-refresh"),
+                        check(
+                            self.wrap,
+                            MenuEntry::new(crate::i18n::text("自动换行"), Action::Wrap)
+                                .leading("review-word-wrap"),
+                        ),
+                        MenuEntry::new(
+                            if self.split {
+                                crate::i18n::text("切换到统一差异视图")
+                            } else {
+                                crate::i18n::text("切换到拆分差异视图")
+                            },
+                            Action::Split,
+                        )
+                        .leading("review-split-diff"),
+                        MenuEntry::new(
+                            if self.all_collapsed() {
+                                crate::i18n::text("展开全部差异")
+                            } else {
+                                crate::i18n::text("折叠全部差异")
+                            },
+                            Action::Collapse,
+                        )
+                        .leading("review-collapse-all"),
+                    ]);
+                }
+                let options = [
+                    check(
                         self.load_files,
-                        crate::i18n::text("不加载完整文件"),
-                        crate::i18n::text("加载完整文件"),
+                        MenuEntry::new(crate::i18n::text("加载完整文件"), Action::LoadFiles)
+                            .leading("review-load-full-files"),
                     ),
-                    Action::LoadFiles,
-                )
-                .leading("review-load-full-files")
-                .separated(),
-                MenuEntry::new(
-                    toggle(
+                    check(
                         self.rich,
-                        crate::i18n::text("禁用富文本预览"),
-                        crate::i18n::text("启用富文本预览"),
+                        MenuEntry::new(crate::i18n::text("渲染预览"), Action::Rich)
+                            .leading("review-rich-preview"),
                     ),
-                    Action::Rich,
-                )
-                .leading("review-rich-preview"),
-                MenuEntry::new(
-                    toggle(
+                    check(
                         self.words,
-                        crate::i18n::text("禁用文字差异"),
-                        crate::i18n::text("启用文字差异"),
+                        MenuEntry::new(crate::i18n::text("词级差异"), Action::Words)
+                            .leading("browser-tool-review"),
                     ),
-                    Action::Words,
-                )
-                .leading("review-word-diffs"),
-                MenuEntry::new(
-                    toggle(
+                    check(
                         self.whitespace,
-                        crate::i18n::text("显示空白字符"),
-                        crate::i18n::text("隐藏空白字符"),
+                        MenuEntry::new(crate::i18n::text("隐藏空白字符"), Action::Whitespace)
+                            .leading("review-white-space"),
                     ),
-                    Action::Whitespace,
-                )
-                .leading("review-white-space"),
-                MenuEntry::new(crate::i18n::text("复制 git apply 命令"), Action::CopyPatch)
-                    .leading("review-copy-apply"),
-            ],
-            Menu::Git => vec![
-                MenuEntry::new(crate::i18n::text("提交或推送"), Action::Commit),
-                MenuEntry::new(crate::i18n::text("创建 Pull Request"), Action::PullRequest),
-            ],
+                    MenuEntry::new(crate::i18n::text("复制 git apply 命令"), Action::CopyPatch)
+                        .leading("review-copy-apply"),
+                ];
+                let separated = !entries.is_empty();
+                for (index, entry) in options.into_iter().enumerate() {
+                    entries.push(if index == 0 && separated {
+                        entry.separated()
+                    } else {
+                        entry
+                    });
+                }
+                entries.push(
+                    MenuEntry::new(crate::i18n::text("提交或推送"), Action::Commit)
+                        .leading("review-commit")
+                        .separated(),
+                );
+                entries.push(
+                    MenuEntry::new(crate::i18n::text("创建 Pull Request"), Action::PullRequest)
+                        .leading("pr-open-browser"),
+                );
+                if self.scope.editable() && !self.snapshot.files.is_empty() {
+                    let staged = self.scope == Scope::Staged;
+                    entries.push(
+                        MenuEntry::new(
+                            if staged {
+                                crate::i18n::text("对全部取消暂存")
+                            } else {
+                                crate::i18n::text("暂存全部")
+                            },
+                            Action::Mutation(if staged {
+                                Mutation::Unstage(None)
+                            } else {
+                                Mutation::Stage(None)
+                            }),
+                        )
+                        .leading(if staged {
+                            "review-minus"
+                        } else {
+                            "review-plus"
+                        }),
+                    );
+                    entries.push(
+                        MenuEntry::new(
+                            crate::i18n::text("还原全部"),
+                            Action::Confirm(Mutation::DiscardAll),
+                        )
+                        .leading("review-restore"),
+                    );
+                }
+                entries
+            }
             Menu::CommitBranch => vec![
                 MenuEntry::new(self.snapshot.branch.clone(), Action::NewBranch(false)),
                 MenuEntry::new(crate::i18n::text("新分支"), Action::NewBranch(true)),
@@ -572,33 +662,51 @@ impl ReviewPanel {
                 .into_iter()
                 .map(|i| MenuEntry::new(self.snapshot.files[i].path.clone(), Action::Jump(i)))
                 .collect(),
+            // The reference's `File actions`; staging and reverting a file
+            // stay below them for the scopes that allow it.
             Menu::File(i) => {
                 let file = &self.snapshot.files[*i];
                 let mut a = vec![
-                    MenuEntry::new(crate::i18n::text("打开文件"), Action::Open(*i)),
-                    MenuEntry::new(crate::i18n::text("在访达中显示"), Action::Reveal(*i)),
                     MenuEntry::new(
                         crate::i18n::text("复制路径"),
                         Action::Copy(file.path.clone()),
                     ),
+                    MenuEntry::new(crate::i18n::text("在标签页中打开文件"), Action::Open(*i)),
                     MenuEntry::new(
-                        crate::i18n::text("复制绝对路径"),
-                        Action::Copy(self.snapshot.root.join(&file.path).to_string_lossy().into()),
+                        if self.collapsed.contains(&file.path) {
+                            crate::i18n::text("展开文件")
+                        } else {
+                            crate::i18n::text("折叠文件")
+                        },
+                        Action::Toggle(*i),
                     ),
                 ];
-                if self.scope.editable() {
+                if matches!(self.scope, Scope::Branch(_) | Scope::Commit(_)) {
                     a.push(MenuEntry::new(
-                        if self.scope == Scope::Staged {
-                            crate::i18n::text("取消暂存")
+                        if self.viewed.get(&file.path) == Some(&file.patch) {
+                            crate::i18n::text("标记为未查看")
                         } else {
-                            crate::i18n::text("暂存更改")
+                            crate::i18n::text("标记为已查看")
                         },
-                        Action::Mutation(if self.scope == Scope::Staged {
-                            Mutation::Unstage(Some(file.path.clone()))
-                        } else {
-                            Mutation::Stage(Some(file.path.clone()))
-                        }),
+                        Action::Viewed(*i),
                     ));
+                }
+                if self.scope.editable() {
+                    a.push(
+                        MenuEntry::new(
+                            if self.scope == Scope::Staged {
+                                crate::i18n::text("取消暂存")
+                            } else {
+                                crate::i18n::text("暂存更改")
+                            },
+                            Action::Mutation(if self.scope == Scope::Staged {
+                                Mutation::Unstage(Some(file.path.clone()))
+                            } else {
+                                Mutation::Stage(Some(file.path.clone()))
+                            }),
+                        )
+                        .separated(),
+                    );
                     a.push(MenuEntry::new(
                         crate::i18n::text("撤销更改…"),
                         Action::Confirm(Mutation::Discard(file.path.clone())),
@@ -620,13 +728,13 @@ impl ReviewPanel {
         }
     }
 
-    pub(super) fn popup(&self, m: Menu, cx: &Context<Self>) -> Stateful<Div> {
+    pub(super) fn popup(&self, m: Menu, cx: &Context<Self>) -> gpui::AnyElement {
         if m == Menu::Branch {
             return div()
                 .id("review-popup")
                 .debug_selector(|| "review-popup".into())
                 .absolute()
-                .top(px(112.))
+                .top(px(HEADER_MENU_TOP))
                 .left(px(8.))
                 .w(px(branch_picker::WIDTH))
                 .max_w(px((self.panel_width - 16.).max(0.)))
@@ -634,7 +742,8 @@ impl ReviewPanel {
                     s.menu = None;
                     cx.notify();
                 }))
-                .child(self.branch_picker.clone());
+                .child(self.branch_picker.clone())
+                .into_any_element();
         }
         let t = Theme::for_mode(self.mode);
         // ChatGPT sizes these menus with `menuBounded` (min 200px, max 320px):
@@ -654,10 +763,8 @@ impl ReviewPanel {
             .top(px(
                 if matches!(m, Menu::CommitBranch | Menu::PullRequestBase) {
                     36.
-                } else if m == Menu::Branch {
-                    112.
                 } else {
-                    80.
+                    HEADER_MENU_TOP
                 },
             ))
             .w(px(width))
@@ -681,7 +788,8 @@ impl ReviewPanel {
                 cx.notify();
             }));
         menu = match m {
-            Menu::Scope | Menu::Branch => menu.left(px(8.)),
+            Menu::Scope | Menu::Branch | Menu::Commits => menu.left(px(8.)),
+            Menu::View | Menu::Jump => menu.right(px(self.header_menu_right(&m))),
             _ => menu.right(px(8.)),
         };
         if m == Menu::Jump {
@@ -791,115 +899,229 @@ impl ReviewPanel {
                     }),
             );
         }
-        menu.child(items)
+        let menu = menu.child(items);
+        // A file's menu opens 4px under its `File actions` button, right
+        // aligned with it, wherever the header is in the list.
+        if let Menu::File(i) = m
+            && let Some(bounds) = self.menu_anchors.borrow().get(&i).copied()
+        {
+            let mut menu = menu;
+            menu.style().position = None;
+            menu.style().inset.top = None;
+            menu.style().inset.right = None;
+            return gpui::deferred(
+                gpui::anchored()
+                    .anchor(gpui::Anchor::TopRight)
+                    .position(bounds.bottom_right() + gpui::point(px(0.), px(4.)))
+                    .snap_to_window_with_margin(px(8.))
+                    .child(menu),
+            )
+            .with_priority(2)
+            .into_any_element();
+        }
+        menu.into_any_element()
     }
 
+    /// The Changes header (`review-header`): the comparison source and its
+    /// totals in one capsule, with the base branch or commit beside it, and
+    /// the diff controls in another at the end.
     pub(super) fn toolbar(&self, cx: &Context<Self>) -> Div {
         let t = Theme::for_mode(self.mode);
         let (adds, dels) = self.counts();
+        let source = viewer_header::capsule(self.mode)
+            .min_w(px(0.))
+            .child(self.source_button(
+                "review-scope",
+                self.scope.label().to_owned(),
+                Menu::Scope,
+                cx,
+            ))
+            .when(adds + dels > 0, |capsule| {
+                capsule.child(
+                    div()
+                        .flex_none()
+                        .mr(px(4.))
+                        .flex()
+                        .items_center()
+                        .gap(px(4.))
+                        .text_size(px(14.))
+                        .line_height(px(14.))
+                        .child(
+                            div()
+                                .text_color(addition_color(self.mode))
+                                .child(format!("+{adds}")),
+                        )
+                        .child(
+                            div()
+                                .text_color(deletion_color(self.mode))
+                                .child(format!("-{dels}")),
+                        ),
+                )
+            });
+        let details = match &self.scope {
+            Scope::Branch(base) => Some((
+                crate::i18n::format!(
+                    "{} → {base}" => "{} → {base}",
+                    self.snapshot.branch
+                ),
+                Menu::Branch,
+            )),
+            Scope::Commit(sha) => Some((sha[..8.min(sha.len())].to_owned(), Menu::Commits)),
+            _ => None,
+        };
+        let wide = self.wide_header();
+        let collapse_label = if self.all_collapsed() {
+            crate::i18n::text("展开全部差异")
+        } else {
+            crate::i18n::text("折叠全部差异")
+        };
+        let layout = self.layout_glyph();
+        let controls = viewer_header::capsule(self.mode)
+            .child(self.capsule_button(
+                "review-options",
+                crate::i18n::text("“变更”选项"),
+                self.capsule_glyph("review-options", false),
+                false,
+                Action::Menu(Menu::View),
+                cx,
+            ))
+            .child(self.capsule_button(
+                "review-jump",
+                crate::i18n::text("跳转到文件"),
+                self.capsule_glyph("review-jump", false),
+                false,
+                Action::Menu(Menu::Jump),
+                cx,
+            ))
+            .when(wide, |capsule| {
+                capsule.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .child(self.capsule_button(
+                            "review-refresh",
+                            crate::i18n::text("刷新"),
+                            self.capsule_glyph("review-refresh", false),
+                            false,
+                            Action::Refresh,
+                            cx,
+                        ))
+                        .child(self.capsule_button(
+                            "review-wrap",
+                            crate::i18n::text("自动换行"),
+                            self.capsule_glyph("review-word-wrap", self.wrap),
+                            self.wrap,
+                            Action::Wrap,
+                            cx,
+                        ))
+                        .child(self.capsule_button(
+                            "review-collapse",
+                            collapse_label,
+                            self.capsule_glyph("review-collapse", false),
+                            false,
+                            Action::Collapse,
+                            cx,
+                        ))
+                        .child(self.capsule_button(
+                            "review-split",
+                            if self.split {
+                                crate::i18n::text("切换到统一差异视图")
+                            } else {
+                                crate::i18n::text("切换到拆分差异视图")
+                            },
+                            layout,
+                            false,
+                            Action::Split,
+                            cx,
+                        )),
+                )
+            })
+            .when(!self.compact(), |capsule| {
+                capsule.child(self.capsule_button(
+                    "review-tree",
+                    if self.tree_open {
+                        crate::i18n::text("隐藏文件")
+                    } else {
+                        crate::i18n::text("显示文件")
+                    },
+                    self.capsule_glyph("pr-file-tree", self.tree_open),
+                    self.tree_open,
+                    Action::Tree,
+                    cx,
+                ))
+            });
         div()
             .w_full()
-            .min_h(px(40.))
+            .h(px(viewer_header::HEIGHT + 1.))
             .flex_none()
             .px(px(8.))
             .flex()
             .items_center()
-            .gap(px(3.))
+            .gap(px(8.))
             .border_b_1()
             .border_color(t.border)
             .child(
-                self.dropdown_button("review-scope", self.scope.label(), Menu::Scope, cx)
-                    .text_size(px(14.)),
+                div()
+                    .min_w(px(0.))
+                    .flex_shrink(1.)
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(source)
+                    .when_some(details, |row, (label, menu)| {
+                        row.child(
+                            viewer_header::capsule(self.mode)
+                                .min_w(px(0.))
+                                .child(self.source_button("review-base", label, menu, cx)),
+                        )
+                    }),
             )
-            .child(div().flex().gap(px(4.)).text_size(px(13.)).when(
-                adds + dels > 0 && self.panel_width > 440.,
-                |d| {
-                    d.child(
-                        div()
-                            .text_color(addition_color(self.mode))
-                            .child(format!("+{adds}")),
-                    )
-                    .child(
-                        div()
-                            .text_color(deletion_color(self.mode))
-                            .child(format!("-{dels}")),
-                    )
-                },
-            ))
             .child(div().flex_1().min_w(px(0.)))
-            .child(self.button(
-                "review-options",
-                crate::i18n::text("查看选项"),
-                Some("review-options"),
-                Action::Menu(Menu::View),
-                cx,
-            ))
-            .child(self.button(
-                "review-collapse",
-                if self.collapsed.len() == self.snapshot.files.len() {
-                    crate::i18n::text("展开全部差异")
-                } else {
-                    crate::i18n::text("折叠全部差异")
-                },
-                Some("review-collapse"),
-                Action::Collapse,
-                cx,
-            ))
-            .child(self.button(
-                "review-jump",
-                crate::i18n::text("跳转到文件"),
-                Some("review-jump"),
-                Action::Menu(Menu::Jump),
-                cx,
-            ))
-            .child(
-                self.button(
-                    "review-split",
-                    if self.split {
-                        crate::i18n::text("切换到统一差异视图")
-                    } else {
-                        crate::i18n::text("切换到拆分差异视图")
-                    },
-                    Some("review-split"),
-                    Action::Split,
-                    cx,
-                )
-                .when(self.split, |b| b.bg(t.sidebar_hover)),
-            )
-            .when(!self.compact(), |d| {
-                d.child(
-                    self.button(
-                        "review-tree",
-                        if self.tree_open {
-                            crate::i18n::text("隐藏文件")
-                        } else {
-                            crate::i18n::text("显示文件")
-                        },
-                        Some("review-tree"),
-                        Action::Tree,
-                        cx,
-                    )
-                    .when(self.tree_open, |b| b.bg(t.sidebar_hover)),
-                )
-            })
-            .child(
-                self.button(
-                    "review-git",
-                    crate::i18n::text("提交或推送"),
-                    Some("review-commit"),
-                    Action::Commit,
-                    cx,
-                )
-                .border_1()
-                .border_color(t.border),
-            )
-            .child(self.button(
-                "review-more-git",
-                crate::i18n::text("更多 Git 操作"),
-                Some("chevron-down"),
-                Action::Menu(Menu::Git),
-                cx,
-            ))
+            .child(controls)
+    }
+
+    /// The diff layout glyph: the frame with the current layout's red and
+    /// green rows, as the reference draws `Switch to split diff`.
+    fn layout_glyph(&self) -> Div {
+        let t = Theme::for_mode(self.mode);
+        let (deleted, added) = if self.split {
+            ("pr-view-split-deleted", "pr-view-split-added")
+        } else {
+            ("pr-view-unified-deleted", "pr-view-unified-added")
+        };
+        let layer = |name: &'static str, color: gpui::Rgba| {
+            icon(name, color.into())
+                .absolute()
+                .top_0()
+                .left_0()
+                .size(px(16.))
+        };
+        div()
+            .relative()
+            .flex_none()
+            .size(px(16.))
+            .child(layer("pr-view-frame", t.text_tertiary))
+            .child(layer(deleted, gpui::rgb(0xf84e63)))
+            .child(layer(added, gpui::rgb(0x36d958)))
+    }
+
+    /// How far the right edge of `m`'s trigger sits from the panel's right
+    /// edge: the header's 8px padding, the capsule's 2px inset, and the 28px
+    /// controls (2px apart, 6px inside the wide group) after the trigger.
+    fn header_menu_right(&self, m: &Menu) -> f32 {
+        let tree = if self.compact() { 0. } else { 30. };
+        let group = if self.wide_header() { 132. } else { 0. };
+        let jump = if *m == Menu::View { 30. } else { 0. };
+        8. + 2. + tree + group + jump
+    }
+
+    pub(super) fn wide_header(&self) -> bool {
+        self.panel_width >= viewer_header::WIDE_MIN_WIDTH
+    }
+
+    pub(super) fn all_collapsed(&self) -> bool {
+        !self.snapshot.files.is_empty() && self.collapsed.len() == self.snapshot.files.len()
     }
     pub(super) fn counts(&self) -> (usize, usize) {
         self.snapshot

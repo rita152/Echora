@@ -8,7 +8,7 @@ use gpui::{
 use super::{
     ChatApp, RIGHT_PANEL_CARD_INSET, RIGHT_PANEL_CARD_RADIUS, RIGHT_PANEL_ITEMS,
     RIGHT_PANEL_MAIN_MIN_WIDTH, RIGHT_PANEL_MIN_WIDTH, SUBAGENT_PANEL_HEADER_HEIGHT,
-    project_creation::project_creation_focus_shadow,
+    panel_tabs::{PanelTab, TabPlacement},
     render::panel_resize_handle,
     state::{RightPanelMode, SubagentPanel},
 };
@@ -65,39 +65,23 @@ impl ChatApp {
         self.right_panel.focus_pending = true;
         cx.notify();
     }
+    /// Shows the panel on the chat's selected tab, or on a New tab when the
+    /// chat has none, as the reference's panel opens on its launcher tab.
     pub fn open_right_panel(&mut self, cx: &mut Context<Self>) {
         self.right_panel.open = true;
-        if self.right_panel.mode == Some(RightPanelMode::SideChat) {
-            self.ensure_side_chat(false, cx);
-            cx.notify();
-            return;
-        }
-        if self.right_panel.mode == Some(RightPanelMode::Review) {
-            self.ensure_review(cx);
-            cx.notify();
-            return;
-        }
-        if self.right_panel.mode == Some(RightPanelMode::Files) {
-            self.ensure_files(cx);
-            cx.notify();
-            return;
-        }
-        if self.right_panel.mode == Some(RightPanelMode::Terminal) {
-            self.ensure_terminal(cx);
-            cx.notify();
-            return;
-        }
-        // The reference's panel opens on a New tab: the browser's launcher
-        // page with the tools and suggested sites.
-        self.right_panel.mode = Some(RightPanelMode::Browser);
         self.right_panel.subagent = None;
         self.right_panel.subagent_menu_open = false;
         self.right_panel.diff_review = None;
         self.right_panel.focused_item = 0;
         self.right_panel.keyboard_focus = false;
-        self.ensure_browser(cx);
+        self.reconcile_panel_tabs(None, cx);
+        match self.active_panel_tab() {
+            Some(tab) => self.show_panel_tab(tab, cx),
+            None => self.open_new_panel_tab(cx),
+        }
         cx.notify();
     }
+    /// Hides the panel; its tabs stay for the next time it opens.
     pub(super) fn close_right_panel(&mut self, cx: &mut Context<Self>) {
         self.home
             .update(cx, |home, cx| home.set_plan_panel_for_view(None, cx));
@@ -106,30 +90,9 @@ impl ChatApp {
             self.deactivate_review(cx);
             self.right_panel.open = false;
             self.right_panel.fullscreen = false;
-            self.terminal_return_focus_pending = matches!(
-                self.right_panel.mode,
-                Some(
-                    RightPanelMode::Terminal
-                        | RightPanelMode::Files
-                        | RightPanelMode::Review
-                        | RightPanelMode::SideChat
-                        | RightPanelMode::Browser
-                )
-            );
+            self.terminal_return_focus_pending = self.right_panel.mode.is_some();
             if let Some(panel) = self.browser_panels.get(&self.active_conversation) {
                 panel.read(cx).hide_pages();
-            }
-            if !matches!(
-                self.right_panel.mode,
-                Some(
-                    RightPanelMode::Terminal
-                        | RightPanelMode::Files
-                        | RightPanelMode::Review
-                        | RightPanelMode::SideChat
-                        | RightPanelMode::Browser
-                )
-            ) {
-                self.right_panel.mode = None;
             }
             self.right_panel.subagent = None;
             self.right_panel.subagent_menu_open = false;
@@ -137,6 +100,7 @@ impl ChatApp {
             self.right_panel.keyboard_focus = false;
             self.right_panel.focus_pending = false;
             self.right_panel.resize_dragging = false;
+            self.panel_tab_frozen_width = None;
             cx.notify();
         }
     }
@@ -147,41 +111,21 @@ impl ChatApp {
             self.open_right_panel(cx);
         }
     }
+    /// The launcher's entries and the shortcuts: Side chat and the Browser
+    /// open a new tab, the other tools select the chat's tab of that kind
+    /// (opening one after the others when it has none).
     pub(super) fn select_right_panel_item(&mut self, index: usize, cx: &mut Context<Self>) {
         let Some((mode, _, _, _)) = RIGHT_PANEL_ITEMS.get(index) else {
             return;
         };
         let mode = *mode;
-        if mode != RightPanelMode::Files {
-            self.home
-                .update(cx, |home, cx| home.set_plan_panel_for_view(None, cx));
+        self.right_panel.open = true;
+        match mode {
+            RightPanelMode::SideChat | RightPanelMode::Browser => {
+                self.open_panel_tool(mode, TabPlacement::Append, cx)
+            }
+            _ => self.show_or_open_panel_tool(mode, cx),
         }
-        if mode != RightPanelMode::SideChat {
-            self.deactivate_side_chat(cx);
-        }
-        if mode != RightPanelMode::Review {
-            self.deactivate_review(cx);
-            self.right_panel.fullscreen = false;
-        }
-        self.right_panel.mode = Some(mode);
-        if mode == RightPanelMode::SideChat {
-            self.ensure_side_chat(true, cx);
-        }
-        if mode == RightPanelMode::Files {
-            self.ensure_files(cx);
-        }
-        if mode == RightPanelMode::Terminal {
-            self.ensure_terminal(cx);
-        }
-        if mode == RightPanelMode::Review {
-            self.ensure_review(cx);
-        }
-        if mode == RightPanelMode::Browser {
-            self.ensure_browser(cx);
-        }
-        self.right_panel.subagent = None;
-        self.right_panel.subagent_menu_open = false;
-        self.right_panel.diff_review = None;
         self.right_panel.keyboard_focus = false;
         cx.notify();
     }
@@ -254,78 +198,6 @@ impl ChatApp {
         }
         cx.stop_propagation();
         cx.notify();
-    }
-    pub(super) fn right_panel_menu_item(
-        &self,
-        index: usize,
-        label: &'static str,
-        shortcut: &'static str,
-        glyph: &'static str,
-        theme: Theme,
-        cx: &mut Context<Self>,
-    ) -> gpui::Stateful<Div> {
-        let focused = self.right_panel.keyboard_focus && self.right_panel.focused_item == index;
-        div()
-            .id(("right-panel-menu-item", index))
-            .role(Role::Button)
-            .aria_label(crate::i18n::text(label))
-            .w_full()
-            .h(px(40.0))
-            .px(px(10.0))
-            .py(px(8.0))
-            .rounded(px(10.0))
-            .bg(theme.text.alpha(0.03))
-            .shadow(project_creation_focus_shadow(theme, focused))
-            .flex()
-            .items_center()
-            .gap(px(8.0))
-            .cursor_pointer()
-            .hover(move |style| style.bg(theme.text.alpha(0.08)))
-            .active(move |style| style.bg(theme.text.alpha(0.08)))
-            .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
-                if *hovered {
-                    this.right_panel.focused_item = index;
-                    this.right_panel.keyboard_focus = false;
-                    this.right_panel.focus.focus(window, cx);
-                    cx.notify();
-                }
-            }))
-            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .on_click(cx.listener(move |this, _, _, cx| {
-                cx.stop_propagation();
-                this.select_right_panel_item(index, cx);
-            }))
-            .child(
-                icon(glyph, theme.text.alpha(0.65).into())
-                    .size(px(16.0))
-                    .flex_none(),
-            )
-            .child(
-                div()
-                    .min_w(px(0.0))
-                    .flex_1()
-                    .text_size(px(13.0))
-                    .line_height(px(18.5714))
-                    .font_weight(gpui::FontWeight::NORMAL)
-                    .text_color(theme.text)
-                    .child(crate::i18n::text(label)),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .h(px(16.0))
-                    .px(px(6.0))
-                    .py(px(2.0))
-                    .rounded(px(10.0))
-                    .bg(theme.text.alpha(0.065))
-                    .text_size(px(12.0))
-                    .line_height(px(12.0))
-                    .font_weight(gpui::FontWeight::NORMAL)
-                    .text_color(theme.text.alpha(0.65))
-                    .flex()
-                    .items_center()
-                    .child(shortcut),
-            )
     }
     pub(super) fn right_panel_resize_handle(
         &self,
@@ -714,7 +586,7 @@ impl ChatApp {
                         .into_any_element()
                 }),
         );
-        self.right_panel_slot(panel_width, fullscreen, card, theme, cx)
+        self.right_panel_slot(panel_width, fullscreen, card, 0., theme, cx)
             .track_focus(&self.right_panel.focus)
             .on_key_down(cx.listener(Self::handle_right_panel_key))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -728,180 +600,74 @@ impl ChatApp {
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
-        if self.right_panel.mode == Some(RightPanelMode::SideChat)
-            && let Some(panel) = self.side_chat_panels.get(&self.active_conversation)
-        {
-            return self.right_panel_slot(
-                panel_width,
-                fullscreen,
-                div().child(panel.clone()),
-                theme,
-                cx,
-            );
-        }
-        if self.right_panel.mode == Some(RightPanelMode::Review)
-            && let Some(panel) = self.review_panels.get(&self.active_conversation)
-        {
-            return self.right_panel_slot(
-                panel_width,
-                fullscreen,
-                div().child(panel.clone()),
-                theme,
-                cx,
-            );
-        }
         if let Some(panel) = self.right_panel.subagent.clone() {
             return self.subagent_right_panel(panel, panel_width, fullscreen, theme, cx);
         }
-        if let Some(review) = self.right_panel.diff_review.clone() {
+        let key = &self.active_conversation;
+        let content: Option<gpui::AnyElement> = match self.active_panel_tab() {
+            Some(PanelTab::Browser(_)) => self
+                .browser_panels
+                .get(key)
+                .map(|panel| panel.clone().into_any_element()),
+            Some(PanelTab::Terminal(_)) => self
+                .terminal_panels
+                .get(key)
+                .map(|panel| panel.clone().into_any_element()),
+            Some(PanelTab::SideChat(_)) => self
+                .side_chat_panels
+                .get(key)
+                .map(|panel| panel.clone().into_any_element()),
+            Some(PanelTab::Changes) => self
+                .review_panels
+                .get(key)
+                .map(|panel| panel.clone().into_any_element()),
+            Some(PanelTab::File(_) | PanelTab::FilePicker) => self
+                .file_panels
+                .get(key)
+                .map(|panel| panel.clone().into_any_element()),
+            None => None,
+        };
+        if content.is_none()
+            && let Some(review) = self.right_panel.diff_review.clone()
+        {
             let target = cx.entity();
             let callback = DiffReviewCallback::new(move |event, _, cx| {
                 target.update(cx, move |app, cx| app.handle_diff_review_event(event, cx));
             });
             let card = div().child(render_diff_review_panel(&review, theme, callback));
             return self
-                .right_panel_slot(panel_width, fullscreen, card, theme, cx)
+                .right_panel_slot(panel_width, fullscreen, card, 0., theme, cx)
                 .track_focus(&self.right_panel.focus)
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(|_, _, cx| cx.stop_propagation());
         }
-
-        if self.right_panel.mode == Some(RightPanelMode::Files)
-            && let Some(panel) = self.file_panels.get(&self.active_conversation)
-        {
-            return self
-                .right_panel_slot(
-                    panel_width,
-                    fullscreen,
-                    div().child(panel.clone()),
-                    theme,
-                    cx,
-                )
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(|_, _, cx| cx.stop_propagation());
-        }
-
-        if self.right_panel.mode == Some(RightPanelMode::Browser)
-            && let Some(browser) = self.browser_panels.get(&self.active_conversation)
-        {
-            let card = div().child(browser.clone());
-            return self
-                .right_panel_slot(panel_width, fullscreen, card, theme, cx)
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(|_, _, cx| cx.stop_propagation());
-        }
-
-        if self.right_panel.mode == Some(RightPanelMode::Terminal)
-            && let Some(terminal) = self.terminal_panels.get(&self.active_conversation)
-        {
-            let card = div().child(terminal.clone());
-            return self
-                .right_panel_slot(panel_width, fullscreen, card, theme, cx)
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(|_, _, cx| cx.stop_propagation());
-        }
-
-        let toolbar = div()
-            .h(px(46.0))
-            .w_full()
-            .flex_none()
-            .px(px(8.0))
+        let inset = if fullscreen {
+            2. * RIGHT_PANEL_CARD_INSET
+        } else {
+            RIGHT_PANEL_CARD_INSET
+        };
+        let card = div()
             .flex()
-            .items_center()
-            .when_some(self.right_panel.mode, |toolbar, mode| {
-                let (_, label, _, glyph) = RIGHT_PANEL_ITEMS
-                    .iter()
-                    .find(|(candidate, _, _, _)| *candidate == mode)
-                    .copied()
-                    .expect("right panel mode must have a launcher item");
-                toolbar.child(
-                    div()
-                        .id("right-panel-active-tab")
-                        .h(px(28.0))
-                        .max_w(px(156.0))
-                        .px(px(8.0))
-                        .rounded(px(10.0))
-                        .bg(theme.text.alpha(0.05))
-                        .flex()
-                        .items_center()
-                        .gap(px(8.0))
-                        .child(icon(glyph, theme.text.into()).size(px(16.0)))
-                        .child(
-                            div()
-                                .min_w(px(0.0))
-                                .flex_1()
-                                .text_size(px(13.0))
-                                .line_height(px(18.5714))
-                                .text_color(theme.text)
-                                .child(crate::i18n::text(label)),
-                        )
-                        .child(
-                            div()
-                                .id("right-panel-close-tab")
-                                .size(px(20.0))
-                                .rounded(px(5.0))
-                                .flex_none()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .cursor_pointer()
-                                .hover(move |style| style.bg(theme.sidebar_hover))
-                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    cx.stop_propagation();
-                                    this.right_panel.mode = None;
-                                    this.right_panel.keyboard_focus = false;
-                                    cx.notify();
-                                }))
-                                .child(
-                                    icon("close-dialog", theme.text_tertiary.into()).size(px(12.0)),
-                                ),
-                        ),
-                )
-            });
-
-        let card = div().flex().flex_col().child(toolbar).child(
-            div()
-                .min_h(px(0.0))
-                .flex_1()
-                .p(px(8.0))
-                .flex()
-                .items_center()
-                .justify_center()
-                .when(self.right_panel.mode.is_none(), |body| {
-                    body.child(
-                        div()
-                            .w_full()
-                            .max_w(px(576.0))
-                            .px(px(20.0))
-                            .flex()
-                            .flex_col()
-                            .gap(px(4.0))
-                            .children(RIGHT_PANEL_ITEMS.iter().enumerate().map(
-                                |(index, (_, label, shortcut, glyph))| {
-                                    self.right_panel_menu_item(
-                                        index, label, shortcut, glyph, theme, cx,
-                                    )
-                                },
-                            )),
-                    )
-                }),
-        );
-        self.right_panel_slot(panel_width, fullscreen, card, theme, cx)
+            .flex_col()
+            .child(self.panel_tab_strip(f32::from(panel_width) - inset, theme, cx))
+            .child(div().min_h(px(0.)).flex_1().w_full().children(content));
+        // The strip paints the tint itself, so its selected tab stays white.
+        let tint_top = crate::components::PANEL_TAB_STRIP_HEIGHT;
+        self.right_panel_slot(panel_width, fullscreen, card, tint_top, theme, cx)
             .track_focus(&self.right_panel.focus)
-            .on_key_down(cx.listener(Self::handle_right_panel_key))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(|_, _, cx| cx.stop_propagation())
     }
     /// The docked slot every right-panel view sits in: the view goes in
     /// `card`, which the slot insets from the window edges and finishes with
-    /// the card chrome. The resize handle stays outside the card, centred on
-    /// its left edge.
+    /// the card chrome, its tint starting `tint_top` below the card's top.
+    /// The resize handle stays outside the card, centred on its left edge.
     fn right_panel_slot(
         &self,
         panel_width: gpui::Pixels,
         fullscreen: bool,
         card: Div,
+        tint_top: f32,
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
@@ -923,7 +689,7 @@ impl ChatApp {
             .child(
                 card.size_full()
                     .relative()
-                    .child(right_panel_card_chrome(theme)),
+                    .child(right_panel_card_chrome(tint_top, theme)),
             )
             .child(self.right_panel_resize_handle(theme, cx))
     }
@@ -934,7 +700,7 @@ impl ChatApp {
 /// rounded corners (GPUI clips children to rectangles, so the view's own
 /// square corners would show), and the hairline. None of them takes a hitbox,
 /// so input still reaches the view underneath.
-fn right_panel_card_chrome(theme: Theme) -> Div {
+fn right_panel_card_chrome(tint_top: f32, theme: Theme) -> Div {
     let radius = px(RIGHT_PANEL_CARD_RADIUS);
     let inset = px(RIGHT_PANEL_CARD_INSET);
     div()
@@ -944,8 +710,17 @@ fn right_panel_card_chrome(theme: Theme) -> Div {
         .child(
             div()
                 .absolute()
-                .inset_0()
-                .rounded(radius)
+                .top(px(tint_top))
+                .left_0()
+                .right_0()
+                .bottom_0()
+                .map(|tint| {
+                    if tint_top > 0. {
+                        tint.rounded_b(radius)
+                    } else {
+                        tint.rounded(radius)
+                    }
+                })
                 .bg(theme.side_panel_tint),
         )
         .child(

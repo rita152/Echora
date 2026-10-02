@@ -8,13 +8,10 @@ use crate::components::file_change::{
 };
 
 impl ChatApp {
+    /// ⌃⇧G and the summary's changes: the chat's Changes tab, opened after
+    /// the others when it has none.
     pub(super) fn open_review(&mut self, cx: &mut Context<Self>) {
-        self.right_panel.open = true;
-        let index = super::RIGHT_PANEL_ITEMS
-            .iter()
-            .position(|(mode, ..)| *mode == super::state::RightPanelMode::Review)
-            .expect("review launcher entry");
-        self.select_right_panel_item(index, cx);
+        self.show_or_open_panel_tool(super::state::RightPanelMode::Review, cx);
     }
     pub(super) fn deactivate_review(&mut self, cx: &mut Context<Self>) {
         if let Some(panel) = self.review_panels.get(&self.active_conversation) {
@@ -40,31 +37,9 @@ impl ChatApp {
                 .get(&key)
                 .map(|h| h.composer.clone());
             cx.subscribe(&panel, move |s, _, event: &ReviewEvent, cx| match event {
-                ReviewEvent::Close => {
-                    s.deactivate_review(cx);
-                    s.right_panel.mode = None;
-                    s.right_panel.fullscreen = false;
-                    s.right_panel.diff_review = None;
-                    cx.notify();
-                }
-                ReviewEvent::AddTab => {
-                    // "+" opens a New tab, which is the browser's.
-                    s.deactivate_review(cx);
-                    s.right_panel.fullscreen = false;
-                    s.right_panel.diff_review = None;
-                    s.open_browser_tab(None, cx);
-                }
-                ReviewEvent::Fullscreen => {
-                    s.right_panel.fullscreen = !s.right_panel.fullscreen;
-                    cx.notify();
-                }
                 ReviewEvent::OpenFile { path, line } => {
-                    s.right_panel.fullscreen = false;
-                    s.right_panel.mode = Some(super::state::RightPanelMode::Files);
-                    s.ensure_files(cx);
-                    s.file_panels[&s.active_conversation].update(cx, |p, cx| {
-                        p.open_path(std::path::PathBuf::from(path), *line, cx)
-                    });
+                    let (path, line) = (std::path::PathBuf::from(path), *line);
+                    s.open_in_files(|panel, cx| panel.open_path(path, line, cx), cx);
                     cx.notify();
                 }
                 ReviewEvent::CommentsChanged(comments) => {
@@ -147,20 +122,6 @@ impl ChatApp {
             self.review_panels[&key].update(cx, |p, cx| p.set_last_turn(review, false, cx));
         }
         self.review_panels[&key].update(cx, |p, cx| p.focus(cx));
-        let tabs = self
-            .file_panels
-            .get(&key)
-            .map(|p| p.read(cx).open_documents())
-            .unwrap_or_default();
-        self.review_panels[&key].update(cx, |p, cx| p.set_file_tabs(tabs, cx));
-        self.review_panels[&key].update(cx, |p, cx| {
-            p.set_side_chat_available(
-                self.side_chat_panels
-                    .get(&key)
-                    .is_some_and(|p| !p.read(cx).is_empty()),
-                cx,
-            )
-        });
         self.right_panel.focus_pending = false;
     }
     pub(super) fn open_diff_review(
@@ -168,16 +129,11 @@ impl ChatApp {
         review: DiffReviewPresentation,
         cx: &mut Context<Self>,
     ) {
-        self.ensure_review(cx);
-        self.review_panels[&self.active_conversation]
-            .update(cx, |p, cx| p.set_last_turn(review.clone(), true, cx));
-        self.right_panel.diff_review = Some(review);
-        self.right_panel.subagent = None;
-        self.right_panel.subagent_menu_open = false;
-        self.right_panel.open = true;
-        self.right_panel.mode = Some(super::state::RightPanelMode::Review);
-        self.right_panel.keyboard_focus = false;
-        self.right_panel.focus_pending = false;
+        // The reference shows a turn's changes in the Changes tab.
+        self.open_review(cx);
+        if let Some(panel) = self.review_panels.get(&self.active_conversation) {
+            panel.update(cx, |p, cx| p.set_last_turn(review, true, cx));
+        }
         cx.notify();
     }
     pub(super) fn handle_diff_review_event(

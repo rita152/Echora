@@ -3,7 +3,7 @@
 use gpui::{Bounds, Div, Entity, canvas, div, point, prelude::*, px, size};
 
 use super::{
-    COMPOSER_BOTTOM_INSET, CONVERSATION_BOTTOM_INSET,
+    COMPOSER_BOTTOM_INSET, CONVERSATION_BOTTOM_INSET, CONVERSATION_TOP_INSET,
     context::{ConversationRenderContext, MainConversationSnapshot},
     conversation::conversation,
     navigation::user_message_navigation_overlay,
@@ -261,7 +261,7 @@ pub(super) fn home(
                     .absolute()
                     // These are component boundaries, not a viewport-specific
                     // heading coordinate. GPUI centers the group in between them.
-                    .top(px(78.0))
+                    .top(px(78.0 - crate::components::PANEL_TAB_STRIP_HEIGHT))
                     .bottom(px(composer_height + 60.0))
                     .w_full()
                     .flex()
@@ -312,6 +312,13 @@ pub(super) fn home(
                 render.clone(),
                 conversation_rows,
                 conversation_list.clone(),
+                // A side chat sits under the right panel's tab strip instead
+                // of the chat's 46px header.
+                if side_chat {
+                    CONVERSATION_TOP_INSET - crate::components::PANEL_TAB_STRIP_HEIGHT
+                } else {
+                    CONVERSATION_TOP_INSET
+                },
                 if side_chat {
                     composer_height + 55.0
                 } else {

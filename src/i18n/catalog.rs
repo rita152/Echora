@@ -122,7 +122,7 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "从使用过 MCP 工具或网页搜索的聊天生成记忆" => {
             "Create memories from chats that used MCP tools or web search"
         }
-        "从工作区目录树中选择文件" => "Choose a file from the workspace tree",
+        "从工作区目录树中选择文件" => "Select a file from the workspace tree",
         "从此处分叉" => "Fork from here",
         "会话" => "Session",
         "会话历史" => "Conversation history",
@@ -344,7 +344,6 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "完整访问权限" => "Full access",
         "实时" => "Live",
         "审批选项" => "Approval options",
-        "审查" => "Review",
         "审查命令超时，已停止相关进程，请刷新后重试" => {
             "Review command timed out and related processes were stopped. Refresh and try again."
         }
@@ -649,7 +648,7 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         }
         "无法写入权限审批响应" => "Could not send permission approval response",
         "无法写入用户输入响应" => "Could not send user input response",
-        "无法加载更改" => "Could not load changes",
+        "无法加载更改" => "Couldn't load changes",
         "无法加载聊天历史" => "Could not load chat history",
         "无法启动审查命令" => "Could not start review command",
         "无法回复命令审批" => "Could not respond to command approval",
@@ -1285,6 +1284,28 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "停止并归档" => "Stop and archive",
         "收藏该轮次" => "Bookmark turn",
         "取消收藏该轮次" => "Remove bookmark",
+        "关闭“变更”标签页" => "Close Changes tab",
+        "“变更”选项" => "Changes options",
+        "自动换行" => "Word wrap",
+        "渲染预览" => "Rich preview",
+        "词级差异" => "Word diffs",
+        "在标签页中打开文件" => "Open file in a tab",
+        "展开文件" => "Expand file",
+        "折叠文件" => "Collapse file",
+        "标记为未查看" => "Mark as unviewed",
+        "打开方式" => "Open in",
+        "在编辑器中打开" => "Open in editor",
+        "文件操作" => "File actions",
+        "1 行未修改" => "1 unmodified line",
+        "还原" => "Revert",
+        "暂存" => "Stage",
+        "此更改需要按文件还原" => "This change has to be reverted by file",
+        "打开" => "Open",
+        "打开选项" => "Open options",
+        "默认应用" => "Default app",
+        "在文件夹中打开" => "Open in folder",
+        "文件路径" => "File path",
+        "刷新以尝试重新加载更改" => "Refresh to try loading the changes again",
         _ => return None,
     })
 }

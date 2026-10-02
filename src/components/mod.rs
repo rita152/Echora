@@ -1,3 +1,6 @@
+/// The right panel's tab strip, above whichever tool it shows.
+pub(crate) const PANEL_TAB_STRIP_HEIGHT: f32 = 46.0;
+
 pub mod account;
 pub mod approval;
 pub(crate) mod auto_approval;
@@ -5,10 +8,14 @@ pub mod browser;
 pub mod callback;
 pub mod chat_search;
 pub mod composer;
+pub(crate) mod diff_marks;
+pub(crate) mod diff_syntax;
+pub(crate) mod diff_words;
 pub mod file_change;
 pub mod file_editor;
 pub mod file_io;
 pub mod file_panel;
+pub(crate) mod file_type_icons;
 pub mod home;
 pub mod icons;
 pub mod markdown;
@@ -22,3 +29,4 @@ pub mod sidebar;
 pub mod summary_panel;
 pub mod terminal;
 pub mod user_input_request;
+pub(crate) mod viewer_header;

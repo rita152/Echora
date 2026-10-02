@@ -1692,3 +1692,194 @@ fn account_events_drive_the_account_surface_without_touching_conversations() {
         );
     });
 }
+
+/// The right panel's tabs follow the reference's strip: `+` appends a New
+/// tab, a tool picked on a New tab replaces it, Changes exists once (and
+/// leaves the New tab's tools), closing the selected tab selects its right
+/// neighbor (the left one at the end), and the last close hides the panel.
+#[test]
+fn panel_tabs_add_replace_and_close_like_the_reference() {
+    use super::panel_tabs::{PanelTab, TabPlacement};
+    let mut app = TestApp::new();
+    let mut window = app.open_window_with_options(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: point(px(0.0), px(0.0)),
+                size: size(px(1440.0), px(900.0)),
+            })),
+            ..Default::default()
+        },
+        |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
+    );
+    let tabs = |window: &mut gpui::TestAppWindow<ChatApp>| {
+        window.read(|chat, _| {
+            let state = &chat.panel_tabs[&chat.active_conversation];
+            (state.tabs.clone(), state.active)
+        })
+    };
+    window.update(|chat, _, cx| chat.open_right_panel(cx));
+    window.draw();
+    let (first, _) = tabs(&mut window);
+    assert!(matches!(first.as_slice(), [PanelTab::Browser(_)]));
+
+    // `+` appends a second New tab and selects it.
+    window.update(|chat, _, cx| chat.open_new_panel_tab(cx));
+    window.draw();
+    let (opened, active) = tabs(&mut window);
+    assert_eq!((opened.len(), active), (2, 1));
+
+    // Terminal picked on that New tab takes its place.
+    window.update(|chat, _, cx| {
+        chat.open_panel_tool(
+            super::RightPanelMode::Terminal,
+            TabPlacement::Replace(1),
+            cx,
+        )
+    });
+    window.draw();
+    let (replaced, active) = tabs(&mut window);
+    assert_eq!(replaced[0], first[0]);
+    assert!(matches!(replaced[1], PanelTab::Terminal(_)));
+    assert_eq!(active, 1);
+    let browser_tabs = window.read(|chat, cx| {
+        chat.browser_panels[&chat.active_conversation]
+            .read(cx)
+            .tab_ids()
+            .len()
+    });
+    assert_eq!(browser_tabs, 1, "the replaced New tab closed");
+
+    // Changes opens once, after the others, and leaves the New tab's tools.
+    window.update(|chat, _, cx| chat.open_review(cx));
+    window.update(|chat, _, cx| chat.open_review(cx));
+    window.draw();
+    let (with_changes, active) = tabs(&mut window);
+    assert_eq!(with_changes.len(), 3);
+    assert_eq!((with_changes[2], active), (PanelTab::Changes, 2));
+
+    // Closing the selected first tab selects its right neighbor.
+    window.update(|chat, _, cx| {
+        chat.activate_panel_tab(0, cx);
+        chat.close_panel_tab(0, cx);
+    });
+    window.draw();
+    let (closed, active) = tabs(&mut window);
+    assert_eq!(closed.len(), 2);
+    assert_eq!((closed[active], active), (with_changes[1], 0));
+
+    // At the end, the left neighbor takes over.
+    window.update(|chat, _, cx| {
+        chat.activate_panel_tab(1, cx);
+        chat.close_panel_tab(1, cx);
+    });
+    window.draw();
+    let (last, active) = tabs(&mut window);
+    assert_eq!((last.as_slice(), active), (&with_changes[1..2], 0));
+    assert_eq!(
+        window.read(|chat, _| chat.right_panel.mode),
+        Some(super::RightPanelMode::Terminal)
+    );
+
+    // The last close hides the panel; opening it again starts a New tab.
+    window.update(|chat, _, cx| chat.close_panel_tab(0, cx));
+    window.draw();
+    assert!(!window.read(|chat, _| chat.right_panel.open));
+    window.update(|chat, _, cx| chat.open_right_panel(cx));
+    window.draw();
+    let (reopened, _) = tabs(&mut window);
+    assert!(matches!(reopened.as_slice(), [PanelTab::Browser(_)]));
+}
+
+/// Dropping a tab on another moves it there and keeps the selection.
+#[test]
+fn panel_tabs_reorder_and_keep_the_selected_tab() {
+    let mut app = TestApp::new();
+    let mut window = app.open_window_with_options(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: point(px(0.0), px(0.0)),
+                size: size(px(1440.0), px(900.0)),
+            })),
+            ..Default::default()
+        },
+        |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
+    );
+    window.update(|chat, _, cx| {
+        chat.open_right_panel(cx);
+        chat.open_review(cx);
+        chat.open_new_panel_tab(cx);
+    });
+    window.draw();
+    let before = window.read(|chat, _| chat.panel_tabs[&chat.active_conversation].tabs.clone());
+    window.update(|chat, _, cx| chat.move_panel_tab(2, 0, cx));
+    let (after, active) = window.read(|chat, _| {
+        let state = &chat.panel_tabs[&chat.active_conversation];
+        (state.tabs.clone(), state.active)
+    });
+    assert_eq!(after, vec![before[2], before[0], before[1]]);
+    assert_eq!(after[active], before[2]);
+}
+
+/// The strip's own buttons: `+` adds a tab after the others, a tab's close
+/// button closes it with the widths held until the pointer leaves the
+/// strip, and closing the last tab hides the panel.
+#[test]
+fn panel_tab_strip_buttons_add_and_close_tabs() {
+    let mut app = TestApp::new();
+    let mut window = app.open_window_with_options(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: point(px(0.), px(0.)),
+                size: size(px(1470.), px(923.)),
+            })),
+            ..Default::default()
+        },
+        |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
+    );
+    // A 600px slot: the card spans 870..1462 and its tabs start at 878,
+    // 240px wide for one tab and 215.5px for two; the strip is 8..54.
+    window.update(|chat, _, cx| {
+        chat.right_panel.width = Some(600.);
+        chat.open_right_panel(cx);
+    });
+    window.draw();
+    let tabs = |window: &TestAppWindow<ChatApp>| {
+        window.read(|chat, _| {
+            let state = &chat.panel_tabs[&chat.active_conversation];
+            (state.tabs.clone(), state.active)
+        })
+    };
+    let (first, _) = tabs(&window);
+    assert_eq!(first.len(), 1);
+
+    window.simulate_click(
+        point(px(878. + 240. + 6. + 14.), px(31.)),
+        MouseButton::Left,
+    );
+    window.draw();
+    let (added, active) = tabs(&window);
+    assert_eq!((added.len(), active, added[0]), (2, 1, first[0]));
+
+    // The first tab's close button, revealed on hover.
+    let close_first = point(px(878. + 215.5 - 2. - 16.), px(30.));
+    window.simulate_mouse_move(close_first);
+    window.draw();
+    window.simulate_click(close_first, MouseButton::Left);
+    window.draw();
+    let (closed, active) = tabs(&window);
+    assert_eq!((closed.as_slice(), active), (&added[1..], 0));
+    assert_eq!(
+        window.read(|chat, _| chat.panel_tab_frozen_width),
+        Some(215.5)
+    );
+    window.simulate_mouse_move(point(px(1100.), px(400.)));
+    window.draw();
+    assert_eq!(window.read(|chat, _| chat.panel_tab_frozen_width), None);
+
+    window.simulate_click(
+        point(px(878. + 240. - 2. - 16.), px(30.)),
+        MouseButton::Left,
+    );
+    window.draw();
+    assert!(!window.read(|chat, _| chat.right_panel.open));
+}

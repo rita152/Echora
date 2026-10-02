@@ -30,13 +30,13 @@ fn native_keyboard_menu_and_select_all_copy_work_in_the_diff() {
         |_, cx| fixture(cx),
     );
     window.draw();
-    window.simulate_click(point(px(40.), px(64.)), MouseButton::Left);
+    window.simulate_click(point(px(40.), px(24.)), MouseButton::Left);
     window.draw();
     window.simulate_keystrokes("down down");
     assert_eq!(window.read(|p, _| p.menu_selected), 2);
     window.simulate_keystrokes("escape");
     assert!(window.read(|p, _| p.menu.is_none()));
-    window.simulate_click(point(px(100.), px(151.)), MouseButton::Left);
+    window.simulate_click(point(px(100.), px(105.)), MouseButton::Left);
     window.simulate_keystrokes("cmd-a cmd-c");
     assert_eq!(
         app.read_from_clipboard().and_then(|c| c.text()),
@@ -128,20 +128,20 @@ fn horizontal_scrollbar_drag_and_keyboard_reach_both_limits() {
     );
     window.draw();
     window.draw();
-    window.simulate_click(point(px(20.), px(254.)), MouseButton::Left);
+    window.simulate_click(point(px(20.), px(294.)), MouseButton::Left);
     window.simulate_keystrokes("end");
     window.draw();
     assert!(window.read(|p, _| p.horizontal_offset) > 100.);
     window.simulate_keystrokes("home");
     window.draw();
     assert_eq!(window.read(|p, _| p.horizontal_offset), 0.);
-    window.simulate_mouse_down(point(px(10.), px(254.)), MouseButton::Left);
+    window.simulate_mouse_down(point(px(10.), px(294.)), MouseButton::Left);
     window.simulate_event(gpui::MouseMoveEvent {
-        position: point(px(350.), px(254.)),
+        position: point(px(350.), px(294.)),
         pressed_button: Some(MouseButton::Left),
         modifiers: Default::default(),
     });
-    window.simulate_mouse_up(point(px(350.), px(254.)), MouseButton::Left);
+    window.simulate_mouse_up(point(px(350.), px(294.)), MouseButton::Left);
     window.draw();
     assert!(window.read(|p, _| p.horizontal_offset) > 100.);
 }
@@ -403,7 +403,7 @@ fn failed_submission_restores_comments_without_replacing_a_new_comment_draft() {
 /// ChatGPT's review popups, measured from the live reference build with
 /// `scripts/cdp_capture_review_menus.mjs`: a 4px inset and 20px corners around
 /// 28.5625px rows, 9px group rules, a 200px comparison menu, a 220px
-/// diff-controls menu, and a 296px branch picker.
+/// `Changes options` menu, and a 296px branch picker.
 #[gpui::test]
 fn review_popups_match_the_captured_chatgpt_metrics(cx: &mut gpui::TestAppContext) {
     use gpui::VisualTestContext;
@@ -446,7 +446,8 @@ fn review_popups_match_the_captured_chatgpt_metrics(cx: &mut gpui::TestAppContex
         "scope menu height {height}"
     );
 
-    // Nine diff-control rows, one group rule, and the same padding.
+    // Five diff options, a rule, then commit, pull request, Stage all and
+    // Restore all: nine rows and the same padding.
     let (width, height) = bounds(cx, Menu::View);
     assert_eq!(width, 220.0);
     assert!(
@@ -488,4 +489,70 @@ fn comparison_popup_opens_from_the_toolbar_and_selects_with_the_keyboard(
         visual.update(|_, cx| view.read(cx).scope.clone()),
         Scope::Unstaged
     );
+}
+
+/// The reference shows a run of up to three unchanged lines outside git's
+/// context in full and folds a longer one into `N unmodified lines`, before
+/// the first hunk and after the last.
+#[test]
+fn unchanged_runs_fold_from_four_lines_and_short_ones_show_in_full() {
+    let mut app = TestApp::new();
+    let panel = app.new_entity(fixture);
+    app.update_entity(&panel, |p, cx| {
+        // Hunks starting at line 4 (three lines above) and line 9 (eight).
+        let short = "diff --git a/a.rs b/a.rs\n--- a/a.rs\n+++ b/a.rs\n@@ -4,2 +4,2 @@\n four\n-old\n+new\n";
+        let long = "diff --git a/b.rs b/b.rs\n--- a/b.rs\n+++ b/b.rs\n@@ -9,2 +9,2 @@\n nine\n-old\n+new\n";
+        let mut files = git_review::parse_unified(&format!("{short}{long}"));
+        files[0].new_text = Some("one\ntwo\nthree\nfour\nnew\nsix\n".into());
+        files[1].new_text = Some((1..=20).map(|n| format!("line {n}\n")).collect());
+        p.snapshot = Arc::new(Snapshot {
+            files,
+            root: std::env::temp_dir(),
+            ..Default::default()
+        });
+        p.rebuild(cx);
+        let rows: Vec<_> = p.rows.iter().cloned().collect();
+        let first_gap = rows
+            .iter()
+            .position(|row| matches!(row, Row::Gap { .. }))
+            .expect("the long file folds");
+        // a.rs: lines 1-3 shown, then its hunk, then line 6 (one line) shown.
+        assert!(matches!(&rows[1], Row::Code { hunk: None, right: Some(line), .. } if line.new == Some(1)));
+        assert!(rows[..first_gap].iter().all(|row| !matches!(row, Row::Gap { file: 0, .. })));
+        assert!(matches!(rows[first_gap], Row::Gap { file: 1, hunk: 0, count: 8 }));
+        // b.rs ends at line 10 of 20: ten folded lines after its last hunk.
+        assert!(rows.iter().any(|row| matches!(row, Row::Gap { file: 1, hunk: 1, count: 10 })));
+        assert!(matches!(rows.last(), Some(Row::End(1))));
+    });
+}
+
+/// A deleted file opens collapsed, as the reference shows only its header,
+/// and a refresh does not fold it again once it was expanded.
+#[test]
+fn deleted_files_fold_once_when_they_first_appear() {
+    let mut app = TestApp::new();
+    let panel = app.new_entity(fixture);
+    app.update_entity(&panel, |p, cx| {
+        let patch = "diff --git a/gone.rs b/gone.rs\ndeleted file mode 100644\n--- a/gone.rs\n+++ /dev/null\n@@ -1 +0,0 @@\n-old\n";
+        let snapshot = Snapshot {
+            files: git_review::parse_unified(patch),
+            root: std::env::temp_dir(),
+            ..Default::default()
+        };
+        assert_eq!(snapshot.files[0].status, 'D');
+        p.generation += 1;
+        let generation = p.generation;
+        p.loading = true;
+        p.finish_refresh(generation, Ok(snapshot.clone()), cx);
+        assert!(p.collapsed.contains("gone.rs"));
+        p.toggle_file(0, cx);
+        assert!(!p.collapsed.contains("gone.rs"));
+        let mut changed = snapshot;
+        changed.fingerprint += 1;
+        p.generation += 1;
+        let generation = p.generation;
+        p.loading = true;
+        p.finish_refresh(generation, Ok(changed), cx);
+        assert!(!p.collapsed.contains("gone.rs"));
+    });
 }

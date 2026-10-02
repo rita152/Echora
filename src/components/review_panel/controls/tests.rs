@@ -98,7 +98,7 @@ fn clicking_jump_result_reveals_a_filtered_out_file() {
     });
     window.draw();
     // The first result is below the input in the right-anchored Jump popup.
-    window.simulate_click(point(px(450.), px(135.)), MouseButton::Left);
+    window.simulate_click(point(px(450.), px(89.)), MouseButton::Left);
     window.draw();
     window.read(|panel, cx| {
         let selected = panel.selected_file;

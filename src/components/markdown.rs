@@ -2471,32 +2471,6 @@ pub(crate) fn code_scope_regions(
     Some(regions)
 }
 
-pub fn file_editor_runs(
-    code: &str,
-    language: Option<&str>,
-    theme: Theme,
-) -> Vec<(Range<usize>, TextRun)> {
-    let mut font = ui_font();
-    font.family = UI_MONOSPACE_FONT_FAMILY.into();
-    let mut palette = MarkdownRenderStyle::new(theme).palette;
-    palette.text = theme.file_editor_text;
-    highlighted_code_spans(code, language)
-        .unwrap_or_else(|| {
-            vec![CodeHighlightSpan {
-                range: 0..code.len(),
-                style: CodeSyntaxStyle::PLAIN,
-            }]
-        })
-        .into_iter()
-        .map(|s| {
-            (
-                s.range.clone(),
-                code_text_run(s.range.len(), font.clone(), s.style, palette),
-            )
-        })
-        .collect()
-}
-
 fn code_syntax_color(token: CodeSyntaxToken, palette: MarkdownPalette) -> Rgba {
     match token {
         CodeSyntaxToken::Plain => palette.text,

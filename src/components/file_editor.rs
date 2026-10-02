@@ -655,10 +655,12 @@ impl FileEditor {
             let theme = Theme::for_mode(self.mode);
             let mut font = ui_font();
             font.family = UI_MONOSPACE_FONT_FAMILY.into();
-            let spans = super::markdown::file_editor_runs(
+            // The reference Files viewer shares the diff viewer's Codex
+            // code theme.
+            let spans = super::diff_syntax::code_spans(
                 &self.buffer.text,
                 self.language.as_deref(),
-                theme,
+                self.mode,
             );
             let mut source = 0;
             let mut span_index = 0;

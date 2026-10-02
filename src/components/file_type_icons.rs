@@ -1,5 +1,5 @@
-//! File-type glyphs for diff headers, resolved as the reference's file tree
-//! resolves them (`set: "complete"`).
+//! File-type glyphs for file trees, tabs and diff headers, resolved as the
+//! reference's file tree resolves them (`set: "complete"`).
 //!
 //! `assets/file-icons/map.json` holds the reference's lookup tables: exact
 //! file names first, then each dotted suffix of the lowercased name from the
@@ -15,7 +15,7 @@ use serde::Deserialize;
 
 use crate::theme::ThemeMode;
 
-const MAP: &str = include_str!("../../../../assets/file-icons/map.json");
+const MAP: &str = include_str!("../../assets/file-icons/map.json");
 
 #[derive(Deserialize)]
 struct IconMap {
@@ -41,7 +41,7 @@ fn hex(color: &str) -> Rgba {
 }
 
 /// The icon token for `path` (`markdown`, `rust`, …, or `default`).
-pub(super) fn file_icon_token(path: &str) -> &'static str {
+pub(crate) fn file_icon_token(path: &str) -> &'static str {
     let map = map();
     let name = path.rsplit('/').next().unwrap_or(path);
     let lower = name.to_lowercase();
@@ -65,7 +65,7 @@ pub(super) fn file_icon_token(path: &str) -> &'static str {
 }
 
 /// The asset name and color of `path`'s file-type glyph in `mode`.
-pub(super) fn file_icon(path: &str, mode: ThemeMode) -> (String, Rgba) {
+pub(crate) fn file_icon(path: &str, mode: ThemeMode) -> (String, Rgba) {
     let token = file_icon_token(path);
     let color = map()
         .colors
@@ -76,6 +76,12 @@ pub(super) fn file_icon(path: &str, mode: ThemeMode) -> (String, Rgba) {
         })
         .unwrap_or_else(|| hex("#84848a"));
     (format!("pr-file-{token}"), color)
+}
+
+/// The color of the reference's untyped glyphs, which its tree also uses for
+/// folder chevrons.
+pub(crate) fn muted_color(mode: ThemeMode) -> Rgba {
+    file_icon("", mode).1
 }
 
 #[cfg(test)]

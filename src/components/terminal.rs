@@ -16,10 +16,7 @@ use gpui::{
 };
 use portable_pty::{CommandBuilder, MasterPty, PtySize};
 
-use crate::{
-    components::icons::icon,
-    theme::{Theme, ThemeMode},
-};
+use crate::theme::{Theme, ThemeMode};
 
 const FONT_SIZE: f32 = 12.0;
 const CELL_WIDTH: f32 = 7.224;
@@ -49,8 +46,21 @@ pub fn init(cx: &mut App) {
 #[derive(Default)]
 struct TerminalCallbacks {
     replies: Vec<Vec<u8>>,
+    /// The title the shell last set (`OSC 0` / `OSC 2`), which names the
+    /// tab as the reference's terminal does.
+    title: Option<String>,
+    title_changed: bool,
 }
 impl vt100::Callbacks for TerminalCallbacks {
+    fn set_window_title(&mut self, _: &mut vt100::Screen, title: &[u8]) {
+        let title = String::from_utf8_lossy(title).trim().to_owned();
+        let title = (!title.is_empty()).then_some(title);
+        if self.title != title {
+            self.title = title;
+            self.title_changed = true;
+        }
+    }
+
     fn unhandled_csi(
         &mut self,
         screen: &mut vt100::Screen,
@@ -173,6 +183,9 @@ impl Process {
     }
 }
 
+/// The shell changed its terminal's title.
+struct TerminalTitleChanged;
+
 pub struct TerminalView {
     parser: vt100::Parser<TerminalCallbacks>,
     process: Option<Process>,
@@ -187,7 +200,12 @@ pub struct TerminalView {
     focus_pending: bool,
     blink: bool,
 }
+impl gpui::EventEmitter<TerminalTitleChanged> for TerminalView {}
+
 impl TerminalView {
+    fn title(&self) -> Option<&str> {
+        self.parser.callbacks().title.as_deref()
+    }
     fn new(cwd: PathBuf, mode: ThemeMode, cx: &mut Context<Self>) -> Self {
         Self::with_process(Process::start(&cwd), mode, cx)
     }
@@ -225,6 +243,11 @@ impl TerminalView {
                                 match event {
                                     Output::Bytes(bytes) => {
                                         this.parser.process(&bytes);
+                                        if std::mem::take(
+                                            &mut this.parser.callbacks_mut().title_changed,
+                                        ) {
+                                            cx.emit(TerminalTitleChanged);
+                                        }
                                         for reply in
                                             std::mem::take(&mut this.parser.callbacks_mut().replies)
                                         {
@@ -387,7 +410,10 @@ impl TerminalView {
                             self.parser.screen().size().0,
                             self.parser.screen().size().1,
                             SCROLLBACK,
-                            TerminalCallbacks::default(),
+                            TerminalCallbacks {
+                                title: self.parser.callbacks().title.clone(),
+                                ..Default::default()
+                            },
                         );
                         self.parser.process(&modes);
                         self.parser.process(&attrs);
@@ -824,8 +850,9 @@ impl EntityInputHandler for TerminalView {
     }
 }
 
+/// A chat's terminals. The right panel's tab strip lists them; the panel
+/// shows the one it selects.
 pub struct TerminalPanel {
-    side_chat_available: bool,
     tabs: Vec<(usize, Entity<TerminalView>)>,
     active: usize,
     next_id: usize,
@@ -834,22 +861,63 @@ pub struct TerminalPanel {
 }
 impl TerminalPanel {
     pub fn new(cwd: PathBuf, mode: ThemeMode, cx: &mut Context<Self>) -> Self {
-        let mut panel = Self {
-            side_chat_available: false,
+        let _ = cx;
+        Self {
             tabs: Vec::new(),
             active: 0,
             next_id: 0,
             cwd,
             mode,
-        };
-        panel.add(cx);
-        panel
+        }
     }
-    fn add(&mut self, cx: &mut Context<Self>) {
+    /// Starts a terminal in the chat's directory and shows it.
+    pub fn add(&mut self, cx: &mut Context<Self>) -> usize {
         let terminal = cx.new(|cx| TerminalView::new(self.cwd.clone(), self.mode, cx));
-        self.tabs.push((self.next_id, terminal));
+        cx.subscribe(&terminal, |_, _, _: &TerminalTitleChanged, cx| cx.notify())
+            .detach();
+        let id = self.next_id;
+        self.tabs.push((id, terminal));
         self.next_id += 1;
         self.active = self.tabs.len() - 1;
+        cx.notify();
+        id
+    }
+    pub fn tab_ids(&self) -> Vec<usize> {
+        self.tabs.iter().map(|(id, _)| *id).collect()
+    }
+    pub fn active_id(&self) -> Option<usize> {
+        self.tabs.get(self.active).map(|(id, _)| *id)
+    }
+    /// The title the shell set for terminal `id`, or the directory's name.
+    pub fn title(&self, id: usize, cx: &App) -> String {
+        self.tabs
+            .iter()
+            .find(|(tab, _)| *tab == id)
+            .and_then(|(_, view)| view.read(cx).title().map(str::to_owned))
+            .unwrap_or_else(|| {
+                self.cwd
+                    .file_name()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| crate::i18n::text("终端").into())
+            })
+    }
+    pub fn select(&mut self, id: usize, cx: &mut Context<Self>) {
+        if let Some(index) = self.tabs.iter().position(|(tab, _)| *tab == id)
+            && index != self.active
+        {
+            self.active = index;
+            cx.notify();
+        }
+    }
+    /// Closes terminal `id`, ending its shell.
+    pub fn close(&mut self, id: usize, cx: &mut Context<Self>) {
+        let Some(index) = self.tabs.iter().position(|(tab, _)| *tab == id) else {
+            return;
+        };
+        self.tabs.remove(index);
+        if index < self.active || self.active >= self.tabs.len() {
+            self.active = self.active.saturating_sub(1);
+        }
         cx.notify();
     }
     pub fn set_mode(&mut self, mode: ThemeMode, cx: &mut Context<Self>) {
@@ -870,130 +938,16 @@ impl TerminalPanel {
             });
         }
     }
-    pub fn set_side_chat_available(&mut self, available: bool, cx: &mut Context<Self>) {
-        self.side_chat_available = available;
-        cx.notify();
-    }
 }
 impl Render for TerminalPanel {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::for_mode(self.mode);
-        let title = self
-            .cwd
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| crate::i18n::text("终端").into());
         div()
             .id("terminal-panel")
             .size_full()
             .flex()
             .flex_col()
             .overflow_hidden()
-            .child(
-                div()
-                    .h(px(46.))
-                    .flex_none()
-                    .px(px(8.))
-                    .pr(px(82.))
-                    .flex()
-                    .items_center()
-                    .gap(px(4.))
-                    .child(
-                        div()
-                            .id("terminal-tabs")
-                            .flex()
-                            .min_w(px(0.))
-                            .overflow_x_scroll()
-                            .gap(px(4.))
-                            .when(self.side_chat_available, |tabs| {
-                                tabs.child(super::side_chat::restore_tab(
-                                    "terminal-side-chat-tab",
-                                    theme,
-                                ))
-                            })
-                            .children(self.tabs.iter().enumerate().map(|(index, (id, _))| {
-                                div()
-                                    .id(("terminal-tab", *id))
-                                    .role(gpui::Role::Tab)
-                                    .aria_selected(index == self.active)
-                                    .aria_label(crate::i18n::format!("终端 {}" => "Terminal {}", index + 1))
-                                    .h(px(28.))
-                                    .w(px(156.))
-                                    .min_w(px(80.))
-                                    .px(px(8.))
-                                    .rounded(px(10.))
-                                    .when(index == self.active, |s| s.bg(theme.text.alpha(0.05)))
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(8.))
-                                    .cursor_pointer()
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.active = index;
-                                        this.focus(cx);
-                                        cx.notify();
-                                    }))
-                                    .child(icon("panel-terminal", theme.text.into()).size(px(16.)))
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .min_w(px(0.))
-                                            .overflow_hidden()
-                                            .text_size(px(13.))
-                                            .text_color(theme.text)
-                                            .child(title.clone()),
-                                    )
-                                    .child(
-                                        div()
-                                            .id(("close-terminal", *id))
-                                            .role(gpui::Role::Button)
-                                            .aria_label(crate::i18n::format!("关闭终端 {}" => "Close terminal {}", index + 1))
-                                            .size(px(20.))
-                                            .flex_none()
-                                            .rounded(px(5.))
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .hover(|s| s.bg(theme.sidebar_hover))
-                                            .on_mouse_down(MouseButton::Left, |_, _, cx| {
-                                                cx.stop_propagation()
-                                            })
-                                            .on_click(cx.listener(move |this, _, _, cx| {
-                                                cx.stop_propagation();
-                                                this.tabs.remove(index);
-                                                this.active = this
-                                                    .active
-                                                    .saturating_sub(usize::from(
-                                                        index <= this.active,
-                                                    ))
-                                                    .min(this.tabs.len().saturating_sub(1));
-                                                this.focus(cx);
-                                                cx.notify();
-                                            }))
-                                            .child(
-                                                icon("close-dialog", theme.text_tertiary.into())
-                                                    .size(px(12.)),
-                                            ),
-                                    )
-                            })),
-                    )
-                    .child(
-                        div()
-                            .id("new-terminal")
-                            .role(gpui::Role::Button)
-                            .aria_label(crate::i18n::text("新建终端"))
-                            .size(px(28.))
-                            .flex_none()
-                            .rounded(px(10.))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_color(theme.text_tertiary)
-                            .cursor_pointer()
-                            .hover(|s| s.bg(theme.sidebar_hover))
-                            .on_click(cx.listener(|this, _, _, cx| this.add(cx)))
-                            .child("+"),
-                    ),
-            )
             .child(
                 div()
                     .flex_1()
@@ -1015,7 +969,9 @@ impl Render for TerminalPanel {
                                 .bg(theme.text.alpha(0.05))
                                 .cursor_pointer()
                                 .text_color(theme.text)
-                                .on_click(cx.listener(|this, _, _, cx| this.add(cx)))
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.add(cx);
+                                }))
                                 .child(crate::i18n::text("新建终端")),
                         )
                     }),
@@ -1027,6 +983,20 @@ impl Render for TerminalPanel {
 mod tests {
     use super::*;
     use std::time::Instant;
+
+    /// Tabs take the title the shell sets with `OSC 0` / `OSC 2`, as the
+    /// reference's terminal tabs do; an empty title falls back again.
+    #[test]
+    fn shell_titles_name_the_terminal_tab() {
+        let mut parser = vt100::Parser::new_with_callbacks(24, 80, 0, TerminalCallbacks::default());
+        parser.process(b"\x1b]2;zp@host:~/repo\x07");
+        assert_eq!(parser.callbacks().title.as_deref(), Some("zp@host:~/repo"));
+        assert!(std::mem::take(&mut parser.callbacks_mut().title_changed));
+        parser.process(b"\x1b]0;zp@host:~/repo\x07");
+        assert!(!parser.callbacks().title_changed);
+        parser.process(b"\x1b]2;\x07");
+        assert_eq!(parser.callbacks().title, None);
+    }
 
     fn output_until(rx: &async_channel::Receiver<Output>, needle: &str) -> String {
         let deadline = Instant::now() + Duration::from_secs(8);

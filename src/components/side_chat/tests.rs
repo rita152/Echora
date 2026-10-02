@@ -85,7 +85,7 @@ fn closing_a_loading_side_tab_cleans_up_a_late_fork_result() {
     let (mut app, backend, panel) = setup();
     app.update_entity(&panel, |panel, cx| panel.new_chat(cx));
     app.update_entity(&panel, |panel, cx| panel.request_close(1, cx));
-    assert!(app.read_entity(&panel, |panel, _| panel.is_empty()));
+    assert!(app.read_entity(&panel, |panel, _| panel.tab_ids().is_empty()));
     complete_open(&mut app, &backend, 0, "late-side");
     assert_eq!(*backend.closed.lock().unwrap(), vec!["late-side"]);
     assert_eq!(

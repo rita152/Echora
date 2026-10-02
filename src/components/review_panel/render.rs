@@ -32,6 +32,7 @@ impl Render for ReviewPanel {
         }
         let (track_width, thumb_width, max_horizontal) = self.horizontal_metrics();
         self.horizontal_offset = self.horizontal_offset.clamp(0., max_horizontal);
+        let failed = self.error.is_some() && !self.show_initial_loading();
         let content = div()
             .min_w(px(0.))
             .flex_1()
@@ -39,7 +40,41 @@ impl Render for ReviewPanel {
             .overflow_hidden()
             .flex()
             .flex_col()
-            .when(rows_empty, |d| {
+            // The reference's `Couldn't load changes` state: the title, the
+            // hint and a Retry button, without the empty state's glyph.
+            .when(rows_empty && failed, |d| {
+                d.items_center()
+                    .justify_center()
+                    .child(
+                        div()
+                            .text_size(px(16.))
+                            .line_height(px(24.))
+                            .text_color(t.text)
+                            .child(crate::i18n::text("无法加载更改")),
+                    )
+                    .child(
+                        div()
+                            .mt(px(4.))
+                            .px(px(20.))
+                            .text_size(px(13.))
+                            .text_color(t.text_tertiary)
+                            .child(crate::i18n::text("刷新以尝试重新加载更改")),
+                    )
+                    .child(
+                        self.button(
+                            "review-retry",
+                            crate::i18n::text("重试"),
+                            None,
+                            Action::Refresh,
+                            cx,
+                        )
+                        .mt(px(16.))
+                        .h(px(28.))
+                        .bg(t.text.alpha(0.05))
+                        .text_color(t.text),
+                    )
+            })
+            .when(rows_empty && !failed, |d| {
                 d.items_center()
                     .justify_center()
                     .gap(px(12.))
@@ -47,8 +82,6 @@ impl Render for ReviewPanel {
                     .child(div().text_size(px(16.)).text_color(t.text).child(
                         if self.show_initial_loading() {
                             crate::i18n::text("正在加载更改…")
-                        } else if self.error.is_some() {
-                            crate::i18n::text("无法加载更改")
                         } else {
                             crate::i18n::text("尚无文件更改")
                         },
@@ -151,51 +184,6 @@ impl Render for ReviewPanel {
                             ),
                     )
                 },
-            )
-            .when(
-                self.scope.editable() && !self.snapshot.files.is_empty(),
-                |d| {
-                    d.child(
-                        div()
-                            .h(px(40.))
-                            .flex_none()
-                            .px(px(10.))
-                            .flex()
-                            .items_center()
-                            .justify_end()
-                            .gap(px(8.))
-                            .child(
-                                self.button(
-                                    "review-discard-all",
-                                    crate::i18n::text("还原全部"),
-                                    None,
-                                    Action::Confirm(Mutation::DiscardAll),
-                                    cx,
-                                )
-                                .h(px(24.)),
-                            )
-                            .child(
-                                self.button(
-                                    "review-stage-all",
-                                    if self.scope == Scope::Staged {
-                                        crate::i18n::text("对全部取消暂存")
-                                    } else {
-                                        crate::i18n::text("暂存全部")
-                                    },
-                                    None,
-                                    Action::Mutation(if self.scope == Scope::Staged {
-                                        Mutation::Unstage(None)
-                                    } else {
-                                        Mutation::Stage(None)
-                                    }),
-                                    cx,
-                                )
-                                .h(px(24.))
-                                .border_1()
-                                .border_color(t.border),
-                            ),
-                    )
-                },
             );
         div()
             .id("workspace-review")
@@ -252,121 +240,14 @@ impl Render for ReviewPanel {
                     }
                 }),
             )
-            .child(
-                div()
-                    .h(px(46.))
-                    .flex_none()
-                    .px(px(8.))
-                    .pr(px(78.))
-                    .flex()
-                    .items_center()
-                    .gap(px(4.))
-                    .border_b_1()
-                    .border_color(t.border)
-                    .children(
-                        self.file_tabs
-                            .iter()
-                            .enumerate()
-                            .filter(|_| !self.compact())
-                            .map(|(i, path)| {
-                                self.button(
-                                    format!("review-file-tab-{i}"),
-                                    PathBuf::from(path)
-                                        .file_name()
-                                        .unwrap_or_default()
-                                        .to_string_lossy()
-                                        .into_owned(),
-                                    None,
-                                    Action::OpenTab(path.clone()),
-                                    cx,
-                                )
-                                .max_w(px(156.))
-                                .truncate()
-                            }),
-                    )
-                    .child(
-                        div()
-                            .h(px(28.))
-                            .w(px(156.))
-                            .px(px(8.))
-                            .rounded(px(10.))
-                            .bg(t.text.alpha(0.05))
-                            .flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .child(icon("panel-review", t.text.into()))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .text_size(px(13.))
-                                    .child(crate::i18n::text("审查")),
-                            )
-                            .child(
-                                self.button(
-                                    "review-close",
-                                    crate::i18n::text("关闭审查标签页"),
-                                    Some("close-dialog"),
-                                    Action::Close,
-                                    cx,
-                                )
-                                .size(px(20.)),
-                            ),
-                    )
-                    .when(self.side_chat_available, |tabs| {
-                        tabs.child(crate::components::side_chat::restore_tab(
-                            "review-side-chat-tab",
-                            t,
-                        ))
-                    })
-                    .child(self.button(
-                        "review-new-tab",
-                        crate::i18n::text("打开侧边面板标签页"),
-                        Some("review-plus"),
-                        Action::AddTab,
-                        cx,
-                    ))
-                    .child(div().flex_1())
-                    .child(self.button(
-                        "review-fullscreen",
-                        crate::i18n::text("进入或退出全屏"),
-                        Some("settings-external"),
-                        Action::Fullscreen,
-                        cx,
-                    )),
-            )
             .child(self.toolbar(cx))
-            .when(
-                matches!(self.scope, Scope::Branch(_) | Scope::Commit(_)),
-                |d| {
-                    let label = match &self.scope {
-                        Scope::Branch(base) => format!("{}  →  {base}", self.snapshot.branch),
-                        Scope::Commit(sha) => sha[..8.min(sha.len())].to_owned(),
-                        _ => String::new(),
-                    };
-                    d.child(
-                        div()
-                            .h(px(29.))
-                            .flex_none()
-                            .px(px(8.))
-                            .flex()
-                            .items_center()
-                            .border_b_1()
-                            .border_color(t.border)
-                            .child(self.dropdown_button(
-                                "review-base",
-                                label,
-                                if matches!(self.scope, Scope::Branch(_)) {
-                                    Menu::Branch
-                                } else {
-                                    Menu::Commits
-                                },
-                                cx,
-                            )),
-                    )
-                },
-            )
+            // A failed load is the empty state's message; a stale diff keeps
+            // the raw error above it, as do failed Git operations.
             .when_some(
-                self.display_error().filter(|_| !self.commit_open),
+                self.operation_error
+                    .clone()
+                    .or_else(|| self.error.clone().filter(|_| !rows_empty))
+                    .filter(|_| !self.commit_open),
                 |d, e| {
                     d.child(
                         div()

@@ -6,14 +6,12 @@ mod tests;
 gpui::actions!(
     side_chat,
     [
-        RestoreSideChat,
         CloseDialogNext,
         CloseDialogPrevious,
         CloseDialogActivate,
         CloseDialogCancel
     ]
 );
-pub(crate) use render::restore_tab;
 
 pub fn init(cx: &mut gpui::App) {
     cx.bind_keys([
@@ -41,31 +39,12 @@ use crate::{
 use gpui::{AppContext, Context, Entity, FocusHandle, KeyDownEvent, Window};
 use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SideChatDestination {
-    Review,
-    Terminal,
-    Browser,
-    Files,
-}
-
 pub enum SideChatEvent {
-    Empty,
-    Fullscreen,
-    OpenPanel(SideChatDestination),
     OpenDiff(DiffReviewPresentation),
     OpenImage(PathBuf),
     OpenHookSettings,
     FullAccess(Entity<ComposerView>),
     SkipCloseConfirmation(bool),
-}
-
-#[derive(Clone)]
-struct SideChatTabDrag {
-    owner: gpui::EntityId,
-    id: u64,
-    title: String,
-    mode: ThemeMode,
 }
 
 struct SideChatTab {
@@ -89,12 +68,8 @@ pub struct SideChatPanel {
     active: Option<u64>,
     next_id: u64,
     visible: bool,
-    fullscreen: bool,
     focus_pending: bool,
     focus: FocusHandle,
-    menu_open: bool,
-    menu_index: usize,
-    menu_focus: FocusHandle,
     close_confirmation: Option<u64>,
     confirm_focus: FocusHandle,
     remember_focus: FocusHandle,
@@ -102,7 +77,6 @@ pub struct SideChatPanel {
     confirm_focus_pending: bool,
     skip_confirmation: bool,
     remember_close: bool,
-    tab_scroll: gpui::ScrollHandle,
     closed_threads: HashSet<ThreadId>,
 }
 
@@ -159,12 +133,8 @@ impl SideChatPanel {
             active: None,
             next_id: 1,
             visible: true,
-            fullscreen: false,
             focus_pending: true,
             focus: cx.focus_handle(),
-            menu_open: false,
-            menu_index: 4,
-            menu_focus: cx.focus_handle(),
             close_confirmation: None,
             confirm_focus: cx.focus_handle(),
             remember_focus: cx.focus_handle(),
@@ -172,15 +142,13 @@ impl SideChatPanel {
             confirm_focus_pending: false,
             skip_confirmation,
             remember_close: false,
-            tab_scroll: gpui::ScrollHandle::new(),
             closed_threads: HashSet::new(),
         }
     }
 
-    pub fn new_chat(&mut self, cx: &mut Context<Self>) {
-        let Some(config) = self.parent.read(cx).side_chat_configuration() else {
-            return;
-        };
+    /// Starts a side chat and shows it; `None` when the chat cannot fork.
+    pub fn new_chat(&mut self, cx: &mut Context<Self>) -> Option<u64> {
+        let config = self.parent.read(cx).side_chat_configuration()?;
         let id = self.next_id;
         self.next_id += 1;
         let title = if self.tabs.is_empty() {
@@ -248,12 +216,26 @@ impl SideChatPanel {
             unread: false,
         });
         self.active = Some(id);
-        self.tab_scroll
-            .scroll_to_item(self.tabs.len().saturating_sub(1));
         self.focus_pending = true;
-        self.menu_open = false;
         self.open_tab(id, cx);
         cx.notify();
+        Some(id)
+    }
+
+    /// The side chats, in the order they opened.
+    pub fn tab_ids(&self) -> Vec<u64> {
+        self.tabs.iter().map(|tab| tab.id).collect()
+    }
+
+    pub fn active_id(&self) -> Option<u64> {
+        self.active
+    }
+
+    /// A side chat's strip label: its title, whether it is busy (starting
+    /// or answering), and whether it has an unread reply.
+    pub fn tab_label(&self, id: u64) -> Option<(String, bool, bool)> {
+        let tab = self.tabs.iter().find(|tab| tab.id == id)?;
+        Some((tab.title.clone(), tab.running || tab.loading, tab.unread))
     }
 
     fn open_tab(&mut self, id: u64, cx: &mut Context<Self>) {
@@ -328,7 +310,6 @@ impl SideChatPanel {
     pub fn set_visible(&mut self, visible: bool, cx: &mut Context<Self>) {
         self.visible = visible;
         if !visible {
-            self.menu_open = false;
             self.close_confirmation = None;
             self.focus_pending = false;
             for tab in &self.tabs {
@@ -344,9 +325,6 @@ impl SideChatPanel {
         self.focus_pending = true;
         cx.notify();
     }
-    pub fn is_empty(&self) -> bool {
-        self.tabs.is_empty()
-    }
     /// The composer of the selected tab.
     pub fn active_composer(&self) -> Option<Entity<ComposerView>> {
         self.tabs
@@ -354,45 +332,26 @@ impl SideChatPanel {
             .find(|tab| Some(tab.id) == self.active)
             .map(|tab| tab.composer.clone())
     }
-    pub fn set_fullscreen(&mut self, fullscreen: bool, cx: &mut Context<Self>) {
-        if self.fullscreen != fullscreen {
-            self.fullscreen = fullscreen;
-            cx.notify();
-        }
-    }
     pub fn set_skip_confirmation(&mut self, skip: bool) {
         self.skip_confirmation = skip;
     }
 
-    fn activate(&mut self, id: u64, cx: &mut Context<Self>) {
+    pub fn activate(&mut self, id: u64, cx: &mut Context<Self>) {
+        if self.active == Some(id) {
+            return;
+        }
         for tab in &self.tabs {
             tab.composer.update(cx, |c, cx| c.close_side_menus(cx));
         }
         if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) {
             tab.unread = false;
             self.active = Some(id);
-            if let Some(index) = self.tabs.iter().position(|tab| tab.id == id) {
-                self.tab_scroll.scroll_to_item(index);
-            }
             self.focus_pending = true;
-            self.menu_open = false;
             cx.notify();
         }
     }
-    fn reorder_tab(&mut self, id: u64, before: u64, cx: &mut Context<Self>) {
-        let Some(from) = self.tabs.iter().position(|tab| tab.id == id) else {
-            return;
-        };
-        let Some(to) = self.tabs.iter().position(|tab| tab.id == before) else {
-            return;
-        };
-        if from != to {
-            let tab = self.tabs.remove(from);
-            self.tabs.insert(to, tab);
-        }
-        self.activate(id, cx);
-    }
-    fn request_close(&mut self, id: u64, cx: &mut Context<Self>) {
+    /// Closes side chat `id`, first asking when it has messages.
+    pub fn request_close(&mut self, id: u64, cx: &mut Context<Self>) {
         let Some(tab) = self.tabs.iter().find(|tab| tab.id == id) else {
             return;
         };
@@ -422,12 +381,6 @@ impl SideChatPanel {
                 .get(index.min(self.tabs.len().saturating_sub(1)))
                 .map(|tab| tab.id);
             self.focus_pending = true;
-            if let Some(index) = self.tabs.iter().position(|tab| Some(tab.id) == self.active) {
-                self.tab_scroll.scroll_to_item(index);
-            }
-        }
-        if self.tabs.is_empty() {
-            cx.emit(SideChatEvent::Empty);
         }
         cx.notify();
     }
@@ -468,12 +421,6 @@ impl SideChatPanel {
             cx.notify();
             return true;
         }
-        if self.menu_open {
-            self.menu_open = false;
-            self.focus_pending = true;
-            cx.notify();
-            return true;
-        }
         for tab in &self.tabs {
             tab.composer.update(cx, |c, cx| c.close_side_menus(cx));
         }
@@ -485,17 +432,6 @@ impl SideChatPanel {
             return true;
         }
         false
-    }
-    fn select_menu(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.menu_open = false;
-        match index {
-            0 => cx.emit(SideChatEvent::OpenPanel(SideChatDestination::Review)),
-            1 => cx.emit(SideChatEvent::OpenPanel(SideChatDestination::Terminal)),
-            2 => cx.emit(SideChatEvent::OpenPanel(SideChatDestination::Browser)),
-            3 => cx.emit(SideChatEvent::OpenPanel(SideChatDestination::Files)),
-            _ => self.new_chat(cx),
-        }
-        cx.notify();
     }
     fn handle_key(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
         let key = &event.keystroke;

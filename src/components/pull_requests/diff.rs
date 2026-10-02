@@ -1,9 +1,6 @@
 //! `Code` and review tabs: toolbar, file headers, hunks, and the file tree.
 
-mod file_icons;
-mod syntax;
 mod viewport;
-mod words;
 pub(super) use viewport::DiffViewport;
 
 use gpui::{Div, SharedString, div, prelude::*, px};
@@ -29,9 +26,6 @@ pub(super) const LINE_HEIGHT: f32 = 21.6;
 const STICKY_HEADER_HEIGHT: f32 = 34.0;
 /// A hunk separator row (`[data-separator="line-info"]`).
 const SEPARATOR_HEIGHT: f32 = 32.0;
-/// The deleted-line bar: `linear-gradient(0deg, <row> 50%, <red> 50%)` tiled
-/// every 1.96364px, a red stripe over each tile's top half.
-const DELETED_BAR_TILE: f32 = 1.96364;
 /// The reference file tree panel: x 1080 → 1440 at a 1440px window, i.e. a
 /// 360px column that reflows the diff into the remaining 286px.
 const TREE_WIDTH: f32 = 360.0;
@@ -77,7 +71,7 @@ impl PullRequestsView {
         language: Option<&'static str>,
     ) -> std::rc::Rc<Vec<gpui::TextRun>> {
         self.diff_viewport.syntax_runs(text, language, || {
-            syntax::code_runs(text, language, self.mode)
+            crate::components::diff_syntax::code_runs(text, language, self.mode)
         })
     }
 
@@ -107,9 +101,9 @@ impl PullRequestsView {
         let deleted = line.kind == LineKind::Deleted;
         let partner = &file.hunks[hunk].lines[pair].text;
         let (old_spans, new_spans) = if deleted {
-            words::changed_spans(&line.text, partner)
+            crate::components::diff_words::changed_spans(&line.text, partner)
         } else {
-            words::changed_spans(partner, &line.text)
+            crate::components::diff_words::changed_spans(partner, &line.text)
         };
         let spans = if deleted { old_spans } else { new_spans };
         if spans.is_empty() {
@@ -126,24 +120,7 @@ impl PullRequestsView {
 
     /// Language name for the syntax highlighter, derived from the file suffix.
     pub(super) fn language_for(path: &str) -> Option<&'static str> {
-        let extension = path.rsplit('.').next().unwrap_or_default();
-        Some(match extension {
-            "rs" => "rs",
-            "toml" => "toml",
-            "json" => "json",
-            "md" => "markdown",
-            "py" => "python",
-            "js" | "mjs" | "cjs" => "javascript",
-            "ts" => "typescript",
-            "sh" | "zsh" | "bash" => "bash",
-            "yml" | "yaml" => "yaml",
-            "c" | "h" => "c",
-            "cpp" | "cc" | "hpp" => "cpp",
-            "go" => "go",
-            "html" => "html",
-            "css" => "css",
-            _ => return None,
-        })
+        crate::components::diff_syntax::language_for(path)
     }
 
     /// Lays out the two panes for this frame, then the diff code column: pane
@@ -710,7 +687,8 @@ impl PullRequestsView {
         let collapsed = self.collapsed_files.contains(&file.path);
         let path = file.path.clone();
         let view = cx.entity();
-        let (asset, glyph_color) = file_icons::file_icon(&file.path, self.mode);
+        let (asset, glyph_color) =
+            crate::components::file_type_icons::file_icon(&file.path, self.mode);
         let split = file.path.rfind('/').map_or(0, |slash| slash + 1);
         let label = gpui::StyledText::new(file.path.clone()).with_highlights([(
             0..split,
@@ -1161,7 +1139,7 @@ impl PullRequestsView {
                 )
             })
             .when(kind == LineKind::Deleted, |cell| {
-                cell.child(deleted_bar(
+                cell.child(crate::components::diff_marks::deleted_bar(
                     theme.diff_deleted_text,
                     theme.diff_deleted_surface,
                 ))
@@ -1227,7 +1205,9 @@ impl PullRequestsView {
                     })
                     .when(!self.wrap, |code| code.whitespace_nowrap())
                     .relative()
-                    .children(words.map(|(spans, color)| word_boxes(layout, spans, color)))
+                    .children(words.map(|(spans, color)| {
+                        crate::components::diff_marks::word_boxes(layout, spans, color)
+                    }))
                     .child(text),
             );
         div()
@@ -2029,7 +2009,8 @@ impl PullRequestsView {
             let selected = self.selected_file.as_deref() == Some(file.path.as_str());
             let path = file.path.clone();
             let view = cx.entity();
-            let (asset, glyph_color) = file_icons::file_icon(&file.path, self.mode);
+            let (asset, glyph_color) =
+                crate::components::file_type_icons::file_icon(&file.path, self.mode);
             let threads = self.detail.as_ref().map_or(0, |detail| {
                 detail
                     .review_threads
@@ -2132,68 +2113,6 @@ fn tree_label(name: &str, file: bool) -> Div {
 /// text: 3px-radius boxes over the code font's content area (as an inline
 /// background covers it), not the 21.6px line box a run background fills.
 /// Each visual line of a wrapped span gets its own box.
-fn word_boxes(
-    layout: gpui::TextLayout,
-    spans: Vec<std::ops::Range<usize>>,
-    color: gpui::Rgba,
-) -> impl IntoElement {
-    gpui::canvas(
-        |_, _, _| {},
-        move |_, _, window, _| {
-            let text = layout.text();
-            let Some(line) = layout.line_layout_for_index(0) else {
-                return;
-            };
-            let unwrapped = &line.unwrapped_layout;
-            let font = unwrapped
-                .runs
-                .first()
-                .map(|run| run.font_id)
-                .unwrap_or_else(|| {
-                    window
-                        .text_system()
-                        .resolve_font(&gpui::font(UI_MONOSPACE_FONT_FAMILY))
-                });
-            let size = unwrapped.font_size;
-            let content = window.text_system().ascent(font, size)
-                + window.text_system().descent(font, size).abs();
-            let inset = (layout.line_height() - content) / 2.0;
-            for span in spans {
-                let mut current: Option<gpui::Bounds<gpui::Pixels>> = None;
-                let mut boxes = Vec::new();
-                for (offset, ch) in text.get(span.clone()).unwrap_or_default().char_indices() {
-                    let index = span.start + offset;
-                    let Some(origin) = layout.position_for_index(index) else {
-                        continue;
-                    };
-                    let advance =
-                        unwrapped.x_for_index(index + ch.len_utf8()) - unwrapped.x_for_index(index);
-                    match current.as_mut() {
-                        Some(bounds) if bounds.origin.y == origin.y + inset => {
-                            bounds.size.width = origin.x + advance - bounds.origin.x;
-                        }
-                        _ => {
-                            boxes.extend(current.take());
-                            current = Some(gpui::Bounds::new(
-                                gpui::point(origin.x, origin.y + inset),
-                                gpui::size(advance, content),
-                            ));
-                        }
-                    }
-                }
-                boxes.extend(current);
-                for bounds in boxes {
-                    window.paint_quad(gpui::fill(bounds, color).corner_radii(px(3.0)));
-                }
-            }
-        },
-    )
-    .absolute()
-    .top_0()
-    .left_0()
-    .size_full()
-}
-
 fn view_mode_glyph(layout: super::DiffLayout, theme: super::theme::PrTheme) -> Div {
     let (deleted, added) = match layout {
         super::DiffLayout::Unified => ("pr-view-unified-deleted", "pr-view-unified-added"),
@@ -2213,38 +2132,6 @@ fn view_mode_glyph(layout: super::DiffLayout, theme: super::theme::PrTheme) -> D
         .child(layer("pr-view-frame", theme.text))
         .child(layer(deleted, gpui::rgb(0xf84e63)))
         .child(layer(added, gpui::rgb(0x36d958)))
-}
-
-/// The deleted-line change bar: red stripes over the row color.
-fn deleted_bar(stripe: gpui::Rgba, row: gpui::Rgba) -> Div {
-    div()
-        .absolute()
-        .left_0()
-        .top_0()
-        .bottom_0()
-        .w(px(4.0))
-        .child(
-            gpui::canvas(
-                |_, _, _| {},
-                move |bounds, _, window, _| {
-                    window.paint_quad(gpui::fill(bounds, row));
-                    let height = f32::from(bounds.size.height);
-                    let mut top = 0.0;
-                    while top < height {
-                        let stripe_bounds = gpui::Bounds::new(
-                            gpui::point(bounds.origin.x, bounds.origin.y + px(top)),
-                            gpui::size(
-                                bounds.size.width,
-                                px((DELETED_BAR_TILE / 2.0).min(height - top)),
-                            ),
-                        );
-                        window.paint_quad(gpui::fill(stripe_bounds, stripe));
-                        top += DELETED_BAR_TILE;
-                    }
-                },
-            )
-            .size_full(),
-        )
 }
 
 /// Align each contiguous deletion/addition block without pairing across context.

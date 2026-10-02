@@ -4,7 +4,7 @@ use super::ChatApp;
 use crate::{
     components::{
         composer::{ComposerView, OpenQueuedInSideChat},
-        side_chat::{SideChatDestination, SideChatEvent, SideChatPanel},
+        side_chat::{SideChatEvent, SideChatPanel},
     },
     media::read_image_dimensions,
 };
@@ -20,8 +20,11 @@ impl ChatApp {
         cx: &mut Context<Self>,
     ) {
         self.right_panel.open = true;
-        // Selecting the side chat item starts a new side chat tab.
-        self.select_right_panel_item(0, cx);
+        self.open_panel_tool(
+            super::state::RightPanelMode::SideChat,
+            super::panel_tabs::TabPlacement::Append,
+            cx,
+        );
         let composer = self
             .side_chat_panels
             .get(&self.active_conversation)
@@ -43,21 +46,18 @@ impl ChatApp {
         }
     }
 
-    pub(super) fn ensure_side_chat(&mut self, new: bool, cx: &mut Context<Self>) {
+    /// The active chat's side chats, created on first use without one;
+    /// `None` when the chat cannot fork side chats.
+    pub(super) fn side_chat_panel(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> Option<Entity<SideChatPanel>> {
         let key = self.active_conversation.clone();
-        let Some(parent) = self
+        let parent = self
             .conversation_hosts
             .get(&key)
-            .map(|host| host.composer.clone())
-        else {
-            return;
-        };
-        if parent.read(cx).side_chat_configuration().is_none() {
-            self.right_panel.mode = None;
-            cx.notify();
-            return;
-        }
-        self.deactivate_review(cx);
+            .map(|host| host.composer.clone())?;
+        parent.read(cx).side_chat_configuration()?;
         if !self.side_chat_panels.contains_key(&key) {
             let backend = self.agent_backend.clone();
             let skip = self
@@ -66,31 +66,15 @@ impl ChatApp {
                 .preferences
                 .skip_side_chat_close_confirmation;
             let panel = cx.new(|cx| SideChatPanel::new(parent, backend, self.mode, skip, cx));
-            cx.observe(&panel, |_, _, cx| cx.notify()).detach();
+            // The app draws the side chat's close confirmation, so every
+            // change redraws it, beyond what the tab strip needs.
+            cx.observe(&panel, |this, _, cx| {
+                this.reconcile_panel_tabs(None, cx);
+                cx.notify();
+            })
+            .detach();
             cx.subscribe(&panel, |this, _, event: &SideChatEvent, cx| {
                 match event {
-                    SideChatEvent::Empty => {
-                        this.right_panel.mode = None;
-                        this.right_panel.fullscreen = false;
-                        this.right_panel.focus_pending = true;
-                    }
-                    SideChatEvent::Fullscreen => {
-                        this.right_panel.fullscreen = !this.right_panel.fullscreen;
-                        if let Some(panel) = this.side_chat_panels.get(&this.active_conversation) {
-                            panel.update(cx, |panel, cx| {
-                                panel.set_fullscreen(this.right_panel.fullscreen, cx)
-                            });
-                        }
-                    }
-                    SideChatEvent::OpenPanel(destination) => {
-                        let index = match destination {
-                            SideChatDestination::Review => 4,
-                            SideChatDestination::Terminal => 2,
-                            SideChatDestination::Browser => 1,
-                            SideChatDestination::Files => 3,
-                        };
-                        this.select_right_panel_item(index, cx);
-                    }
                     SideChatEvent::OpenDiff(review) => {
                         this.deactivate_side_chat(cx);
                         this.open_diff_review(review.clone(), cx);
@@ -119,16 +103,6 @@ impl ChatApp {
             .detach();
             self.side_chat_panels.insert(key.clone(), panel);
         }
-        self.side_chat_panels[&key].update(cx, |panel, cx| {
-            panel.set_fullscreen(self.right_panel.fullscreen, cx);
-            if new || panel.is_empty() {
-                panel.new_chat(cx);
-            }
-            panel.set_visible(true, cx);
-            panel.focus(cx);
-        });
-        self.right_panel.focus_pending = false;
-        self.terminal_return_focus_pending = false;
-        cx.notify();
+        Some(self.side_chat_panels[&key].clone())
     }
 }

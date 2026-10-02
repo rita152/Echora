@@ -16,7 +16,9 @@ mod mutations;
 mod render;
 #[cfg(test)]
 mod tests;
-mod theme;
+pub(crate) mod theme;
+
+pub(crate) use list::stats_font_features;
 
 use std::{collections::HashSet, path::PathBuf, sync::Arc, time::Duration};
 

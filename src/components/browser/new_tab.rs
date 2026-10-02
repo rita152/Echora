@@ -1,5 +1,6 @@
-//! The New tab page, the reference's panel launcher: "Tools" (Review,
-//! Terminal, Side chat when the chat has one, Files) in one or two columns,
+//! The New tab page, the reference's panel launcher: "Tools" (Changes unless
+//! the chat has a Changes tab, Terminal, Side chat when the chat has one,
+//! Files) in one or two columns,
 //! then "Suggested", the most visited sites, which can be dismissed.
 
 use gpui::{Context, Div, FontWeight, MouseButton, Role, Stateful, div, img, prelude::*, px};
@@ -22,20 +23,22 @@ impl BrowserPanel {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let content_width = (self.panel_width.get() - 2. * PAGE_PADDING_X).min(PAGE_MAX_WIDTH);
-        let mut tools = vec![
-            (
+        // Changes opens once per chat: its tile leaves while the tab is open.
+        let mut tools = Vec::new();
+        if !self.changes_open {
+            tools.push((
                 BrowserTool::Review,
-                crate::i18n::format!("审查" => "Review"),
+                crate::i18n::format!("变更" => "Changes"),
                 "browser-tool-review",
                 "⌃⇧G",
-            ),
-            (
-                BrowserTool::Terminal,
-                crate::i18n::format!("终端" => "Terminal"),
-                "browser-tool-terminal",
-                "⌃`",
-            ),
-        ];
+            ));
+        }
+        tools.push((
+            BrowserTool::Terminal,
+            crate::i18n::format!("终端" => "Terminal"),
+            "browser-tool-terminal",
+            "⌃`",
+        ));
         if self.side_chat_available {
             tools.push((
                 BrowserTool::SideChat,

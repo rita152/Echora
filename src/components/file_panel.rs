@@ -1,6 +1,6 @@
 mod background_terminal_tab;
-mod file_icons;
 mod goal_tab;
+mod header;
 
 pub use goal_tab::{GoalTabSync, SaveGoalObjective};
 
@@ -30,7 +30,6 @@ pub struct OpenWorkspaceFile {
     pub path: String,
     pub line: Option<usize>,
 }
-gpui::actions!(workspace_review, [OpenWorkspaceReview]);
 
 struct Document {
     id: u64,
@@ -76,9 +75,10 @@ struct TreeRow {
     entry: FileEntry,
     depth: usize,
 }
+/// A chat's files: the open documents and the workspace tree. The right
+/// panel's tab strip lists the documents (and an `Open file` tab for the
+/// tree alone); the panel shows the one it selects.
 pub struct FilePanel {
-    review_available: bool,
-    side_chat_available: bool,
     cwd: PathBuf,
     mode: ThemeMode,
     documents: Vec<Document>,
@@ -100,6 +100,9 @@ pub struct FilePanel {
     selected_row: usize,
     tree_scroll: gpui::UniformListScrollHandle,
     pending_close: Option<u64>,
+    /// The `Open options` menu and where its split button last painted.
+    open_menu: bool,
+    open_anchor: std::rc::Rc<std::cell::Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
 }
 impl FilePanel {
     pub fn new(cwd: PathBuf, mode: ThemeMode, cx: &mut Context<Self>) -> Self {
@@ -118,8 +121,6 @@ impl FilePanel {
         })
         .detach();
         let mut s = Self {
-            review_available: false,
-            side_chat_available: false,
             cwd: cwd.clone(),
             mode,
             documents: Vec::new(),
@@ -141,6 +142,8 @@ impl FilePanel {
             selected_row: 0,
             tree_scroll: gpui::UniformListScrollHandle::new(),
             pending_close: None,
+            open_menu: false,
+            open_anchor: Default::default(),
         };
         s.load_directory(cwd, cx);
         cx.spawn(async move |this, cx| {
@@ -167,23 +170,46 @@ impl FilePanel {
         }
         cx.notify();
     }
-    pub fn set_review_available(&mut self, available: bool, cx: &mut Context<Self>) {
-        self.review_available = available;
+    /// The open documents, in the order they opened.
+    pub fn document_ids(&self) -> Vec<u64> {
+        self.documents.iter().map(|d| d.id).collect()
+    }
+    pub fn active_document(&self) -> Option<u64> {
+        self.active
+    }
+    /// Shows document `id`, or the tree alone (`Open file`) for `None`.
+    pub fn show_document(&mut self, id: Option<u64>, cx: &mut Context<Self>) {
+        if self.active == id {
+            return;
+        }
+        self.active = id.filter(|id| self.documents.iter().any(|d| d.id == *id));
+        if self.active.is_some() {
+            self.focus_editor = true;
+        } else {
+            self.show_picker(cx);
+        }
+        self.open_menu = false;
         cx.notify();
     }
-    pub fn set_side_chat_available(&mut self, available: bool, cx: &mut Context<Self>) {
-        self.side_chat_available = available;
-        cx.notify();
+    /// A document's strip label and glyph: the file type's glyph path, or
+    /// the plan, goal and terminal glyphs.
+    pub fn document_tab(&self, id: u64) -> Option<(String, String)> {
+        let d = self.documents.iter().find(|d| d.id == id)?;
+        let glyph = if d.plan.is_some() {
+            "icons/plan.svg".to_owned()
+        } else if d.goal.is_some() {
+            "icons/goal-chip.svg".to_owned()
+        } else if d.terminal.is_some() {
+            "icons/panel-terminal.svg".to_owned()
+        } else {
+            let (asset, _) =
+                crate::components::file_type_icons::file_icon(&d.path.to_string_lossy(), self.mode);
+            format!("icons/{asset}.svg")
+        };
+        Some((d.label(), glyph))
     }
     pub fn active_plan_id(&self) -> Option<String> {
         self.current()?.plan.as_ref().map(|p| p.id.clone())
-    }
-    pub fn open_documents(&self) -> Vec<String> {
-        self.documents
-            .iter()
-            .filter(|d| d.plan.is_none() && d.goal.is_none() && d.terminal.is_none())
-            .map(|d| d.path.to_string_lossy().into_owned())
-            .collect()
     }
     pub fn focus(&mut self, cx: &mut Context<Self>) {
         if self.active.is_some() {
@@ -210,6 +236,24 @@ impl FilePanel {
     }
     fn current(&self) -> Option<&Document> {
         self.documents.iter().find(|d| Some(d.id) == self.active)
+    }
+    /// Expands the folders above `path`, as the reference's tree reveals the
+    /// file a tab shows.
+    fn reveal_in_tree(&mut self, path: &std::path::Path, cx: &mut Context<Self>) {
+        let Ok(relative) = path.strip_prefix(&self.cwd) else {
+            return;
+        };
+        let mut folder = self.cwd.clone();
+        for part in relative
+            .parent()
+            .into_iter()
+            .flat_map(|parent| parent.components())
+        {
+            folder.push(part);
+            if self.expanded.insert(folder.clone()) && !self.directories.contains_key(&folder) {
+                self.load_directory(folder.clone(), cx);
+            }
+        }
     }
     fn load_directory(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         if !self.loading.insert(path.clone()) {
@@ -375,6 +419,7 @@ impl FilePanel {
         } else {
             self.cwd.join(path)
         };
+        self.reveal_in_tree(&path, cx);
         if let Some(doc) = self.documents.iter().find(|d| d.path == path) {
             self.active = Some(doc.id);
             if let Some(line) = line
@@ -665,7 +710,8 @@ impl FilePanel {
         })
         .detach();
     }
-    fn request_close(&mut self, id: u64, cx: &mut Context<Self>) {
+    /// Closes document `id`, first saving or asking about unsaved edits.
+    pub fn request_close(&mut self, id: u64, cx: &mut Context<Self>) {
         if self
             .documents
             .iter()
@@ -794,238 +840,9 @@ impl Render for FilePanel {
                 self.focus_editor = false;
             }
         }
-        let tabs = div()
-            .id("file-tabs")
-            .h(px(46.))
-            .pr(px(110.))
-            .pl(px(8.))
-            .w_full()
-            .flex_none()
-            .flex()
-            .items_center()
-            .gap(px(3.))
-            .overflow_x_scroll()
-            .when(self.side_chat_available, |tabs| {
-                tabs.child(super::side_chat::restore_tab(
-                    "file-panel-side-chat-tab",
-                    theme,
-                ))
-            })
-            .when(self.review_available, |tabs| {
-                tabs.child(
-                    div()
-                        .id("file-panel-review-tab")
-                        .role(Role::Tab)
-                        .aria_label(crate::i18n::text("审查"))
-                        .focusable()
-                        .tab_stop(true)
-                        .h(px(28.))
-                        .px(px(8.))
-                        .rounded(px(8.))
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .cursor_pointer()
-                        .hover(move |s| s.bg(theme.sidebar_hover))
-                        .on_click(|_, window, cx| {
-                            window.dispatch_action(Box::new(OpenWorkspaceReview), cx)
-                        })
-                        .on_key_down(|e: &KeyDownEvent, window, cx| {
-                            if matches!(e.keystroke.key.as_str(), "enter" | "space") {
-                                window.dispatch_action(Box::new(OpenWorkspaceReview), cx);
-                                cx.stop_propagation();
-                            }
-                        })
-                        .child(icon("panel-review", theme.text_secondary.into()))
-                        .child(crate::i18n::text("审查")),
-                )
-            })
-            .children(self.documents.iter().map(|d| {
-                let id = d.id;
-                let active = self.active == Some(id);
-                div()
-                    .id(("file-tab", id))
-                    .min_w(px(90.))
-                    .max_w(px(156.))
-                    .h(px(28.))
-                    .px(px(8.))
-                    .rounded(px(8.))
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .when(active, |s| s.bg(theme.text.alpha(0.05)))
-                    .hover(move |s| s.bg(theme.sidebar_hover))
-                    .role(Role::Tab)
-                    .aria_selected(active)
-                    .aria_label(crate::i18n::format!("文件 {}" => "File {}", d.label()))
-                    .tab_stop(true)
-                    .on_click(cx.listener(move |s, _, _, cx| {
-                        s.active = Some(id);
-                        s.focus_editor = true;
-                        cx.notify();
-                    }))
-                    .on_key_down(cx.listener(move |s, e: &KeyDownEvent, _, cx| {
-                        if matches!(e.keystroke.key.as_str(), "enter" | "space") {
-                            s.active = Some(id);
-                            s.focus_editor = true;
-                            cx.notify();
-                            cx.stop_propagation();
-                        }
-                    }))
-                    .child(
-                        (if d.plan.is_some() {
-                            icon("plan", theme.text_tertiary.into())
-                        } else if d.goal.is_some() {
-                            icon("goal-chip", theme.text_tertiary.into())
-                        } else if d.terminal.is_some() {
-                            icon("panel-terminal", theme.text_tertiary.into())
-                        } else {
-                            file_icon(&d.path, self.mode)
-                        })
-                        .size(px(16.))
-                        .flex_none(),
-                    )
-                    .child(div().flex_1().min_w(px(0.)).truncate().child(d.label()))
-                    .child(
-                        self.control(
-                            ("close-file", id),
-                            &crate::i18n::format!("关闭 {}" => "Close {}", d.label()),
-                            "close-dialog",
-                            theme,
-                        )
-                        .size(px(20.))
-                        .on_click(cx.listener(move |s, _, _, cx| {
-                            s.request_close(id, cx);
-                            cx.stop_propagation();
-                        })),
-                    )
-            }))
-            .when(self.documents.is_empty(), |t| {
-                t.child(
-                    div()
-                        .px(px(8.))
-                        .h(px(28.))
-                        .rounded(px(8.))
-                        .bg(theme.text.alpha(0.05))
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .child(icon("markdown-file-document", theme.text.into()).size(px(16.)))
-                        .child(crate::i18n::text("打开文件")),
-                )
-            })
-            .child(
-                self.control("add-file", crate::i18n::text("打开文件"), "add", theme)
-                    .on_click(cx.listener(|s, _, _, cx| {
-                        s.active = None;
-                        s.show_picker(cx);
-                    })),
-            );
         let goal_toolbar = self.current().and_then(|d| self.goal_toolbar(d, theme, cx));
         let goal_active = goal_toolbar.is_some();
-        let mut toolbar = div()
-            .h(px(40.))
-            .flex_none()
-            .px(px(12.))
-            .border_b_1()
-            .border_color(theme.border)
-            .flex()
-            .items_center()
-            .gap(px(6.));
-        if let Some(d) = self.current() {
-            let id = d.id;
-            let relative = d
-                .path
-                .strip_prefix(&self.cwd)
-                .unwrap_or(&d.path)
-                .to_string_lossy()
-                .into_owned();
-            toolbar = toolbar.child(div().flex_1().min_w(px(0.)).truncate().child(format!(
-                "{}  /  {}",
-                self.cwd.file_name().unwrap_or_default().to_string_lossy(),
-                relative
-            )));
-            if d.editor.is_some() {
-                toolbar = toolbar.child(
-                    div()
-                        .text_size(px(11.))
-                        .text_color(if d.error.is_some() {
-                            theme.warning
-                        } else {
-                            theme.text_tertiary
-                        })
-                        .child(if d.saving {
-                            crate::i18n::text("保存中…")
-                        } else if d.dirty(cx) {
-                            crate::i18n::text("未保存")
-                        } else {
-                            ""
-                        }),
-                );
-            }
-            if matches!(
-                d.path.extension().and_then(|s| s.to_str()),
-                Some("md" | "markdown")
-            ) && d.editor.is_some()
-            {
-                let preview = d.preview;
-                toolbar = toolbar.child(
-                    self.control(
-                        "file-preview",
-                        if preview {
-                            crate::i18n::text("查看源代码")
-                        } else {
-                            crate::i18n::text("预览")
-                        },
-                        if preview {
-                            "panel-terminal"
-                        } else {
-                            "markdown-file-document"
-                        },
-                        theme,
-                    )
-                    .w(px(92.))
-                    .gap(px(4.))
-                    .child(if preview {
-                        crate::i18n::text("查看源代码")
-                    } else {
-                        crate::i18n::text("预览")
-                    })
-                    .on_click(cx.listener(move |s, _, window, cx| {
-                        if let Some(d) = s.documents.iter_mut().find(|d| d.id == id) {
-                            d.preview = !d.preview;
-                            s.focus_editor = true;
-                        }
-                        window.refresh();
-                        cx.notify();
-                    })),
-                );
-            }
-            toolbar = toolbar.child(
-                self.control(
-                    "reload-file",
-                    crate::i18n::text("重新加载"),
-                    "settings-refresh",
-                    theme,
-                )
-                .on_click(cx.listener(move |s, _, w, cx| s.reload(id, w, cx))),
-            );
-        } else {
-            toolbar = toolbar.child(div().flex_1().child("/"));
-        }
-        toolbar = toolbar.child(
-            self.control(
-                "toggle-file-tree",
-                crate::i18n::text("切换文件树"),
-                "panel-files",
-                theme,
-            )
-            .when(self.tree_open, |s| s.bg(theme.text.alpha(0.05)))
-            .on_click(cx.listener(|s, _, _, cx| {
-                s.tree_open = !s.tree_open;
-                cx.notify();
-            })),
-        );
+        let toolbar = self.viewer_header(theme, cx);
         let mut content = div()
             .id("file-content")
             .debug_selector(|| "file-content".into())
@@ -1277,18 +1094,24 @@ impl Render for FilePanel {
             .flex()
             .flex_col()
             .child(
-                div().px(px(8.)).pt(px(8.)).pb(px(1.)).child(
+                // The reference's `Filter files…` field over the tree.
+                div().px(px(4.)).pt(px(8.)).child(
                     div()
                         .h(px(28.))
                         .border_1()
                         .border_color(theme.border)
-                        .rounded(px(8.))
+                        .rounded(px(12.5))
+                        .when(self.mode == ThemeMode::Dark, |field| {
+                            field.bg(gpui::rgba(0xffffff08))
+                        })
                         .flex()
                         .items_center()
+                        .gap(px(4.))
                         .child(
                             icon("search", theme.text_tertiary.into())
                                 .size(px(16.))
-                                .ml(px(8.)),
+                                .flex_none()
+                                .ml(px(9.)),
                         )
                         .child(div().flex_1().min_w(px(0.)).child(self.filter.clone()))
                         .when(!self.query.is_empty(), |bar| {
@@ -1321,7 +1144,7 @@ impl Render for FilePanel {
                     .aria_label(crate::i18n::text("工作区目录树"))
                     .flex_1()
                     .min_h(px(0.))
-                    .px(px(8.))
+                    .px(px(4.))
                     .track_focus(&self.focus)
                     .when(count == 0, |t| {
                         t.child(div().p(px(12.)).text_color(theme.text_tertiary).child(
@@ -1389,7 +1212,7 @@ impl Render for FilePanel {
             .text_color(theme.text)
             .text_size(px(13.))
             .line_height(px(18.))
-            .child(tabs)
+            .children(self.open_menu(theme, cx))
             .map(|panel| match goal_toolbar {
                 Some(goal_toolbar) => panel.child(goal_toolbar),
                 None if self
@@ -1462,6 +1285,9 @@ impl Render for FilePanel {
     }
 }
 impl FilePanel {
+    /// A workspace tree row as the reference draws it: 28px, a 3px inset,
+    /// a 7.5px indent guide per level (drawn while the open file is inside
+    /// that folder), the folder chevron or file type glyph, and the name.
     fn tree_row(
         &self,
         row: TreeRow,
@@ -1470,6 +1296,7 @@ impl FilePanel {
         focused: bool,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
+        let pr = crate::components::pull_requests::theme::PrTheme::for_mode(self.mode);
         let expanded = self.expanded.contains(&row.entry.path);
         let selected = self.current().is_some_and(|d| d.path == row.entry.path);
         let label = if self.query.is_empty() {
@@ -1487,16 +1314,39 @@ impl FilePanel {
                 .to_string_lossy()
                 .into_owned()
         };
+        let current = self.current().map(|d| d.path.clone());
+        let guides = (0..row.depth).map(|level| {
+            let folder = row
+                .entry
+                .path
+                .ancestors()
+                .nth(row.depth - level)
+                .map(std::path::Path::to_path_buf);
+            let visible = folder
+                .zip(current.as_ref())
+                .is_some_and(|(folder, current)| current.starts_with(folder));
+            div()
+                .flex_none()
+                .w(px(7.5))
+                .h_full()
+                .flex()
+                .justify_end()
+                .child(
+                    div()
+                        .w(px(1.))
+                        .h_full()
+                        .when(visible, |line| line.bg(pr.diff_gutter_text.alpha(0.25))),
+                )
+        });
         div()
             .id(("file-row", index))
             .h(px(28.))
             .w_full()
-            .pl(px(6. + row.depth as f32 * 14.))
-            .pr(px(6.))
+            .px(px(3.))
             .rounded(px(6.))
             .flex()
             .items_center()
-            .gap(px(10.))
+            .gap(px(5.))
             .cursor_pointer()
             .role(Role::TreeItem)
             .aria_selected(selected)
@@ -1516,8 +1366,8 @@ impl FilePanel {
                     ""
                 }
             ))
-            .when(selected, |s| s.bg(theme.text.alpha(0.05)))
-            .hover(move |s| s.bg(theme.sidebar_hover))
+            .when(selected, |s| s.bg(pr.row_selected))
+            .hover(move |s| s.bg(pr.row_hover))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |s, _, w, cx| {
@@ -1527,22 +1377,30 @@ impl FilePanel {
                 }),
             )
             .on_click(cx.listener(move |s, _, _, cx| s.activate_row(index, cx)))
-            .child(
-                (if row.entry.directory {
-                    icon(
-                        if expanded {
-                            "chevron-down"
-                        } else {
-                            "settings-chevron-right"
-                        },
-                        theme.text_tertiary.into(),
+            .children(guides)
+            .child(if row.entry.directory {
+                div()
+                    .w(px(16.))
+                    .flex_none()
+                    .flex()
+                    .justify_center()
+                    .child(
+                        icon(
+                            if expanded {
+                                "chevron-down"
+                            } else {
+                                "settings-chevron-right"
+                            },
+                            crate::components::file_type_icons::muted_color(self.mode).into(),
+                        )
+                        .size(px(12.)),
                     )
-                } else {
-                    file_icon(&row.entry.path, self.mode)
-                })
-                .size(px(16.))
-                .flex_none(),
-            )
+                    .into_any_element()
+            } else {
+                file_icon(&row.entry.path, self.mode)
+                    .flex_none()
+                    .into_any_element()
+            })
             .child(
                 div()
                     .flex_1()
@@ -1553,14 +1411,14 @@ impl FilePanel {
             )
     }
 }
+/// The reference file tree's glyph for `path`, in its type's color.
 fn file_icon(path: &std::path::Path, mode: ThemeMode) -> gpui::Svg {
-    let descriptor = file_icons::for_path(path);
-    // GPUI renders SVGs as alpha masks. Supply the file-type palette instead of
-    // the shared UI text color; embedded SVG fills alone cannot color this element.
+    let (asset, color) =
+        crate::components::file_type_icons::file_icon(&path.to_string_lossy(), mode);
     gpui::svg()
-        .path(descriptor.asset)
+        .path(format!("icons/{asset}.svg"))
         .size(px(16.))
-        .text_color(gpui::rgb(descriptor.color(mode == ThemeMode::Light)))
+        .text_color(color)
 }
 
 #[cfg(test)]
@@ -1807,7 +1665,6 @@ mod tests {
             assert!(p.current().unwrap().editor.is_none());
             assert!(p.current().unwrap().markdown.is_some());
             assert!(!p.has_unsaved(cx));
-            assert!(p.open_documents().is_empty());
             p.save_all(cx);
             p.reload(p.active.unwrap(), w, cx);
             let mut updated = plan.clone();

@@ -749,6 +749,12 @@ struct ResumedCaptureOptions {
     /// A batch-four state was applied: wait for its pull requests, checkout
     /// and summary panel before counting stable frames.
     batch4_waiting: bool,
+    /// `--right-panel-tool=<tool>`, opened once the task is loaded so the tool
+    /// starts in the task's directory.
+    right_panel_tool: Option<&'static str>,
+    /// The tool was opened: give its shell, fork or file tree this long to
+    /// settle before counting stable frames.
+    settle_until: Option<Instant>,
 }
 
 #[cfg(feature = "screenshot")]
@@ -758,6 +764,7 @@ impl ResumedCaptureOptions {
             && self.navigation_hover.is_none()
             && self.navigation_jump.is_none()
             && self.batch4.is_none()
+            && self.right_panel_tool.is_none()
     }
 }
 
@@ -797,6 +804,10 @@ fn schedule_resumed_thread_screenshot(
                     app.update(cx, |app, cx| app.set_batch4_for_capture(state, cx));
                     remaining.batch4_waiting = true;
                 }
+                if let Some(tool) = remaining.right_panel_tool.take() {
+                    app.update(cx, |app, cx| app.capture_right_panel_tool(tool, cx));
+                    remaining.settle_until = Some(Instant::now() + Duration::from_millis(3000));
+                }
                 window.refresh();
                 schedule_resumed_thread_screenshot(
                     window,
@@ -813,6 +824,49 @@ fn schedule_resumed_thread_screenshot(
                     && Instant::now() < deadline
                     && !app.read(cx).batch4_capture_ready(cx) =>
             {
+                window.refresh();
+                schedule_resumed_thread_screenshot(
+                    window,
+                    app,
+                    path,
+                    thread_id,
+                    deadline,
+                    options,
+                    RESUMED_THREAD_STABLE_FRAMES,
+                );
+            }
+            Ok(true)
+                if options
+                    .settle_until
+                    .is_some_and(|until| Instant::now() < until) =>
+            {
+                window.refresh();
+                schedule_resumed_thread_screenshot(
+                    window,
+                    app,
+                    path,
+                    thread_id,
+                    deadline,
+                    options,
+                    RESUMED_THREAD_STABLE_FRAMES,
+                );
+            }
+            Ok(true)
+                if capture_pointer().is_some()
+                    && !CAPTURE_POINTER_SENT.swap(true, std::sync::atomic::Ordering::Relaxed) =>
+            {
+                // `--pointer=x,y` hovers a point once the task (and its
+                // right-panel tool) has settled; the stable frames repaint it.
+                if let Some(position) = capture_pointer() {
+                    window.dispatch_event(
+                        gpui::PlatformInput::MouseMove(gpui::MouseMoveEvent {
+                            position,
+                            pressed_button: None,
+                            modifiers: gpui::Modifiers::default(),
+                        }),
+                        cx,
+                    );
+                }
                 window.refresh();
                 schedule_resumed_thread_screenshot(
                     window,
@@ -1874,6 +1928,14 @@ fn main() {
                             app.capture_review(PathBuf::from(root), cx);
                         }
                         #[cfg(feature = "screenshot")]
+                        if resume_thread.is_none()
+                            && let Some(tool) = args
+                                .iter()
+                                .find_map(|a| a.strip_prefix("--right-panel-tool="))
+                        {
+                            app.capture_right_panel_tool(tool, cx);
+                        }
+                        #[cfg(feature = "screenshot")]
                         if let Some(query) =
                             args.iter().find_map(|a| a.strip_prefix("--review-filter="))
                         {
@@ -1980,6 +2042,12 @@ fn main() {
                                     navigation_motion,
                                     batch4: batch4_state,
                                     batch4_waiting: false,
+                                    right_panel_tool: args.iter().find_map(|a| {
+                                        a.strip_prefix("--right-panel-tool=").map(|tool| {
+                                            &*Box::leak(tool.to_owned().into_boxed_str())
+                                        })
+                                    }),
+                                    settle_until: None,
                                 },
                                 RESUMED_THREAD_STABLE_FRAMES,
                             );

@@ -2,15 +2,14 @@
 
 use std::time::Duration;
 
-use gpui::{Context, Window, prelude::*};
+use gpui::{Context, Entity, Window, prelude::*};
 
 use super::ChatApp;
 use crate::components::{file_panel::FilePanel, terminal::TerminalPanel};
 
 impl ChatApp {
-    pub(super) fn ensure_terminal(&mut self, cx: &mut Context<Self>) {
-        self.deactivate_review(cx);
-        self.terminal_return_focus_pending = false;
+    /// The active chat's terminals, created on first use without one.
+    pub(super) fn terminal_panel(&mut self, cx: &mut Context<Self>) -> Entity<TerminalPanel> {
         let key = self.active_conversation.clone();
         if !self.terminal_panels.contains_key(&key) {
             let cwd = self
@@ -19,18 +18,11 @@ impl ChatApp {
                 .map(|host| host.cwd.clone())
                 .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
             let panel = cx.new(|cx| TerminalPanel::new(cwd, self.mode, cx));
+            cx.observe(&panel, |this, _, cx| this.reconcile_panel_tabs(None, cx))
+                .detach();
             self.terminal_panels.insert(key.clone(), panel);
         }
-        self.terminal_panels[&key].update(cx, |panel, cx| panel.focus(cx));
-        self.terminal_panels[&key].update(cx, |panel, cx| {
-            panel.set_side_chat_available(
-                self.side_chat_panels
-                    .get(&key)
-                    .is_some_and(|p| !p.read(cx).is_empty()),
-                cx,
-            )
-        });
-        self.right_panel.focus_pending = false;
+        self.terminal_panels[&key].clone()
     }
     pub fn request_window_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         if !self
@@ -89,8 +81,8 @@ impl ChatApp {
         .detach();
         false
     }
-    pub(super) fn ensure_files(&mut self, cx: &mut Context<Self>) {
-        self.deactivate_review(cx);
+    /// The active chat's files, created on first use without a document.
+    pub(super) fn file_panel(&mut self, cx: &mut Context<Self>) -> Entity<FilePanel> {
         let key = self.active_conversation.clone();
         if !self.file_panels.contains_key(&key) {
             let cwd = self
@@ -108,29 +100,48 @@ impl ChatApp {
                     this.home
                         .update(cx, |home, cx| home.set_plan_panel_for_view(item_id, cx));
                 }
+                this.reconcile_panel_tabs(None, cx);
             })
             .detach();
             self.watch_goal_saves(&panel, cx);
             self.file_panels.insert(key.clone(), panel);
         }
-        self.file_panels[&key].update(cx, |p, cx| p.focus(cx));
-        self.file_panels[&key].update(cx, |p, cx| {
-            p.set_review_available(self.review_panels.contains_key(&key), cx)
-        });
-        self.file_panels[&key].update(cx, |p, cx| {
-            p.set_side_chat_available(
-                self.side_chat_panels
-                    .get(&key)
-                    .is_some_and(|p| !p.read(cx).is_empty()),
-                cx,
-            )
-        });
-        self.right_panel.focus_pending = false;
+        self.file_panels[&key].clone()
     }
-    pub(super) fn open_files(&mut self, cx: &mut Context<Self>) {
+
+    /// Opens a document in the chat's files: `open` adds it to the file
+    /// panel, and its tab joins the strip, selected.
+    pub(super) fn open_in_files(
+        &mut self,
+        open: impl FnOnce(&mut FilePanel, &mut Context<FilePanel>),
+        cx: &mut Context<Self>,
+    ) {
         self.right_panel.open = true;
-        self.select_right_panel_item(3, cx);
-        self.file_panels[&self.active_conversation].update(cx, |p, cx| p.show_picker(cx));
+        let panel = self.file_panel(cx);
+        panel.update(cx, open);
+        self.reconcile_panel_tabs(None, cx);
+        if let Some(id) = panel.read(cx).active_document() {
+            self.show_panel_tab(super::panel_tabs::PanelTab::File(id), cx);
+        }
+    }
+    /// ⌘P: the `Open file` tab with the tree's filter focused.
+    pub(super) fn open_files(&mut self, cx: &mut Context<Self>) {
+        use super::panel_tabs::{PanelTab, TabPlacement};
+        self.right_panel.open = true;
+        self.file_panel(cx);
+        let picker = self
+            .panel_tabs
+            .get(&self.active_conversation)
+            .and_then(|state| {
+                state
+                    .tabs
+                    .iter()
+                    .position(|tab| *tab == PanelTab::FilePicker)
+            });
+        match picker {
+            Some(index) => self.activate_panel_tab(index, cx),
+            None => self.place_panel_tab(PanelTab::FilePicker, TabPlacement::Append, cx),
+        }
     }
 
     /// Opens one file matched inside the chat search dialog in the existing
@@ -142,20 +153,14 @@ impl ChatApp {
         is_directory: bool,
         cx: &mut Context<Self>,
     ) {
-        self.ensure_files(cx);
-        self.right_panel.open = true;
-        self.right_panel.mode = Some(super::state::RightPanelMode::Files);
-        let key = self.active_conversation.clone();
-        let Some(panel) = self.file_panels.get(&key).cloned() else {
+        if is_directory {
+            self.open_files(cx);
             return;
-        };
-        panel.update(cx, |panel, cx| {
-            if is_directory {
-                panel.show_picker(cx);
-            } else {
-                panel.open_path(std::path::PathBuf::from(path), None, cx);
-            }
-        });
+        }
+        self.open_in_files(
+            |panel, cx| panel.open_path(std::path::PathBuf::from(path), None, cx),
+            cx,
+        );
         cx.notify();
     }
 }

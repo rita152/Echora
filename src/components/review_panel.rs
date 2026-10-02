@@ -38,9 +38,6 @@ use std::{
 
 #[derive(Clone, Debug)]
 pub enum ReviewEvent {
-    Close,
-    AddTab,
-    Fullscreen,
     OpenFile {
         path: String,
         line: Option<usize>,
@@ -60,7 +57,6 @@ pub enum ReviewEvent {
 enum Menu {
     Scope,
     View,
-    Git,
     Branch,
     Commits,
     Jump,
@@ -72,9 +68,17 @@ enum Menu {
 #[derive(Clone)]
 enum Row {
     Header(usize),
-    Hunk(usize, usize),
+    /// `N unmodified lines` before `hunk` (`hunks.len()`: after the last).
+    Gap {
+        file: usize,
+        hunk: usize,
+        count: u32,
+    },
     Code {
         file: usize,
+        /// The hunk the line belongs to; `None` for unchanged lines shown
+        /// between hunks.
+        hunk: Option<usize>,
         left: Option<Line>,
         right: Option<Line>,
     },
@@ -83,6 +87,9 @@ enum Row {
     Binary(usize),
     Empty(usize),
     Preview(usize),
+    /// The space under an expanded file's diff: the viewer's 15px bottom
+    /// padding and the file block's `pb-0.5`.
+    End(usize),
 }
 
 #[derive(Clone)]
@@ -110,8 +117,6 @@ pub struct ReviewPanel {
     mode: ThemeMode,
     scope: Scope,
     snapshot: Arc<Snapshot>,
-    file_tabs: Vec<String>,
-    side_chat_available: bool,
     last_turn: Vec<FileDiff>,
     latest_turn: Vec<FileDiff>,
     history_pinned: bool,
@@ -156,6 +161,9 @@ pub struct ReviewPanel {
     words: bool,
     whitespace: bool,
     collapsed: HashSet<String>,
+    /// Deleted files already folded once: the reference opens them collapsed,
+    /// and a later refresh must not fold one the user expanded again.
+    folded_deletions: HashSet<String>,
     viewed: HashMap<String, String>,
     folder_collapsed: HashSet<String>,
     selected_file: usize,
@@ -184,6 +192,12 @@ pub struct ReviewPanel {
     new_branch: bool,
     push_after_commit: bool,
     previews: HashMap<String, Entity<super::markdown::MarkdownPreview>>,
+    /// Where each file header's `File actions` button last painted.
+    menu_anchors: std::rc::Rc<std::cell::RefCell<HashMap<usize, gpui::Bounds<gpui::Pixels>>>>,
+    /// The row of each hunk's last changed line, which carries the hunk's
+    /// Revert / Stage capsule, and the hunk under the pointer.
+    hunk_action_rows: HashMap<usize, (usize, usize)>,
+    hovered_hunk: Option<(usize, usize)>,
 }
 
 impl EventEmitter<ReviewEvent> for ReviewPanel {}
@@ -280,8 +294,6 @@ impl ReviewPanel {
             mode,
             scope: Scope::Uncommitted,
             snapshot: Arc::new(Snapshot::default()),
-            file_tabs: Vec::new(),
-            side_chat_available: false,
             last_turn: vec![],
             latest_turn: vec![],
             history_pinned: false,
@@ -322,6 +334,7 @@ impl ReviewPanel {
             words: false,
             whitespace: false,
             collapsed: HashSet::new(),
+            folded_deletions: HashSet::new(),
             viewed: HashMap::new(),
             folder_collapsed: HashSet::new(),
             selected_file: 0,
@@ -349,6 +362,9 @@ impl ReviewPanel {
             new_branch: false,
             push_after_commit: false,
             previews: HashMap::new(),
+            menu_anchors: Default::default(),
+            hunk_action_rows: HashMap::new(),
+            hovered_hunk: None,
         };
         panel.refresh(cx);
         cx.spawn(async move |this, cx| {
@@ -404,14 +420,6 @@ impl ReviewPanel {
     }
     fn compact(&self) -> bool {
         self.panel_width < 560.
-    }
-    pub fn set_file_tabs(&mut self, paths: Vec<String>, cx: &mut Context<Self>) {
-        self.file_tabs = paths;
-        cx.notify();
-    }
-    pub fn set_side_chat_available(&mut self, available: bool, cx: &mut Context<Self>) {
-        self.side_chat_available = available;
-        cx.notify();
     }
     pub fn apply_preferences(
         &mut self,
@@ -593,6 +601,7 @@ impl ReviewPanel {
                         }
                     }
                     self.snapshot = Arc::new(snapshot);
+                    self.fold_new_deletions();
                     self.previews.clear();
                     self.rebuild(cx);
                     self.restore_scroll(anchor);
@@ -627,6 +636,7 @@ impl ReviewPanel {
         self.snapshot_loaded = false;
         self.error = None;
         self.collapsed.clear();
+        self.folded_deletions.clear();
         self.selected_file = 0;
         self.scroll.scroll_to(ListOffset::default());
         let mut snapshot = (*self.snapshot).clone();
@@ -639,6 +649,16 @@ impl ReviewPanel {
         }
         self.refresh(cx);
     }
+    /// Collapses deleted files the first time they appear, as the reference
+    /// shows a deletion as its header alone.
+    fn fold_new_deletions(&mut self) {
+        for file in &self.snapshot.files {
+            if file.status == 'D' && self.folded_deletions.insert(file.path.clone()) {
+                self.collapsed.insert(file.path.clone());
+            }
+        }
+    }
+
     fn matching_files(&self, query: &str) -> Vec<usize> {
         let q = query.to_lowercase();
         self.snapshot
@@ -673,18 +693,30 @@ impl ReviewPanel {
             }
             if file.binary {
                 rows.push(Row::Binary(i));
+                rows.push(Row::End(i));
                 continue;
             }
             if self.rich && file.path.ends_with(".md") && file.new_text.is_some() {
                 rows.push(Row::Preview(i));
+                rows.push(Row::End(i));
                 continue;
             }
             if file.hunks.is_empty() {
                 rows.push(Row::Empty(i));
             }
+            // The reference collapses an unchanged run of four or more lines
+            // into a separator and shows a shorter one in full, which takes
+            // the file's text for the runs outside git's context.
+            let lines: Option<Vec<&str>> = file.new_text.as_deref().map(|t| t.lines().collect());
+            let (mut next_new, mut next_old) = (1, 1);
             for (h, hunk) in file.hunks.iter().enumerate() {
-                if !hunk.header.is_empty() {
-                    rows.push(Row::Hunk(i, h));
+                if let (Some((new_start, new_end)), Some((_, old_end))) =
+                    (hunk.new_range(), hunk.old_range())
+                {
+                    let gap = new_start.saturating_sub(next_new);
+                    self.gap_rows(&mut rows, i, h, (next_new, next_old), gap, lines.as_deref());
+                    next_new = new_end + 1;
+                    next_old = old_end + 1;
                 }
                 let mut n = 0;
                 while n < hunk.lines.len() {
@@ -703,6 +735,7 @@ impl ReviewPanel {
                             let right = (j < n - added).then(|| hunk.lines[added + j].clone());
                             rows.push(Row::Code {
                                 file: i,
+                                hunk: Some(h),
                                 left: left.clone(),
                                 right: right.clone(),
                             });
@@ -719,6 +752,7 @@ impl ReviewPanel {
                         };
                         rows.push(Row::Code {
                             file: i,
+                            hunk: Some(h),
                             left: left.clone(),
                             right: right.clone(),
                         });
@@ -727,6 +761,15 @@ impl ReviewPanel {
                     }
                 }
             }
+            if let (Some(lines), Some(_)) = (
+                lines.as_deref(),
+                file.hunks.last().and_then(|hunk| hunk.new_range()),
+            ) {
+                let gap = (lines.len() as u32 + 1).saturating_sub(next_new);
+                let hunk = file.hunks.len();
+                self.gap_rows(&mut rows, i, hunk, (next_new, next_old), gap, Some(lines));
+            }
+            rows.push(Row::End(i));
         }
         // Comments remain reviewable even after staging, filtering, or changing
         // scopes removes their original source line from the visible diff.
@@ -738,12 +781,74 @@ impl ReviewPanel {
                 rows.push(Row::Comment(comment.id));
             }
         }
+        self.hunk_action_rows = rows
+            .iter()
+            .enumerate()
+            .filter_map(|(index, row)| match row {
+                Row::Code {
+                    file,
+                    hunk: Some(hunk),
+                    left,
+                    right,
+                } if [left, right]
+                    .into_iter()
+                    .flatten()
+                    .any(|line| line.kind != LineKind::Context) =>
+                {
+                    Some(((*file, *hunk), index))
+                }
+                _ => None,
+            })
+            .collect::<HashMap<_, _>>()
+            .into_iter()
+            .map(|(hunk, index)| (index, hunk))
+            .collect();
         self.rows = Arc::new(rows);
         self.scroll
             .reset_with_uniform_height(self.rows.len(), px(21.6));
         self.restore_scroll(anchor);
         cx.notify();
     }
+    /// The rows for `gap` unchanged lines starting at `(new, old)` before
+    /// `hunk`: the lines themselves when there are at most three and the
+    /// file's text is loaded, otherwise one separator.
+    fn gap_rows(
+        &self,
+        rows: &mut Vec<Row>,
+        file: usize,
+        hunk: usize,
+        (new, old): (u32, u32),
+        gap: u32,
+        lines: Option<&[&str]>,
+    ) {
+        if gap == 0 {
+            return;
+        }
+        let shown = lines.filter(|lines| gap <= 3 && (new + gap - 1) as usize <= lines.len());
+        let Some(lines) = shown else {
+            rows.push(Row::Gap {
+                file,
+                hunk,
+                count: gap,
+            });
+            return;
+        };
+        for offset in 0..gap {
+            let line = Line {
+                old: Some(old + offset),
+                new: Some(new + offset),
+                text: lines[(new + offset - 1) as usize].to_owned(),
+                kind: LineKind::Context,
+            };
+            rows.push(Row::Code {
+                file,
+                hunk: None,
+                left: self.split.then(|| line.clone()),
+                right: Some(line),
+            });
+        }
+    }
+
     fn comment_rows(
         &self,
         rows: &mut Vec<Row>,
@@ -1029,8 +1134,9 @@ impl ReviewPanel {
         self.rebuild(cx);
     }
     /// Opens one review popup for a deterministic capture: `scope`, `options`,
-    /// or `branch`. The branch capture also switches the comparison source so
-    /// the second header row renders, exactly as a user would.
+    /// `jump`, `file` (the first file's actions) or `branch`. The branch
+    /// capture also switches the comparison source so its base capsule
+    /// renders, exactly as a user would.
     #[cfg(feature = "screenshot")]
     pub fn capture_menu(&mut self, name: &str, cx: &mut Context<Self>) {
         self.capture_menu = Some(name.to_owned());
@@ -1047,6 +1153,9 @@ impl ReviewPanel {
             "scope" => Menu::Scope,
             "options" => Menu::View,
             "branch" => Menu::Branch,
+            "jump" => Menu::Jump,
+            // The first file's `File actions`.
+            "file" if !self.snapshot.files.is_empty() => Menu::File(0),
             _ => return,
         };
         if menu == Menu::Branch && self.snapshot.branches.is_empty() && self.loading {

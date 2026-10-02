@@ -363,7 +363,6 @@ mod tests {
         window.update(|p, _, cx| {
             assert_eq!(p.documents.len(), 1, "one tab per thread goal");
             assert!(!p.has_unsaved(cx), "a goal edit never blocks closing");
-            assert!(p.open_documents().is_empty(), "not a file for context");
             let id = p.active.unwrap();
             // Unchanged text does not save.
             p.save_goal(id, cx);

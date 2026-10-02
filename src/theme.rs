@@ -44,9 +44,8 @@ impl ThemeMode {
 #[derive(Clone, Copy)]
 pub struct Theme {
     pub surface: Rgba,
-    /// Live CDP file editor canvas and plain text, separate from the panel chrome.
+    /// Live CDP file editor canvas, separate from the panel chrome.
     pub file_editor_surface: Rgba,
-    pub file_editor_text: Rgba,
     /// The sidebar's actual translucent paint, matching the Electron shell.
     pub sidebar_surface: Rgba,
     pub surface_under: Rgba,
@@ -201,7 +200,6 @@ impl Theme {
             ThemeMode::Light => Self {
                 surface: rgba(0xffffffff),
                 file_editor_surface: rgba(0xffffffff),
-                file_editor_text: rgba(0x0d0d0dff),
                 // Live ChatGPT CDP: color(srgb 1 1 1 / 0.7), composited once
                 // over Electron's macOS Menu material. Preserve the exact alpha
                 // and neutral white instead of compensating for one backdrop.
@@ -320,7 +318,6 @@ impl Theme {
             ThemeMode::Dark => Self {
                 surface: rgba(0x181818ff),
                 file_editor_surface: rgba(0x111111ff),
-                file_editor_text: rgba(0xfcfcfcff),
                 // Live ChatGPT CDP: color(srgb 0.156863 0.156863 0.156863 / 0.7).
                 sidebar_surface: Rgba {
                     a: 0.7,
@@ -434,6 +431,17 @@ impl Theme {
                 side_panel_tint: rgba(0xffffff07),
             },
         }
+    }
+}
+
+/// `over` painted on the opaque `under`, as one opaque color.
+pub fn composite_over(over: Rgba, under: Rgba) -> Rgba {
+    let (a, rest) = (over.a, 1.0 - over.a);
+    Rgba {
+        r: over.r * a + under.r * rest,
+        g: over.g * a + under.g * rest,
+        b: over.b * a + under.b * rest,
+        a: 1.0,
     }
 }
 

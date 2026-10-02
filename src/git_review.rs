@@ -71,6 +71,36 @@ pub struct Hunk {
     pub patch: String,
 }
 
+impl Hunk {
+    /// The `+start,count` range of the header, as `(first, last)` new-file
+    /// lines; `None` for a hunk without a unified header.
+    pub fn new_range(&self) -> Option<(u32, u32)> {
+        range(
+            self.header.split("@@").nth(1)?.split_whitespace().nth(1)?,
+            '+',
+        )
+    }
+
+    /// The `-start,count` range of the header, as `(first, last)` old-file
+    /// lines.
+    pub fn old_range(&self) -> Option<(u32, u32)> {
+        range(
+            self.header.split("@@").nth(1)?.split_whitespace().next()?,
+            '-',
+        )
+    }
+}
+
+fn range(field: &str, sign: char) -> Option<(u32, u32)> {
+    let mut parts = field.strip_prefix(sign)?.split(',');
+    let start: u32 = parts.next()?.parse().ok()?;
+    let count = match parts.next() {
+        Some(count) => count.parse::<u32>().ok()?,
+        None => 1,
+    };
+    Some((start, start + count.saturating_sub(1)))
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FileDiff {
     pub path: String,
@@ -114,6 +144,11 @@ pub enum Mutation {
         path: String,
         index: usize,
         reverse: bool,
+    },
+    /// Reverts one unstaged hunk in the working tree.
+    DiscardHunk {
+        path: String,
+        index: usize,
     },
     Commit {
         message: String,
@@ -1147,6 +1182,23 @@ pub fn apply(snapshot: &Snapshot, scope: &Scope, mutation: &Mutation) -> Result<
             let mut check = args.clone();
             check.push("--check");
             apply_stdin(root, &check, &hunk.patch)?;
+            apply_stdin(root, &args, &hunk.patch)?;
+        }
+        Mutation::DiscardHunk { path, index } => {
+            let file = snapshot
+                .files
+                .iter()
+                .find(|f| &f.path == path)
+                .context(crate::i18n::text("找不到文件"))?;
+            if *scope != Scope::Unstaged || file.status != 'M' {
+                bail!(crate::i18n::text("此更改需要按文件还原"));
+            }
+            let hunk = file
+                .hunks
+                .get(*index)
+                .context(crate::i18n::text("找不到差异块"))?;
+            let args = ["apply", "--reverse", "--whitespace=nowarn"];
+            apply_stdin(root, &[args.as_slice(), &["--check"]].concat(), &hunk.patch)?;
             apply_stdin(root, &args, &hunk.patch)?;
         }
         Mutation::Commit {

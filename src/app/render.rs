@@ -293,7 +293,14 @@ impl Render for ChatApp {
             self.right_panel.focus_pending = false;
         }
         self.sync_viewed_thread(cx);
-        self.normalize_right_panel_mode(cx);
+        // An open panel always shows a tab: a chat without one gets a New tab.
+        if self.right_panel.open
+            && !self.has_panel_tabs()
+            && self.right_panel.subagent.is_none()
+            && self.right_panel.diff_review.is_none()
+        {
+            self.open_new_panel_tab(cx);
+        }
         self.sync_browser_pages(cx);
         let sidebar_width = self.sidebar.read(cx).width();
         // The rename panel is a window-level dialog: the sidebar owns the task
@@ -348,11 +355,9 @@ impl Render for ChatApp {
             _ => None,
         };
         let viewport_width = f32::from(window.viewport_size().width);
+        // Any tab can take the full view.
         let review_fullscreen = self.right_panel.open
-            && matches!(
-                self.right_panel.mode,
-                Some(RightPanelMode::Review | RightPanelMode::SideChat)
-            )
+            && self.right_panel.subagent.is_none()
             && self.right_panel.fullscreen;
         // `Rsa` belongs to the conversation page's header, which a full-screen
         // side panel replaces.
@@ -446,10 +451,9 @@ impl Render for ChatApp {
                 this.open_files(cx);
                 cx.stop_propagation();
             }))
-            .on_action(cx.listener(|this,_:&crate::components::file_panel::OpenWorkspaceReview,_,cx|{this.right_panel.open=true;this.select_right_panel_item(4,cx);cx.stop_propagation();}))
             .on_action(cx.listener(|this, event: &OpenWorkspaceFile, _, cx| {
-                this.open_files(cx);
-                this.file_panels[&this.active_conversation].update(cx, |p,cx| p.open_path(PathBuf::from(&event.path),event.line,cx));
+                let (path, line) = (PathBuf::from(&event.path), event.line);
+                this.open_in_files(|panel, cx| panel.open_path(path, line, cx), cx);
                 cx.stop_propagation();
             }))
             .on_action(cx.listener(|this, _: &ToggleTerminal, _, cx| {
@@ -491,15 +495,6 @@ impl Render for ChatApp {
             .on_action(cx.listener(|this, _: &OpenSideChat, _, cx| {
                 this.right_panel.open = true;
                 this.select_right_panel_item(0, cx);
-                cx.stop_propagation();
-            }))
-            .on_action(cx.listener(|this, _: &crate::components::side_chat::RestoreSideChat, _, cx| {
-                this.deactivate_review(cx);
-                this.right_panel.open = true;
-                this.right_panel.mode = Some(RightPanelMode::SideChat);
-                this.right_panel.fullscreen = false;
-                this.right_panel.diff_review = None;
-                this.ensure_side_chat(false, cx);
                 cx.stop_propagation();
             }))
             .on_key_down(cx.listener(Self::handle_project_creation_key))

@@ -3,7 +3,7 @@
 use std::{path::PathBuf, time::Duration};
 
 #[cfg(feature = "screenshot")]
-use super::ConversationKey;
+use super::{ConversationKey, state::RightPanelMode};
 #[cfg(feature = "screenshot")]
 use crate::components::file_panel::FilePanel;
 #[cfg(feature = "screenshot")]
@@ -585,6 +585,66 @@ impl ChatApp {
         self.project_creation.kind = ProjectCreationKind::Remote;
         self.project_creation.step = ProjectCreationStep::Remote;
         cx.notify();
+    }
+    /// `--right-panel-tool=side-chat|browser|terminal|files|review` opens
+    /// that tool in the current chat's right panel; a comma-separated list
+    /// opens one tab per entry, in order, leaving the last selected
+    /// (`selected:` before an entry selects that one instead). `files=<path>`
+    /// opens that file, and `review=unstaged|staged` shows that list.
+    #[cfg(feature = "screenshot")]
+    pub fn capture_right_panel_tool(&mut self, tools: &str, cx: &mut Context<Self>) {
+        use super::panel_tabs::TabPlacement;
+        self.complete_startup_for_capture(cx);
+        self.right_panel.open = true;
+        let mut selected = None;
+        for entry in tools.split(',') {
+            let (keep, entry) = match entry.strip_prefix("selected:") {
+                Some(entry) => (true, entry),
+                None => (false, entry),
+            };
+            let (tool, argument) = match entry.split_once('=') {
+                Some((tool, argument)) => (tool, Some(argument)),
+                None => (entry, None),
+            };
+            let mode = match tool {
+                "side-chat" => RightPanelMode::SideChat,
+                "browser" => RightPanelMode::Browser,
+                "terminal" => RightPanelMode::Terminal,
+                "files" => RightPanelMode::Files,
+                "review" => RightPanelMode::Review,
+                _ => {
+                    eprintln!("unknown --right-panel-tool={tool}");
+                    continue;
+                }
+            };
+            match (mode, argument) {
+                (RightPanelMode::Files, Some(path)) => {
+                    let path = PathBuf::from(path);
+                    self.open_in_files(|panel, cx| panel.open_path(path, None, cx), cx);
+                }
+                _ => self.open_panel_tool(mode, TabPlacement::Append, cx),
+            }
+            if mode == RightPanelMode::Review
+                && let Some(scope) = argument
+                && let Some(panel) = self.review_panels.get(&self.active_conversation)
+            {
+                let scope = match scope {
+                    "unstaged" => crate::git_review::Scope::Unstaged,
+                    "staged" => crate::git_review::Scope::Staged,
+                    _ => crate::git_review::Scope::Uncommitted,
+                };
+                panel.update(cx, |panel, cx| panel.show_scope(scope, cx));
+            }
+            if keep {
+                selected = self
+                    .panel_tabs
+                    .get(&self.active_conversation)
+                    .map(|state| state.active);
+            }
+        }
+        if let Some(index) = selected {
+            self.activate_panel_tab(index, cx);
+        }
     }
     #[cfg(feature = "screenshot")]
     pub fn capture_files(&mut self, root: PathBuf, path: Option<PathBuf>, cx: &mut Context<Self>) {

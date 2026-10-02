@@ -559,3 +559,30 @@ fn review_branches_follow_the_reference_code_review_menu() {
     // Outside a repository the list cannot load.
     assert!(review_branches(&std::env::temp_dir().join("gpui-not-a-repo")).is_err());
 }
+
+#[test]
+fn reverts_one_unstaged_hunk_and_reads_hunk_ranges() {
+    let r = Repo::new();
+    let original = (0..30).map(|n| format!("line {n}\n")).collect::<String>();
+    r.write("file.txt", original.as_bytes());
+    r.commit();
+    let changed = original
+        .replace("line 2\n", "changed 2\n")
+        .replace("line 25\n", "changed 25\n");
+    r.write("file.txt", changed.as_bytes());
+    let snapshot = r.load(Scope::Unstaged);
+    let hunks = &snapshot.files[0].hunks;
+    assert_eq!(hunks[0].new_range(), Some((1, 6)));
+    assert_eq!(hunks[0].old_range(), Some((1, 6)));
+    assert_eq!(hunks[1].new_range(), Some((23, 29)));
+    let revert = Mutation::DiscardHunk {
+        path: "file.txt".into(),
+        index: 1,
+    };
+    apply(&snapshot, &Scope::Unstaged, &revert).unwrap();
+    let text = std::fs::read_to_string(r.0.join("file.txt")).unwrap();
+    assert!(text.contains("changed 2\n") && text.contains("line 25\n"));
+    // Only the unstaged list reverts single hunks.
+    let fresh = r.load(Scope::Uncommitted);
+    assert!(apply(&fresh, &Scope::Uncommitted, &revert).is_err());
+}

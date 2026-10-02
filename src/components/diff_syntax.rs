@@ -20,8 +20,8 @@ use two_face::re_exports::syntect::{
 
 use crate::theme::{ThemeMode, UI_MONOSPACE_FONT_FAMILY, ui_font};
 
-const CODEX_LIGHT: &str = include_str!("../../../../assets/code-themes/codex-light.json");
-const CODEX_DARK: &str = include_str!("../../../../assets/code-themes/codex-dark.json");
+const CODEX_LIGHT: &str = include_str!("../../assets/code-themes/codex-light.json");
+const CODEX_DARK: &str = include_str!("../../assets/code-themes/codex-dark.json");
 
 #[derive(Deserialize)]
 struct VsCodeTheme {
@@ -212,9 +212,31 @@ fn theme(mode: ThemeMode) -> &'static Theme {
     }
 }
 
+/// Language name for the syntax highlighter, derived from the file suffix.
+pub(crate) fn language_for(path: &str) -> Option<&'static str> {
+    let extension = path.rsplit('.').next().unwrap_or_default();
+    Some(match extension {
+        "rs" => "rs",
+        "toml" => "toml",
+        "json" => "json",
+        "md" => "markdown",
+        "py" => "python",
+        "js" | "mjs" | "cjs" => "javascript",
+        "ts" => "typescript",
+        "sh" | "zsh" | "bash" => "bash",
+        "yml" | "yaml" => "yaml",
+        "c" | "h" => "c",
+        "cpp" | "cc" | "hpp" => "cpp",
+        "go" => "go",
+        "html" => "html",
+        "css" => "css",
+        _ => return None,
+    })
+}
+
 /// Text runs for one line of diff code in `mode`'s Codex theme. Unknown
 /// languages (and code too long to parse) keep the theme's foreground.
-pub(super) fn code_runs(text: &str, language: Option<&str>, mode: ThemeMode) -> Vec<TextRun> {
+pub(crate) fn code_runs(text: &str, language: Option<&str>, mode: ThemeMode) -> Vec<TextRun> {
     let theme = theme(mode);
     let mut font = ui_font();
     font.family = UI_MONOSPACE_FONT_FAMILY.into();
@@ -285,6 +307,24 @@ pub(super) fn code_runs(text: &str, language: Option<&str>, mode: ThemeMode) -> 
         ));
     }
     runs
+}
+
+/// [`code_runs`] with the byte range each run covers, for multi-line text
+/// such as a whole file in the Files viewer.
+pub(crate) fn code_spans(
+    text: &str,
+    language: Option<&str>,
+    mode: ThemeMode,
+) -> Vec<(Range<usize>, TextRun)> {
+    let mut start = 0;
+    code_runs(text, language, mode)
+        .into_iter()
+        .map(|run| {
+            let range = start..start + run.len;
+            start = range.end;
+            (range, run)
+        })
+        .collect()
 }
 
 #[cfg(test)]
