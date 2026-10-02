@@ -166,12 +166,14 @@ const RIGHT_PANEL_ITEMS: &[(RightPanelMode, &str, &str, &str)] = &[
 const SIDEBAR_MAX_WIDTH: f32 = 480.0;
 const RIGHT_PANEL_MIN_WIDTH: f32 = 320.0;
 const RIGHT_PANEL_MAIN_MIN_WIDTH: f32 = 384.0;
+/// Share of the window beside the sidebar the right panel takes until its
+/// divider is dragged; the main column keeps the larger part.
+const RIGHT_PANEL_DEFAULT_SHARE: f32 = 0.3;
 /// The right panel is a rounded card inset from the window's top, right and
 /// bottom edges. The titlebar's trailing controls move in by the same inset so
 /// they stay in the card's toolbar.
 const RIGHT_PANEL_CARD_INSET: f32 = 8.0;
 const RIGHT_PANEL_CARD_RADIUS: f32 = 12.0;
-const SUBAGENT_PANEL_DEFAULT_WIDTH: f32 = 603.0;
 const SUBAGENT_PANEL_HEADER_HEIGHT: f32 = 48.0;
 // The reference places its traffic lights at `trafficLightPosition` =
 // {x: 16, y: round((46 - 14) / 2)} = {16, 16}, so the native 14px buttons are

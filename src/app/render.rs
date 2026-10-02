@@ -29,7 +29,7 @@ use crate::{
 use super::{
     ChatApp, ConversationKey, DismissPermissionUi, LEADING_TITLEBAR_CONTROLS_GAP,
     LEADING_TITLEBAR_CONTROLS_LEFT, LEADING_TITLEBAR_CONTROLS_TOP, OpenFiles, OpenSideChat,
-    RIGHT_PANEL_CARD_INSET, RIGHT_PANEL_MIN_WIDTH, STARTUP_LOADING_BLINK_DURATION,
+    RIGHT_PANEL_CARD_INSET, RIGHT_PANEL_DEFAULT_SHARE, STARTUP_LOADING_BLINK_DURATION,
     STARTUP_LOADING_LOGO_SIZE, ToggleReview, ToggleTerminal,
     sidebar::{conversation_titlebar_leading_edge, sidebar_trigger_left, titlebar_leading_edge},
 };
@@ -345,18 +345,7 @@ impl Render for ChatApp {
             }
             _ => None,
         };
-        // CDP at both 2560×1410 and the project's 1440×900 target showed a
-        // persisted 1418.21875 px panel, clamped to leave the main thread at
-        // its measured 773.09375 px right edge on narrower windows.
         let viewport_width = f32::from(window.viewport_size().width);
-        let default_right_panel_width = (window.viewport_size().width
-            - px(if self.right_panel.mode == Some(RightPanelMode::Review) {
-                759.66406
-            } else {
-                773.09375
-            }))
-        .min(px(1_418.218_8))
-        .max(px(RIGHT_PANEL_MIN_WIDTH));
         let review_fullscreen = self.right_panel.open
             && matches!(
                 self.right_panel.mode,
@@ -369,10 +358,12 @@ impl Render for ChatApp {
         let right_panel_width = if review_fullscreen {
             px(viewport_width - revealed_sidebar_width)
         } else {
+            // Until the divider is dragged every mode opens at the same
+            // share of the window beside the sidebar.
             px(clamp_right_panel_width(
-                self.right_panel
-                    .width
-                    .unwrap_or(f32::from(default_right_panel_width)),
+                self.right_panel.width.unwrap_or(
+                    (viewport_width - revealed_sidebar_width) * RIGHT_PANEL_DEFAULT_SHARE,
+                ),
                 viewport_width,
                 revealed_sidebar_width,
             ))

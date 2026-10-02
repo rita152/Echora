@@ -7,8 +7,7 @@ use gpui::{
 
 use super::{
     ChatApp, RIGHT_PANEL_CARD_INSET, RIGHT_PANEL_CARD_RADIUS, RIGHT_PANEL_ITEMS,
-    RIGHT_PANEL_MAIN_MIN_WIDTH, RIGHT_PANEL_MIN_WIDTH, SUBAGENT_PANEL_DEFAULT_WIDTH,
-    SUBAGENT_PANEL_HEADER_HEIGHT,
+    RIGHT_PANEL_MAIN_MIN_WIDTH, RIGHT_PANEL_MIN_WIDTH, SUBAGENT_PANEL_HEADER_HEIGHT,
     project_creation::project_creation_focus_shadow,
     render::panel_resize_handle,
     state::{RightPanelMode, SubagentPanel},
@@ -62,9 +61,6 @@ impl ChatApp {
         self.right_panel.open = true;
         self.right_panel.mode = None;
         self.right_panel.diff_review = None;
-        if self.right_panel.width.is_none() {
-            self.right_panel.width = Some(SUBAGENT_PANEL_DEFAULT_WIDTH);
-        }
         self.right_panel.keyboard_focus = false;
         self.right_panel.focus_pending = true;
         cx.notify();

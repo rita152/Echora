@@ -510,9 +510,10 @@ fn collaboration_event_opens_a_read_only_subagent_panel_without_switching_parent
     });
 
     window.draw();
-    // At 1440px the 603px panel begins at x=837; the live 156×28 tab
-    // occupies x=845..1001 and toggles the same information popover.
-    window.simulate_click(point(px(900.0), px(23.0)), MouseButton::Left);
+    // At 1440px the default 360px card begins at x=1080 and y=8; the live
+    // 156×28 tab occupies x=1088..1244, y=17..45 and toggles the same
+    // information popover.
+    window.simulate_click(point(px(1160.0), px(31.0)), MouseButton::Left);
     assert!(window.read(|chat, _| chat.right_panel.subagent_menu_open));
     window.simulate_keystroke("escape");
     assert!(window.read(|chat, _| chat.right_panel.open));
@@ -607,10 +608,10 @@ fn right_panel_card_chrome_lets_the_pointer_reach_the_launcher() {
     window.update(|chat, _, cx| chat.open_right_panel(cx));
     window.draw();
 
-    // The card spans x 773..1432 and y 8..892; under its 46 px toolbar the
-    // five 40 px launcher rows (4 px apart) are centred, so Browser's row
-    // runs from y=409 to y=449.
-    let browser = point(px(1102.0), px(429.0));
+    // The default 360 px card spans x 1080..1432 and y 8..892; under its
+    // 46 px toolbar the five 40 px launcher rows (4 px apart) are centred,
+    // so Browser's row runs from y=409 to y=449.
+    let browser = point(px(1256.0), px(429.0));
     window.simulate_mouse_move(browser);
     assert_eq!(window.read(|chat, _| chat.right_panel.focused_item), 1);
     window.simulate_click(browser, MouseButton::Left);
@@ -726,17 +727,18 @@ fn right_panel_resize_handle_matches_reference_limits_without_hiding_the_panel()
     window.update(|chat, _, cx| chat.open_right_panel(cx));
     window.draw();
 
-    // CDP: a 16 px hit area is centered on the one-pixel divider.
-    window.simulate_mouse_move(point(px(773.09375), px(300.0)));
-    window.simulate_mouse_down(point(px(773.09375), px(300.0)), MouseButton::Left);
+    // The panel opens at 30% of the 1200 px beside the 240 px sidebar, so
+    // its divider (the card's left edge) is at x=1080. A 16 px hit area is
+    // centered on it, and grabbing it records that default width.
+    let divider = 1440.0 - (1440.0 - 240.0) * super::RIGHT_PANEL_DEFAULT_SHARE;
+    window.simulate_mouse_move(point(px(divider), px(300.0)));
+    window.simulate_mouse_down(point(px(divider), px(300.0)), MouseButton::Left);
     assert!(window.read(|chat, _| chat.right_panel.resize_dragging));
+    assert_eq!(window.read(|chat, _| chat.right_panel.width), Some(360.0));
     window.simulate_mouse_move(point(px(1100.0), px(300.0)));
     window.simulate_mouse_up(point(px(1100.0), px(300.0)), MouseButton::Left);
-    // The divider is the card's left edge, the slot's own edge: the slot has
-    // no border to push the handle a pixel in, so the drag ends at
-    // 1440 - 1100 plus the pointer's snapped offset from the divider.
     let narrow_width = window.read(|chat, _| chat.right_panel.width.unwrap());
-    assert!((narrow_width - 340.09375).abs() < 0.2, "{narrow_width}");
+    assert!((narrow_width - 340.0).abs() < 0.2, "{narrow_width}");
 
     window.draw();
     window.simulate_mouse_down(point(px(1100.0), px(300.0)), MouseButton::Left);
