@@ -550,14 +550,16 @@ fn remaining_titlebar_panel_toggle_uses_its_full_hit_area() {
     }
 
     // The remaining toggle keeps its original position and 28 px hit area.
+    // Over the open panel it moves in with the card inset and keeps all 28 px
+    // there.
+    let inset = super::RIGHT_PANEL_CARD_INSET;
     for x in [865.0, 878.0, 891.0] {
         for y in [10.0, 23.0, 36.0] {
-            let trigger = point(px(x), px(y));
             window.draw();
-            window.simulate_click(trigger, MouseButton::Left);
+            window.simulate_click(point(px(x), px(y)), MouseButton::Left);
             assert!(window.read(|chat, _| chat.right_panel.open));
             window.draw();
-            window.simulate_click(trigger, MouseButton::Left);
+            window.simulate_click(point(px(x - inset), px(y + inset)), MouseButton::Left);
             assert!(!window.read(|chat, _| chat.right_panel.open));
         }
     }
@@ -583,6 +585,35 @@ fn right_panel_menu_supports_keyboard_selection() {
     window.simulate_keystroke("down");
     assert_eq!(window.read(|chat, _| chat.right_panel.focused_item), 1);
     window.simulate_keystroke("enter");
+    assert_eq!(
+        window.read(|chat, _| chat.right_panel.mode),
+        Some(super::RightPanelMode::Browser)
+    );
+}
+
+#[test]
+fn right_panel_card_chrome_lets_the_pointer_reach_the_launcher() {
+    let mut app = TestApp::new();
+    let mut window = app.open_window_with_options(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: point(px(0.0), px(0.0)),
+                size: size(px(1440.0), px(900.0)),
+            })),
+            ..Default::default()
+        },
+        |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
+    );
+    window.update(|chat, _, cx| chat.open_right_panel(cx));
+    window.draw();
+
+    // The card spans x 773..1432 and y 8..892; under its 46 px toolbar the
+    // five 40 px launcher rows (4 px apart) are centred, so Browser's row
+    // runs from y=409 to y=449.
+    let browser = point(px(1102.0), px(429.0));
+    window.simulate_mouse_move(browser);
+    assert_eq!(window.read(|chat, _| chat.right_panel.focused_item), 1);
+    window.simulate_click(browser, MouseButton::Left);
     assert_eq!(
         window.read(|chat, _| chat.right_panel.mode),
         Some(super::RightPanelMode::Browser)
@@ -697,12 +728,15 @@ fn right_panel_resize_handle_matches_reference_limits_without_hiding_the_panel()
 
     // CDP: a 16 px hit area is centered on the one-pixel divider.
     window.simulate_mouse_move(point(px(773.09375), px(300.0)));
-    assert!(window.read(|chat, _| chat.right_panel.resize_hovered));
     window.simulate_mouse_down(point(px(773.09375), px(300.0)), MouseButton::Left);
+    assert!(window.read(|chat, _| chat.right_panel.resize_dragging));
     window.simulate_mouse_move(point(px(1100.0), px(300.0)));
     window.simulate_mouse_up(point(px(1100.0), px(300.0)), MouseButton::Left);
+    // The divider is the card's left edge, the slot's own edge: the slot has
+    // no border to push the handle a pixel in, so the drag ends at
+    // 1440 - 1100 plus the pointer's snapped offset from the divider.
     let narrow_width = window.read(|chat, _| chat.right_panel.width.unwrap());
-    assert!((narrow_width - 339.09375).abs() < 0.2, "{narrow_width}");
+    assert!((narrow_width - 340.09375).abs() < 0.2, "{narrow_width}");
 
     window.draw();
     window.simulate_mouse_down(point(px(1100.0), px(300.0)), MouseButton::Left);

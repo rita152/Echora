@@ -169,6 +169,10 @@ pub struct Theme {
     pub tooltip_shortcut_surface: Rgba,
     pub tooltip_shortcut_text: Rgba,
     pub tooltip_shadow: Rgba,
+    /// Echora's right-panel card is the main surface under this tint: the
+    /// hosted views keep painting `surface` and the card lifts them as a whole
+    /// (dark #181818 to #1e1e1e, light #ffffff to #f8f8f8).
+    pub side_panel_tint: Rgba,
 }
 
 impl Theme {
@@ -311,6 +315,7 @@ impl Theme {
                 tooltip_shortcut_surface: rgba(0xffffff40),
                 tooltip_shortcut_text: rgba(0xcdcdcdff),
                 tooltip_shadow: rgba(0x0f172a33),
+                side_panel_tint: rgba(0x00000007),
             },
             ThemeMode::Dark => Self {
                 surface: rgba(0x181818ff),
@@ -426,6 +431,7 @@ impl Theme {
                 tooltip_shortcut_surface: rgba(0xffffff40),
                 tooltip_shortcut_text: rgba(0xcdcdcdff),
                 tooltip_shadow: rgba(0x0f172a33),
+                side_panel_tint: rgba(0xffffff07),
             },
         }
     }
@@ -442,6 +448,16 @@ mod tests {
         assert_eq!(font.weight, super::UI_BODY_FONT_WEIGHT);
         // CJK goes through CoreText's system cascade, as in Chromium.
         assert!(font.fallbacks.is_none());
+    }
+
+    #[test]
+    fn side_panel_card_tint_sets_the_card_apart_from_the_main_surface() {
+        for (mode, card) in [(ThemeMode::Dark, 0x1e), (ThemeMode::Light, 0xf8)] {
+            let theme = Theme::for_mode(mode);
+            let tint = theme.side_panel_tint;
+            let composite = theme.surface.r * (1.0 - tint.a) + tint.r * tint.a;
+            assert_eq!((composite * 255.0).round() as u8, card);
+        }
     }
 
     #[test]

@@ -166,6 +166,11 @@ const RIGHT_PANEL_ITEMS: &[(RightPanelMode, &str, &str, &str)] = &[
 const SIDEBAR_MAX_WIDTH: f32 = 480.0;
 const RIGHT_PANEL_MIN_WIDTH: f32 = 320.0;
 const RIGHT_PANEL_MAIN_MIN_WIDTH: f32 = 384.0;
+/// The right panel is a rounded card inset from the window's top, right and
+/// bottom edges. The titlebar's trailing controls move in by the same inset so
+/// they stay in the card's toolbar.
+const RIGHT_PANEL_CARD_INSET: f32 = 8.0;
+const RIGHT_PANEL_CARD_RADIUS: f32 = 12.0;
 const SUBAGENT_PANEL_DEFAULT_WIDTH: f32 = 603.0;
 const SUBAGENT_PANEL_HEADER_HEIGHT: f32 = 48.0;
 // The reference places its traffic lights at `trafficLightPosition` =

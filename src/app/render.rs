@@ -29,8 +29,8 @@ use crate::{
 use super::{
     ChatApp, ConversationKey, DismissPermissionUi, LEADING_TITLEBAR_CONTROLS_GAP,
     LEADING_TITLEBAR_CONTROLS_LEFT, LEADING_TITLEBAR_CONTROLS_TOP, OpenFiles, OpenSideChat,
-    RIGHT_PANEL_MIN_WIDTH, STARTUP_LOADING_BLINK_DURATION, STARTUP_LOADING_LOGO_SIZE, ToggleReview,
-    ToggleTerminal,
+    RIGHT_PANEL_CARD_INSET, RIGHT_PANEL_MIN_WIDTH, STARTUP_LOADING_BLINK_DURATION,
+    STARTUP_LOADING_LOGO_SIZE, ToggleReview, ToggleTerminal,
     sidebar::{conversation_titlebar_leading_edge, sidebar_trigger_left, titlebar_leading_edge},
 };
 
@@ -393,6 +393,11 @@ impl Render for ChatApp {
             };
         let summary_mode = SummaryDisplayMode::for_main_width(main_width);
         let summary_available = resumed_title.is_some() && !review_fullscreen;
+        let trailing_controls_inset = if self.right_panel.open {
+            RIGHT_PANEL_CARD_INSET
+        } else {
+            0.0
+        };
         let summary_shown = summary_available
             && self.summary_panel_visible(summary_mode)
             && self.summary_panel.read(cx).has_content(cx);
@@ -670,6 +675,7 @@ impl Render for ChatApp {
                                     .when(self.right_panel.open, |row| {
                                         row.child(self.right_panel(
                                             right_panel_width,
+                                            review_fullscreen,
                                             theme,
                                             cx,
                                         ))
@@ -975,8 +981,10 @@ impl Render for ChatApp {
                     .child(
                         div()
                             .absolute()
-                            .top(px(9.0))
-                            .right(px(8.0))
+                            // Over an open right panel these sit in its
+                            // card's toolbar, which the card inset moves in.
+                            .top(px(9.0 + trailing_controls_inset))
+                            .right(px(8.0 + trailing_controls_inset))
                             .flex()
                             .gap(px(6.0))
                             // The reference Pull Requests page owns the whole

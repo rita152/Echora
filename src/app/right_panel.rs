@@ -6,8 +6,9 @@ use gpui::{
 };
 
 use super::{
-    ChatApp, RIGHT_PANEL_ITEMS, RIGHT_PANEL_MAIN_MIN_WIDTH, RIGHT_PANEL_MIN_WIDTH,
-    SUBAGENT_PANEL_DEFAULT_WIDTH, SUBAGENT_PANEL_HEADER_HEIGHT,
+    ChatApp, RIGHT_PANEL_CARD_INSET, RIGHT_PANEL_CARD_RADIUS, RIGHT_PANEL_ITEMS,
+    RIGHT_PANEL_MAIN_MIN_WIDTH, RIGHT_PANEL_MIN_WIDTH, SUBAGENT_PANEL_DEFAULT_WIDTH,
+    SUBAGENT_PANEL_HEADER_HEIGHT,
     project_creation::project_creation_focus_shadow,
     render::panel_resize_handle,
     state::{RightPanelMode, SubagentPanel},
@@ -132,7 +133,6 @@ impl ChatApp {
             self.right_panel.diff_review = None;
             self.right_panel.keyboard_focus = false;
             self.right_panel.focus_pending = false;
-            self.right_panel.resize_hovered = false;
             self.right_panel.resize_dragging = false;
             cx.notify();
         }
@@ -327,7 +327,6 @@ impl ChatApp {
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
         let entity = cx.entity();
-        let line_visible = self.right_panel.resize_hovered || self.right_panel.resize_dragging;
         let input_layer = canvas(
             |bounds, _, _| bounds,
             move |bounds, _, window, _| {
@@ -340,7 +339,6 @@ impl ChatApp {
                         let divider_x = f32::from(bounds.origin.x) + 8.0;
                         let current_width = f32::from(window.viewport_size().width) - divider_x;
                         this.right_panel.resize_dragging = true;
-                        this.right_panel.resize_hovered = true;
                         this.right_panel.resize_pointer_offset =
                             divider_x - f32::from(event.position.x);
                         // Resolve the responsive default to a persisted width as
@@ -354,35 +352,26 @@ impl ChatApp {
 
                 let mouse_move_entity = entity.clone();
                 window.on_mouse_event(move |event: &MouseMoveEvent, _, window, cx| {
-                    let pointer_inside = bounds.contains(&event.position);
                     mouse_move_entity.update(cx, |this, cx| {
-                        let mut changed = false;
-                        if this.right_panel.resize_dragging {
-                            let viewport_width = f32::from(window.viewport_size().width);
-                            let revealed_sidebar_width =
-                                this.sidebar.read(cx).width() * this.sidebar_layout.reveal;
-                            let divider_x = f32::from(event.position.x)
-                                + this.right_panel.resize_pointer_offset;
-                            let next_width = clamp_right_panel_width(
-                                viewport_width - divider_x,
-                                viewport_width,
-                                revealed_sidebar_width,
-                            );
-                            if this
-                                .right_panel
-                                .width
-                                .is_none_or(|width| (width - next_width).abs() > f32::EPSILON)
-                            {
-                                this.right_panel.width = Some(next_width);
-                                changed = true;
-                            }
+                        if !this.right_panel.resize_dragging {
+                            return;
                         }
-                        let next_hovered = pointer_inside || this.right_panel.resize_dragging;
-                        if this.right_panel.resize_hovered != next_hovered {
-                            this.right_panel.resize_hovered = next_hovered;
-                            changed = true;
-                        }
-                        if changed {
+                        let viewport_width = f32::from(window.viewport_size().width);
+                        let revealed_sidebar_width =
+                            this.sidebar.read(cx).width() * this.sidebar_layout.reveal;
+                        let divider_x =
+                            f32::from(event.position.x) + this.right_panel.resize_pointer_offset;
+                        let next_width = clamp_right_panel_width(
+                            viewport_width - divider_x,
+                            viewport_width,
+                            revealed_sidebar_width,
+                        );
+                        if this
+                            .right_panel
+                            .width
+                            .is_none_or(|width| (width - next_width).abs() > f32::EPSILON)
+                        {
+                            this.right_panel.width = Some(next_width);
                             cx.notify();
                         }
                     });
@@ -390,35 +379,25 @@ impl ChatApp {
 
                 let mouse_up_entity = entity.clone();
                 window.on_mouse_event(move |event: &MouseUpEvent, _, _, cx| {
-                    if event.button != MouseButton::Left {
-                        return;
+                    if event.button == MouseButton::Left {
+                        mouse_up_entity
+                            .update(cx, |this, _| this.right_panel.resize_dragging = false);
                     }
-                    mouse_up_entity.update(cx, |this, cx| {
-                        if !this.right_panel.resize_dragging {
-                            return;
-                        }
-                        this.right_panel.resize_dragging = false;
-                        this.right_panel.resize_hovered = bounds.contains(&event.position);
-                        cx.notify();
-                    });
                 });
             },
         )
         .absolute()
         .inset_0();
 
-        panel_resize_handle(
-            "right-panel-resize-handle",
-            -8.0,
-            line_visible,
-            theme,
-            input_layer,
-        )
+        // The card floats over the window, so its divider is only a hit area
+        // with the resize cursor: no line runs through the window's height.
+        panel_resize_handle("right-panel-resize-handle", -8.0, false, theme, input_layer)
     }
     pub(super) fn subagent_right_panel(
         &self,
         panel: SubagentPanel,
         panel_width: gpui::Pixels,
+        fullscreen: bool,
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
@@ -614,11 +593,18 @@ impl ChatApp {
                     .child(panel_name.clone()),
             );
 
+        // The menu is laid out in the slot, above the card chrome, at its
+        // place under the tab trigger inside the card.
+        let card_left = if fullscreen {
+            RIGHT_PANEL_CARD_INSET
+        } else {
+            0.0
+        };
         let dropdown = div()
             .id("subagent-panel-menu")
             .absolute()
-            .top(px(59.0))
-            .left(px(43.0))
+            .top(px(RIGHT_PANEL_CARD_INSET + 59.0))
+            .left(px(card_left + 43.0))
             .w(px(240.0))
             .h(px(204.0))
             .p(px(10.0))
@@ -707,141 +693,96 @@ impl ChatApp {
                     ),
             );
 
-        div()
-            .id("right-panel")
-            .w(panel_width)
-            .min_w(panel_width)
-            .h_full()
-            .flex_none()
-            .relative()
-            .border_l_1()
-            .border_color(theme.border)
-            .bg(theme.surface)
+        let card = div().flex().flex_col().child(toolbar).child(header).child(
+            div()
+                .id("subagent-panel-body")
+                .min_h(px(0.0))
+                .flex_1()
+                .bg(theme.surface)
+                .child(if panel.home.read(cx).needs_live_interaction_render(cx) {
+                    panel.home.into_any_element()
+                } else {
+                    panel
+                        .home
+                        .cached(StyleRefinement::default().size_full())
+                        .into_any_element()
+                }),
+        );
+        self.right_panel_slot(panel_width, fullscreen, card, theme, cx)
             .track_focus(&self.right_panel.focus)
             .on_key_down(cx.listener(Self::handle_right_panel_key))
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(|_, _, cx| cx.stop_propagation())
-            .flex()
-            .flex_col()
-            .child(self.right_panel_resize_handle(theme, cx))
-            .child(toolbar)
-            .child(header)
-            .child(
-                div()
-                    .id("subagent-panel-body")
-                    .min_h(px(0.0))
-                    .flex_1()
-                    .bg(theme.surface)
-                    .child(if panel.home.read(cx).needs_live_interaction_render(cx) {
-                        panel.home.into_any_element()
-                    } else {
-                        panel
-                            .home
-                            .cached(StyleRefinement::default().size_full())
-                            .into_any_element()
-                    }),
-            )
-            .when(menu_open, |panel| panel.child(dropdown))
+            .when(menu_open, |slot| slot.child(dropdown))
     }
     pub(super) fn right_panel(
         &self,
         panel_width: gpui::Pixels,
+        fullscreen: bool,
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
         if self.right_panel.mode == Some(RightPanelMode::SideChat)
             && let Some(panel) = self.side_chat_panels.get(&self.active_conversation)
         {
-            return div()
-                .id("right-panel")
-                .w(panel_width)
-                .min_w(panel_width)
-                .h_full()
-                .flex_none()
-                .relative()
-                .border_l_1()
-                .border_color(theme.border)
-                .bg(theme.surface)
-                .child(panel.clone())
-                .child(self.right_panel_resize_handle(theme, cx));
+            return self.right_panel_slot(
+                panel_width,
+                fullscreen,
+                div().child(panel.clone()),
+                theme,
+                cx,
+            );
         }
         if self.right_panel.mode == Some(RightPanelMode::Review)
             && let Some(panel) = self.review_panels.get(&self.active_conversation)
         {
-            return div()
-                .id("right-panel")
-                .w(panel_width)
-                .min_w(panel_width)
-                .h_full()
-                .flex_none()
-                .relative()
-                .border_l_1()
-                .border_color(theme.border)
-                .bg(theme.surface)
-                .child(panel.clone())
-                .child(self.right_panel_resize_handle(theme, cx));
+            return self.right_panel_slot(
+                panel_width,
+                fullscreen,
+                div().child(panel.clone()),
+                theme,
+                cx,
+            );
         }
         if let Some(panel) = self.right_panel.subagent.clone() {
-            return self.subagent_right_panel(panel, panel_width, theme, cx);
+            return self.subagent_right_panel(panel, panel_width, fullscreen, theme, cx);
         }
         if let Some(review) = self.right_panel.diff_review.clone() {
             let target = cx.entity();
             let callback = DiffReviewCallback::new(move |event, _, cx| {
                 target.update(cx, move |app, cx| app.handle_diff_review_event(event, cx));
             });
-            return div()
-                .id("right-panel")
-                .w(panel_width)
-                .min_w(panel_width)
-                .h_full()
-                .flex_none()
-                .relative()
-                .border_l_1()
-                .border_color(theme.border)
-                .bg(theme.surface)
+            let card = div().child(render_diff_review_panel(&review, theme, callback));
+            return self
+                .right_panel_slot(panel_width, fullscreen, card, theme, cx)
                 .track_focus(&self.right_panel.focus)
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(|_, _, cx| cx.stop_propagation())
-                .child(self.right_panel_resize_handle(theme, cx))
-                .child(render_diff_review_panel(&review, theme, callback));
+                .on_click(|_, _, cx| cx.stop_propagation());
         }
 
         if self.right_panel.mode == Some(RightPanelMode::Files)
             && let Some(panel) = self.file_panels.get(&self.active_conversation)
         {
-            return div()
-                .id("right-panel")
-                .w(panel_width)
-                .min_w(panel_width)
-                .h_full()
-                .flex_none()
-                .relative()
-                .border_l_1()
-                .border_color(theme.border)
-                .bg(theme.surface)
+            return self
+                .right_panel_slot(
+                    panel_width,
+                    fullscreen,
+                    div().child(panel.clone()),
+                    theme,
+                    cx,
+                )
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(|_, _, cx| cx.stop_propagation())
-                .child(panel.clone())
-                .child(self.right_panel_resize_handle(theme, cx));
+                .on_click(|_, _, cx| cx.stop_propagation());
         }
 
         if self.right_panel.mode == Some(RightPanelMode::Terminal)
             && let Some(terminal) = self.terminal_panels.get(&self.active_conversation)
         {
-            return div()
-                .id("right-panel")
-                .w(panel_width)
-                .min_w(panel_width)
-                .h_full()
-                .flex_none()
-                .relative()
-                .border_l_1()
-                .border_color(theme.border)
-                .bg(theme.surface)
+            let card = div().child(terminal.clone());
+            return self
+                .right_panel_slot(panel_width, fullscreen, card, theme, cx)
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(|_, _, cx| cx.stop_propagation())
-                .child(terminal.clone())
-                .child(self.right_panel_resize_handle(theme, cx));
+                .on_click(|_, _, cx| cx.stop_propagation());
         }
 
         let toolbar = div()
@@ -903,6 +844,52 @@ impl ChatApp {
                 )
             });
 
+        let card = div().flex().flex_col().child(toolbar).child(
+            div()
+                .min_h(px(0.0))
+                .flex_1()
+                .p(px(8.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .when(self.right_panel.mode.is_none(), |body| {
+                    body.child(
+                        div()
+                            .w_full()
+                            .max_w(px(576.0))
+                            .px(px(20.0))
+                            .flex()
+                            .flex_col()
+                            .gap(px(4.0))
+                            .children(RIGHT_PANEL_ITEMS.iter().enumerate().map(
+                                |(index, (_, label, shortcut, glyph))| {
+                                    self.right_panel_menu_item(
+                                        index, label, shortcut, glyph, theme, cx,
+                                    )
+                                },
+                            )),
+                    )
+                }),
+        );
+        self.right_panel_slot(panel_width, fullscreen, card, theme, cx)
+            .track_focus(&self.right_panel.focus)
+            .on_key_down(cx.listener(Self::handle_right_panel_key))
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(|_, _, cx| cx.stop_propagation())
+    }
+    /// The docked slot every right-panel view sits in: the view goes in
+    /// `card`, which the slot insets from the window edges and finishes with
+    /// the card chrome. The resize handle stays outside the card, centred on
+    /// its left edge.
+    fn right_panel_slot(
+        &self,
+        panel_width: gpui::Pixels,
+        fullscreen: bool,
+        card: Div,
+        theme: Theme,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<Div> {
+        let inset = px(RIGHT_PANEL_CARD_INSET);
         div()
             .id("right-panel")
             .w(panel_width)
@@ -910,45 +897,63 @@ impl ChatApp {
             .h_full()
             .flex_none()
             .relative()
-            .border_l_1()
-            .border_color(theme.border)
+            .pt(inset)
+            .pr(inset)
+            .pb(inset)
+            // The main column already separates a docked card on the left; a
+            // full-screen panel has no main column beside it.
+            .when(fullscreen, |slot| slot.pl(inset))
             .bg(theme.surface)
-            .track_focus(&self.right_panel.focus)
-            .on_key_down(cx.listener(Self::handle_right_panel_key))
-            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .on_click(|_, _, cx| cx.stop_propagation())
-            .flex()
-            .flex_col()
-            .child(self.right_panel_resize_handle(theme, cx))
-            .child(toolbar)
             .child(
-                div()
-                    .min_h(px(0.0))
-                    .flex_1()
-                    .p(px(8.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .when(self.right_panel.mode.is_none(), |body| {
-                        body.child(
-                            div()
-                                .w_full()
-                                .max_w(px(576.0))
-                                .px(px(20.0))
-                                .flex()
-                                .flex_col()
-                                .gap(px(4.0))
-                                .children(RIGHT_PANEL_ITEMS.iter().enumerate().map(
-                                    |(index, (_, label, shortcut, glyph))| {
-                                        self.right_panel_menu_item(
-                                            index, label, shortcut, glyph, theme, cx,
-                                        )
-                                    },
-                                )),
-                        )
-                    }),
+                card.size_full()
+                    .relative()
+                    .child(right_panel_card_chrome(theme)),
             )
+            .child(self.right_panel_resize_handle(theme, cx))
     }
+}
+
+/// Layers painted over the hosted view to make the card: the tint that sets
+/// the card apart from the main surface, the main surface again outside the
+/// rounded corners (GPUI clips children to rectangles, so the view's own
+/// square corners would show), and the hairline. None of them takes a hitbox,
+/// so input still reaches the view underneath.
+fn right_panel_card_chrome(theme: Theme) -> Div {
+    let radius = px(RIGHT_PANEL_CARD_RADIUS);
+    let inset = px(RIGHT_PANEL_CARD_INSET);
+    div()
+        .absolute()
+        .inset_0()
+        .overflow_hidden()
+        .child(
+            div()
+                .absolute()
+                .inset_0()
+                .rounded(radius)
+                .bg(theme.side_panel_tint),
+        )
+        .child(
+            // A ring as wide as the gap around the card: its inner edge is
+            // the card's rounded outline, and clipping to the card leaves
+            // only the four corners.
+            div()
+                .absolute()
+                .top(-inset)
+                .right(-inset)
+                .bottom(-inset)
+                .left(-inset)
+                .rounded(radius + inset)
+                .border(inset)
+                .border_color(theme.surface),
+        )
+        .child(
+            div()
+                .absolute()
+                .inset_0()
+                .rounded(radius)
+                .border_1()
+                .border_color(theme.border),
+        )
 }
 
 pub(super) fn right_panel_width_limit(viewport_width: f32, revealed_sidebar_width: f32) -> f32 {
