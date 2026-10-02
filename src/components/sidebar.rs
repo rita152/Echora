@@ -141,9 +141,9 @@ const SECTION_HEADER_HEIGHT: f32 = 25.0;
 /// Brand row above the first navigation entry. CDP: 16 px inset, 32 px tall,
 /// with the 24 px search/activity buttons inset another 4 px from the right.
 const BRAND_ROW_HEIGHT: f32 = 32.0;
-/// `Codex` wordmark: OpenAI Sans 17/24 px, 6 px before its 14 px chevron.
+/// `Echora` wordmark: OpenAI Sans 17/24 px. It has no chevron: the app has no
+/// product switcher behind it.
 const BRAND_LINE_HEIGHT: f32 = 24.0;
-const BRAND_CHEVRON_GAP: f32 = 6.0;
 const ACTIVITY_BUTTON_OFFSET_Y: f32 = 1.0;
 /// The reference's `xs` squircle icon buttons (search, activity, section and
 /// project actions) round their 24 px hover plate at 9.375 px.
@@ -4028,18 +4028,12 @@ impl SidebarView {
                             .px(px(8.0))
                             .flex()
                             .items_center()
-                            .gap(px(BRAND_CHEVRON_GAP))
                             .text_size(px(17.0))
                             .line_height(px(BRAND_LINE_HEIGHT))
                             .font(crate::typography::brand_font(cx))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(theme.sidebar_title_text)
-                            .child("Codex")
-                            .child(
-                                icon("sidebar-brand-chevron", theme.sidebar_icon_muted.into())
-                                    .size(px(14.0))
-                                    .mr(px(-1.0)),
-                            ),
+                            .child("Echora"),
                     )
                     .child(div().flex_1())
                     .child(
