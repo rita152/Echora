@@ -46,6 +46,8 @@ fn ease_out_quint(progress: f32) -> f32 {
 
 /// `_MainContentTopFade`: `h-4`, from `--color-surface` to transparent.
 const MAIN_CONTENT_TOP_FADE: f32 = 16.0;
+/// Height of the resumed thread's header row.
+const RESUMED_HEADER_HEIGHT: f32 = 46.0;
 /// From the header's leading edge to the thread title's text: the reference's
 /// 0.5px hairline, the toolbar's `ps-2`, and the title's `-ms-0.5 px-1.5`.
 const RESUMED_TITLE_INSET: f32 = 0.5 + 8.0 - 2.0 + 6.0;
@@ -842,13 +844,13 @@ impl Render for ChatApp {
                 ))
             })
             .when_some(resumed_title.clone().filter(|_| !review_fullscreen), |shell, title| {
-                // The reference's thread header is transparent: the transcript
-                // scrolls on under the title, and only a 16px fade from the
-                // surface colour (`_MainContentTopFade`) softens its top edge.
-                // With the side panel open the reference hides that fade and
-                // lays the pane out below its toolbar, so the header stays
-                // opaque there.
-                let transparent = !self.right_panel.open;
+                // The reference's header is transparent with the side panel
+                // closed, so the transcript scrolls on under the title. Echora
+                // lays the pane out below an opaque header in both states, so
+                // the transcript's display region is the same with the side
+                // panel open or closed. A 16px fade from the surface colour
+                // (`_MainContentTopFade`) softens the edge where the
+                // transcript passes under it.
                 // The toolbar (`ps-2`) starts past the sidebar or past the
                 // titlebar's leading area, whichever ends later, and the
                 // title's `-ms-0.5 px-1.5` puts its text 12px further in:
@@ -857,27 +859,25 @@ impl Render for ChatApp {
                 let header_start = revealed_sidebar_width
                     .max(conversation_titlebar_leading_edge(sidebar_reveal));
                 shell
-                    .when(transparent, |shell| {
-                        shell.child(
-                            div()
-                                .absolute()
-                                .top_0()
-                                .left(px(revealed_sidebar_width))
-                                .right_0()
-                                .h(px(MAIN_CONTENT_TOP_FADE))
-                                .bg(linear_gradient(
-                                    0.0,
-                                    linear_color_stop(theme.surface.alpha(0.0), 0.0),
-                                    linear_color_stop(theme.surface, 1.0),
-                                )),
-                        )
-                    })
+                    .child(
+                        div()
+                            .absolute()
+                            .top(px(RESUMED_HEADER_HEIGHT))
+                            .left(px(revealed_sidebar_width))
+                            .right(if self.right_panel.open { right_panel_width } else { px(0.0) })
+                            .h(px(MAIN_CONTENT_TOP_FADE))
+                            .bg(linear_gradient(
+                                0.0,
+                                linear_color_stop(theme.surface.alpha(0.0), 0.0),
+                                linear_color_stop(theme.surface, 1.0),
+                            )),
+                    )
                     .child(div()
                     .id("resumed-thread-header")
                     .absolute().top_0().left(px(revealed_sidebar_width))
                     .right(if self.right_panel.open { right_panel_width } else { px(0.0) })
-                    .h(px(46.0))
-                    .when(!transparent, |header| header.bg(theme.surface).border_b_1().border_color(theme.border))
+                    .h(px(RESUMED_HEADER_HEIGHT))
+                    .bg(theme.surface)
                     .pl(px(header_start - revealed_sidebar_width + RESUMED_TITLE_INSET)).pr(px(100.0))
                     .flex().items_center()
                         .text_size(px(14.0)).line_height(px(20.0)).font_weight(gpui::FontWeight::MEDIUM)
@@ -886,8 +886,8 @@ impl Render for ChatApp {
             })
             .when(main_left_border, |shell| {
                 // The border is painted over the sidebar material, not over the
-                // opaque main surface, and above the transparent thread header
-                // and its top fade, exactly like the reference's border box.
+                // opaque main surface, and above the thread header and its
+                // fade, exactly like the reference's border box.
                 shell.child(
                     div()
                         .absolute()
