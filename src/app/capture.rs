@@ -590,7 +590,8 @@ impl ChatApp {
     /// that tool in the current chat's right panel; a comma-separated list
     /// opens one tab per entry, in order, leaving the last selected
     /// (`selected:` before an entry selects that one instead). `files=<path>`
-    /// opens that file, and `review=unstaged|staged` shows that list.
+    /// opens that file, and `review=unstaged|staged` shows that list. A
+    /// `fullscreen` entry takes the panel to the full view.
     #[cfg(feature = "screenshot")]
     pub fn capture_right_panel_tool(&mut self, tools: &str, cx: &mut Context<Self>) {
         use super::panel_tabs::TabPlacement;
@@ -598,6 +599,10 @@ impl ChatApp {
         self.right_panel.open = true;
         let mut selected = None;
         for entry in tools.split(',') {
+            if entry == "fullscreen" {
+                self.right_panel.fullscreen = true;
+                continue;
+            }
             let (keep, entry) = match entry.strip_prefix("selected:") {
                 Some(entry) => (true, entry),
                 None => (false, entry),

@@ -32,13 +32,18 @@ use crate::{
 
 /// The strip's left padding, before the first tab.
 const STRIP_LEFT: f32 = 8.0;
+/// A full-screen strip's tabs start this far past the titlebar's leading
+/// area: its 6px gap, the 1px border of the header that follows and the
+/// strip's own 8px padding, less the card's 8px inset from the window edge.
+const TITLEBAR_TABS_GAP: f32 = 7.0;
 /// Room the strip keeps on its right for the titlebar's trailing controls.
 const TRAILING_CONTROLS: f32 = 78.0;
 /// A tab's slot: the 238px tab and its 2px gap, down to an 88px tab.
 const TAB_SLOT_MAX: f32 = 240.0;
 const TAB_SLOT_MIN: f32 = 90.0;
 const TAB_GAP: f32 = 2.0;
-const TAB_HEIGHT: f32 = 32.0;
+/// Centred in the 34px strip, on the titlebar's row.
+const TAB_HEIGHT: f32 = 26.0;
 /// `+` and its 6px lead.
 const NEW_TAB_AREA: f32 = 34.0;
 /// The full view toggle, the hairline before it and their 6px gaps.
@@ -702,10 +707,13 @@ impl ChatApp {
     }
 
     /// The tab strip on the card's top bar: the tabs, `+`, and the full view
-    /// toggle, left of the titlebar's trailing controls.
+    /// toggle, left of the titlebar's trailing controls. A full-screen card
+    /// under the titlebar's leading controls passes how far they reach into
+    /// it as `titlebar_inset`; the tabs start after them.
     pub(super) fn panel_tab_strip(
         &self,
         card_width: f32,
+        titlebar_inset: f32,
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
@@ -727,8 +735,9 @@ impl ChatApp {
                 .ok();
             });
         }
+        let strip_left = STRIP_LEFT.max(titlebar_inset + TITLEBAR_TABS_GAP);
         let available =
-            (card_width - STRIP_LEFT - NEW_TAB_AREA - FULL_VIEW_AREA - TRAILING_CONTROLS).max(0.);
+            (card_width - strip_left - NEW_TAB_AREA - FULL_VIEW_AREA - TRAILING_CONTROLS).max(0.);
         let slot = self.panel_tab_frozen_width.unwrap_or_else(|| {
             (available / tabs.len().max(1) as f32).clamp(TAB_SLOT_MIN, TAB_SLOT_MAX)
         });
@@ -929,7 +938,7 @@ impl ChatApp {
                         .aria_label(close_label)
                         .absolute()
                         .right(px(6.))
-                        .top(px(5.))
+                        .top(px(2.))
                         .size(px(20.))
                         .rounded(px(10.))
                         .flex()
@@ -963,7 +972,7 @@ impl ChatApp {
                             div()
                                 .absolute()
                                 .right_0()
-                                .top(px(10.))
+                                .top(px(7.))
                                 .w(px(1.))
                                 .h(px(12.))
                                 .bg(theme.border),
@@ -983,7 +992,7 @@ impl ChatApp {
             .w_full()
             .flex_none()
             .bg(strip_fill)
-            .pl(px(STRIP_LEFT))
+            .pl(px(strip_left))
             .pr(px(TRAILING_CONTROLS))
             .flex()
             .items_center()

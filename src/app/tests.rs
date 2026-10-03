@@ -510,10 +510,10 @@ fn collaboration_event_opens_a_read_only_subagent_panel_without_switching_parent
     });
 
     window.draw();
-    // At 1440px the default 360px card begins at x=1080 and y=8; the live
-    // 156×28 tab occupies x=1088..1244, y=17..45 and toggles the same
-    // information popover.
-    window.simulate_click(point(px(1160.0), px(31.0)), MouseButton::Left);
+    // At 1440px the default 360px card begins at x=1080 and y=6; the live
+    // 156×28 tab occupies x=1088..1244, y=9..37 on the titlebar's row and
+    // toggles the same information popover.
+    window.simulate_click(point(px(1160.0), px(23.0)), MouseButton::Left);
     assert!(window.read(|chat, _| chat.right_panel.subagent_menu_open));
     window.simulate_keystroke("escape");
     assert!(window.read(|chat, _| chat.right_panel.open));
@@ -552,7 +552,7 @@ fn remaining_titlebar_panel_toggle_uses_its_full_hit_area() {
 
     // The remaining toggle keeps its original position and 28 px hit area.
     // Over the open panel it moves in with the card inset and keeps all 28 px
-    // there.
+    // there, on the same row: the card's toolbar is centred on it.
     let inset = super::RIGHT_PANEL_CARD_INSET;
     for x in [865.0, 878.0, 891.0] {
         for y in [10.0, 23.0, 36.0] {
@@ -560,7 +560,7 @@ fn remaining_titlebar_panel_toggle_uses_its_full_hit_area() {
             window.simulate_click(point(px(x), px(y)), MouseButton::Left);
             assert!(window.read(|chat, _| chat.right_panel.open));
             window.draw();
-            window.simulate_click(point(px(x - inset), px(y + inset)), MouseButton::Left);
+            window.simulate_click(point(px(x - inset), px(y)), MouseButton::Left);
             assert!(!window.read(|chat, _| chat.right_panel.open));
         }
     }
@@ -690,6 +690,94 @@ fn review_fullscreen_button_does_not_hit_the_global_panel_toggle() {
     window.simulate_click(point(px(1378.), px(23.)), MouseButton::Left);
     window.draw();
     assert!(window.read(|chat, _| chat.right_panel.open && !chat.right_panel.fullscreen));
+}
+
+#[test]
+fn review_fullscreen_tabs_start_after_the_titlebar_controls() {
+    let mut app = TestApp::new();
+    let mut window = app.open_window_with_options(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: point(px(0.), px(0.)),
+                size: size(px(1470.), px(923.)),
+            })),
+            ..Default::default()
+        },
+        |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
+    );
+    window.update(|chat, _, cx| {
+        chat.open_right_panel(cx);
+        chat.right_panel.fullscreen = true;
+    });
+    window.draw();
+    // The first tab is hovered just right of its left edge and not just left
+    // of it.
+    let tab_starts_at = |window: &mut TestAppWindow<ChatApp>, left: f32| {
+        window.simulate_mouse_move(point(px(left - 1.), px(23.)));
+        window.draw();
+        let before = window.read(|chat, _| chat.panel_tab_hovered);
+        window.simulate_mouse_move(point(px(left + 1.), px(23.)));
+        window.draw();
+        let after = window.read(|chat, _| chat.panel_tab_hovered);
+        (before, after)
+    };
+    // Beside the open sidebar the card sits past the traffic lights: the
+    // sidebar, its hairline, the card's 8px inset and the strip's 8px padding.
+    let sidebar = window.read(|chat, cx| chat.sidebar.read(cx).width());
+    assert_eq!(
+        tab_starts_at(&mut window, sidebar + 1. + 8. + 8.),
+        (None, Some(0))
+    );
+    // ChatGPT 26.930 at 1470px with the sidebar closed: the traffic lights
+    // and the trigger end at x=128, and the full-view tab strip starts its
+    // first tab at x=143 (6px gap, 1px border, `ps-2`).
+    window.simulate_click(point(px(170.), px(23.)), MouseButton::Left);
+    simulate_next_frame(&mut app, &window, 400);
+    assert_eq!(window.read(|chat, _| chat.sidebar_layout.reveal), 0.0);
+    window.draw();
+    assert_eq!(tab_starts_at(&mut window, 143.), (None, Some(0)));
+    // The trigger stays clickable over the full-screen card's strip.
+    window.simulate_click(point(px(108.), px(23.)), MouseButton::Left);
+    assert!(!window.read(|chat, _| chat.sidebar_layout.collapsed));
+}
+
+#[test]
+fn right_panel_toolbar_shares_the_titlebar_row() {
+    let mut app = TestApp::new();
+    let mut window = app.open_window_with_options(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: point(px(0.), px(0.)),
+                size: size(px(1470.), px(923.)),
+            })),
+            ..Default::default()
+        },
+        |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
+    );
+    // Claude desktop centres its card's toolbar on the traffic lights: the
+    // card starts 6px down, its 34px toolbar spans y=6..40, and the 26px tab
+    // in a 600px slot spans x=878.., y=10..36 around the row's y=23.
+    window.update(|chat, _, cx| {
+        chat.right_panel.width = Some(600.);
+        chat.open_right_panel(cx);
+    });
+    window.draw();
+    let hovered = |window: &mut TestAppWindow<ChatApp>, y: f32| {
+        window.simulate_mouse_move(point(px(900.), px(y)));
+        window.draw();
+        window.read(|chat, _| chat.panel_tab_hovered)
+    };
+    assert_eq!(hovered(&mut window, 9.5), None);
+    assert_eq!(hovered(&mut window, 10.5), Some(0));
+    assert_eq!(hovered(&mut window, 35.5), Some(0));
+    assert_eq!(hovered(&mut window, 36.5), None);
+    // The sidebar trigger stays on that row (x=156..184, y=9..37) beside it.
+    let collapsed =
+        |window: &TestAppWindow<ChatApp>| window.read(|chat, _| chat.sidebar_layout.collapsed);
+    window.simulate_click(point(px(170.), px(38.)), MouseButton::Left);
+    assert!(!collapsed(&window));
+    window.simulate_click(point(px(170.), px(10.)), MouseButton::Left);
+    assert!(collapsed(&window));
 }
 
 #[test]
@@ -1837,7 +1925,7 @@ fn panel_tab_strip_buttons_add_and_close_tabs() {
         |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
     );
     // A 600px slot: the card spans 870..1462 and its tabs start at 878,
-    // 240px wide for one tab and 215.5px for two; the strip is 8..54.
+    // 240px wide for one tab and 215.5px for two; the strip is 6..40.
     window.update(|chat, _, cx| {
         chat.right_panel.width = Some(600.);
         chat.open_right_panel(cx);
@@ -1853,7 +1941,7 @@ fn panel_tab_strip_buttons_add_and_close_tabs() {
     assert_eq!(first.len(), 1);
 
     window.simulate_click(
-        point(px(878. + 240. + 6. + 14.), px(31.)),
+        point(px(878. + 240. + 6. + 14.), px(23.)),
         MouseButton::Left,
     );
     window.draw();
@@ -1861,7 +1949,7 @@ fn panel_tab_strip_buttons_add_and_close_tabs() {
     assert_eq!((added.len(), active, added[0]), (2, 1, first[0]));
 
     // The first tab's close button, revealed on hover.
-    let close_first = point(px(878. + 215.5 - 2. - 16.), px(30.));
+    let close_first = point(px(878. + 215.5 - 2. - 16.), px(23.));
     window.simulate_mouse_move(close_first);
     window.draw();
     window.simulate_click(close_first, MouseButton::Left);
@@ -1877,7 +1965,7 @@ fn panel_tab_strip_buttons_add_and_close_tabs() {
     assert_eq!(window.read(|chat, _| chat.panel_tab_frozen_width), None);
 
     window.simulate_click(
-        point(px(878. + 240. - 2. - 16.), px(30.)),
+        point(px(878. + 240. - 2. - 16.), px(23.)),
         MouseButton::Left,
     );
     window.draw();

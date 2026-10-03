@@ -1,5 +1,6 @@
-/// The right panel's tab strip, above whichever tool it shows.
-pub(crate) const PANEL_TAB_STRIP_HEIGHT: f32 = 46.0;
+/// The right panel's tab strip, above whichever tool it shows: the card's
+/// toolbar, centred on the titlebar's row (y=23) below its 6px top inset.
+pub(crate) const PANEL_TAB_STRIP_HEIGHT: f32 = 34.0;
 
 pub mod account;
 pub mod approval;

@@ -6,8 +6,9 @@ use gpui::{
 };
 
 use super::{
-    ChatApp, RIGHT_PANEL_CARD_INSET, RIGHT_PANEL_CARD_RADIUS, RIGHT_PANEL_ITEMS,
-    RIGHT_PANEL_MAIN_MIN_WIDTH, RIGHT_PANEL_MIN_WIDTH, SUBAGENT_PANEL_HEADER_HEIGHT,
+    ChatApp, RIGHT_PANEL_CARD_INSET, RIGHT_PANEL_CARD_RADIUS, RIGHT_PANEL_CARD_TOP_INSET,
+    RIGHT_PANEL_ITEMS, RIGHT_PANEL_MAIN_MIN_WIDTH, RIGHT_PANEL_MIN_WIDTH,
+    SUBAGENT_PANEL_HEADER_HEIGHT,
     panel_tabs::{PanelTab, TabPlacement},
     render::panel_resize_handle,
     state::{RightPanelMode, SubagentPanel},
@@ -389,7 +390,7 @@ impl ChatApp {
             );
         let toolbar = div()
             .id("subagent-panel-toolbar")
-            .h(px(46.0))
+            .h(px(crate::components::PANEL_TAB_STRIP_HEIGHT))
             .w_full()
             .flex_none()
             .px(px(8.0))
@@ -481,7 +482,7 @@ impl ChatApp {
         let dropdown = div()
             .id("subagent-panel-menu")
             .absolute()
-            .top(px(RIGHT_PANEL_CARD_INSET + 59.0))
+            .top(px(RIGHT_PANEL_CARD_TOP_INSET + 53.0))
             .left(px(card_left + 43.0))
             .w(px(240.0))
             .h(px(204.0))
@@ -597,6 +598,7 @@ impl ChatApp {
         &self,
         panel_width: gpui::Pixels,
         fullscreen: bool,
+        titlebar_inset: f32,
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
@@ -649,7 +651,7 @@ impl ChatApp {
         let card = div()
             .flex()
             .flex_col()
-            .child(self.panel_tab_strip(f32::from(panel_width) - inset, theme, cx))
+            .child(self.panel_tab_strip(f32::from(panel_width) - inset, titlebar_inset, theme, cx))
             .child(div().min_h(px(0.)).flex_1().w_full().children(content));
         // The strip paints the tint itself, so its selected tab stays white.
         let tint_top = crate::components::PANEL_TAB_STRIP_HEIGHT;
@@ -679,7 +681,7 @@ impl ChatApp {
             .h_full()
             .flex_none()
             .relative()
-            .pt(inset)
+            .pt(px(RIGHT_PANEL_CARD_TOP_INSET))
             .pr(inset)
             .pb(inset)
             // The main column already separates a docked card on the left; a

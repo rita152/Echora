@@ -364,6 +364,15 @@ impl Render for ChatApp {
         // `Rsa` belongs to the conversation page's header, which a full-screen
         // side panel replaces.
         let conversation_new_chat = resumed_title.is_some() && !review_fullscreen;
+        // A full-screen panel reaches under the titlebar once the sidebar no
+        // longer covers it: its tab strip starts after the traffic lights and
+        // the sidebar trigger, like the reference's `headerLeftWidth` spacer.
+        let panel_titlebar_inset = if review_fullscreen {
+            let panel_left = revealed_sidebar_width + if main_left_border { hairline } else { 0.0 };
+            (titlebar_leading_edge(sidebar_reveal) - panel_left).max(0.0)
+        } else {
+            0.0
+        };
         let right_panel_width = if review_fullscreen {
             px(viewport_width - revealed_sidebar_width)
         } else {
@@ -674,6 +683,7 @@ impl Render for ChatApp {
                                         row.child(self.right_panel(
                                             right_panel_width,
                                             review_fullscreen,
+                                            panel_titlebar_inset,
                                             theme,
                                             cx,
                                         ))
@@ -978,8 +988,9 @@ impl Render for ChatApp {
                         div()
                             .absolute()
                             // Over an open right panel these sit in its
-                            // card's toolbar, which the card inset moves in.
-                            .top(px(9.0 + trailing_controls_inset))
+                            // card's toolbar, which the card inset moves in;
+                            // the toolbar is centred on the titlebar's row.
+                            .top(px(9.0))
                             .right(px(8.0 + trailing_controls_inset))
                             .flex()
                             .gap(px(6.0))

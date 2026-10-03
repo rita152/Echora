@@ -194,11 +194,16 @@ const RIGHT_PANEL_DEFAULT_SHARE: f32 = 0.3;
 /// bottom edges. The titlebar's trailing controls move in by the same inset so
 /// they stay in the card's toolbar.
 const RIGHT_PANEL_CARD_INSET: f32 = 8.0;
+/// The card sits a little closer to the window's top edge, as Claude
+/// desktop's does, so its toolbar (`PANEL_TAB_STRIP_HEIGHT`, y=6..40) is
+/// centred on the titlebar's row at y=23 with the traffic lights.
+const RIGHT_PANEL_CARD_TOP_INSET: f32 = 6.0;
 const RIGHT_PANEL_CARD_RADIUS: f32 = 12.0;
 const SUBAGENT_PANEL_HEADER_HEIGHT: f32 = 48.0;
 // The reference places its traffic lights at `trafficLightPosition` =
 // {x: 16, y: round((46 - 14) / 2)} = {16, 16}, so the native 14px buttons are
-// centered on y=23px. The 28px leading titlebar controls share that axis.
+// centered on y=23px. The 28px leading titlebar controls share that axis, and so
+// does the right panel card's toolbar, as in Claude desktop.
 pub(crate) const TRAFFIC_LIGHT_INSET: f32 = 16.0;
 const LEADING_TITLEBAR_CONTROLS_TOP: f32 = 9.0;
 // ChatGPT 26.924's leading titlebar controls (`jln`) start at x=88 with 6px
