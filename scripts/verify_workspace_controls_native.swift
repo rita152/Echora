@@ -121,6 +121,38 @@ func record(_ label: String) {
     report.append(["name":label,"controls":controls])
     try! JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: output.appendingPathComponent("report.json"))
 }
+if option("scenario") == "hover" {
+    guard let x = Double(option("x")), let y = Double(option("y")),
+          let window = (value(root, kAXWindowsAttribute) as? [AXUIElement])?.first else {
+        fatalError("Hover capture requires --x and --y in window coordinates")
+    }
+    app.activate(options: [.activateAllWindows])
+    var bounds = rect(window)
+    // GPUI's first AX window can be a tooltip or have incomplete geometry.
+    // Read window metadata (not screen pixels) for this process in that case.
+    if bounds.width <= x || bounds.height <= y {
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        let frames = windows.filter {
+            ($0[kCGWindowOwnerPID as String] as? Int) == Int(app.processIdentifier) &&
+            ($0[kCGWindowLayer as String] as? Int) == 0
+        }.compactMap { info -> CGRect? in
+            guard let frame = info[kCGWindowBounds as String] as? [String: Any] else { return nil }
+            return CGRect(dictionaryRepresentation: frame as CFDictionary)
+        }
+        if let resolved = frames.max(by: { $0.width * $0.height < $1.width * $1.height }) {
+            bounds = resolved
+        }
+    }
+    precondition(x.isFinite && y.isFinite && x >= 0 && y >= 0 && x < bounds.width && y < bounds.height,
+                 "Hover coordinates must be inside the named verification window: \(bounds)")
+    let point = CGPoint(x: bounds.minX + x, y: bounds.minY + y)
+    CGEvent(mouseEventSource: nil, mouseType: .mouseMoved,
+            mouseCursorPosition: point, mouseButton: .left)!.post(tap: .cghidEventTap)
+    Thread.sleep(forTimeInterval: 0.8)
+    record("00-hover")
+    print("Captured pointer hover at \(x), \(y) in the named verification window")
+    exit(0)
+}
 if option("scenario") == "capture" {
     record("00-capture")
     print("Verified app-owned capture without Screen Recording or Apple Events")

@@ -1146,6 +1146,16 @@ impl SidebarView {
     pub fn set_profile_menu_open(&mut self, open: bool, cx: &mut Context<Self>) {
         self.close_transient_menus(cx);
         self.profile_menu_open = open;
+        if open {
+            self.hovered_thread_id = None;
+            self.hovered_thread_indented = None;
+            self.hovered_project_id = None;
+            self.thread_hover_card = None;
+            self.thread_hover_card_hovered = false;
+            self.project_hover_card = None;
+            self.project_hover_card_hovered = false;
+            self.stop_marquee();
+        }
         cx.notify();
     }
 
@@ -1345,7 +1355,8 @@ impl SidebarView {
     fn schedule_thread_hover_card(&mut self, thread_id: ThreadId, cx: &mut Context<Self>) {
         // The activity view prints the card for projectless chats too (the
         // reference's `isProjectlessHoverCard`), with the title row alone.
-        if self.thread_hover_card.as_deref() == Some(thread_id.as_str())
+        if self.profile_menu_open
+            || self.thread_hover_card.as_deref() == Some(thread_id.as_str())
             || (self.activity.is_none() && self.project_for_thread(thread_id.as_str()).is_none())
         {
             return;
@@ -1355,7 +1366,9 @@ impl SidebarView {
                 .timer(THREAD_HOVER_CARD_DELAY)
                 .await;
             let _ = this.update(cx, |this, cx| {
-                if this.hovered_thread_id.as_deref() != Some(thread_id.as_str()) {
+                if this.profile_menu_open
+                    || this.hovered_thread_id.as_deref() != Some(thread_id.as_str())
+                {
                     return;
                 }
                 this.thread_hover_card = Some(thread_id.clone());
@@ -1389,7 +1402,8 @@ impl SidebarView {
     }
 
     fn schedule_project_hover_card(&mut self, project_id: ProjectId, cx: &mut Context<Self>) {
-        if self.project_hover_card.as_deref() == Some(project_id.as_str()) {
+        if self.profile_menu_open || self.project_hover_card.as_deref() == Some(project_id.as_str())
+        {
             return;
         }
         cx.spawn(async move |this, cx| {
@@ -1397,7 +1411,8 @@ impl SidebarView {
                 .timer(PROJECT_HOVER_CARD_DELAY)
                 .await;
             let _ = this.update(cx, |this, cx| {
-                if this.project_menu_id.is_some()
+                if this.profile_menu_open
+                    || this.project_menu_id.is_some()
                     || this.hovered_project_id.as_deref() != Some(project_id.as_str())
                 {
                     return;
@@ -4208,7 +4223,7 @@ impl SidebarView {
             )
             .on_click(cx.listener(|this, _, _, cx| {
                 cx.stop_propagation();
-                this.profile_menu_open = !this.profile_menu_open;
+                this.set_profile_menu_open(!this.profile_menu_open, cx);
                 if this.profile_menu_open {
                     // Opening the account page reads the account and the quota.
                     cx.emit(AccountAction(AccountIntent::Refresh));
@@ -4324,6 +4339,7 @@ impl SidebarView {
         let mut rhythm = AccountMenuRhythm::new(scale_factor);
         let mut menu = div()
             .id("account-menu")
+            .occlude()
             .w(px((self.width - 2.0 * ACCOUNT_MENU_INSET_X).max(0.0)))
             .p(px(ACCOUNT_MENU_PADDING))
             .flex()
@@ -5347,6 +5363,101 @@ mod tests {
         if let Some(parent) = preferences.parent() {
             let _ = std::fs::remove_dir_all(parent);
         }
+    }
+
+    #[test]
+    fn account_menu_blocks_underlying_thread_hover_and_cancels_pending_cards() {
+        use crate::agent::{AgentAccountPresence, AgentAccountSnapshot};
+        use crate::components::account::{AccountLoadStatus, AccountView};
+
+        let preferences = std::env::temp_dir()
+            .join(format!("gpui-account-hover-{}", std::process::id()))
+            .join("preferences.json");
+        let store =
+            WorkspaceStore::with_preferences_path(SidebarBackend::new(), preferences.clone());
+        store.refresh_all();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while store.snapshot().loading.recent || store.snapshot().loading.projects {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let mut app = TestApp::new();
+        let mut window = app.open_window_with_options(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                    point(px(0.), px(0.)),
+                    size(px(900.), px(700.)),
+                ))),
+                ..Default::default()
+            },
+            |_, cx| SidebarView::new(ThemeMode::Dark, false, store, cx),
+        );
+        window.update(|sidebar, _, cx| {
+            sidebar.set_account_view(
+                AccountView {
+                    state: crate::agent::AgentAccountState {
+                        account: AgentAccountSnapshot {
+                            requires_openai_auth: false,
+                            account: AgentAccountPresence::Null,
+                            auth_mode: None,
+                            plan_type: None,
+                        },
+                        ..Default::default()
+                    },
+                    status: AccountLoadStatus::Loaded,
+                    model_provider_name: Some("My Codex".into()),
+                    ..Default::default()
+                },
+                cx,
+            );
+        });
+        window.draw();
+        let row = window.read(|sidebar, _| sidebar.thread_row_bounds.borrow()["thread-stable-id"]);
+        // Place the Settings row directly over a real, painted thread row.
+        let height = f32::from(row.center().y) + 65.;
+        window.simulate_resize(size(px(900.), px(height)));
+        window.draw();
+        let outside = point(px(700.), px(100.));
+        window.simulate_mouse_move(outside);
+        window.simulate_mouse_move(row.center());
+        app.advance_clock(THREAD_HOVER_CARD_DELAY);
+        window.draw();
+        assert!(window.read(|sidebar, _| sidebar.thread_hover_card_is_open()));
+
+        window.update(|sidebar, _, cx| sidebar.set_profile_menu_open(true, cx));
+        window.draw();
+        assert!(!window.read(|sidebar, _| sidebar.thread_hover_card_is_open()));
+        for x in [14., 120., 228.] {
+            for y in [height - 110., height - 85., height - 65., height - 49.] {
+                window.simulate_mouse_move(point(px(x), px(y)));
+                app.advance_clock(THREAD_HOVER_CARD_DELAY * 2);
+                window.draw();
+                assert!(!window.read(|sidebar, _| sidebar.thread_hover_card_is_open()));
+                assert!(!window.read(|sidebar, _| sidebar.project_hover_card_is_open()));
+            }
+        }
+        window.update(|sidebar, _, cx| {
+            sidebar.dismiss_profile_menu(cx);
+        });
+        window.draw();
+        window.simulate_mouse_move(outside);
+        window.simulate_mouse_move(row.center());
+        // A delayed card queued just before opening the menu must stay closed.
+        window.update(|sidebar, _, cx| sidebar.set_profile_menu_open(true, cx));
+        window.draw();
+        app.advance_clock(THREAD_HOVER_CARD_DELAY * 2);
+        window.draw();
+        assert!(!window.read(|sidebar, _| sidebar.thread_hover_card_is_open()));
+        window.update(|sidebar, _, cx| {
+            sidebar.dismiss_profile_menu(cx);
+        });
+        window.draw();
+        window.simulate_mouse_move(outside);
+        window.simulate_mouse_move(row.center());
+        app.advance_clock(THREAD_HOVER_CARD_DELAY * 2);
+        window.draw();
+        assert!(window.read(|sidebar, _| sidebar.thread_hover_card_is_open()));
+        let _ = std::fs::remove_dir_all(preferences.parent().unwrap());
     }
 
     /// Opens the hover card of the fixture's only task and returns the bounds
