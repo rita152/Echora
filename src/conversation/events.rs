@@ -74,7 +74,8 @@ impl ConversationState {
                     None => return false,
                 }
             }
-            AgentConnectionEvent::SkillsChanged { .. }
+            AgentConnectionEvent::ThreadReadStateChanged { .. }
+            | AgentConnectionEvent::SkillsChanged { .. }
             | AgentConnectionEvent::AppListUpdated { .. }
             | AgentConnectionEvent::McpOauthLoginCompleted(_) => return false,
             // Config warnings describe the whole connection and are replayed
@@ -214,6 +215,7 @@ impl ConversationState {
             | AgentConnectionEvent::SkillsChanged { .. }
             | AgentConnectionEvent::AppListUpdated { .. }
             | AgentConnectionEvent::McpOauthLoginCompleted(_)
+            | AgentConnectionEvent::ThreadReadStateChanged { .. }
             | AgentConnectionEvent::ThreadProjectUpdated { .. }
             | AgentConnectionEvent::ConfigWarning(_) => return false,
             AgentConnectionEvent::McpElicitationRequested { .. }

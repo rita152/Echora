@@ -5476,3 +5476,28 @@ fn completed_assistant_snapshot_corrects_partial_deltas_and_preserves_phase_once
         ]
     );
 }
+
+#[test]
+fn thread_read_state_validates_observed_payload_and_read_transition() {
+    let mut message = json!({"method":"thread/readState/changed","params":{
+        "threadId":"thread-a","readState":{"revision":"revision-1","firstUnread":{"type":"turn","turnId":"turn-a"}}
+    }});
+    ensure_server_method_is_defined(&message).unwrap();
+    assert!(
+        matches!(super::notifications::parse_thread_read_state_changed(&message).unwrap(),
+        crate::agent::AgentConnectionEvent::ThreadReadStateChanged { thread_id, revision, first_unread_turn_id: Some(turn) }
+        if thread_id == "thread-a" && revision == "revision-1" && turn == "turn-a")
+    );
+    message["params"]["readState"]["firstUnread"] = Value::Null;
+    ensure_server_method_is_defined(&message).unwrap();
+    for invalid in [
+        json!({"type":"turn"}),
+        json!({"type":"unknown","turnId":"x"}),
+        json!(false),
+    ] {
+        message["params"]["readState"]["firstUnread"] = invalid;
+        assert!(ensure_server_method_is_defined(&message).is_err());
+    }
+    message["params"]["readState"] = json!({"firstUnread":null});
+    assert!(ensure_server_method_is_defined(&message).is_err());
+}

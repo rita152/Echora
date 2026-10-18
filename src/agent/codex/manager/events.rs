@@ -185,6 +185,9 @@ pub(super) fn connection_event_key(event: &AgentConnectionEvent) -> String {
                 completion.generation, completion.login_id
             )
         }
+        AgentConnectionEvent::ThreadReadStateChanged { thread_id, .. } => {
+            format!("thread-read-state:{thread_id}")
+        }
         AgentConnectionEvent::ThreadStatusChanged(status) => {
             format!("thread-status:{}", status.thread_id)
         }

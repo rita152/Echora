@@ -183,6 +183,9 @@ pub(super) fn ensure_server_method_is_defined(message: &Value) -> Result<()> {
         // cache invalidation signal; the caller re-reads `app/list` itself.
         "app/list/updated" => super::apps::validate_list_updated(message).map(|_| ()),
         "mcpServer/oauthLogin/completed" => super::mcp::parse_oauth_completed(message).map(|_| ()),
+        "thread/readState/changed" => {
+            super::notifications::parse_thread_read_state_changed(message).map(|_| ())
+        }
         "thread/status/changed" => parse_thread_status_changed(message).map(|_| ()),
         "thread/reverted" => parse_thread_reverted(message).map(|_| ()),
         "fuzzyFileSearch/sessionUpdated" => {

@@ -2389,3 +2389,46 @@ fn dropping_last_manager_owner_terminates_and_waits_for_process() {
 }
 
 mod progress;
+
+#[test]
+fn read_state_notification_keeps_shared_connection_and_replays_latest_revision() {
+    let (manager, spawner) = manager_with_fake();
+    let events = manager.subscribe_connection_events();
+    let result = manager.list_threads(ThreadListRequest::default());
+    let mut endpoint = spawner.next_endpoint();
+    handshake(&mut endpoint);
+    let request = endpoint.recv();
+    for (revision, first_unread) in [
+        ("r1", json!({"type":"turn","turnId":"turn-a"})),
+        ("r2", Value::Null),
+    ] {
+        endpoint.send(json!({"method":"thread/readState/changed","params":{
+            "threadId":"thread-a","readState":{"revision":revision,"firstUnread":first_unread}
+        }}));
+        loop {
+            if let AgentConnectionEvent::ThreadReadStateChanged {
+                revision: observed, ..
+            } = wait_value(&events)
+            {
+                assert_eq!(observed, revision);
+                break;
+            }
+        }
+    }
+    endpoint.respond(&request, json!({"data":[],"nextCursor":null}));
+    assert!(wait_value(&result).is_ok());
+    let replay = manager.subscribe_connection_events();
+    loop {
+        if let AgentConnectionEvent::ThreadReadStateChanged {
+            revision,
+            first_unread_turn_id,
+            ..
+        } = wait_value(&replay)
+        {
+            assert_eq!(revision, "r2");
+            assert!(first_unread_turn_id.is_none());
+            break;
+        }
+    }
+    manager.shutdown();
+}

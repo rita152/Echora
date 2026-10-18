@@ -41,6 +41,33 @@ pub(super) struct TokenUsageBreakdown {
     pub(super) reasoning_output_tokens: i64,
 }
 
+pub(super) fn parse_thread_read_state_changed(
+    message: &Value,
+) -> Result<crate::agent::AgentConnectionEvent> {
+    let thread_id = required_notification_string(message, "threadId")?;
+    let revision = required_string_at(
+        message,
+        "/params/readState/revision",
+        "params.readState.revision",
+    )?;
+    let first_unread_turn_id = match message.pointer("/params/readState/firstUnread") {
+        Some(Value::Null) => None,
+        Some(value) if value.get("type").and_then(Value::as_str) == Some("turn") => {
+            Some(required_string_at(
+                message,
+                "/params/readState/firstUnread/turnId",
+                "params.readState.firstUnread.turnId",
+            )?)
+        }
+        _ => bail!("thread/readState/changed 缺少有效的 params.readState.firstUnread"),
+    };
+    Ok(crate::agent::AgentConnectionEvent::ThreadReadStateChanged {
+        thread_id,
+        revision,
+        first_unread_turn_id,
+    })
+}
+
 pub(super) fn validate_remote_control_status_changed(message: &Value) -> Result<()> {
     let status = required_notification_string(message, "status")?;
     if !matches!(

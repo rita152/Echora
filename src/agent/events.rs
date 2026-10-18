@@ -50,6 +50,12 @@ pub enum AgentConnectionEvent {
     /// Result of an OAuth login this client started, correlated to the client's
     /// own login id.
     McpOauthLoginCompleted(Box<super::mcp::AgentMcpOauthCompletion>),
+    /// Server read-state revision; the first unread turn is absent when read.
+    ThreadReadStateChanged {
+        thread_id: ThreadId,
+        revision: String,
+        first_unread_turn_id: Option<String>,
+    },
     ThreadStatusChanged(AgentThreadStatus),
     ThreadTokenUsageUpdated(AgentThreadTokenUsage),
     ThreadSettingsUpdated {

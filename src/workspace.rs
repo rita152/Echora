@@ -495,6 +495,13 @@ impl WorkspaceStore {
                     });
                 });
             }
+            AgentConnectionEvent::ThreadReadStateChanged { thread_id, first_unread_turn_id, .. } => {
+                if first_unread_turn_id.is_some() {
+                    self.mark_unread_unless_viewed(&thread_id);
+                } else {
+                    self.mark_threads_read(&[thread_id]);
+                }
+            }
             AgentConnectionEvent::ThreadStatusChanged(status) => {
                 let activity = activity_from_connection_status(&status.state);
                 let previous = self

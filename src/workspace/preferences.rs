@@ -43,8 +43,8 @@ pub struct UiPreferences {
     #[serde(default)]
     pub activity: ActivityPreferences,
     /// Chats with a turn the user has not opened since it finished or asked
-    /// for a response. The app-server has no read state, so the app keeps it,
-    /// as the reference keeps its own `unread-thread-ids-by-host`.
+    /// for a response. Updated by server read-state notifications when available,
+    /// with local completion/open tracking for older servers.
     #[serde(default)]
     pub unread_thread_ids: BTreeSet<ThreadId>,
     /// The Pull Requests detail panel's width ratio, as the reference stores

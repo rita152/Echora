@@ -1388,3 +1388,28 @@ fn new_chat_survives_a_list_read_started_before_its_first_message_was_indexed() 
     assert!(store.snapshot().thread("new-chat").is_none());
     let _ = fs::remove_dir_all(path.parent().unwrap());
 }
+
+#[test]
+fn server_read_state_updates_only_its_thread_and_respects_the_viewed_chat() {
+    let backend = FakeWorkspaceBackend::new();
+    let path = test_preferences_path("server-read-state");
+    let store = WorkspaceStore::with_preferences_path(backend, path.clone());
+    let event = |id: &str, unread: bool| AgentConnectionEvent::ThreadReadStateChanged {
+        thread_id: id.to_owned(),
+        revision: "opaque-revision".to_owned(),
+        first_unread_turn_id: unread.then(|| "turn-a".to_owned()),
+    };
+    store.set_viewed_thread(Some("thread-b".to_owned()));
+    store.apply_backend_event(event("thread-a", true));
+    store.apply_backend_event(event("thread-b", true));
+    assert_eq!(
+        store.snapshot().preferences.unread_thread_ids,
+        ["thread-a".to_owned()].into()
+    );
+    store.apply_backend_event(event("thread-a", false));
+    assert!(store.snapshot().preferences.unread_thread_ids.is_empty());
+    store.apply_backend_event(event("thread-a", true));
+    store.set_viewed_thread(Some("thread-a".to_owned()));
+    assert!(store.snapshot().preferences.unread_thread_ids.is_empty());
+    let _ = fs::remove_dir_all(path.parent().unwrap());
+}

@@ -640,6 +640,12 @@ impl ManagerInner {
                 self.publish_connection_event(AgentConnectionEvent::ThreadTokenUsageUpdated(usage));
                 Ok(())
             }
+            "thread/readState/changed" => {
+                self.publish_connection_event(
+                    super::super::notifications::parse_thread_read_state_changed(message)?,
+                );
+                Ok(())
+            }
             "thread/status/changed" => {
                 self.publish_connection_event(AgentConnectionEvent::ThreadStatusChanged(
                     parse_thread_status_changed(message)?,
