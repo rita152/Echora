@@ -26,7 +26,14 @@ impl ChatApp {
                 .conversation_hosts
                 .get(&key)
                 .map(|h| h.cwd.clone())
-                .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+                .unwrap_or_else(|| {
+                    self.home
+                        .read(cx)
+                        .composer_entity()
+                        .read(cx)
+                        .environment_context()
+                        .0
+                });
             let panel = cx.new(|cx| ReviewPanel::new(cwd, self.mode, cx));
             panel.update(cx, |p, cx| {
                 p.apply_preferences(self.workspace_store.snapshot().preferences.review, cx)
@@ -37,6 +44,28 @@ impl ChatApp {
                 .get(&key)
                 .map(|h| h.composer.clone());
             cx.subscribe(&panel, move |s, _, event: &ReviewEvent, cx| match event {
+                ReviewEvent::ReturnToEnvironment => {
+                    s.summary_panel
+                        .update(cx, |panel, cx| panel.return_environment_focus(cx));
+                }
+                ReviewEvent::EnvironmentNotice { text, failed } => {
+                    let target = composer
+                        .clone()
+                        .unwrap_or_else(|| s.home.read(cx).composer_entity());
+                    target.update(cx, |c, cx| {
+                        c.show_panel_toast(
+                            if *failed {
+                                crate::components::composer::ToastKind::Danger
+                            } else {
+                                crate::components::composer::ToastKind::Success
+                            },
+                            text.clone(),
+                            None,
+                            cx,
+                        )
+                    });
+                }
+                ReviewEvent::OpenChanges => s.open_review(cx),
                 ReviewEvent::OpenFile { path, line } => {
                     let (path, line) = (std::path::PathBuf::from(path), *line);
                     s.open_in_files(|panel, cx| panel.open_path(path, line, cx), cx);
@@ -120,6 +149,16 @@ impl ChatApp {
             && let Some(review) = host.composer.read(cx).latest_review()
         {
             self.review_panels[&key].update(cx, |p, cx| p.set_last_turn(review, false, cx));
+        }
+        if !self.conversation_hosts.contains_key(&key) {
+            let cwd = self
+                .home
+                .read(cx)
+                .composer_entity()
+                .read(cx)
+                .environment_context()
+                .0;
+            self.review_panels[&key].update(cx, |p, cx| p.set_workspace_root(cwd, cx));
         }
         self.review_panels[&key].update(cx, |p, cx| p.focus(cx));
         self.right_panel.focus_pending = false;

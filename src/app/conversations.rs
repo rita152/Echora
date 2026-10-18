@@ -106,6 +106,7 @@ impl ChatApp {
                 this.workspace_store.invalidate_branch_lookups();
                 if key == this.active_conversation {
                     this.update_chat_search_roots(cx);
+                    this.sync_summary_panel(cx);
                 }
                 cx.notify();
             },
@@ -175,6 +176,7 @@ impl ChatApp {
             .update(cx, |sidebar, cx| sidebar.set_draft_project(project_id, cx));
         self.sync_project_labels(&snapshot.projects, cx);
         self.update_chat_search_roots(cx);
+        self.sync_summary_panel(cx);
         cx.notify();
     }
 

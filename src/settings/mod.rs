@@ -3,8 +3,9 @@ mod view;
 
 pub use spec::PageSpec;
 pub use view::{
-    ChangeBranchPrefix, ChangeFollowUpMode, ChangeLanguage, ChangeReviewDelivery, ChangeTheme,
-    CloseSettings, ConfigSaveFinished, OpenSettingsFile, SettingsView,
+    ChangeBranchPrefix, ChangeEnvironmentOpen, ChangeEnvironmentSection, ChangeFollowUpMode,
+    ChangeLanguage, ChangeReviewDelivery, ChangeTheme, CloseSettings, ConfigSaveFinished,
+    OpenSettingsFile, SettingsView,
 };
 
 pub fn pages() -> impl Iterator<Item = &'static PageSpec> {

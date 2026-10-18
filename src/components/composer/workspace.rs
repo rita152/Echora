@@ -16,6 +16,17 @@ pub struct WorkspacePresentation {
 }
 
 impl ComposerView {
+    pub fn environment_context(&self) -> (std::path::PathBuf, bool, bool) {
+        (
+            self.conversation.cwd.clone(),
+            self.conversation.project_id.is_some(),
+            self.workspace_controls.worktree_mode,
+        )
+    }
+    pub fn select_environment_location(&mut self, worktree: bool, cx: &mut Context<Self>) {
+        self.select_run_location(worktree, cx);
+    }
+
     pub fn workspace_presentation(&self) -> &WorkspacePresentation {
         &self.workspace
     }

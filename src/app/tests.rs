@@ -488,7 +488,7 @@ fn right_panel_stays_open_until_its_titlebar_toggle_is_clicked_again() {
     );
 
     window.draw();
-    let trigger = point(px(878.0), px(23.0));
+    let trigger = point(px(864.0), px(22.0));
     window.simulate_click(trigger, MouseButton::Left);
     assert!(window.read(|chat, _| chat.right_panel.open));
 
@@ -519,12 +519,11 @@ fn right_panel_toggle_stays_in_one_place_when_the_panel_opens_and_closes() {
         |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
     );
     let is_open = |window: &TestAppWindow<ChatApp>| window.read(|chat, _| chat.right_panel.open);
-    // The 28px button sits 8px from the window edge plus the card's 8px inset,
-    // x=856..884, whether the panel is open or not, so a click that does not
-    // move toggles it back and forth.
+    // The 28px dock button sits 22px from the edge, x=850..878,
+    // whether the panel is open or not.
     window.draw();
-    for x in [857.0, 870.0, 883.0] {
-        let spot = point(px(x), px(23.0));
+    for x in [851.0, 864.0, 877.0] {
+        let spot = point(px(x), px(22.0));
         window.simulate_click(spot, MouseButton::Left);
         assert!(is_open(&window), "click at x={x} opens the panel");
         window.draw();
@@ -533,14 +532,14 @@ fn right_panel_toggle_stays_in_one_place_when_the_panel_opens_and_closes() {
         window.draw();
     }
     // Where the closed button used to sit, past its trailing edge.
-    window.simulate_click(point(px(890.0), px(23.0)), MouseButton::Left);
+    window.simulate_click(point(px(890.0), px(22.0)), MouseButton::Left);
     assert!(!is_open(&window));
-    window.simulate_click(point(px(870.0), px(23.0)), MouseButton::Left);
+    window.simulate_click(point(px(864.0), px(22.0)), MouseButton::Left);
     window.draw();
-    window.simulate_click(point(px(855.0), px(23.0)), MouseButton::Left);
+    window.simulate_click(point(px(849.0), px(22.0)), MouseButton::Left);
     assert!(
         is_open(&window),
-        "x=855 is outside the button in both states"
+        "x=849 is outside the button in both states"
     );
 }
 
@@ -715,21 +714,18 @@ fn remaining_titlebar_panel_toggle_uses_its_full_hit_area() {
         |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
     );
 
-    // The removed control's former hit area, left of the toggle, is now
-    // titlebar space.
+    // The Environment button and its surrounding space do not open the dock.
     for x in [831.0, 844.0] {
-        for y in [10.0, 23.0, 36.0] {
+        for y in [9.0, 22.0, 35.0] {
             window.draw();
             window.simulate_click(point(px(x), px(y)), MouseButton::Left);
             assert!(!window.read(|chat, _| chat.right_panel.open));
         }
     }
 
-    // The toggle keeps its 28 px hit area, x=856..884: 8px from the window
-    // edge plus the card's 8px inset. Opening the panel does not move it, so
-    // the same click hides the panel again, on the same row.
-    for x in [857.0, 870.0, 883.0] {
-        for y in [10.0, 23.0, 36.0] {
+    // The dock toggle keeps its 28px hit area, x=850..878, in both states.
+    for x in [851.0, 864.0, 877.0] {
+        for y in [9.0, 22.0, 35.0] {
             window.draw();
             window.simulate_click(point(px(x), px(y)), MouseButton::Left);
             assert!(window.read(|chat, _| chat.right_panel.open));
@@ -2323,4 +2319,66 @@ fn project_confirmation_tabs_stay_inside_and_escape_never_submits() {
             && !chat.project_creation.creating
             && chat.project_creation.confirmation.is_none()));
     }
+}
+
+#[test]
+fn environment_toggle_edges_keyboard_and_dock_are_independent() {
+    let mut app = TestApp::new();
+    app.update(|cx| {
+        cx.bind_keys([
+            gpui::KeyBinding::new("escape", super::DismissPermissionUi, None),
+            gpui::KeyBinding::new("enter", super::ToggleEnvironment, Some("EnvironmentToggle")),
+            gpui::KeyBinding::new("space", super::ToggleEnvironment, Some("EnvironmentToggle")),
+        ])
+    });
+    let mut window = app.open_window_with_options(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: point(px(0.0), px(0.0)),
+                size: size(px(900.0), px(700.0)),
+            })),
+            ..Default::default()
+        },
+        |_, cx| ChatApp::new(ThemeMode::Light, false, cx),
+    );
+    let visible = |w: &TestAppWindow<ChatApp>| {
+        w.read(|chat, _| {
+            !chat
+                .workspace_store
+                .snapshot()
+                .preferences
+                .summary_panel_unpinned
+        })
+    };
+    for x in [815.0, 828.0, 841.0] {
+        for y in [9.0, 22.0, 35.0] {
+            window.draw();
+            let before = visible(&window);
+            window.simulate_click(point(px(x), px(y)), MouseButton::Left);
+            assert_ne!(visible(&window), before, "environment edge {x},{y}");
+            assert!(!window.read(|chat, _| chat.right_panel.open));
+            window.draw();
+            window.simulate_click(point(px(x), px(y)), MouseButton::Left);
+            assert_eq!(visible(&window), before);
+        }
+    }
+    window.update(|chat, w, cx| chat.environment_toggle_focus.focus(w, cx));
+    window.draw();
+    let before = visible(&window);
+    window.simulate_keystroke("space");
+    assert_ne!(visible(&window), before);
+    window.draw();
+    window.simulate_keystroke("enter");
+    assert_eq!(visible(&window), before);
+    window.update(|chat, _, _| chat.workspace_store.set_summary_panel_pinned(true));
+    window.draw();
+    window.simulate_click(point(px(700.), px(136.)), MouseButton::Left);
+    assert!(window.read(|chat, cx| chat.summary_panel.read(cx).has_environment_menu()));
+    window.draw();
+    window.simulate_keystroke("escape");
+    assert!(!window.read(|chat, cx| chat.summary_panel.read(cx).has_environment_menu()));
+    assert!(
+        visible(&window),
+        "Escape dismisses the menu, leaving the card open"
+    );
 }

@@ -97,6 +97,10 @@ pub struct UiPreferences {
     /// `app-shell-summary-panel-pinned` (default true).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub summary_panel_unpinned: bool,
+    #[serde(default)]
+    pub environment_hidden_sections: Vec<String>,
+    #[serde(default)]
+    pub environment_editor: Option<String>,
     /// Summary panel sections the user expanded or collapsed, by section key;
     /// absent keys use the section's default.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]

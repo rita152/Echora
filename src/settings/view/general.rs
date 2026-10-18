@@ -85,6 +85,85 @@ impl SettingsView {
         }
     }
 
+    fn environment_settings(&self, theme: Theme, cx: &mut Context<Self>) -> gpui::Div {
+        let mut content = card(theme);
+        for (key, label, detail) in [
+            (
+                "open",
+                "Open by default",
+                "Open the Environment panel automatically. Your last open/close also updates this preference.",
+            ),
+            (
+                "repository",
+                "Repository",
+                "Show the GitHub repository link. The git block always stays visible.",
+            ),
+            (
+                "pull-requests",
+                "Pull request",
+                "Show pull requests attached to this chat and their checks.",
+            ),
+            (
+                "editor",
+                "Editor",
+                "Show Editor view and the Open in editor picker.",
+            ),
+        ] {
+            let checked = if key == "open" {
+                self.environment_open
+            } else {
+                !self.environment_hidden_sections.iter().any(|s| s == key)
+            };
+            let control = super::dynamic::switch(
+                gpui::SharedString::from(format!("environment-setting-{key}")),
+                checked,
+                false,
+                theme,
+            )
+            .aria_label(label)
+            .focusable()
+            .tab_stop(true)
+            .on_click(
+                cx.listener(move |this, _, _, cx| {
+                    this.choose_environment_setting(key, !checked, cx)
+                }),
+            )
+            .on_key_down(cx.listener(move |this, e: &gpui::KeyDownEvent, _, cx| {
+                if matches!(e.keystroke.key.as_str(), "enter" | "space") {
+                    this.choose_environment_setting(key, !checked, cx);
+                    cx.stop_propagation();
+                }
+            }));
+            content = content.child(row(
+                label,
+                Some(detail.into()),
+                Some(control.into_any_element()),
+                key != "editor",
+                theme,
+            ));
+        }
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .child(heading("Environment panel".into(), None, theme))
+            .child(content)
+    }
+
+    fn choose_environment_setting(&mut self, key: &str, checked: bool, cx: &mut Context<Self>) {
+        if key == "open" {
+            self.environment_open = checked;
+            cx.emit(super::ChangeEnvironmentOpen(checked));
+        } else {
+            self.environment_hidden_sections.retain(|s| s != key);
+            if !checked {
+                self.environment_hidden_sections.push(key.to_owned());
+            }
+            cx.emit(super::ChangeEnvironmentSection(key.to_owned(), checked));
+        }
+        cx.notify();
+    }
+
     pub(super) fn general_content(
         &self,
         page: &'static PageSpec,
@@ -139,6 +218,7 @@ impl SettingsView {
             )
             .child(section("常规", language))
             .child(section("编辑器", follow_up))
+            .child(self.environment_settings(theme, cx))
             .into_any_element()
     }
 }

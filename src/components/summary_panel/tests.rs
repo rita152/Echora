@@ -179,12 +179,12 @@ fn preferences_path() -> PathBuf {
 }
 
 /// Field order is drop order: the window's context goes before the app.
-struct Fixture {
-    visual: VisualTestContext,
-    composer: Entity<ComposerView>,
+pub(super) struct Fixture {
+    pub(super) visual: VisualTestContext,
+    pub(super) composer: Entity<ComposerView>,
     backend: Arc<Backend>,
     store: Arc<WorkspaceStore>,
-    panel: Entity<SummaryPanel>,
+    pub(super) panel: Entity<SummaryPanel>,
     events: Arc<Mutex<Vec<String>>>,
     path: PathBuf,
 }
@@ -196,7 +196,7 @@ impl Drop for Fixture {
 }
 
 impl Fixture {
-    fn new(cx: &mut TestAppContext, attachments: Vec<AgentThreadAttachment>) -> Self {
+    pub(super) fn new(cx: &mut TestAppContext, attachments: Vec<AgentThreadAttachment>) -> Self {
         // The store reads attachments and saves preferences on worker threads.
         cx.executor().allow_parking();
         let backend = Backend::new(attachments);
@@ -240,6 +240,9 @@ impl Fixture {
                         format!("view:{}", summary.url)
                     }
                     SummaryPanelEvent::OpenReview => "review".to_owned(),
+                    SummaryPanelEvent::OpenEditorView => "editor".to_owned(),
+                    SummaryPanelEvent::EnvironmentSettings => "environment-settings".to_owned(),
+                    SummaryPanelEvent::EnvironmentGit(action) => format!("git:{action:?}"),
                 };
                 recorded.lock().unwrap().push(text);
             })
@@ -269,7 +272,7 @@ impl Fixture {
         fixture
     }
 
-    fn draw(&mut self) {
+    pub(super) fn draw(&mut self) {
         self.visual.run_until_parked();
         self.visual.update(|window, cx| window.draw(cx).clear(cx));
     }
@@ -286,7 +289,7 @@ impl Fixture {
         }
     }
 
-    fn bounds(&mut self, selector: &str) -> Option<Bounds<Pixels>> {
+    pub(super) fn bounds(&mut self, selector: &str) -> Option<Bounds<Pixels>> {
         let selector: &'static str = Box::leak(selector.to_owned().into_boxed_str());
         self.visual.debug_bounds(selector)
     }

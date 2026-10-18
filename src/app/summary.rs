@@ -45,6 +45,20 @@ impl ChatApp {
                     this.pull_requests
                         .update(cx, |view, cx| view.select(summary, cx));
                 }
+                SummaryPanelEvent::EnvironmentSettings => {
+                    this.open_settings_page("general-settings", cx);
+                    this.settings
+                        .update(cx, |settings, cx| settings.select_environment(cx));
+                }
+                SummaryPanelEvent::OpenEditorView => {
+                    this.open_files(cx);
+                }
+                SummaryPanelEvent::EnvironmentGit(action) => {
+                    this.ensure_review(cx);
+                    if let Some(panel) = this.review_panels.get(&this.active_conversation) {
+                        panel.update(cx, |panel, cx| panel.open_environment_git(*action, cx));
+                    }
+                }
                 SummaryPanelEvent::OpenReview => {
                     this.right_panel.open = true;
                     this.select_right_panel_item(REVIEW_ITEM, cx);
@@ -57,18 +71,14 @@ impl ChatApp {
 
     /// Points the panel at the active chat.
     pub(super) fn sync_summary_panel(&mut self, cx: &mut Context<Self>) {
-        let (composer, thread_id, cwd) = match &self.active_conversation {
-            ConversationKey::Thread(thread_id) => {
-                match self.conversation_hosts.get(&self.active_conversation) {
-                    Some(host) => (
-                        Some(host.composer.clone()),
-                        Some(thread_id.clone()),
-                        Some(host.cwd.clone()),
-                    ),
-                    None => (None, None, None),
-                }
-            }
-            ConversationKey::Draft(_) => (None, None, None),
+        let (composer, cwd) = self
+            .conversation_hosts
+            .get(&self.active_conversation)
+            .map(|host| (Some(host.composer.clone()), Some(host.cwd.clone())))
+            .unwrap_or_else(|| (Some(self.home.read(cx).composer_entity()), None));
+        let thread_id = match &self.active_conversation {
+            ConversationKey::Thread(id) => Some(id.clone()),
+            _ => None,
         };
         self.summary_panel.update(cx, |panel, cx| {
             panel.set_conversation(composer, thread_id, cwd, cx)
@@ -82,32 +92,28 @@ impl ChatApp {
         mode: SummaryDisplayMode,
         cx: &mut Context<Self>,
     ) {
-        if mode == SummaryDisplayMode::Overlay {
-            self.summary_popover_open = !self.summary_popover_open;
-        } else {
-            let pinned = !self
-                .workspace_store
-                .snapshot()
-                .preferences
-                .summary_panel_unpinned;
-            self.workspace_store.set_summary_panel_pinned(!pinned);
-        }
+        let _ = mode;
+        let pinned = !self
+            .workspace_store
+            .snapshot()
+            .preferences
+            .summary_panel_unpinned;
+        self.workspace_store.set_summary_panel_pinned(!pinned);
+        self.summary_popover_open = false;
+        self.summary_panel
+            .update(cx, |panel, cx| panel.reset_environment(cx));
         self.summary_reveal_serial += 1;
         cx.notify();
     }
 
     /// Whether the island shows, for the chat column's width.
     pub(super) fn summary_panel_visible(&self, mode: SummaryDisplayMode) -> bool {
-        match mode {
-            SummaryDisplayMode::Overlay => self.summary_popover_open,
-            _ => {
-                !self
-                    .workspace_store
-                    .snapshot()
-                    .preferences
-                    .summary_panel_unpinned
-            }
-        }
+        let _ = mode;
+        !self
+            .workspace_store
+            .snapshot()
+            .preferences
+            .summary_panel_unpinned
     }
 
     /// Output of background terminals follows into their open tabs.

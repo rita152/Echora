@@ -42,6 +42,7 @@ gpui::actions!(
         CaptureFrame,
         ToggleTerminal,
         ToggleReview,
+        ToggleEnvironment,
         OpenFiles,
         OpenSideChat,
         OpenSettingsPage,
@@ -165,6 +166,7 @@ pub struct ChatApp {
     summary_panel: Entity<crate::components::summary_panel::SummaryPanel>,
     /// Overlay mode (a narrow chat column): the header button's popover.
     summary_popover_open: bool,
+    environment_toggle_focus: gpui::FocusHandle,
     /// Bumped on each toggle so the island's entrance animation restarts.
     summary_reveal_serial: u64,
     /// Window activation seen by the last frame; regaining it refreshes the
@@ -488,6 +490,21 @@ impl ChatApp {
             },
         )
         .detach();
+        cx.subscribe(
+            &settings,
+            |this, _, event: &crate::settings::ChangeEnvironmentSection, _| {
+                this.workspace_store
+                    .set_environment_section_visible(&event.0, event.1);
+            },
+        )
+        .detach();
+        cx.subscribe(
+            &settings,
+            |this, _, event: &crate::settings::ChangeEnvironmentOpen, _| {
+                this.workspace_store.set_summary_panel_pinned(event.0);
+            },
+        )
+        .detach();
         settings.update(cx, |settings, cx| {
             settings.set_follow_up_mode(workspace_store.snapshot().preferences.follow_up_mode, cx)
         });
@@ -679,6 +696,7 @@ impl ChatApp {
             account_choice: 0,
             summary_panel,
             summary_popover_open: false,
+            environment_toggle_focus: cx.focus_handle().tab_stop(true),
             summary_reveal_serial: 0,
             window_was_active: true,
         };
@@ -1124,6 +1142,11 @@ impl ChatApp {
             .flat_map(|project| project.roots.iter().cloned())
             .collect::<Vec<_>>();
         self.settings.update(cx, |settings, cx| {
+            settings.set_environment_preferences(
+                !snapshot.preferences.summary_panel_unpinned,
+                snapshot.preferences.environment_hidden_sections.clone(),
+                cx,
+            );
             settings.set_config_context(cwd, cx);
             settings.set_hook_roots(selected_roots, all_roots, cx);
             settings.set_manage_context(thread_id, cx);

@@ -19,9 +19,7 @@ use crate::{
         file_panel::OpenWorkspaceFile,
         home::{NextUserMessage, PreviousUserMessage},
         icons::icon,
-        summary_panel::{
-            SUMMARY_PANEL_ANIMATION, SUMMARY_PANEL_GUTTER, SUMMARY_PANEL_WIDTH, SummaryDisplayMode,
-        },
+        summary_panel::{SUMMARY_PANEL_ANIMATION, SummaryDisplayMode},
     },
     theme::{CHAT_CONTENT_HORIZONTAL_GUTTER, Theme, ThemeMode, ui_font},
 };
@@ -29,15 +27,15 @@ use crate::{
 use super::{
     ChatApp, ConversationKey, DismissPermissionUi, LEADING_TITLEBAR_CONTROLS_GAP,
     LEADING_TITLEBAR_CONTROLS_LEFT, LEADING_TITLEBAR_CONTROLS_TOP, OpenFiles, OpenSideChat,
-    RIGHT_PANEL_CARD_INSET, RIGHT_PANEL_DEFAULT_SHARE, STARTUP_LOADING_BLINK_DURATION,
-    STARTUP_LOADING_LOGO_SIZE, ToggleReview, ToggleTerminal,
+    RIGHT_PANEL_DEFAULT_SHARE, STARTUP_LOADING_BLINK_DURATION, STARTUP_LOADING_LOGO_SIZE,
+    ToggleReview, ToggleTerminal,
     sidebar::{conversation_titlebar_leading_edge, sidebar_trigger_left, titlebar_leading_edge},
 };
 
 /// The pinned summary island: 6 px (`pe-1.5`) from the chat column's right
 /// edge and just below the thread header, where the reference draws it.
-const SUMMARY_PANEL_TOP: f32 = 52.0;
-const SUMMARY_PANEL_RIGHT: f32 = 6.0;
+const SUMMARY_PANEL_TOP: f32 = 56.0;
+const SUMMARY_PANEL_RIGHT: f32 = 16.0;
 
 /// The reference's spring settles like a quintic ease-out.
 fn ease_out_quint(progress: f32) -> f32 {
@@ -227,14 +225,25 @@ impl Render for ChatApp {
         if self.right_panel_parked && self.right_panel.open {
             self.close_right_panel(cx);
         }
-        let review_overlay =
-            if self.right_panel.open && self.right_panel.mode == Some(RightPanelMode::Review) {
-                self.review_panels
-                    .get(&self.active_conversation)
-                    .and_then(|p| p.update(cx, |p, cx| p.render_overlay(cx)))
-            } else {
-                None
-            };
+        let review_overlay = if !self.showing_settings && !self.showing_pull_requests {
+            self.review_panels
+                .get(&self.active_conversation)
+                .and_then(|p| {
+                    p.update(cx, |p, cx| {
+                        if p.has_environment_dialog() {
+                            p.prepare_environment_overlay(window, cx)
+                        } else if self.right_panel.open
+                            && self.right_panel.mode == Some(RightPanelMode::Review)
+                        {
+                            p.render_overlay(cx)
+                        } else {
+                            None
+                        }
+                    })
+                })
+        } else {
+            None
+        };
         let side_chat_overlay = if self.right_panel.open
             && self.right_panel.mode == Some(RightPanelMode::SideChat)
         {
@@ -244,11 +253,12 @@ impl Render for ChatApp {
         } else {
             None
         };
-        let toasts = self
+        let toast_composer = self
             .conversation_hosts
             .get(&self.active_conversation)
             .map(|host| host.composer.clone())
-            .and_then(|composer| composer.update(cx, |composer, cx| composer.render_toasts(cx)));
+            .unwrap_or_else(|| self.home.read(cx).composer_entity());
+        let toasts = toast_composer.update(cx, |composer, cx| composer.render_toasts(cx));
         let composer_overlay = self
             .conversation_hosts
             .get(&self.active_conversation)
@@ -428,14 +438,12 @@ impl Render for ChatApp {
                 0.0
             };
         let summary_mode = SummaryDisplayMode::for_main_width(main_width);
-        let summary_available = resumed_title.is_some() && !review_fullscreen;
+        let summary_available = !review_fullscreen;
         // The same in both states: the open button and the hide button that
         // replaces it sit at one spot, so toggling the panel never moves it.
-        let trailing_controls_inset = RIGHT_PANEL_CARD_INSET;
         let summary_shown = summary_available
             && self.summary_panel_visible(summary_mode)
             && self.summary_panel.read(cx).has_content(cx);
-        let summary_shift = summary_shown && summary_mode == SummaryDisplayMode::Shift;
         let summary_serial = self.summary_reveal_serial;
         let reduce_motion = cx.reduce_motion();
         let summary_island = summary_shown.then(|| {
@@ -454,9 +462,8 @@ impl Render for ChatApp {
                     })
                     .with_easing(ease_out_quint),
                     |slot, progress| {
-                        slot.opacity(progress).right(px(
-                            SUMMARY_PANEL_RIGHT - SUMMARY_PANEL_WIDTH * (1.0 - progress)
-                        ))
+                        slot.opacity(progress)
+                            .right(px(SUMMARY_PANEL_RIGHT - 8.0 * (1.0 - progress)))
                     },
                 )
         });
@@ -564,6 +571,11 @@ impl Render for ChatApp {
                     cx.stop_propagation();
                     return;
                 }
+                if this.summary_panel.read(cx).has_environment_menu()
+                    && this.summary_panel.update(cx, |panel, cx| panel.dismiss_environment_menu(window, cx)) {
+                    cx.stop_propagation();
+                    return;
+                }
                 if this.sidebar.update(cx, |sidebar, cx| sidebar.dismiss_project_actions(window, cx)) {
                     cx.stop_propagation();
                     return;
@@ -601,8 +613,8 @@ impl Render for ChatApp {
                     && panel.update(cx, |panel, cx| panel.dismiss_transient(cx)) {
                     cx.stop_propagation(); return;
                 }
-                if this.right_panel.open&&this.right_panel.mode==Some(RightPanelMode::Review)
-                    &&let Some(panel)=this.review_panels.get(&this.active_conversation)
+                if let Some(panel)=this.review_panels.get(&this.active_conversation)
+                    &&(panel.read(cx).has_environment_dialog() || (this.right_panel.open && this.right_panel.mode==Some(RightPanelMode::Review)))
                     &&panel.update(cx,|p,cx|p.dismiss_transient(window,cx)) {
                     cx.stop_propagation();return;
                 }
@@ -692,10 +704,6 @@ impl Render for ChatApp {
                                             // column. Max-width content remains unchanged on wide
                                             // windows because HomeView still centers it internally.
                                             .px(px(CHAT_CONTENT_HORIZONTAL_GUTTER))
-                                            // Shift mode: the chat column moves 153 px left.
-                                            .when(summary_shift, |main| {
-                                                main.pr(px(CHAT_CONTENT_HORIZONTAL_GUTTER + SUMMARY_PANEL_GUTTER))
-                                            })
                                             .bg(theme.surface)
                                             .relative()
                                             .child(
@@ -1030,10 +1038,10 @@ impl Render for ChatApp {
                             // Over an open right panel these sit in its
                             // card's toolbar, which the card inset moves in;
                             // the toolbar is centred on the titlebar's row.
-                            .top(px(9.0))
-                            .right(px(8.0 + trailing_controls_inset))
+                            .top(px(8.0))
+                            .right(px(22.0))
                             .flex()
-                            .gap(px(6.0))
+                            .gap(px(8.0))
                             // The reference Pull Requests page owns the whole
                             // content area and shows no panel controls there.
                             .when(!self.showing_pull_requests, |controls| {
@@ -1042,24 +1050,38 @@ impl Render for ChatApp {
                                 // Echora's own top bar; the reference's pinned
                                 // label is "Toggle pinned summary", its overlay
                                 // one "Toggle summary".
-                                let label = if summary_mode == SummaryDisplayMode::Overlay {
-                                    crate::i18n::format!("切换摘要" => "Toggle summary")
-                                } else {
-                                    crate::i18n::format!("切换固定摘要" => "Toggle pinned summary")
-                                };
+                                let label = "Toggle environment panel";
                                 controls.child(
                                     titlebar_icon_button(
-                                        "summary-panel",
+                                        "environment-panel",
                                         false,
                                         self.summary_panel_visible(summary_mode),
                                         theme,
                                     )
                                     .role(Role::Button)
                                     .aria_label(label)
-                                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                    .aria_toggled(if self.summary_panel_visible(summary_mode) { gpui::Toggled::True } else { gpui::Toggled::False })
+                                    .track_focus(&self.environment_toggle_focus)
+                                    .key_context("EnvironmentToggle")
+                                    .tab_stop(true)
+                                    .on_action(cx.listener(move |this, _: &super::ToggleEnvironment, window, cx| {
+                                        this.toggle_summary_panel(summary_mode, cx);
+                                        this.environment_toggle_focus.focus(window, cx);
+                                        cx.stop_propagation();
+                                    }))
+                                    .on_key_down(cx.listener(move |this, event: &KeyDownEvent, window, cx| {
+                                        if event.keystroke.key == "tab" && !event.keystroke.modifiers.shift && this.summary_panel_visible(summary_mode) {
+                                            this.summary_panel.update(cx, |panel, cx| panel.focus_environment(window, cx)); cx.stop_propagation();
+                                        }
+                                    }))
+                                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
+                                        this.environment_toggle_focus.focus(window, cx);
+                                        cx.stop_propagation();
+                                    }))
+                                    .on_click(cx.listener(move |this, _, window, cx| {
                                         cx.stop_propagation();
                                         this.toggle_summary_panel(summary_mode, cx);
+                                        this.environment_toggle_focus.focus(window, cx);
                                     })),
                                 )
                             })

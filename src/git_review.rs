@@ -4,6 +4,7 @@
 //! and mutations check that the displayed snapshot is still current first.
 
 mod comments;
+pub mod environment;
 pub(crate) mod process;
 pub mod workspace;
 pub use comments::{ReviewComment, comments_prompt};

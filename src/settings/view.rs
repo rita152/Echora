@@ -36,6 +36,8 @@ pub struct CloseSettings;
 pub struct ChangeTheme(pub ThemeMode);
 pub struct ChangeLanguage(pub crate::i18n::Language);
 /// The Follow-up behavior segmented control changed.
+pub struct ChangeEnvironmentSection(pub String, pub bool);
+pub struct ChangeEnvironmentOpen(pub bool);
 pub struct ChangeFollowUpMode(pub crate::workspace::FollowUpMode);
 /// Git → Review delivery changed.
 pub struct ChangeReviewDelivery(pub crate::workspace::ReviewDelivery);
@@ -59,6 +61,8 @@ pub struct SettingsView {
     nav_scroll: ScrollHandle,
     content_scroll: ScrollHandle,
     appearance_theme: usize,
+    pub(super) environment_hidden_sections: Vec<String>,
+    pub(super) environment_open: bool,
     pub(super) follow_up_mode: crate::workspace::FollowUpMode,
     pub(super) review_delivery: crate::workspace::ReviewDelivery,
     branch_prefix_input: gpui::Entity<crate::components::prompt_input::PromptInput>,
@@ -131,12 +135,28 @@ pub struct SettingsView {
 impl EventEmitter<CloseSettings> for SettingsView {}
 impl EventEmitter<ChangeTheme> for SettingsView {}
 impl EventEmitter<ChangeLanguage> for SettingsView {}
+impl EventEmitter<ChangeEnvironmentSection> for SettingsView {}
+impl EventEmitter<ChangeEnvironmentOpen> for SettingsView {}
 impl EventEmitter<ChangeFollowUpMode> for SettingsView {}
 impl EventEmitter<ChangeReviewDelivery> for SettingsView {}
 impl EventEmitter<ChangeBranchPrefix> for SettingsView {}
 impl EventEmitter<OpenSettingsFile> for SettingsView {}
 
 impl SettingsView {
+    pub fn set_environment_preferences(
+        &mut self,
+        open: bool,
+        hidden: Vec<String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.environment_open = open;
+        self.environment_hidden_sections = hidden;
+        cx.notify();
+    }
+    pub fn select_environment(&mut self, cx: &mut Context<Self>) {
+        self.select("general-settings", cx);
+        self.content_scroll.set_offset(point(px(0.), px(-360.)));
+    }
     pub fn set_branch_prefix(&mut self, prefix: &str, cx: &mut Context<Self>) {
         self.branch_prefix_input
             .update(cx, |input, cx| input.set_text_silently(prefix, cx));
@@ -349,6 +369,8 @@ impl SettingsView {
             nav_scroll: ScrollHandle::new(),
             content_scroll: ScrollHandle::new(),
             appearance_theme: if mode == ThemeMode::Dark { 2 } else { 1 },
+            environment_hidden_sections: Vec::new(),
+            environment_open: true,
             follow_up_mode: Default::default(),
             review_delivery: Default::default(),
             branch_prefix_input,

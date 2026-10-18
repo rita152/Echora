@@ -1,14 +1,7 @@
-//! The thread summary panel: the reference's pinned island to the right of a
-//! chat (`thread-summary-panel`), 300 px wide, with the sections Echora has data
-//! for: the checkout's environment (its branch and the attached pull requests
-//! on it), the other attached pull requests, and background processes.
-//!
-//! Layout and tokens come from the reference's DOM (`artifacts/batch4-panel-*`,
-//! `artifacts/batch4-background-*`): island `rounded-2xl` on
-//! `bg-surface-elevated-secondary`, `py-2.5 gap-2`; section headers `h-7 ps-5
-//! pe-3.5` in 13 px secondary text with a chevron on hover; rows `py-1` with an
-//! 18 px leading icon, 13 px label, and a 24 px action button that appears on
-//! hover or focus.
+//! Floating Environment card, attached pull requests, and background terminals.
+//! Environment actions use the selected checkout without moving the chat column.
+
+mod environment;
 
 use std::{
     cell::RefCell,
@@ -41,12 +34,7 @@ use crate::{
     },
 };
 
-pub const SUMMARY_PANEL_WIDTH: f32 = 300.0;
-/// The layout gutter the pinned panel reserves beside the chat.
-pub const SUMMARY_PANEL_GUTTER: f32 = 306.0;
-const ISLAND_RADIUS: f32 = 16.0;
-const ISLAND_PADDING_Y: f32 = 10.0;
-const SECTION_GAP: f32 = 8.0;
+pub const SUMMARY_PANEL_WIDTH: f32 = 286.0;
 const SECTION_BOTTOM: f32 = 8.0;
 const HEADER_HEIGHT: f32 = 28.0;
 const HEADER_PADDING_START: f32 = 20.0;
@@ -108,6 +96,16 @@ pub enum SummaryPanelEvent {
     ViewPullRequest(PullRequestSummary),
     /// The branch row: the review panel on this checkout.
     OpenReview,
+    OpenEditorView,
+    EnvironmentSettings,
+    EnvironmentGit(EnvironmentGitAction),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum EnvironmentGitAction {
+    Commit,
+    CommitPush,
+    PullRequest,
 }
 
 impl EventEmitter<SummaryPanelEvent> for SummaryPanel {}
@@ -122,6 +120,7 @@ struct PullRequestMenu {
 }
 
 pub struct SummaryPanel {
+    environment: environment::EnvironmentUi,
     mode: ThemeMode,
     store: Arc<WorkspaceStore>,
     snapshot: WorkspaceSnapshot,
@@ -173,7 +172,9 @@ impl SummaryPanel {
             }
         })
         .detach();
+        let environment = environment::EnvironmentUi::new(mode, cx);
         Self {
+            environment,
             mode,
             store,
             snapshot,
@@ -228,6 +229,7 @@ impl SummaryPanel {
             }
             return;
         }
+        self.reset_environment(cx);
         self._composer_changes = composer.as_ref().map(|composer| {
             cx.subscribe(composer, |_, _, _: &ConversationChanged, cx| cx.notify())
         });
@@ -348,11 +350,8 @@ impl SummaryPanel {
     }
 
     /// Whether the panel has anything to show for this chat.
-    pub fn has_content(&self, cx: &gpui::App) -> bool {
-        self.thread_id.is_some()
-            && (self.checkout().is_some()
-                || !self.pull_requests().is_empty()
-                || !self.background_terminals(cx).is_empty())
+    pub fn has_content(&self, _cx: &gpui::App) -> bool {
+        true
     }
 
     fn expanded(&self, key: &str) -> bool {
@@ -1297,13 +1296,21 @@ impl Render for SummaryPanel {
         let unmatched = match &checkout {
             Some(checkout) => {
                 let (environment, unmatched) = self.environment_pull_requests(checkout);
-                let title = checkout
-                    .root
-                    .file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                let rows = self.environment_section(checkout, &environment, theme, cx);
-                sections.push(("environment", title, None, rows));
+                let mut rows = self.environment_section(checkout, &environment, theme, cx);
+                // The Environment card owns the branch picker; retain attachment actions.
+                if !rows.is_empty() {
+                    rows.remove(0);
+                }
+                if !rows.is_empty()
+                    && !self
+                        .snapshot
+                        .preferences
+                        .environment_hidden_sections
+                        .iter()
+                        .any(|s| s == "pull-requests")
+                {
+                    sections.push(("environment", "Pull request".into(), None, rows));
+                }
                 unmatched
             }
             None => self.pull_requests(),
@@ -1337,18 +1344,25 @@ impl Render for SummaryPanel {
             .menu
             .clone()
             .map(|menu| self.pull_request_menu(&menu, theme, cx));
+        let environment_card = self.environment_card(window, cx);
         let mut island = div()
             .id("thread-summary-panel")
             .debug_selector(|| "THREAD_SUMMARY_PANEL".to_owned())
             .track_focus(&self.focus)
             .w(px(SUMMARY_PANEL_WIDTH))
             .max_w_full()
-            .py(px(ISLAND_PADDING_Y))
+            .p(px(6.0))
+            .max_h((window.viewport_size().height - px(72.)).max(px(100.)))
+            .overflow_y_scroll()
             .flex()
             .flex_col()
-            .gap(px(SECTION_GAP))
-            .rounded(px(ISLAND_RADIUS))
-            .bg(theme.popover_surface)
+            .gap(px(2.0))
+            .rounded(px(20.0))
+            .bg(if self.mode == ThemeMode::Light {
+                gpui::rgba(0xfbfbfbff)
+            } else {
+                gpui::rgba(0x212121ff)
+            })
             .shadow(vec![
                 gpui::BoxShadow::new(px(0.0), px(0.0), theme.border.into()).spread_radius(px(0.5)),
                 gpui::BoxShadow::new(px(0.0), px(4.0), theme.menu_shadow.into())
@@ -1356,8 +1370,11 @@ impl Render for SummaryPanel {
                     .spread_radius(px(-4.0)),
             ])
             .font_family(".SystemUIFont")
-            .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
-                if event.keystroke.key == "escape" && this.dismiss_menu(cx) {
+            .child(environment_card)
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if event.keystroke.key == "escape"
+                    && (this.dismiss_environment_menu(window, cx) || this.dismiss_menu(cx))
+                {
                     cx.stop_propagation();
                 }
             }));

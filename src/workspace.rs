@@ -1475,6 +1475,22 @@ impl WorkspaceStore {
         self.save_preferences();
     }
 
+    pub fn set_environment_section_visible(&self, key: &str, visible: bool) {
+        self.update(|snapshot| {
+            let hidden = &mut snapshot.preferences.environment_hidden_sections;
+            hidden.retain(|section| section != key);
+            if !visible {
+                hidden.push(key.to_owned());
+            }
+        });
+        self.save_preferences();
+    }
+
+    pub fn set_environment_editor(&self, editor: String) {
+        self.update(|snapshot| snapshot.preferences.environment_editor = Some(editor));
+        self.save_preferences();
+    }
+
     pub fn set_summary_section_expanded(&self, key: &str, expanded: bool) {
         self.update(|snapshot| {
             snapshot

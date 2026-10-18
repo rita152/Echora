@@ -1570,6 +1570,8 @@ fn main() {
                 gpui::KeyBinding::new("cmd-alt-s", app::OpenSideChat, None),
                 gpui::KeyBinding::new("cmd-,", app::OpenSettingsPage, None),
                 gpui::KeyBinding::new("cmd-alt-u", app::ToggleActivityView, None),
+                gpui::KeyBinding::new("enter", app::ToggleEnvironment, Some("EnvironmentToggle")),
+                gpui::KeyBinding::new("space", app::ToggleEnvironment, Some("EnvironmentToggle")),
                 gpui::KeyBinding::new("tab", app::NextSettingsControl, Some("Settings")),
                 gpui::KeyBinding::new("shift-tab", app::PreviousSettingsControl, Some("Settings")),
             ]);

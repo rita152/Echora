@@ -52,6 +52,7 @@ impl MenuEntry {
 
 #[derive(Clone)]
 pub(super) enum Action {
+    EnvironmentEdit,
     Menu(Menu),
     Scope(Scope),
     Refresh,
@@ -114,6 +115,21 @@ fn menu_separator(t: Theme) -> Div {
 
 impl ReviewPanel {
     pub(super) fn action(&mut self, a: Action, w: &mut Window, cx: &mut Context<Self>) {
+        if self.environment_dialog
+            && self.busy
+            && matches!(
+                a,
+                Action::EnvironmentEdit
+                    | Action::Commit
+                    | Action::SaveCommit
+                    | Action::CommitAndPush
+                    | Action::NewBranch(_)
+                    | Action::PullRequest
+                    | Action::CancelDialog
+            )
+        {
+            return;
+        }
         if matches!(&a,Action::Open(i)|Action::OpenExternal(i)|Action::Viewed(i)|Action::Toggle(i)|Action::Jump(i)|Action::Context(i)|Action::Menu(Menu::File(i)) if *i>=self.snapshot.files.len())
         {
             return;
@@ -129,6 +145,12 @@ impl ReviewPanel {
                 | Action::Tree
         );
         match a {
+            Action::EnvironmentEdit => {
+                self.commit_open = false;
+                self.pr_open = false;
+                self.environment_dialog = false;
+                cx.emit(ReviewEvent::OpenChanges);
+            }
             Action::Menu(m) => {
                 let jump = m == Menu::Jump;
                 self.toggle_menu(m, cx);
@@ -236,24 +258,7 @@ impl ReviewPanel {
                 self.confirm = Some(op);
             }
             Action::Commit => self.open_commit(cx),
-            Action::SaveCommit => {
-                if self.busy
-                    || (self.new_branch && self.branch_input.read(cx).text().trim() == "codex/")
-                {
-                    return;
-                }
-                let message = self.commit_input.read(cx).text().to_owned();
-                self.mutate(
-                    Mutation::Commit {
-                        message,
-                        stage_all: self.commit_all,
-                        branch: self
-                            .new_branch
-                            .then(|| self.branch_input.read(cx).text().trim().to_owned()),
-                    },
-                    cx,
-                );
-            }
+            Action::SaveCommit => self.save_commit(cx),
             Action::SaveComment => self.save_comment(cx),
             Action::EditComment(id) => self.edit_comment(id, cx),
             Action::CancelComment => {
@@ -271,6 +276,7 @@ impl ReviewPanel {
                 self.rebuild(cx);
             }
             Action::CancelDialog => {
+                self.return_to_environment(cx);
                 self.pr_open = false;
                 self.confirm = None;
                 self.commit_open = false;

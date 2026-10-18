@@ -8,6 +8,7 @@ mod cache;
 mod comments;
 mod controls;
 mod dialogs;
+mod environment_dialog;
 mod files;
 #[cfg(test)]
 mod refresh_tests;
@@ -38,6 +39,12 @@ use std::{
 
 #[derive(Clone, Debug)]
 pub enum ReviewEvent {
+    ReturnToEnvironment,
+    EnvironmentNotice {
+        text: String,
+        failed: bool,
+    },
+    OpenChanges,
     OpenFile {
         path: String,
         line: Option<usize>,
@@ -187,6 +194,8 @@ pub struct ReviewPanel {
     /// Capture-only: the popup to open once the first snapshot has loaded.
     #[cfg(feature = "screenshot")]
     capture_menu: Option<String>,
+    environment_dialog: bool,
+    environment_git_pending: Option<crate::components::summary_panel::EnvironmentGitAction>,
     commit_open: bool,
     commit_all: bool,
     new_branch: bool,
@@ -357,6 +366,8 @@ impl ReviewPanel {
             confirm: None,
             #[cfg(feature = "screenshot")]
             capture_menu: None,
+            environment_dialog: false,
+            environment_git_pending: None,
             commit_open: false,
             commit_all: true,
             new_branch: false,
@@ -405,6 +416,7 @@ impl ReviewPanel {
         self.loading = false;
         self.snapshot = Arc::new(Snapshot::default());
         self.snapshot_loaded = false;
+        self.environment_git_pending = None;
         self.scope = Scope::Uncommitted;
         self.last_turn.clear();
         self.latest_turn.clear();
@@ -648,7 +660,15 @@ impl ReviewPanel {
             }
             Err(e) => {
                 self.error = Some(e);
+                if self.environment_git_pending.take().is_some() {
+                    self.commit_open = true;
+                }
             }
+        }
+        if self.snapshot_loaded
+            && let Some(action) = self.environment_git_pending.take()
+        {
+            self.open_environment_git(action, cx);
         }
         cx.notify();
     }
@@ -1028,13 +1048,14 @@ impl ReviewPanel {
                         } else {
                             s.show_notice(message, cx);
                         }
-                        s.commit_open = false;
-                        s.pr_open = false;
                         if s.push_after_commit {
                             s.push_after_commit = false;
                             s.refresh_then_push(cx);
                             return;
                         }
+                        s.commit_open = false;
+                        s.pr_open = false;
+                        s.return_to_environment(cx);
                     }
                     Err(e) => {
                         s.operation_error = Some(e);
@@ -1047,6 +1068,21 @@ impl ReviewPanel {
         })
         .detach();
         cx.notify();
+    }
+    fn save_commit(&mut self, cx: &mut Context<Self>) {
+        if self.busy || (self.new_branch && self.branch_input.read(cx).text().trim() == "codex/") {
+            return;
+        }
+        self.mutate(
+            Mutation::Commit {
+                message: self.commit_input.read(cx).text().to_owned(),
+                stage_all: self.commit_all,
+                branch: self
+                    .new_branch
+                    .then(|| self.branch_input.read(cx).text().trim().to_owned()),
+            },
+            cx,
+        );
     }
     fn refresh_then_push(&mut self, cx: &mut Context<Self>) {
         let cwd = self.cwd.clone();
@@ -1063,13 +1099,63 @@ impl ReviewPanel {
             let _ = this.update(cx, |s, cx| {
                 s.busy = false;
                 match result {
-                    Ok(m) => s.show_notice(m, cx),
-                    Err(e) => s.operation_error = Some(crate::i18n::format!("提交已完成；推送失败：{e:#}" => "Commit completed; push failed: {e:#}")),
+                    Ok(m) => {
+                        if s.environment_dialog {
+                            cx.emit(ReviewEvent::EnvironmentNotice { text: m.clone(), failed: false });
+                        }
+                        s.show_notice(m, cx);
+                    }
+                    Err(e) => {
+                        let text = crate::i18n::format!("提交已完成；推送失败：{e:#}" => "Commit completed; push failed: {e:#}");
+                        if s.environment_dialog {
+                            cx.emit(ReviewEvent::EnvironmentNotice { text: text.clone(), failed: true });
+                        }
+                        s.operation_error = Some(text);
+                    }
                 }
+                s.commit_open = false;
+                s.pr_open = false;
+                s.return_to_environment(cx);
                 s.refresh(cx);
+                cx.notify();
             });
         })
         .detach();
+    }
+    pub fn open_environment_git(
+        &mut self,
+        action: crate::components::summary_panel::EnvironmentGitAction,
+        cx: &mut Context<Self>,
+    ) {
+        use crate::components::summary_panel::EnvironmentGitAction;
+        if self.busy {
+            return;
+        }
+        self.environment_dialog = true;
+        if self.scope != Scope::Uncommitted {
+            self.change_scope(Scope::Uncommitted, cx);
+        }
+        if !self.snapshot_loaded || self.loading {
+            self.environment_git_pending = Some(action);
+            self.refresh(cx);
+            return;
+        }
+        match action {
+            EnvironmentGitAction::Commit => self.open_commit(cx),
+            EnvironmentGitAction::CommitPush => {
+                self.open_commit(cx);
+                if !self.snapshot.detached {
+                    self.push_after_commit = true;
+                    if self.snapshot.files.is_empty() {
+                        self.push_after_commit = false;
+                        self.refresh_then_push(cx);
+                    } else {
+                        self.save_commit(cx);
+                    }
+                }
+            }
+            EnvironmentGitAction::PullRequest => self.open_pull_request(cx),
+        }
     }
     fn open_commit(&mut self, cx: &mut Context<Self>) {
         self.pr_open = false;
@@ -1081,8 +1167,19 @@ impl ReviewPanel {
         self.branch_input
             .update(cx, |i, cx| i.set_text_silently("codex/", cx));
         self.commit_input.update(cx, |i, cx| {
-            i.set_accessible_name("提交信息");
-            i.set_placeholder("提交信息（留空将自动生成）…", cx);
+            i.set_accessible_name(if self.environment_dialog {
+                "Commit message"
+            } else {
+                "提交信息"
+            });
+            i.set_placeholder(
+                if self.environment_dialog {
+                    "Commit message (leave blank to generate)"
+                } else {
+                    "提交信息（留空将自动生成）…"
+                },
+                cx,
+            );
             i.set_text_silently("", cx);
         });
         self.focus_input = true;
@@ -1379,6 +1476,9 @@ impl ReviewPanel {
         cx.notify();
     }
     pub fn dismiss_transient(&mut self, w: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.environment_dialog && self.busy {
+            return true;
+        }
         if self.menu.take().is_none() && self.confirm.take().is_none() {
             if self.commit_open {
                 self.commit_open = false;
@@ -1389,6 +1489,7 @@ impl ReviewPanel {
                 return false;
             }
         }
+        self.return_to_environment(cx);
         self.focus.focus(w, cx);
         cx.notify();
         true
