@@ -106,7 +106,13 @@ xcrun --sdk macosx metal --version
 
 Use `--theme=light` for the light theme. Add `--language=en`, `--language=zh-CN`, or `--language=auto` to choose the interface language for one launch. Settings saves your language preference for future launches.
 
-Build archives for macOS arm64, Linux x86_64, and Windows x86_64 are available from completed runs on the [Actions page](https://github.com/rita152/Echora/actions/workflows/release.yml). They are unsigned executable-and-assets archives; keep the executable beside its `assets/` directory. The executable is currently named `gpui-chat-clone`. Interactive verification is currently limited to macOS.
+Download development previews from [GitHub Releases](https://github.com/rita152/Echora/releases). Versioned archives and `SHA256SUMS` are published for macOS arm64, Linux x86_64, and Windows x86_64. They are unsigned executable-and-assets archives; keep the executable beside its `assets/` directory. The executable is currently named `gpui-chat-clone`. Interactive verification is currently limited to macOS. Builds from branches and pull requests remain available for 14 days on the [Actions page](https://github.com/rita152/Echora/actions/workflows/release.yml).
+
+### Publishing a version
+
+Versions follow SemVer: `v0.1.0-alpha.1`, `v0.1.0-alpha.2`, then beta/rc previews as needed, and `v0.1.0` for a stable release. Any version with a prerelease suffix is automatically marked **Pre-release** on GitHub and is not marked Latest.
+
+Update the root package version in `Cargo.toml` and its entry in `Cargo.lock`, commit and push the change, then push the matching `v` tag (for example, `git tag v0.1.0-alpha.2` followed by `git push origin v0.1.0-alpha.2`). The workflow validates the version, builds all three platforms, and creates a GitHub Release with the archives and checksums only after every build succeeds. Publishing a release through GitHub's UI also triggers builds and attaches the same assets; its tag must match the version in the tagged source. To retry a failed release build, rerun the workflow or manually dispatch it on the version tag.
 
 ## Current scope
 

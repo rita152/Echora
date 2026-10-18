@@ -106,7 +106,13 @@ xcrun --sdk macosx metal --version
 
 使用 `--theme=light` 启动浅色主题。添加 `--language=en`、`--language=zh-CN` 或 `--language=auto` 可指定本次启动的界面语言；在设置中选择的语言会保留到后续启动。
 
-也可以从 [Actions 页面](https://github.com/rita152/Echora/actions/workflows/release.yml)已完成的构建中下载 macOS arm64、Linux x86_64 和 Windows x86_64 压缩包。这些是未签名的可执行文件与资源包，使用时请让可执行文件与 `assets/` 目录保持相邻。可执行文件目前名为 `gpui-chat-clone`。当前仅在 macOS 上进行原生交互验证。
+从 [GitHub Releases](https://github.com/rita152/Echora/releases) 下载开发预览版，包含 macOS arm64、Linux x86_64 和 Windows x86_64 的版本化压缩包以及 `SHA256SUMS` 校验文件。这些是未签名的可执行文件与资源包，使用时请让可执行文件与 `assets/` 目录保持相邻。可执行文件目前名为 `gpui-chat-clone`。当前仅在 macOS 上进行原生交互验证。分支和拉取请求的构建仍在 [Actions 页面](https://github.com/rita152/Echora/actions/workflows/release.yml)保留 14 天。
+
+### 发布版本
+
+版本号遵循 SemVer：从 `v0.1.0-alpha.1`、`v0.1.0-alpha.2` 开始，按需推进到 beta/rc 预览版，稳定后发布 `v0.1.0`。带预发布后缀的版本会自动标记为 GitHub **Pre-release**，不标记为 Latest。
+
+更新根目录 `Cargo.toml` 的包版本及 `Cargo.lock` 中对应的条目，提交并推送，然后推送匹配的 `v` 标签（例如先执行 `git tag v0.1.0-alpha.2`，再执行 `git push origin v0.1.0-alpha.2`）。工作流会校验版本、编译三平台，并仅在全部构建成功后创建 GitHub Release，附上压缩包和校验文件。在 GitHub 网页发布 Release 也会触发编译并附上相同产物；其标签必须与标签所指源码中的版本一致。构建失败后可以重新运行工作流，或选择该版本标签手动触发。
 
 ## 当前支持范围
 

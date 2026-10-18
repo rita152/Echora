@@ -5,22 +5,59 @@ on:
     branches: [main]
     tags: ['v*']
   pull_request:
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: release-${{ github.workflow }}-${{ github.event_name == 'release' && format('refs/tags/{0}', github.event.release.tag_name) || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'release' && !startsWith(github.ref, 'refs/tags/') }}
 
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: '0'
 
 jobs:
+  version:
+    name: Validate release version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read and validate version
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          package = tomllib.loads(Path("Cargo.toml").read_text())["package"]
+          version = package["version"]
+          locked = tomllib.loads(Path("Cargo.lock").read_text())["package"]
+          assert any(p["name"] == package["name"] and p["version"] == version for p in locked), "Cargo.lock version must match Cargo.toml"
+          tag = os.environ["RELEASE_TAG"]
+          if tag and tag != f"v{version}":
+              raise SystemExit(f"Release tag {tag!r} must match Cargo.toml: v{version}")
+          prerelease = "-" in version.split("+", 1)[0]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"version={version}\ntag={tag}\nprerelease={str(prerelease).lower()}\n")
+          print(f"Version: {version}; tag: {tag or '(build only)'}; prerelease: {prerelease}")
+          PY
+
   build:
     name: Release / ${{ matrix.platform }}
+    needs: version
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     strategy:
@@ -86,8 +123,10 @@ jobs:
       # Archive first so executable permissions survive artifact downloads.
       # Assets next to the executable are resolved independently of the cwd.
       - name: Package executable and assets
+        env:
+          PACKAGE_NAME: echora-${{ needs.version.outputs.version }}-${{ matrix.target }}
         run: |
-          package='echora-${{ matrix.target }}'
+          package="$PACKAGE_NAME"
           mkdir -p "dist/$package"
           cp 'target/${{ matrix.target }}/release/${{ matrix.executable }}' "dist/$package/"
           cp -R assets "dist/$package/assets"
@@ -97,6 +136,48 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: echora-${{ matrix.target }}
-          path: dist/echora-${{ matrix.target }}.tar.gz
+          path: dist/echora-${{ needs.version.outputs.version }}-${{ matrix.target }}.tar.gz
           if-no-files-found: error
           retention-days: 14
+
+  publish:
+    name: Publish GitHub Release
+    needs: [version, build]
+    if: needs.version.outputs.tag != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download release archives
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: echora-*
+          merge-multiple: true
+          path: dist
+
+      - name: Generate SHA-256 checksums
+        working-directory: dist
+        run: |
+          archives=(*.tar.gz)
+          test "${#archives[@]}" -eq 3
+          sha256sum "${archives[@]}" > SHA256SUMS
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          latest=true
+          if [[ "$PRERELEASE" == true ]]; then
+            latest=false
+          fi
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/* --clobber
+            gh release edit "$RELEASE_TAG" --prerelease="$PRERELEASE" --latest="$latest"
+          else
+            gh release create "$RELEASE_TAG" dist/* \
+              --verify-tag --title "Echora $RELEASE_TAG" --generate-notes \
+              --prerelease="$PRERELEASE" --latest="$latest"
+          fi
