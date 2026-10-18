@@ -108,7 +108,7 @@ The sidebar navigation shows New chat, Pull requests, Scheduled, and Plugins. Th
 | Choose a draft project | Composer project button or the underlined project name in the home heading; search, arrow keys, Enter, and Esc |
 | Create a project | Projects heading `+` or the project picker → New project; choose local source folders, or create a workspace without them |
 | Inspect or manage a project | Hover a sidebar project row for its information card; its `…` menu offers Pin/Unpin, Edit, Reveal in Finder, Archive chats, and Remove project |
-| Inspect a task | Hover a sidebar task row inside a project: the card shows the task title with its environment icon and age, then the project it is filed under |
+| Inspect a task | Hover a sidebar task row inside a project: the card shows the task title with its environment icon and age, then the project it is filed under; the card stays within the window even for bottom rows and wrapped titles |
 | Rename a task | Double click a sidebar task row: the first click opens that conversation, the second raises the same centered rename dialog ChatGPT shows (title field selected, `Cancel`, `Save`, `Esc`, the close button, or the scrim to leave it) |
 | Search chats | Sidebar search button → the chat search dialog (`Enter` opens, `⌘1`–`⌘9` select, `Esc` closes) |
 | Follow activity | Sidebar bell (`View activity`); `Option+Cmd+U` toggles it |

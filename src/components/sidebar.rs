@@ -4641,14 +4641,14 @@ impl Render for SidebarView {
         {
             // Anchored to the row, not the pointer, and deferred for the same
             // reason as the project card: the reference tooltip overhangs the
-            // sidebar into the main pane.
+            // sidebar into the main pane. Measure the actual card (including
+            // wrapped titles and PR rows) before clamping it to the viewport.
             let left = f32::from(bounds.origin.x + bounds.size.width) + PROJECT_HOVER_CARD_OFFSET_X;
             let top = f32::from(bounds.origin.y) + PROJECT_HOVER_CARD_OFFSET_Y;
             sidebar = sidebar.child(deferred(
-                div()
-                    .absolute()
-                    .left(px(left))
-                    .top(px(top))
+                gpui::anchored()
+                    .position(gpui::point(px(left), px(top)))
+                    .snap_to_window_with_margin(px(8.))
                     .child(self.thread_hover_card(&thread, project.as_ref(), theme, cx)),
             ));
         }
@@ -5479,8 +5479,10 @@ mod tests {
     /// of the card, its title, and its project row.
     fn thread_hover_card_bounds(
         title: &'static str,
+        bottom_room: Option<f32>,
         cx: &mut gpui::TestAppContext,
     ) -> (
+        Bounds<gpui::Pixels>,
         Bounds<gpui::Pixels>,
         Bounds<gpui::Pixels>,
         Bounds<gpui::Pixels>,
@@ -5518,6 +5520,10 @@ mod tests {
                     .expect("the rendered task row records its bounds")
             })
             .unwrap();
+        if let Some(room) = bottom_room {
+            visual.simulate_resize(size(px(650.), row.bottom() + px(room)));
+            visual.update(|window, cx| window.draw(cx).clear(cx));
+        }
         visual.simulate_mouse_move(row.center(), None, gpui::Modifiers::default());
         visual.executor().advance_clock(THREAD_HOVER_CARD_DELAY);
         visual.run_until_parked();
@@ -5527,6 +5533,35 @@ mod tests {
             visual.debug_bounds("THREAD_HOVER_TITLE"),
             visual.debug_bounds("THREAD_HOVER_PROJECT"),
         );
+        if bottom_room.is_some() {
+            let card = bounds.0.expect("the hover card opens");
+            for x in [card.left() + px(10.), card.right() - px(10.)] {
+                for y in [card.top() + px(10.), card.bottom() - px(10.)] {
+                    let position = point(x, y);
+                    visual.simulate_mouse_move(position, None, gpui::Modifiers::default());
+                    visual.simulate_click(position, gpui::Modifiers::default());
+                    visual
+                        .executor()
+                        .advance_clock(THREAD_HOVER_CARD_CLOSE_DELAY * 2);
+                    visual.run_until_parked();
+                    assert!(
+                        handle
+                            .read_with(&visual, |sidebar, _| sidebar.thread_hover_card_is_open())
+                            .unwrap()
+                    );
+                }
+            }
+            visual.simulate_mouse_move(point(px(640.), px(20.)), None, gpui::Modifiers::default());
+            visual
+                .executor()
+                .advance_clock(THREAD_HOVER_CARD_CLOSE_DELAY * 2);
+            visual.run_until_parked();
+            assert!(
+                !handle
+                    .read_with(&visual, |sidebar, _| sidebar.thread_hover_card_is_open())
+                    .unwrap()
+            );
+        }
         if let Some(parent) = preferences.parent() {
             let _ = std::fs::remove_dir_all(parent);
         }
@@ -5534,6 +5569,7 @@ mod tests {
             bounds.0.expect("the hover card opens"),
             bounds.1.expect("the card prints the task title"),
             bounds.2.expect("the card names the task's project"),
+            row,
         )
     }
 
@@ -5542,10 +5578,11 @@ mod tests {
     /// 21px, so the wrapped title ran over the project row and out of the card.
     #[gpui::test]
     fn thread_hover_card_holds_a_three_line_title(cx: &mut gpui::TestAppContext) {
-        let (card, title, project) = thread_hover_card_bounds(
+        let (card, title, project, _) = thread_hover_card_bounds(
             "I would like Echora's icon buttons to match the icon buttons of the Synara app in \
              my library exactly, in function and in style, and I would like you to submit the \
              change for me directly once every state has been compared against the reference",
+            None,
             cx,
         );
         let height = |bounds: Bounds<gpui::Pixels>| f32::from(bounds.size.height);
@@ -5574,7 +5611,7 @@ mod tests {
 
     #[gpui::test]
     fn thread_hover_card_keeps_its_one_line_height(cx: &mut gpui::TestAppContext) {
-        let (card, title, project) = thread_hover_card_bounds("Stable thread", cx);
+        let (card, title, project, _) = thread_hover_card_bounds("Stable thread", None, cx);
         assert!(
             (f32::from(card.size.height) - 58.5).abs() <= 1.0,
             "a one-line card is 58.5px tall, got {}",
@@ -5586,6 +5623,22 @@ mod tests {
             (f32::from(title.origin.x - card.origin.x) - 2.0).abs() <= 0.5,
             "-6px margin and 8px card padding leave the title box 2px inside the card"
         );
+    }
+
+    #[gpui::test]
+    fn thread_hover_card_stays_inside_the_bottom_edge(cx: &mut gpui::TestAppContext) {
+        let (card, title, project, row) = thread_hover_card_bounds(
+            "A long task title that wraps over three lines and must remain fully readable \
+             when its sidebar row is close to the bottom of the window",
+            Some(40.),
+            cx,
+        );
+        assert!(card.origin.y < row.origin.y, "the card moves up to fit");
+        assert!(card.origin.y >= px(8.));
+        assert!(card.bottom() <= row.bottom() + px(32.), "{card:?}");
+        assert!(card.right() <= px(642.));
+        assert!(title.bottom() <= project.origin.y);
+        assert!(project.bottom() <= card.bottom());
     }
 
     #[test]
