@@ -243,6 +243,8 @@ Follow the dedicated-instance rules in [AGENTS.md](AGENTS.md). Package the captu
 scripts/package_gpui_capture.sh
 ```
 
+Capture builds retain the native display-frame scheduling used by `cargo run`; synchronous drawing after updates is limited to GPUI test contexts.
+
 The script builds with `--features screenshot`, writes `target/GPUI Capture (<worktree>-<digest>).app`, copies `assets/` into `Contents/Resources/assets`, and prints the bundle path, its name, and its identifier. Launch that bundle's `Contents/MacOS/gpui-chat-clone` from the repository root with an absolute path:
 
 ```bash

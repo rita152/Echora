@@ -1691,18 +1691,24 @@ impl App {
                     }
                 }
             } else {
-                #[cfg(any(test, feature = "test-support", feature = "bench"))]
-                for window in self
-                    .windows
-                    .values()
-                    .filter_map(|window| {
-                        let window = window.as_deref()?;
-                        window.invalidator.is_dirty().then_some(window.handle)
-                    })
-                    .collect::<Vec<_>>()
-                {
-                    self.update_window(window, |_, window, cx| window.draw(cx).clear(cx))
-                        .unwrap();
+                #[cfg(any(test, feature = "test-support"))]
+                if matches!(self.mode, GpuiMode::Test { .. }) {
+                    // Test platforms have no native frame loop. A real window
+                    // built with test-support (for render_to_image) must still
+                    // coalesce invalidations at the display cadence, rather
+                    // than draw synchronously after every input and effect.
+                    for window in self
+                        .windows
+                        .values()
+                        .filter_map(|window| {
+                            let window = window.as_deref()?;
+                            window.invalidator.is_dirty().then_some(window.handle)
+                        })
+                        .collect::<Vec<_>>()
+                    {
+                        self.update_window(window, |_, window, cx| window.draw(cx).clear(cx))
+                            .unwrap();
+                    }
                 }
 
                 if self.pending_effects.is_empty() {
@@ -3075,12 +3081,60 @@ impl<'a, T> Drop for GpuiBorrow<'a, T> {
 
 #[cfg(test)]
 mod test {
-    use std::{cell::RefCell, ffi::OsString, path::PathBuf, rc::Rc};
+    use std::{
+        cell::{Cell, RefCell},
+        ffi::OsString,
+        path::PathBuf,
+        rc::Rc,
+    };
 
     #[cfg(unix)]
     use std::os::unix::ffi::OsStringExt;
 
     use crate::{AppContext, TestAppContext};
+
+    #[gpui::test]
+    fn production_updates_wait_for_the_platform_frame(cx: &mut TestAppContext) {
+        struct CountRenders(Rc<Cell<usize>>);
+
+        impl crate::Render for CountRenders {
+            fn render(
+                &mut self,
+                _: &mut crate::Window,
+                _: &mut crate::Context<Self>,
+            ) -> impl crate::IntoElement {
+                self.0.set(self.0.get() + 1);
+                crate::div()
+            }
+        }
+
+        let renders = Rc::new(Cell::new(0));
+        let window = cx.add_window(|_, _| CountRenders(renders.clone()));
+        assert!(
+            renders.get() > 0,
+            "test windows draw without a native frame loop"
+        );
+        let initial = renders.get();
+        cx.update(|cx| cx.mode = super::GpuiMode::Production);
+        for _ in 0..3 {
+            window.update(cx, |_, _, cx| cx.notify()).unwrap();
+        }
+        assert_eq!(renders.get(), initial, "production updates must coalesce");
+        cx.test_window(window.into())
+            .simulate_frame_request(crate::RequestFrameOptions::default());
+        assert!(
+            renders.get() > initial,
+            "native frame requests must still draw"
+        );
+        let after_frame = renders.get();
+        window.update(cx, |_, _, cx| cx.notify()).unwrap();
+        assert_eq!(renders.get(), after_frame);
+        cx.update(|cx| cx.mode = super::GpuiMode::test());
+        assert!(
+            renders.get() > after_frame,
+            "test mode must still draw dirty windows"
+        );
+    }
 
     #[test]
     fn test_gpui_borrow() {

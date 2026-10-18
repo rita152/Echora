@@ -243,6 +243,8 @@ node scripts/verify_integration_table.mjs
 scripts/package_gpui_capture.sh
 ```
 
+截图构建与 `cargo run` 使用相同的原生显示帧调度；更新后同步绘制仅用于 GPUI 测试上下文。
+
 脚本以 `--features screenshot` 构建，产出 `target/GPUI Capture (<worktree>-<digest>).app`，把 `assets/` 复制进 `Contents/Resources/assets`，并打印 bundle 路径、名称与标识。随后在仓库根目录用绝对路径启动该 bundle 内的 `Contents/MacOS/gpui-chat-clone`：
 
 ```bash
