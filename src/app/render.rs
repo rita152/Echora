@@ -46,6 +46,8 @@ fn ease_out_quint(progress: f32) -> f32 {
 const MAIN_CONTENT_TOP_FADE: f32 = 16.0;
 /// Height of the resumed thread's header row.
 const RESUMED_HEADER_HEIGHT: f32 = 46.0;
+/// Keep request-length titles from consuming the whole toolbar on wide windows.
+const RESUMED_TITLE_MAX_WIDTH: f32 = 360.0;
 /// From the header's leading edge to the thread title's text: the reference's
 /// 0.5px hairline, the toolbar's `ps-2`, and the title's `-ms-0.5 px-1.5`.
 const RESUMED_TITLE_INSET: f32 = 0.5 + 8.0 - 2.0 + 6.0;
@@ -957,7 +959,7 @@ impl Render for ChatApp {
                     .flex().items_center()
                         .text_size(px(14.0)).line_height(px(20.0)).font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(theme.text)
-                    .child(div().min_w(px(0.0)).truncate().child(title)))
+                    .child(div().min_w(px(0.0)).max_w(px(RESUMED_TITLE_MAX_WIDTH)).truncate().child(title)))
             })
             .when(main_left_border, |shell| {
                 // The border is painted over the sidebar material, not over the
