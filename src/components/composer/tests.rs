@@ -4408,3 +4408,47 @@ fn stop_and_resume_use_the_whole_button_and_busy_clicks_do_not_repeat(
     assert!(requests[0].prompt.is_empty());
     assert_eq!(requests[0].thread_id.as_deref(), Some("thread"));
 }
+
+#[test]
+fn permissions_refresh_after_reconnect_and_retry_an_inflight_stale_read() {
+    for in_flight in [false, true] {
+        let mut app = TestApp::new();
+        let backend = RecordingBackend::new();
+        let composer = app
+            .new_entity(|cx| ComposerView::new_with_backend(ThemeMode::Dark, backend.clone(), cx));
+        app.update_entity(&composer, |composer, cx| {
+            seed_permission_catalog(composer);
+            composer.set_permission_selection(AgentPermissionMode::Full);
+            let mut config = composer.permission_config.clone().unwrap();
+            config.generation = 1;
+            composer.permission_config = Some(config.clone());
+            *backend.permission_config.lock().unwrap() = Some(config.clone());
+            if in_flight {
+                composer.load_permission_catalog(cx);
+            }
+            config.generation = 2;
+            *backend.permission_config.lock().unwrap() = Some(config);
+            composer.apply_connection_event(
+                AgentConnectionEvent::Runtime(crate::agent::AgentRuntimeEvent {
+                    generation: 2,
+                    observation: crate::agent::AgentRuntimeObservation::GenerationStarted,
+                }),
+                cx,
+            );
+        });
+        app.run_until_parked();
+        app.read_entity(&composer, |composer, _| {
+            assert_eq!(composer.permission_config.as_ref().unwrap().generation, 2);
+            assert!(!composer.permission_catalog_loading);
+            assert!(composer.permission_catalog_error.is_none());
+            assert_eq!(
+                composer.selected_agent_permission_mode(),
+                AgentPermissionMode::Full
+            );
+        });
+        app.update_entity(&composer, |composer, cx| {
+            composer.activate_permission_mode(PermissionMode::Full, cx);
+            assert!(composer.conversation.permission_error.is_none());
+        });
+    }
+}

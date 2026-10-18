@@ -37,7 +37,7 @@ impl ComposerView {
             cx.notify();
         }
     }
-    pub(super) fn selected_agent_permission_mode(&self) -> crate::agent::AgentPermissionMode {
+    pub(crate) fn selected_agent_permission_mode(&self) -> crate::agent::AgentPermissionMode {
         self.permission_selection.clone()
     }
 
@@ -47,6 +47,9 @@ impl ComposerView {
         let cycle = self.permission_catalog_cycle;
         let cwd = self.conversation.cwd.clone();
         self.permission_catalog_loading = true;
+        // Retire a settings read started with the previous catalog/generation.
+        self.permission_read_cycle = self.permission_read_cycle.wrapping_add(1);
+        self.permission_effective_loading = false;
         let config = self.backend.read_config(cwd.clone());
         let profiles = self.backend.load_permission_profiles(cwd.clone());
         cx.spawn(async move |this, cx| {
@@ -60,18 +63,22 @@ impl ComposerView {
                 match (config, profiles) {
                     (Ok(Ok(config)), Ok(Ok(profiles))) => {
                         if config.generation < this.conversation.runtime.generation {
-                            this.permission_catalog_error =
-                                Some(crate::i18n::text("连接已变化，请重新读取权限配置").into());
+                            // A newer shared generation may start while these reads
+                            // are in flight. Read again on that generation.
+                            this.load_permission_catalog(cx);
+                            return;
                         } else {
                             this.conversation.apply_config_defaults(&config);
                             this.permission_config = Some(config);
                             this.permission_profiles = profiles;
                             this.permission_catalog_error = None;
-                            if this.conversation.thread_id.is_none()
-                                && this.permission_selection
-                                    == crate::agent::AgentPermissionMode::Custom
+                            if this.conversation.permission_error.as_deref()
+                                == Some(crate::i18n::text("连接已变化，请重新读取权限配置"))
                             {
-                                this.permission_mode = this.configured_permission_mode(None);
+                                this.conversation.permission_error = None;
+                            }
+                            if this.conversation.thread_id.is_none() {
+                                this.set_permission_selection(this.permission_selection.clone());
                             }
                             this.load_effective_permissions(cx);
                         }
@@ -337,7 +344,8 @@ impl ComposerView {
             return;
         }
         let Some(thread_id) = self.conversation.thread_id.clone() else {
-            self.set_permission_selection(selection);
+            self.set_permission_selection(selection.clone());
+            cx.emit(super::PermissionSelectionChanged(selection));
             self.conversation.permission_error = None;
             cx.notify();
             return;
@@ -392,10 +400,14 @@ impl ComposerView {
                     .as_ref()
                     .ok()
                     .and_then(|result| result.active_turn_reviewer.clone());
+                let confirmed = result.is_ok();
                 this.apply_permission_update_result(
                     selection,
                     result.map(|result| result.settings),
                 );
+                if confirmed {
+                    cx.emit(super::PermissionSelectionChanged(this.permission_selection.clone()));
+                }
                 // The thread settings did change; only the running turn kept
                 // its reviewer, which is worth saying rather than hiding.
                 if let Some(crate::agent::AgentActiveTurnReviewerUpdate::Failed {
@@ -514,7 +526,10 @@ impl ComposerView {
         )
     }
 
-    fn set_permission_selection(&mut self, selection: crate::agent::AgentPermissionMode) {
+    pub(crate) fn set_permission_selection(
+        &mut self,
+        selection: crate::agent::AgentPermissionMode,
+    ) {
         use crate::agent::AgentPermissionMode as Mode;
         self.permission_mode = match &selection {
             Mode::Request => PermissionMode::Request,

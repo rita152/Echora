@@ -24,7 +24,7 @@ Echora is an independent application in early development. It currently connects
 Start a conversation in a local project, attach context, and follow the agent's replies and tool activity as they arrive. Plans, commands, searches, and file changes appear in the conversation, while approval cards let you inspect actions that need permission.
 
 - Add files, folders, images, skills, plugins, local chats, and pages from the in-app browser as context. Drop files or macOS screenshot thumbnails anywhere in the conversation to attach them; unsaved screenshots are received locally and shown as image previews.
-- Choose the permission options exposed by your Codex configuration.
+- Choose the permission options exposed by your Codex configuration. New chats remember your last confirmed choice; permission options refresh automatically after a backend reconnect.
 - Send new instructions while the agent works, or queue follow-ups for later.
 - Use plan mode, set a goal, or start a code review from the slash menu when supported by the backend.
 - Stop a turn, resume an interrupted conversation, search its messages, and jump between prompts.

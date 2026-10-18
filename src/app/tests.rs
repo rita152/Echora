@@ -2587,3 +2587,64 @@ fn environment_card_stays_outside_the_conversation_header_fade(cx: &mut gpui::Te
         }
     }
 }
+
+#[test]
+fn new_chats_inherit_confirmed_permissions_without_changing_existing_chats() {
+    use crate::agent::AgentPermissionMode;
+    let mut app = TestApp::new();
+    let path = std::env::temp_dir().join(format!(
+        "echora-permission-preference-{}.json",
+        std::process::id()
+    ));
+    let mut window = app.open_window(|_, cx| ChatApp::new(ThemeMode::Dark, false, cx));
+    window.update(|chat, _, cx| {
+        chat.workspace_store = crate::workspace::WorkspaceStore::with_preferences_path(
+            chat.agent_backend.clone(),
+            path.clone(),
+        );
+        let first_key = chat.active_conversation.clone();
+        let first = chat.conversation_hosts[&first_key].composer.clone();
+        first.update(cx, |composer, cx| {
+            composer.set_permission_selection(AgentPermissionMode::Full);
+            cx.emit(crate::components::composer::PermissionSelectionChanged(
+                AgentPermissionMode::Full,
+            ));
+        });
+    });
+    app.run_until_parked();
+    window.update(|chat, _, cx| {
+        let first_key = chat.active_conversation.clone();
+        chat.start_draft(None, PathBuf::from("/tmp/second-chat"), cx);
+        assert_eq!(
+            chat.conversation_hosts[&chat.active_conversation]
+                .composer
+                .read(cx)
+                .selected_agent_permission_mode(),
+            AgentPermissionMode::Full
+        );
+        chat.workspace_store
+            .set_new_chat_permission_mode(AgentPermissionMode::Request);
+        chat.start_draft(None, PathBuf::from("/tmp/third-chat"), cx);
+        assert_eq!(
+            chat.conversation_hosts[&chat.active_conversation]
+                .composer
+                .read(cx)
+                .selected_agent_permission_mode(),
+            AgentPermissionMode::Request
+        );
+        assert_eq!(
+            chat.conversation_hosts[&first_key]
+                .composer
+                .read(cx)
+                .selected_agent_permission_mode(),
+            AgentPermissionMode::Full
+        );
+        let saved: crate::workspace::UiPreferences =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            saved.new_chat_permission_mode,
+            Some(AgentPermissionMode::Request)
+        );
+    });
+    let _ = std::fs::remove_file(path);
+}

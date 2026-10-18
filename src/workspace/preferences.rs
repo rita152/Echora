@@ -16,6 +16,9 @@ const PREFERENCES_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiPreferences {
+    /// Last permission choice explicitly confirmed by the user, for new chats.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_chat_permission_mode: Option<crate::agent::AgentPermissionMode>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recent_model_configurations: Vec<RecentModelConfiguration>,
     #[serde(default)]

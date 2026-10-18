@@ -138,6 +138,9 @@ pub struct SlashChatAction(pub(crate) slash_menu::SlashCommand);
 impl gpui::EventEmitter<SlashChatAction> for ComposerView {}
 pub(crate) use slash_menu::SlashCommand;
 
+pub struct PermissionSelectionChanged(pub(crate) crate::agent::AgentPermissionMode);
+impl gpui::EventEmitter<PermissionSelectionChanged> for ComposerView {}
+
 pub struct ConversationChanged;
 impl gpui::EventEmitter<ConversationChanged> for ComposerView {}
 
@@ -843,12 +846,20 @@ impl ComposerView {
         {
             self.report_git_actions(std::slice::from_ref(completed), cx);
         }
+        let refresh_permissions = !self.side_chat
+            && matches!(&event, AgentConnectionEvent::Runtime(runtime)
+                if matches!(runtime.observation, crate::agent::AgentRuntimeObservation::GenerationStarted)
+                    && self.permission_config.as_ref().is_some_and(|config| config.generation < runtime.generation))
+            && !self.permission_catalog_loading;
         let goal_event = matches!(
             event,
             AgentConnectionEvent::ThreadGoalUpdated { .. }
                 | AgentConnectionEvent::ThreadGoalCleared { .. }
         );
         let changed = self.apply_scoped_connection_event(event);
+        if refresh_permissions {
+            self.load_permission_catalog(cx);
+        }
         if goal_event && changed {
             self.after_goal_change(cx);
         }

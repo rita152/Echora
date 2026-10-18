@@ -33,7 +33,7 @@ pub struct AgentModelCatalog {
     pub models: Vec<AgentModel>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AgentPermissionMode {
     Request,
     Assist,

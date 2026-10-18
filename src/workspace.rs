@@ -1443,6 +1443,11 @@ impl WorkspaceStore {
         self.save_preferences();
     }
 
+    pub fn set_new_chat_permission_mode(&self, mode: crate::agent::AgentPermissionMode) {
+        self.update(|snapshot| snapshot.preferences.new_chat_permission_mode = Some(mode));
+        self.save_preferences();
+    }
+
     pub fn set_activity_preferences(&self, activity: ActivityPreferences) {
         self.update(|snapshot| snapshot.preferences.activity = activity);
         self.save_preferences();

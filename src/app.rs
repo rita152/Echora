@@ -301,6 +301,16 @@ impl ChatApp {
             composer.set_review_delivery(review_delivery, cx);
             composer.set_branch_prefix(branch_prefix.clone());
         });
+        if let Some(selection) = workspace_store
+            .snapshot()
+            .preferences
+            .new_chat_permission_mode
+        {
+            initial_composer.update(cx, |composer, _| {
+                composer.set_permission_selection(selection)
+            });
+        }
+        Self::wire_permission_preference(&initial_composer, cx);
         Self::wire_code_review(&initial_composer, cx);
         Self::wire_project_selection(&initial_composer, cx);
         Self::wire_slash_commands(
@@ -795,13 +805,22 @@ impl ChatApp {
             .preferences
             .branch_prefix
             .unwrap_or_else(|| "codex/".into());
+        let permission = self
+            .workspace_store
+            .snapshot()
+            .preferences
+            .new_chat_permission_mode;
         let composer = cx.new(|cx| {
             let mut composer = ComposerView::new_with_backend(self.mode, backend, cx);
+            if let Some(selection) = permission {
+                composer.set_permission_selection(selection);
+            }
             composer.set_follow_up_mode(mode, cx);
             composer.set_review_delivery(delivery, cx);
             composer.set_branch_prefix(branch_prefix);
             composer
         });
+        Self::wire_permission_preference(&composer, cx);
         Self::wire_code_review(&composer, cx);
         Self::wire_project_selection(&composer, cx);
         Self::wire_slash_commands(

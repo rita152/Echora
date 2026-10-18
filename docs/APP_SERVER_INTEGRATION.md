@@ -432,7 +432,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/search` | 实验 | 已接入 | 非空 searchTerm、archived、分页和排序；返回 thread 与 snippet。历史会话搜索弹窗用它检索会话；空查询改用 `threadSection/list` 的置顶分区与 `thread/list`（recency 倒序）拼出前九行。参考实现的弹窗还会合并 ChatGPT 云端会话，app-server 无对应数据。 | `manager/workspace` |
 | `thread/searchOccurrences` | 实验 | 已接入 | threadId/searchTerm（去首尾空白）/limit=250/cursor；UTF-16 snippetMatchRange 转字节并拒绝越界、倒序或切开代理对；游标重复即停止；`-32601`（临时线程）回退本地已加载消息查找；聊天内 ⌘F 查找栏逐项定位与高亮。 | `manager/search`、`conversation/find`、`home/find` |
 | `thread/section/move` | 默认 | 已接入 | threadId、nullable sectionId/beforeThreadId；用于置顶、取消置顶，以及聊天移入／移出自定义分区（菜单「移至分区」或拖放）。 | `manager/workspace` |
-| `thread/settings/update` | 实验 | 已接入 | 主／临时线程按线程队列更新 approvalPolicy、approvalsReviewer、permissions 或 sandboxPolicy；绑定 generation／操作，等待 RPC 成功和匹配的有效权限通知，影响后续轮次；复核者另经 `turn/settings/update` 同步到进行中的轮次。 | `manager/settings`、`permissions` |
+| `thread/settings/update` | 实验 | 已接入 | 新聊天沿用本地偏好中最近明确确认成功的权限选择（失败及取消不保存）；连接 generation 更新或过期读取到达时自动重读权限目录。主／临时线程按线程队列更新 approvalPolicy、approvalsReviewer、permissions 或 sandboxPolicy；绑定 generation／操作，等待 RPC 成功和匹配的有效权限通知，影响后续轮次；复核者另经 `turn/settings/update` 同步到进行中的轮次。 | `manager/settings`、`permissions` |
 | `thread/shellCommand` | 默认 | 已接入 | 输入框以 `!` 开头时为 Shell 模式（警告色「Shell · 在沙盒外运行」）；发送 `{threadId,command}`，新聊天先 `thread/start{threadSource:user}`；回执须为 `{}`，服务端随后发起的轮次按 userShell 命令卡片显示运行中、完成、失败、超时与中断。失败恢复输入并提示。参考没有此入口，为 Echora 新增。 | `manager/review`、`composer/shell` |
 | `thread/start` | 默认 | 已接入 | 首条提示词才新建；发送 cwd、projectId、historyMode=paginated、ephemeral=false、serviceName、model、serviceTier；采用 result.thread.id。 | `manager/turn` |
 | `thread/timeline/list` | 实验 | 未接入 | — | — |

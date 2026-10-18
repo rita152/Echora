@@ -4,6 +4,20 @@ use crate::components::composer::ComposerView;
 use gpui::{Context, Entity, KeyDownEvent, Window};
 
 impl ChatApp {
+    pub(super) fn wire_permission_preference(
+        composer: &Entity<ComposerView>,
+        cx: &mut Context<Self>,
+    ) {
+        cx.subscribe(
+            composer,
+            |this, _, event: &crate::components::composer::PermissionSelectionChanged, _| {
+                this.workspace_store
+                    .set_new_chat_permission_mode(event.0.clone());
+            },
+        )
+        .detach();
+    }
+
     pub(super) fn open_permission_confirmation(
         &mut self,
         target: Entity<ComposerView>,
