@@ -2395,3 +2395,126 @@ fn environment_toggle_edges_keyboard_and_dock_are_independent() {
         "Escape dismisses the menu, leaving the card open"
     );
 }
+
+#[gpui::test]
+fn environment_column_reflows_the_conversation_on_resize_and_toggle(cx: &mut gpui::TestAppContext) {
+    cx.executor().allow_parking();
+    let handle = cx.add_window(|_, cx| ChatApp::new(ThemeMode::Dark, false, cx));
+    let entity = handle.root(cx).unwrap();
+    let mut visual = gpui::VisualTestContext::from_window(handle.into(), cx);
+    visual.update(|_, cx| {
+        entity
+            .update(cx, |chat, cx| {
+                chat.complete_startup_for_capture(cx);
+                chat.submit_prompt_for_capture("This long prompt must wrap within the conversation column while Environment remains beside it, including after resizing the window and opening the tool dock.", cx);
+            });
+    });
+    for (width, collapsed, dock) in [
+        (960., false, false),
+        (1100., false, false),
+        (1440., false, false),
+        (1900., false, false),
+        (960., true, false),
+        (1440., false, true),
+    ] {
+        visual.simulate_resize(size(px(width), px(700.)));
+        let mut open_width = px(0.);
+        for open in [true, false, true] {
+            visual.update(|_, cx| {
+                entity.update(cx, |chat, cx| {
+                    chat.sidebar_layout.collapsed = collapsed;
+                    chat.sidebar_layout.reveal = if collapsed { 0. } else { 1. };
+                    chat.sidebar_layout.animation_running = false;
+                    chat.right_panel.open = dock;
+                    chat.workspace_store.set_summary_panel_pinned(open);
+                    cx.notify();
+                });
+            });
+            for _ in 0..3 {
+                visual.run_until_parked();
+                visual.update(|window, cx| window.draw(cx).clear(cx));
+            }
+            let chat = visual.debug_bounds("MAIN_CONVERSATION_SLOT").unwrap();
+            assert!(chat.size.width > px(0.));
+            if open {
+                let panel = visual.debug_bounds("THREAD_SUMMARY_PANEL").unwrap();
+                assert!(
+                    chat.right() + px(15.) <= panel.left(),
+                    "{width}, {collapsed}, {dock}: {chat:?} vs {panel:?}"
+                );
+                assert!(panel.right() <= px(width));
+                open_width = chat.size.width;
+            } else {
+                assert!(visual.debug_bounds("THREAD_SUMMARY_PANEL").is_none());
+                assert!(
+                    chat.size.width > open_width,
+                    "closing Environment must restore chat space: width={width}, collapsed={collapsed}, dock={dock}, open={open_width:?}, closed={chat:?}"
+                );
+            }
+        }
+    }
+}
+
+#[gpui::test]
+fn environment_column_keeps_long_tables_scrollable(cx: &mut gpui::TestAppContext) {
+    use crate::agent::AgentEvent as E;
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    fn hash(value: &impl Hash) -> u64 {
+        let mut h = DefaultHasher::new();
+        value.hash(&mut h);
+        h.finish()
+    }
+    let seed = hash(&"environment-table");
+    let table_id = hash(&(seed, 0_usize));
+    let viewport_selector =
+        Box::leak(format!("markdown-table-viewport-{table_id}").into_boxed_str());
+    let table_selector = Box::leak(format!("markdown-table-{table_id}").into_boxed_str());
+    cx.executor().allow_parking();
+    let handle = cx.add_window(|_, cx| ChatApp::new(ThemeMode::Dark, false, cx));
+    let entity = handle.root(cx).unwrap();
+    let mut visual = gpui::VisualTestContext::from_window(handle.into(), cx);
+    visual.simulate_resize(size(px(1100.), px(700.)));
+    visual.update(|_, cx| entity.update(cx, |chat, cx| {
+        chat.complete_startup_for_capture(cx);
+        chat.workspace_store.set_summary_panel_pinned(true);
+        chat.submit_prompt_for_capture("Show a table", cx);
+        chat.home.read(cx).composer_entity().update(cx, |composer, cx| {
+            composer.apply_events_for_capture(vec![E::AssistantMessageCompleted {
+                item_id: "environment-table".into(),
+                text: "| Priority | Work | Acceptance |\n| --- | --- | --- |\n| P0 | Fix the application | Every column remains readable in a narrow conversation |".into(),
+                phase: Some("final_answer".into()),
+            }, E::Completed], cx);
+        });
+    }));
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        let home = entity.read(cx).home.clone();
+        home.update(cx, |_, cx| cx.notify());
+        window.draw(cx).clear(cx);
+    });
+    let slot = visual.debug_bounds("MAIN_CONVERSATION_SLOT").unwrap();
+    let viewport = visual.debug_bounds(viewport_selector).unwrap();
+    let table = visual.debug_bounds(table_selector).unwrap();
+    assert!(
+        viewport.left() >= slot.left() && viewport.right() <= slot.right(),
+        "slot={slot:?}, viewport={viewport:?}"
+    );
+    assert!(table.size.width > viewport.size.width);
+    visual.simulate_event(gpui::ScrollWheelEvent {
+        position: viewport.center(),
+        delta: gpui::ScrollDelta::Pixels(point(px(-10000.), px(0.))),
+        touch_phase: gpui::TouchPhase::Moved,
+        modifiers: Default::default(),
+    });
+    visual.update(|window, cx| {
+        let home = entity.read(cx).home.clone();
+        home.update(cx, |_, cx| cx.notify());
+        window.draw(cx).clear(cx);
+    });
+    let scrolled = visual.debug_bounds(table_selector).unwrap();
+    assert!(
+        scrolled.left() < table.left(),
+        "before={table:?}, after={scrolled:?}"
+    );
+    assert!((scrolled.right() - viewport.right()).abs() <= px(1.));
+}

@@ -1,5 +1,5 @@
 //! Floating Environment card, attached pull requests, and background terminals.
-//! Environment actions use the selected checkout without moving the chat column.
+//! Environment actions use the selected checkout beside the chat column.
 
 mod environment;
 
@@ -58,30 +58,6 @@ const MENU_ROW_OFFSET: f32 = 3.0;
 const VISIBLE_ITEMS: usize = 6;
 /// The reference's spring (0.3 s, bounce 0.01), as an ease-out.
 pub const SUMMARY_PANEL_ANIMATION: Duration = Duration::from_millis(300);
-
-/// Where the panel sits for the chat column's width: the reference's `Ee`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SummaryDisplayMode {
-    /// Too narrow to pin: the header button opens it as a popover.
-    Overlay,
-    /// Pinned, with the chat shifted left by 153 px.
-    Shift,
-    /// Pinned in the gutter beside the centred chat.
-    Gutter,
-}
-
-impl SummaryDisplayMode {
-    pub fn for_main_width(width: f32) -> Self {
-        let room = (width - 736.0) / 2.0;
-        if room < 180.0 {
-            Self::Overlay
-        } else if room < 400.0 {
-            Self::Shift
-        } else {
-            Self::Gutter
-        }
-    }
-}
 
 /// Asks the app to show something the panel links to.
 pub enum SummaryPanelEvent {

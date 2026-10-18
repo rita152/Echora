@@ -6,7 +6,7 @@ use gpui::{Context, Entity};
 use super::{ChatApp, ConversationKey};
 use crate::components::{
     composer::ComposerView,
-    summary_panel::{SummaryDisplayMode, SummaryPanel, SummaryPanelEvent},
+    summary_panel::{SummaryPanel, SummaryPanelEvent},
 };
 
 /// Index of the Files and Review items in `RIGHT_PANEL_ITEMS`.
@@ -85,30 +85,22 @@ impl ChatApp {
         });
     }
 
-    /// The header button: flips the global pin, or in overlay mode opens and
-    /// closes the popover, like the reference's `togglePinnedSummary`.
-    pub(super) fn toggle_summary_panel(
-        &mut self,
-        mode: SummaryDisplayMode,
-        cx: &mut Context<Self>,
-    ) {
-        let _ = mode;
+    /// The header button shows or hides Environment and its reserved column.
+    pub(super) fn toggle_summary_panel(&mut self, cx: &mut Context<Self>) {
         let pinned = !self
             .workspace_store
             .snapshot()
             .preferences
             .summary_panel_unpinned;
         self.workspace_store.set_summary_panel_pinned(!pinned);
-        self.summary_popover_open = false;
         self.summary_panel
             .update(cx, |panel, cx| panel.reset_environment(cx));
         self.summary_reveal_serial += 1;
         cx.notify();
     }
 
-    /// Whether the island shows, for the chat column's width.
-    pub(super) fn summary_panel_visible(&self, mode: SummaryDisplayMode) -> bool {
-        let _ = mode;
+    /// Whether Environment is enabled in the workspace preferences.
+    pub(super) fn summary_panel_visible(&self) -> bool {
         !self
             .workspace_store
             .snapshot()

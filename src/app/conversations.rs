@@ -43,7 +43,6 @@ impl ChatApp {
         }
         self.home
             .update(cx, |home, cx| home.set_composer(composer, cx));
-        self.summary_popover_open = false;
         self.sync_summary_panel(cx);
         cx.notify();
     }

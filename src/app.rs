@@ -164,8 +164,6 @@ pub struct ChatApp {
     account_choice: usize,
     /// The thread summary panel beside the active chat.
     summary_panel: Entity<crate::components::summary_panel::SummaryPanel>,
-    /// Overlay mode (a narrow chat column): the header button's popover.
-    summary_popover_open: bool,
     environment_toggle_focus: gpui::FocusHandle,
     /// Bumped on each toggle so the island's entrance animation restarts.
     summary_reveal_serial: u64,
@@ -695,7 +693,6 @@ impl ChatApp {
             account_focus_pending: false,
             account_choice: 0,
             summary_panel,
-            summary_popover_open: false,
             environment_toggle_focus: cx.focus_handle().tab_stop(true),
             summary_reveal_serial: 0,
             window_was_active: true,

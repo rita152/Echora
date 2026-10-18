@@ -19,7 +19,7 @@ use crate::{
         file_panel::OpenWorkspaceFile,
         home::{NextUserMessage, PreviousUserMessage},
         icons::icon,
-        summary_panel::{SUMMARY_PANEL_ANIMATION, SummaryDisplayMode},
+        summary_panel::{SUMMARY_PANEL_ANIMATION, SUMMARY_PANEL_WIDTH},
     },
     theme::{CHAT_CONTENT_HORIZONTAL_GUTTER, Theme, ThemeMode, ui_font},
 };
@@ -428,22 +428,20 @@ impl Render for ChatApp {
             self.summary_panel.read(cx).refresh_on_focus();
         }
         self.window_was_active = window_active;
-        // The summary panel follows the chat column's width: pinned beside it
-        // (shifting it left when there is little room), or a popover.
-        let main_width = viewport_width
-            - revealed_sidebar_width
-            - if self.right_panel.open {
-                f32::from(right_panel_width)
-            } else {
-                0.0
-            };
-        let summary_mode = SummaryDisplayMode::for_main_width(main_width);
         let summary_available = !review_fullscreen;
         // The same in both states: the open button and the hide button that
         // replaces it sit at one spot, so toggling the panel never moves it.
         let summary_shown = summary_available
-            && self.summary_panel_visible(summary_mode)
+            && self.summary_panel_visible()
             && self.summary_panel.read(cx).has_content(cx);
+        // Reserve the card's column before HomeView measures its transcript
+        // and composer, so wrapping and virtual row heights follow the space
+        // that remains beside Environment, including after window resizing.
+        let chat_trailing_inset = if summary_shown {
+            SUMMARY_PANEL_RIGHT + SUMMARY_PANEL_WIDTH + 16.0
+        } else {
+            CHAT_CONTENT_HORIZONTAL_GUTTER
+        };
         let summary_serial = self.summary_reveal_serial;
         let reduce_motion = cx.reduce_motion();
         let summary_island = summary_shown.then(|| {
@@ -703,10 +701,16 @@ impl Render for ChatApp {
                                             // workspace edges when a side panel narrows the main
                                             // column. Max-width content remains unchanged on wide
                                             // windows because HomeView still centers it internally.
-                                            .px(px(CHAT_CONTENT_HORIZONTAL_GUTTER))
+                                            .pl(px(CHAT_CONTENT_HORIZONTAL_GUTTER))
+                                            .pr(px(chat_trailing_inset))
                                             .bg(theme.surface)
                                             .relative()
-                                            .child(
+                                            .child(div()
+                                                .id("main-conversation-slot")
+                                                .debug_selector(|| "MAIN_CONVERSATION_SLOT".to_owned())
+                                                .size_full()
+                                                .min_w(px(0.0))
+                                                .child(
                                                 if self.home.read(cx).needs_live_interaction_render(cx) {
                                                     // Interactive activity focus, AX nodes and text selection
                                                     // must remain registered on every frame.
@@ -716,7 +720,7 @@ impl Render for ChatApp {
                                                         StyleRefinement::default().size_full(),
                                                     ).into_any_element()
                                                 },
-                                            )
+                                                ))
                                             .when_some(summary_island, |main, island| main.child(island)),
                                     ))
                                     .when(self.right_panel.open, |row| {
@@ -1055,22 +1059,22 @@ impl Render for ChatApp {
                                     titlebar_icon_button(
                                         "environment-panel",
                                         false,
-                                        self.summary_panel_visible(summary_mode),
+                                        self.summary_panel_visible(),
                                         theme,
                                     )
                                     .role(Role::Button)
                                     .aria_label(label)
-                                    .aria_toggled(if self.summary_panel_visible(summary_mode) { gpui::Toggled::True } else { gpui::Toggled::False })
+                                    .aria_toggled(if self.summary_panel_visible() { gpui::Toggled::True } else { gpui::Toggled::False })
                                     .track_focus(&self.environment_toggle_focus)
                                     .key_context("EnvironmentToggle")
                                     .tab_stop(true)
                                     .on_action(cx.listener(move |this, _: &super::ToggleEnvironment, window, cx| {
-                                        this.toggle_summary_panel(summary_mode, cx);
+                                        this.toggle_summary_panel(cx);
                                         this.environment_toggle_focus.focus(window, cx);
                                         cx.stop_propagation();
                                     }))
                                     .on_key_down(cx.listener(move |this, event: &KeyDownEvent, window, cx| {
-                                        if event.keystroke.key == "tab" && !event.keystroke.modifiers.shift && this.summary_panel_visible(summary_mode) {
+                                        if event.keystroke.key == "tab" && !event.keystroke.modifiers.shift && this.summary_panel_visible() {
                                             this.summary_panel.update(cx, |panel, cx| panel.focus_environment(window, cx)); cx.stop_propagation();
                                         }
                                     }))
@@ -1080,7 +1084,7 @@ impl Render for ChatApp {
                                     }))
                                     .on_click(cx.listener(move |this, _, window, cx| {
                                         cx.stop_propagation();
-                                        this.toggle_summary_panel(summary_mode, cx);
+                                        this.toggle_summary_panel(cx);
                                         this.environment_toggle_focus.focus(window, cx);
                                     })),
                                 )
