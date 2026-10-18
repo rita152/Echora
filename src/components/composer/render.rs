@@ -775,7 +775,8 @@ pub(super) fn context_toolbar(
                 .left_0()
                 .w_full()
                 .h(px(42.0))
-                .rounded(px(16.0))
+                // The bottom edge joins the input; only the exposed top corners round.
+                .rounded_t(px(16.0))
                 .bg(theme.surface_under),
         )
         .child(
