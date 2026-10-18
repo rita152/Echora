@@ -381,6 +381,23 @@ impl ChatApp {
         let Some(host) = self.conversation_hosts.remove(&draft_key) else {
             return;
         };
+        let preview = host
+            .composer
+            .read(cx)
+            .conversation_render_snapshot()
+            .1
+            .unwrap_or_default();
+        self.workspace_store.register_created_thread(
+            thread_id.clone(),
+            host.cwd.clone(),
+            host.project_id.clone(),
+            preview,
+        );
+        if self.active_conversation == draft_key {
+            self.sidebar.update(cx, |sidebar, cx| {
+                sidebar.reveal_created_thread(thread_id.clone(), host.project_id.clone(), cx);
+            });
+        }
         if let Some(section_id) = self.draft_sections.remove(&draft_key) {
             self.workspace_store.move_to_custom_section(
                 crate::workspace::SectionItem::Thread(thread_id.clone()),

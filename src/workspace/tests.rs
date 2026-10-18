@@ -1196,3 +1196,52 @@ fn project_archive_deduplicates_collections_and_keeps_other_projects() {
     assert!(!calls.contains(&"thread/archive:other".into()));
     let _ = fs::remove_dir_all(path.parent().unwrap());
 }
+
+#[test]
+fn new_chat_survives_a_list_read_started_before_its_first_message_was_indexed() {
+    let backend = DelayedThreadListBackend::new();
+    let path = test_preferences_path("created-thread-race");
+    let store = WorkspaceStore::with_preferences_path(backend.clone(), path.clone());
+    store.refresh_all();
+    wait_until(|| backend.recent_requested.load(Ordering::Acquire) == 1);
+    store.register_created_thread(
+        "new-chat".into(),
+        PathBuf::from("/tmp/project-a"),
+        Some("project-a".into()),
+        "First prompt".into(),
+    );
+    assert_eq!(
+        store.snapshot().project_thread_ids("project-a"),
+        ["new-chat"]
+    );
+    backend.release_recent(Page::single(vec![thread("older-chat", None)]));
+    wait_until(|| !store.snapshot().loading.recent);
+    let snapshot = store.snapshot();
+    assert_eq!(snapshot.recent_threads[0].thread_id, "new-chat");
+    assert_eq!(snapshot.thread("new-chat").unwrap().title, "First prompt");
+    assert_eq!(
+        snapshot.thread("new-chat").unwrap().cwd,
+        PathBuf::from("/tmp/project-a")
+    );
+    store.apply_backend_event(AgentConnectionEvent::ThreadNameUpdated {
+        thread_id: "new-chat".into(),
+        name: Some("Server title".into()),
+    });
+    let mut served = thread("new-chat", Some("project-a"));
+    served.preview = "Indexed prompt".into();
+    store.update(|snapshot| snapshot.recent_threads = vec![served]);
+    assert_eq!(store.snapshot().recent_threads.len(), 1);
+    assert_eq!(
+        store.snapshot().thread("new-chat").unwrap().title,
+        "Server title"
+    );
+    assert_eq!(
+        store.snapshot().thread("new-chat").unwrap().preview,
+        "Indexed prompt"
+    );
+    store.apply_backend_event(AgentConnectionEvent::ThreadDeleted {
+        thread_id: "new-chat".into(),
+    });
+    assert!(store.snapshot().thread("new-chat").is_none());
+    let _ = fs::remove_dir_all(path.parent().unwrap());
+}

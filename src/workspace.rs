@@ -52,6 +52,7 @@ const PINNED_SECTION_NAME: &str = "Pinned";
 
 #[derive(Clone, Debug, Default)]
 struct ThreadNotificationOverlay {
+    created: Option<ThreadSummary>,
     deleted: bool,
     archived: Option<bool>,
     name: Option<Option<String>>,
@@ -291,6 +292,13 @@ impl WorkspaceStore {
     fn update(&self, update: impl FnOnce(&mut WorkspaceSnapshot)) {
         if let Ok(mut snapshot) = self.snapshot.lock() {
             update(&mut snapshot);
+            // A list read can race the first turn being persisted. Keep locally
+            // created chats visible, including when an older read completes.
+            apply_thread_overlays(
+                &mut snapshot.recent_threads,
+                &self.thread_overlays(),
+                ThreadCollectionKind::Recent,
+            );
         }
         self.publish();
     }
@@ -1280,6 +1288,32 @@ impl WorkspaceStore {
         });
     }
 
+    /// Publish a new chat before thread/list has indexed its first message.
+    pub fn register_created_thread(
+        &self,
+        thread_id: ThreadId,
+        cwd: PathBuf,
+        project_id: Option<ProjectId>,
+        preview: String,
+    ) {
+        let now = chrono::Utc::now().timestamp();
+        let thread = ThreadSummary {
+            thread_id: thread_id.clone(),
+            title: fallback_thread_title(&preview),
+            preview,
+            cwd,
+            project_id,
+            section: None,
+            created_at: now,
+            updated_at: now,
+            recency_at: Some(now),
+            activity: ThreadActivity::NotLoaded,
+            git: Default::default(),
+        };
+        self.update_thread_overlay(&thread_id, |overlay| overlay.created = Some(thread));
+        self.update(|_| {});
+    }
+
     /// Lists `thread` as if the backend had returned it, for shell tests that
     /// cannot reach an app-server.
     #[cfg(test)]
@@ -1752,6 +1786,15 @@ fn apply_thread_overlays(
     overlays: &HashMap<ThreadId, ThreadNotificationOverlay>,
     collection: ThreadCollectionKind,
 ) {
+    if matches!(collection, ThreadCollectionKind::Recent) {
+        for (id, overlay) in overlays {
+            if !threads.iter().any(|thread| &thread.thread_id == id)
+                && let Some(thread) = &overlay.created
+            {
+                upsert_thread(threads, thread.clone());
+            }
+        }
+    }
     threads.retain_mut(|thread| apply_thread_overlay(thread, overlays, collection));
 }
 

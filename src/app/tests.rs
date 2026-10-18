@@ -1304,6 +1304,13 @@ fn thread_created_rekeys_the_draft_without_replacing_its_host() {
         },
         |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
     );
+    window.update(|chat, _, cx| {
+        chat.start_draft(
+            Some("project-stable-id".into()),
+            PathBuf::from("/tmp/project"),
+            cx,
+        )
+    });
     let (draft_key, composer) = window.read(|chat, _| {
         (
             chat.active_conversation.clone(),
@@ -1332,6 +1339,12 @@ fn thread_created_rekeys_the_draft_without_replacing_its_host() {
     );
     let rekeyed = window.read(|chat, _| chat.conversation_hosts[&thread_key].composer.clone());
     assert!(rekeyed == composer);
+    window.read(|chat, _| {
+        let snapshot = chat.workspace_store.snapshot();
+        let created = snapshot.thread("thread-stable-id").unwrap();
+        assert_eq!(created.project_id.as_deref(), Some("project-stable-id"));
+        assert_eq!(created.cwd, PathBuf::from("/tmp/project"));
+    });
 }
 
 fn history_fixture(thread_id: &str, message: &str) -> ThreadHistory {

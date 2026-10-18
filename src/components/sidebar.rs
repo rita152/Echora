@@ -1463,6 +1463,22 @@ impl SidebarView {
         .detach();
     }
 
+    /// Keep the newly started chat selected and expose its project rows.
+    pub fn reveal_created_thread(
+        &mut self,
+        thread_id: ThreadId,
+        project_id: Option<ProjectId>,
+        cx: &mut Context<Self>,
+    ) {
+        self.selected_thread_id = Some(thread_id);
+        self.selected_project_id = project_id.clone();
+        if let Some(id) = project_id {
+            self.store.set_project_collapsed(id, false);
+            self.store.set_section_collapsed("projects", false);
+        }
+        cx.notify();
+    }
+
     /// Mirrors the visual state produced by a real sidebar thread selection
     /// without emitting a second navigation event. The capture resume path
     /// drives the matching conversation load directly from `ChatApp`.
