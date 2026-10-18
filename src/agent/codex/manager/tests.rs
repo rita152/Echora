@@ -2432,3 +2432,59 @@ fn read_state_notification_keeps_shared_connection_and_replays_latest_revision()
     }
     manager.shutdown();
 }
+
+#[test]
+fn failed_turns_and_connection_loss_publish_thread_errors_without_stale_spinners() {
+    for disconnect in [false, true] {
+        let (manager, spawner) = manager_with_fake();
+        let events = manager.subscribe_connection_events();
+        let run_a = manager.run_prompt(request("a", Some("a")));
+        let mut endpoint = spawner.next_endpoint();
+        handshake(&mut endpoint);
+        start_known_turn(&mut endpoint, "a", "ta");
+        let run_b = manager.run_prompt(request("b", Some("b")));
+        start_known_turn(&mut endpoint, "b", "tb");
+        for id in ["a", "b"] {
+            endpoint.send(json!({"method":"thread/status/changed","params":{"threadId":id,"status":{"type":"active","activeFlags":[]}}}));
+        }
+        if disconnect {
+            endpoint.send(json!({"method":"protocol/unknownFatalNotification","params":{}}));
+        } else {
+            complete(&endpoint, "a", "ta", "failed");
+        }
+        let (a, _ha) = run_a.into_parts();
+        assert!(matches!(
+            collect_terminal(&a).last(),
+            Some(AgentEvent::Failed(_))
+        ));
+        let mut failed = HashSet::new();
+        while failed.len() < if disconnect { 2 } else { 1 } {
+            if let AgentConnectionEvent::ThreadStatusChanged(status) = wait_value(&events)
+                && status.state == crate::agent::AgentThreadStatusState::SystemError
+            {
+                failed.insert(status.thread_id);
+            }
+        }
+        assert!(failed.contains("a"));
+        if disconnect {
+            assert!(failed.contains("b"));
+        } else {
+            assert!(!failed.contains("b"));
+            complete(&endpoint, "b", "tb", "completed");
+            let (b, _hb) = run_b.into_parts();
+            assert_eq!(collect_terminal(&b).last(), Some(&AgentEvent::Completed));
+            assert!(endpoint.process.is_alive());
+        }
+        let replay = manager.subscribe_connection_events();
+        let mut replay_failed = HashSet::new();
+        while let Ok(event) = replay.try_recv() {
+            if let AgentConnectionEvent::ThreadStatusChanged(status) = event
+                && status.state == crate::agent::AgentThreadStatusState::SystemError
+            {
+                replay_failed.insert(status.thread_id);
+            }
+        }
+        assert_eq!(replay_failed, failed);
+        manager.shutdown();
+    }
+}

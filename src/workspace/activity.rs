@@ -27,6 +27,7 @@ const ACTIVITY_HISTORY_DAYS: u64 = 7;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Attention {
     Waiting,
+    Failed,
     Unread,
     Active,
     Idle,
@@ -48,6 +49,7 @@ impl Attention {
             {
                 Self::Waiting
             }
+            ThreadActivity::SystemError => Self::Failed,
             _ if unread.contains(&thread.thread_id) => Self::Unread,
             ThreadActivity::Active { .. } => Self::Active,
             _ => Self::Idle,
@@ -56,7 +58,7 @@ impl Attention {
 
     /// Waiting and unread chats light the bell's attention badge.
     pub fn needs_attention(self) -> bool {
-        matches!(self, Self::Waiting | Self::Unread)
+        matches!(self, Self::Waiting | Self::Failed | Self::Unread)
     }
 }
 

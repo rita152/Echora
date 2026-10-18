@@ -2120,6 +2120,7 @@ impl SidebarView {
         // An unread turn prints the reference's 8 px `bg-info-solid` dot where
         // a running chat prints its spinner.
         let unread = !active
+            && !status_error
             && self
                 .snapshot
                 .preferences
@@ -2388,13 +2389,22 @@ impl SidebarView {
                 row.child(
                     div()
                         .absolute()
-                        .right(px(12.0))
-                        .size(px(6.0))
-                        .rounded_full()
-                        .bg(theme.warning),
+                        .id(format!("thread-error-{thread_id}"))
+                        .role(gpui::Role::Status)
+                        .aria_label(crate::i18n::text("聊天发生错误"))
+                        .right(px(8.0))
+                        .top(px(8.0))
+                        .size(px(16.0))
+                        .child(icon("conversation-error", theme.warning.into()).size(px(16.0))),
                 )
             })
             .child(actions)
+            .when(status_error, |row| {
+                row.tooltip(|_, cx| {
+                    cx.new(|_| ProjectActionTooltip(crate::i18n::text("聊天发生错误").into()))
+                        .into()
+                })
+            })
             .child(
                 // Records the row's window bounds for the hover card, which is
                 // deferred so the sidebar's own clip never cuts it off.

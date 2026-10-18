@@ -919,6 +919,7 @@ impl SidebarView {
             .any(|candidate| candidate.thread_id == thread_id);
         let worktree = runs_in_codex_worktree(thread);
         let status = match attention {
+            Attention::Failed => Some(Attention::Failed),
             Attention::Unread => Some(Attention::Unread),
             Attention::Active => Some(Attention::Active),
             _ => None,
@@ -974,6 +975,19 @@ impl SidebarView {
             );
         }
         match status {
+            Some(Attention::Failed) => {
+                trailing = trailing.child(
+                    div()
+                        .size(px(ROW_TRAILING_ICON_BOX))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .id(format!("activity-thread-error-{thread_id}"))
+                        .role(gpui::Role::Status)
+                        .aria_label(crate::i18n::text("聊天发生错误"))
+                        .child(icon("conversation-error", theme.warning.into()).size(px(16.0))),
+                );
+            }
             Some(Attention::Unread) => {
                 trailing = trailing.child(
                     div()

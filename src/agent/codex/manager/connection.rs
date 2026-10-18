@@ -920,6 +920,12 @@ impl Connection {
         result: Result<TurnOutcome>,
     ) {
         let mut foreign_early = Vec::new();
+        if !matches!(
+            &result,
+            Ok(TurnOutcome::Completed | TurnOutcome::Interrupted)
+        ) {
+            self.publish_thread_failure(&turn.thread_id);
+        }
         if let Some(manager) = self.manager.upgrade()
             && let Some(turn_id) = turn.turn_id()
         {
@@ -1129,6 +1135,19 @@ impl Connection {
         })
     }
 
+    fn publish_thread_failure(&self, thread_id: &str) {
+        if let Some(manager) = self.manager.upgrade() {
+            manager.publish_connection_event(
+                crate::agent::AgentConnectionEvent::ThreadStatusChanged(
+                    crate::agent::AgentThreadStatus {
+                        thread_id: thread_id.to_owned(),
+                        state: crate::agent::AgentThreadStatusState::SystemError,
+                    },
+                ),
+            );
+        }
+    }
+
     pub(super) fn fail_all(&self, message: &str) -> Vec<InvalidatedMcpElicitation> {
         // Pending OAuth logins belong to this generation only: report them once
         // so no view keeps waiting on a connection that can never answer.
@@ -1188,6 +1207,7 @@ impl Connection {
             })
             .unwrap_or_default();
         for turn in turns {
+            self.publish_thread_failure(&turn.thread_id);
             turn.finish(Err(anyhow!(message.to_owned())));
         }
         for (_, waiter) in settings_waiters {

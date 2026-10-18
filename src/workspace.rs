@@ -503,7 +503,7 @@ impl WorkspaceStore {
                 }
             }
             AgentConnectionEvent::ThreadStatusChanged(status) => {
-                let activity = activity_from_connection_status(&status.state);
+                let mut activity = activity_from_connection_status(&status.state);
                 let previous = self
                     .thread_overlays()
                     .get(&status.thread_id)
@@ -513,6 +513,11 @@ impl WorkspaceStore {
                             .thread(&status.thread_id)
                             .map(|thread| thread.activity.clone())
                     });
+                // An idle notification can follow a failed turn. Keep its
+                // error until a new run starts or a successful close arrives.
+                if activity == ThreadActivity::Idle && previous == Some(ThreadActivity::SystemError) {
+                    activity = ThreadActivity::SystemError;
+                }
                 if turn_left_unread(previous.as_ref(), &activity) {
                     self.mark_unread_unless_viewed(&status.thread_id);
                 }
@@ -524,6 +529,14 @@ impl WorkspaceStore {
                         thread.activity = activity.clone();
                     });
                 });
+            }
+            AgentConnectionEvent::Runtime(crate::agent::AgentRuntimeEvent {
+                observation: crate::agent::AgentRuntimeObservation::TurnClosed { thread_id, reason, .. }, ..
+            }) if reason != crate::agent::AgentLocalClosure::Failed => {
+                if self.thread_overlays().get(&thread_id).and_then(|overlay| overlay.activity.as_ref()) == Some(&ThreadActivity::SystemError) {
+                    self.update_thread_overlay(&thread_id, |overlay| overlay.activity = Some(ThreadActivity::Idle));
+                    self.update(|snapshot| visit_thread_mut(snapshot, &thread_id, |thread| thread.activity = ThreadActivity::Idle));
+                }
             }
             AgentConnectionEvent::Runtime(_)
             | AgentConnectionEvent::DeprecationNotice(_)

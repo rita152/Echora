@@ -1413,3 +1413,55 @@ fn server_read_state_updates_only_its_thread_and_respects_the_viewed_chat() {
     assert!(store.snapshot().preferences.unread_thread_ids.is_empty());
     let _ = fs::remove_dir_all(path.parent().unwrap());
 }
+
+#[test]
+fn thread_errors_survive_idle_refresh_and_read_until_a_new_run_or_success() {
+    let backend = FakeWorkspaceBackend::new();
+    let path = test_preferences_path("thread-errors");
+    let store = WorkspaceStore::with_preferences_path(backend, path.clone());
+    store.refresh_all();
+    wait_until(|| !store.snapshot().loading.recent);
+    let running = || AgentThreadStatusState::Active {
+        active_flags: Vec::new(),
+    };
+    store.apply_backend_event(status("thread-a", running()));
+    store.apply_backend_event(status("thread-b", running()));
+    store.apply_backend_event(status("thread-a", AgentThreadStatusState::SystemError));
+    store.apply_backend_event(status("thread-a", AgentThreadStatusState::Idle));
+    store.mark_threads_read(&["thread-a".to_owned()]);
+    assert_eq!(
+        store.snapshot().thread("thread-a").unwrap().activity,
+        ThreadActivity::SystemError
+    );
+    assert!(matches!(
+        store.snapshot().thread("thread-b").unwrap().activity,
+        ThreadActivity::Active { .. }
+    ));
+    store.refresh_all();
+    wait_until(|| !store.snapshot().loading.recent);
+    assert_eq!(
+        store.snapshot().thread("thread-a").unwrap().activity,
+        ThreadActivity::SystemError
+    );
+    store.apply_backend_event(status("thread-a", running()));
+    assert!(matches!(
+        store.snapshot().thread("thread-a").unwrap().activity,
+        ThreadActivity::Active { .. }
+    ));
+    store.apply_backend_event(status("thread-a", AgentThreadStatusState::SystemError));
+    store.apply_backend_event(AgentConnectionEvent::Runtime(
+        crate::agent::AgentRuntimeEvent {
+            generation: 1,
+            observation: crate::agent::AgentRuntimeObservation::TurnClosed {
+                thread_id: "thread-a".into(),
+                turn_id: "turn-a".into(),
+                reason: crate::agent::AgentLocalClosure::TurnCompleted,
+            },
+        },
+    ));
+    assert_eq!(
+        store.snapshot().thread("thread-a").unwrap().activity,
+        ThreadActivity::Idle
+    );
+    let _ = fs::remove_dir_all(path.parent().unwrap());
+}

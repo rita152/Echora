@@ -98,7 +98,8 @@ fn attention_prefers_pending_requests_then_unread_then_running() {
     assert_eq!(Attention::of(&unread_running, &unread), Attention::Unread);
     assert_eq!(Attention::of(&running, &unread), Attention::Active);
     assert_eq!(Attention::of(&idle, &unread), Attention::Idle);
-    assert_eq!(Attention::of(&failed, &unread), Attention::Idle);
+    assert_eq!(Attention::of(&failed, &unread), Attention::Failed);
+    assert!(Attention::Failed.needs_attention());
     assert!(Attention::Waiting < Attention::Unread && Attention::Unread < Attention::Active);
     assert!(Attention::Unread.needs_attention() && !Attention::Active.needs_attention());
 }

@@ -765,6 +765,7 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "权限请求" => "Permission request",
         "权限请求失败" => "Permission request failed",
         "权限请求已取消" => "Permission request canceled",
+        "聊天发生错误" => "Chat failed",
         "权限配置" => "Permission profile",
         "权限配置尚未读取" => "Permission profiles have not loaded",
         "权限配置连接已关闭" => "The permission profiles connection closed",
