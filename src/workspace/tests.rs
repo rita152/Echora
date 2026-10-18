@@ -576,6 +576,149 @@ fn a_git_worktree_thread_belongs_to_the_project_that_owns_the_repository() {
 }
 
 #[test]
+fn thread_project_index_keeps_worktree_mapping_across_status_and_title_updates() {
+    let root = test_preferences_path("project-index")
+        .parent()
+        .unwrap()
+        .to_owned();
+    let repository = root.join("repository");
+    let worktree = root.join("worktree");
+    fs::create_dir_all(repository.join(".git/worktrees/test")).unwrap();
+    fs::create_dir_all(&worktree).unwrap();
+    fs::write(
+        worktree.join(".git"),
+        format!(
+            "gitdir: {}\n",
+            repository.join(".git/worktrees/test").display()
+        ),
+    )
+    .unwrap();
+    let mut snapshot = WorkspaceSnapshot::new(Default::default(), UiPreferences::current());
+    let mut owner = project("owner", 0);
+    owner.roots = vec![repository];
+    snapshot.projects.push(owner);
+    let mut legacy = thread("legacy", None);
+    legacy.cwd = worktree.clone();
+    snapshot.recent_threads.push(legacy);
+    let mut index = ThreadProjectIndex::default();
+    let initial = index.update(&snapshot);
+    assert_eq!(initial["legacy"].as_deref(), Some("owner"));
+
+    fs::remove_file(worktree.join(".git")).unwrap();
+    snapshot.recent_threads[0].title = "Renamed chat".into();
+    snapshot.recent_threads[0].activity = ThreadActivity::Active { flags: vec![] };
+    let updated = index.update(&snapshot);
+    assert_eq!(updated["legacy"].as_deref(), Some("owner"));
+    assert!(Arc::ptr_eq(&initial, &updated));
+
+    // Loading another chat must not re-read an unchanged chat's worktree either.
+    snapshot.recent_threads.push(thread("new", Some("owner")));
+    assert_eq!(index.update(&snapshot)["legacy"].as_deref(), Some("owner"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn thread_project_index_updates_cwd_assignment_roots_and_removed_threads() {
+    let mut snapshot = WorkspaceSnapshot::new(Default::default(), UiPreferences::current());
+    let mut parent = project("parent", 0);
+    parent.roots = vec![PathBuf::from("/tmp/workspace")];
+    let mut nested = project("nested", 1);
+    nested.roots = vec![PathBuf::from("/tmp/workspace/app")];
+    snapshot.projects = vec![parent, nested];
+    snapshot.recent_threads = vec![thread("legacy", None)];
+    let mut index = ThreadProjectIndex::default();
+    assert_eq!(index.update(&snapshot)["legacy"].as_deref(), Some("parent"));
+
+    snapshot.recent_threads[0].cwd = PathBuf::from("/tmp/workspace/app/src");
+    assert_eq!(index.update(&snapshot)["legacy"].as_deref(), Some("nested"));
+    snapshot.projects[1].roots = vec![PathBuf::from("/tmp/elsewhere")];
+    assert_eq!(index.update(&snapshot)["legacy"].as_deref(), Some("parent"));
+    snapshot.recent_threads[0].project_id = Some("server-owned".into());
+    assert_eq!(
+        index.update(&snapshot)["legacy"].as_deref(),
+        Some("server-owned")
+    );
+    snapshot.recent_threads.clear();
+    assert!(index.update(&snapshot).is_empty());
+}
+
+#[test]
+fn thread_project_index_includes_pinned_archived_and_custom_section_chats() {
+    let mut snapshot = WorkspaceSnapshot::new(Default::default(), UiPreferences::current());
+    snapshot.pinned_threads.push(thread("pinned", Some("p")));
+    snapshot
+        .archived_threads
+        .push(thread("archived", Some("a")));
+    snapshot.custom_sections.push(CustomSection {
+        section: ThreadSection {
+            section_id: "section".into(),
+            name: "Section".into(),
+            appearance: None,
+        },
+        threads: vec![thread("section-chat", Some("s"))],
+        projects: vec![],
+    });
+    let ids = ThreadProjectIndex::default().update(&snapshot);
+    assert_eq!(ids["pinned"].as_deref(), Some("p"));
+    assert_eq!(ids["archived"].as_deref(), Some("a"));
+    assert_eq!(ids["section-chat"].as_deref(), Some("s"));
+}
+
+#[test]
+#[ignore = "diagnostic timing comparison; run with --ignored --nocapture"]
+fn thread_project_index_timings() {
+    let mut snapshot = WorkspaceSnapshot::new(Default::default(), UiPreferences::current());
+    snapshot.projects = (0..16)
+        .map(|i| project(&format!("timing-{i}"), i))
+        .collect();
+    snapshot.recent_threads = (0..256)
+        .map(|i| {
+            let mut chat = thread(&format!("chat-{i}"), None);
+            chat.cwd = snapshot.projects[i % 16].roots[0].join("src");
+            chat
+        })
+        .collect();
+    let frames = 20;
+    let started = Instant::now();
+    let mut original_rows = 0;
+    for _ in 0..frames {
+        for project in &snapshot.projects {
+            original_rows += snapshot
+                .recent_threads
+                .iter()
+                .filter(|chat| {
+                    project_id_for_thread(chat, &snapshot.projects).as_deref()
+                        == Some(project.project_id.as_str())
+                })
+                .count();
+        }
+    }
+    let original = started.elapsed();
+    let mut index = ThreadProjectIndex::default();
+    let ids = index.update(&snapshot);
+    let started = Instant::now();
+    let mut cached_rows = 0;
+    for _ in 0..frames {
+        for project in &snapshot.projects {
+            cached_rows += snapshot
+                .recent_threads
+                .iter()
+                .filter(|chat| {
+                    ids.get(&chat.thread_id).and_then(Option::as_deref)
+                        == Some(project.project_id.as_str())
+                })
+                .count();
+        }
+    }
+    let cached = started.elapsed();
+    assert_eq!(original_rows, 256 * frames);
+    assert_eq!(cached_rows, original_rows);
+    eprintln!(
+        "sidebar project filtering: 256 threads, 16 projects, {frames} passes; original={original:?}, cached={cached:?}"
+    );
+}
+
+#[test]
 fn fake_backend_refresh_accumulates_pages_and_uses_server_ids() {
     let backend = FakeWorkspaceBackend::new();
     let path = test_preferences_path("pagination");

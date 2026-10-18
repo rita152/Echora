@@ -31,7 +31,6 @@ use crate::{
             ActivityInputs, ActivityLayout, ActivitySection, ActivitySectionKind, ActivitySession,
             Attention, RelativeDay,
         },
-        project_id_for_thread,
     },
 };
 
@@ -1032,13 +1031,12 @@ impl SidebarView {
                 ))
                 .when(trailing_icons > 0 && !hovered, |line| line.child(trailing));
 
-        let project =
-            project_id_for_thread(thread, &self.snapshot.projects).and_then(|project_id| {
-                self.snapshot
-                    .projects
-                    .iter()
-                    .find(|project| project.project_id == project_id)
-            });
+        let project = self.thread_project_id(thread).and_then(|project_id| {
+            self.snapshot
+                .projects
+                .iter()
+                .find(|project| project.project_id == project_id)
+        });
         let (detail_glyph, detail_label): (&'static str, SharedString) = match project {
             Some(project) => ("utility-folder", project.name.clone().into()),
             None => ("project-local", "Codex".into()),

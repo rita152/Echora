@@ -199,6 +199,64 @@ impl WorkspaceSnapshot {
     }
 }
 
+/// Resolves sidebar membership off the UI thread and reuses unchanged inputs.
+#[derive(Default)]
+pub(crate) struct ThreadProjectIndex {
+    roots: Vec<(ProjectId, Vec<PathBuf>)>,
+    inputs: HashMap<ThreadId, (PathBuf, Option<ProjectId>)>,
+    project_ids: Arc<HashMap<ThreadId, Option<ProjectId>>>,
+}
+
+impl ThreadProjectIndex {
+    pub fn update(
+        &mut self,
+        snapshot: &WorkspaceSnapshot,
+    ) -> Arc<HashMap<ThreadId, Option<ProjectId>>> {
+        let roots = snapshot
+            .projects
+            .iter()
+            .map(|project| (project.project_id.clone(), project.roots.clone()))
+            .collect::<Vec<_>>();
+        let mut threads = HashMap::new();
+        for thread in snapshot
+            .pinned_threads
+            .iter()
+            .chain(&snapshot.recent_threads)
+            .chain(&snapshot.archived_threads)
+            .chain(
+                snapshot
+                    .custom_sections
+                    .iter()
+                    .flat_map(|section| &section.threads),
+            )
+        {
+            threads.entry(thread.thread_id.clone()).or_insert(thread);
+        }
+        let inputs = threads
+            .iter()
+            .map(|(id, thread)| (id.clone(), (thread.cwd.clone(), thread.project_id.clone())))
+            .collect::<HashMap<_, _>>();
+        if roots == self.roots && inputs == self.inputs {
+            return self.project_ids.clone();
+        }
+        let project_ids = threads
+            .into_iter()
+            .map(|(id, thread)| {
+                let project_id = if roots == self.roots && self.inputs.get(&id) == inputs.get(&id) {
+                    self.project_ids.get(&id).cloned().flatten()
+                } else {
+                    project_id_for_thread(thread, &snapshot.projects)
+                };
+                (id, project_id)
+            })
+            .collect();
+        self.roots = roots;
+        self.inputs = inputs;
+        self.project_ids = Arc::new(project_ids);
+        self.project_ids.clone()
+    }
+}
+
 pub struct WorkspaceStore {
     backend: Arc<dyn AgentBackend>,
     snapshot: Mutex<WorkspaceSnapshot>,

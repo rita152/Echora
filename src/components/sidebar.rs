@@ -27,9 +27,7 @@ use crate::{
     },
     git_review::ProjectRepo,
     theme::{Theme, ThemeMode, composite_over},
-    workspace::{
-        WorkspaceSnapshot, WorkspaceStore, activity::ActivitySession, project_id_for_thread,
-    },
+    workspace::{ThreadProjectIndex, WorkspaceSnapshot, WorkspaceStore, activity::ActivitySession},
 };
 
 mod activity;
@@ -842,6 +840,7 @@ pub struct SidebarView {
     mode: ThemeMode,
     store: Arc<WorkspaceStore>,
     snapshot: WorkspaceSnapshot,
+    thread_project_ids: Arc<HashMap<ThreadId, Option<ProjectId>>>,
     scroll: ScrollHandle,
     /// Whether the last render reserved the classic-scrollbar gutter, so the
     /// frame that first discovers (or loses) overflow can re-render once.
@@ -977,9 +976,19 @@ impl SidebarView {
         .detach();
         let receiver = store.subscribe();
         cx.spawn(async move |this, cx| {
+            let mut project_index = ThreadProjectIndex::default();
             while let Ok(snapshot) = receiver.recv().await {
+                let (snapshot, index, project_ids) = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let project_ids = project_index.update(&snapshot);
+                        (snapshot, project_index, project_ids)
+                    })
+                    .await;
+                project_index = index;
                 let _ = this.update(cx, |this, cx| {
                     this.snapshot = snapshot;
+                    this.thread_project_ids = project_ids;
                     this.refresh_activity();
                     this.apply_pending_activity_capture(cx);
                     if let Some(project) = this.pending_project_hover_card.clone() {
@@ -1029,6 +1038,7 @@ impl SidebarView {
             mode,
             store,
             snapshot,
+            thread_project_ids: Arc::default(),
             scroll: ScrollHandle::new(),
             scrollbar_gutter: Rc::new(std::cell::Cell::new(false)),
             scroll_to_bottom,
@@ -1306,12 +1316,21 @@ impl SidebarView {
         self.thread_hover_card.is_some()
     }
 
+    /// Read the background-resolved project without filesystem work during render.
+    fn thread_project_id<'a>(&'a self, thread: &'a ThreadSummary) -> Option<&'a str> {
+        thread.project_id.as_deref().or_else(|| {
+            self.thread_project_ids
+                .get(&thread.thread_id)
+                .and_then(Option::as_deref)
+        })
+    }
+
     /// The project a task row's card belongs to. The reference only prints a
     /// task card when it can name the project, which is why projectless tasks
     /// in the Recents section show no card at all.
     fn project_for_thread(&self, thread_id: &str) -> Option<Project> {
         let thread = self.snapshot.thread(thread_id)?;
-        let project_id = project_id_for_thread(thread, &self.snapshot.projects)?;
+        let project_id = self.thread_project_id(thread)?;
         self.snapshot
             .projects
             .iter()
@@ -2469,8 +2488,7 @@ impl SidebarView {
             .ordered(&self.snapshot.recent_threads)
             .into_iter()
             .filter(|thread| {
-                project_id_for_thread(thread, &self.snapshot.projects).as_deref()
-                    == Some(project_id.as_str())
+                self.thread_project_id(thread) == Some(project_id.as_str())
                     && !pinned_ids.contains(thread.thread_id.as_str())
             })
             .collect::<Vec<_>>();
@@ -2713,10 +2731,7 @@ impl SidebarView {
             .sidebar
             .ordered(&self.snapshot.recent_threads)
             .into_iter()
-            .filter(|thread| {
-                project_id_for_thread(thread, &self.snapshot.projects).as_deref()
-                    == Some(project_id.as_str())
-            })
+            .filter(|thread| self.thread_project_id(thread) == Some(project_id.as_str()))
             .collect::<Vec<_>>();
         let summary = project_hover_summary(&threads);
         let repo = self
