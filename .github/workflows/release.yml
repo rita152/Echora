@@ -1,0 +1,102 @@
+name: Release builds
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+
+jobs:
+  build:
+    name: Release / ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux x86_64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            executable: gpui-chat-clone
+          - platform: macOS arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+            executable: gpui-chat-clone
+          - platform: Windows x86_64
+            runner: windows-2022
+            target: x86_64-pc-windows-msvc
+            executable: gpui-chat-clone.exe
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential clang cmake libasound2-dev libfontconfig-dev \
+            libglib2.0-dev libssl-dev libvulkan-dev libwayland-dev \
+            libx11-xcb-dev libxkbcommon-x11-dev libzstd-dev pkg-config
+
+      - name: Prepare Metal compiler
+        if: runner.os == 'macOS'
+        run: |
+          xcode-select -p
+          if ! xcrun --sdk macosx metal --version; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+          xcrun --sdk macosx metal --version
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup show
+          rustup target add '${{ matrix.target }}'
+          rustc --version
+          cargo --version
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          key: release-${{ matrix.target }}
+          cache-on-failure: true
+
+      - name: Build release executable
+        run: >-
+          cargo build --locked --release
+          --package gpui-chat-clone --bin gpui-chat-clone
+          --target '${{ matrix.target }}'
+
+      # Archive first so executable permissions survive artifact downloads.
+      # Assets next to the executable are resolved independently of the cwd.
+      - name: Package executable and assets
+        run: |
+          package='echora-${{ matrix.target }}'
+          mkdir -p "dist/$package"
+          cp 'target/${{ matrix.target }}/release/${{ matrix.executable }}' "dist/$package/"
+          cp -R assets "dist/$package/assets"
+          tar -czf "dist/$package.tar.gz" -C dist "$package"
+
+      - name: Upload release archive
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: echora-${{ matrix.target }}
+          path: dist/echora-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
+          retention-days: 14

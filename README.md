@@ -96,7 +96,7 @@ The interface defaults to automatic language detection: Chinese system locales u
 
 Echora starts `codex app-server --stdio` and uses the local Codex installation for backend configuration and sessions. Git review requires Git; creating pull requests also requires an authenticated `gh`. Python, Node.js, and Electron are development verification tools, not requirements for running the native interface.
 
-The Cargo package and executable are still named `gpui-chat-clone`, so the existing build and capture commands continue to use that name. Prebuilt releases and cross-platform verification are not provided yet.
+The Cargo package and executable are still named `gpui-chat-clone`, so the existing build and capture commands continue to use that name. [Release builds](.github/workflows/release.yml) compile Linux x86_64 (GNU), macOS arm64, and Windows x86_64 (MSVC) on pushes to `main`, `v*` tags, pull requests, and manual dispatch. Download each platform's artifact from the [Actions page](https://github.com/rita152/Echora/actions/workflows/release.yml); its `.tar.gz` contains the executable and adjacent `assets/` directory, which must stay together. Builds use `cargo build --locked --release` and the pinned Rust toolchain. Artifacts are retained for 14 days; these are unsigned builds, with no installer or automatic GitHub Release publication. Interactive verification remains macOS-only.
 
 ## Find your way around
 

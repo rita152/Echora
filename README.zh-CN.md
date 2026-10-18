@@ -96,7 +96,7 @@ cargo run --release -- --theme=dark
 
 Echora 启动 `codex app-server --stdio`，使用本机 Codex 安装提供的后端配置与会话。Git 审查需要本机 Git，创建 PR 另需已登录的 `gh`。Python、Node.js 和 Electron 用于开发验证，不是运行原生界面的必要依赖。
 
-Cargo 包和可执行文件目前仍名为 `gpui-chat-clone`，现有构建与截图命令继续沿用该名称。暂未提供预编译发布包，也尚未完成跨平台验证。
+Cargo 包和可执行文件目前仍名为 `gpui-chat-clone`，现有构建与截图命令继续沿用该名称。[Release 构建](.github/workflows/release.yml) 在推送到 `main`、推送 `v*` 标签、提交 PR 或手动触发时，分别编译 Linux x86_64（GNU）、macOS arm64 与 Windows x86_64（MSVC）。从 [Actions 页面](https://github.com/rita152/Echora/actions/workflows/release.yml) 下载对应平台的产物；其中的 `.tar.gz` 包含可执行文件及相邻的 `assets/` 目录，两者须一起保留。构建使用 `cargo build --locked --release` 和仓库固定的 Rust 工具链。产物保留 14 天；构建未经签名，不提供安装器，也不自动发布 GitHub Release。交互验收仍仅覆盖 macOS。
 
 ## 常用入口
 
