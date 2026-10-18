@@ -41,7 +41,7 @@ use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
 pub enum SideChatEvent {
     OpenDiff(DiffReviewPresentation),
-    OpenImage(PathBuf),
+    OpenImage(PathBuf, Option<gpui::WeakEntity<ComposerView>>),
     OpenHookSettings,
     FullAccess(Entity<ComposerView>),
     SkipCloseConfirmation(bool),
@@ -183,7 +183,7 @@ impl SideChatPanel {
         })
         .detach();
         cx.subscribe(&home, |_, _, event: &OpenImagePreview, cx| {
-            cx.emit(SideChatEvent::OpenImage(event.0.clone()))
+            cx.emit(SideChatEvent::OpenImage(event.0.clone(), event.1.clone()))
         })
         .detach();
         cx.subscribe(

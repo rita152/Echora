@@ -1135,6 +1135,8 @@ impl Render for ChatApp {
                 let image_height = (f32::from(viewport.height) - 128.0).max(120.0) * zoom;
                 let percentage = format!("{}%", (zoom * 100.0).round() as i32);
                 let preview_dimensions = self.image_preview.dimensions;
+                let editable = self.image_preview.composer.as_ref().and_then(gpui::WeakEntity::upgrade)
+                    .is_some_and(|composer| composer.read(cx).can_annotate_attachment(&path));
                 shell.child(
                     div()
                         .id("image-preview-dialog")
@@ -1180,6 +1182,19 @@ impl Render for ChatApp {
                                 .right(px(12.0))
                                 .flex()
                                 .gap(px(8.0))
+                                .when(editable, |toolbar| toolbar.child(
+                                    div().id("image-preview-markup")
+                                        .role(Role::Button).aria_label(crate::i18n::format!("标注"=>"Mark up"))
+                                        .focusable().tab_stop(true).h(px(40.)).px(px(16.)).rounded_full()
+                                        .bg(theme.model_picker_surface.alpha(0.95)).cursor_pointer()
+                                        .flex().items_center().justify_center().text_color(theme.text)
+                                        .hover(move |button| button.bg(theme.elevated))
+                                        .on_click(cx.listener(|this, _, _, cx| {this.annotate_preview_image(cx);cx.stop_propagation();}))
+                                        .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                                            if matches!(event.keystroke.key.as_str(), "enter"|"space") {this.annotate_preview_image(cx);cx.stop_propagation();}
+                                        }))
+                                        .child(crate::i18n::format!("标注"=>"Mark up"))
+                                ))
                                 .child(
                                     div()
                                         .id("image-preview-open-original")

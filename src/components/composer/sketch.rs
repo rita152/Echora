@@ -1,5 +1,5 @@
 //! Editable sketches with a shared vector document for native painting and PNG export.
-use super::{ComposerView, toast::ToastKind};
+use super::{ComposerView, sketch_image::ImageBackground, toast::ToastKind};
 use crate::theme::{Theme, ThemeMode};
 use gpui::{
     AnyElement, Bounds, Context, FocusHandle, Focusable, MouseButton, PathBuilder, Pixels, Point,
@@ -143,6 +143,12 @@ impl Mark {
         }
     }
 }
+#[derive(Clone, Default)]
+struct SketchDocument {
+    marks: Vec<Mark>,
+    background: Option<ImageBackground>,
+}
+
 #[derive(Default)]
 pub(super) struct SketchState {
     pub(super) open: bool,
@@ -166,10 +172,19 @@ pub(super) struct SketchState {
     color_panel_open: bool,
     text_input: Option<gpui::Entity<crate::components::file_editor::FileEditor>>,
     text_position: Option<(f32, f32)>,
-    documents: HashMap<PathBuf, Vec<Mark>>,
+    documents: HashMap<PathBuf, SketchDocument>,
+    background: Option<ImageBackground>,
     editing_path: Option<PathBuf>,
 }
 impl SketchState {
+    fn logical_height(&self) -> f32 {
+        self.background
+            .as_ref()
+            .map_or(SIDE, ImageBackground::logical_height)
+    }
+    fn can_save(&self) -> bool {
+        self.background.is_some() || !self.marks.is_empty()
+    }
     fn checkpoint(&mut self) {
         if self.undo.last() != Some(&self.marks) {
             self.undo.push(self.marks.clone());
@@ -197,7 +212,8 @@ impl SketchState {
         let b = self.bounds.get()?;
         Some((
             (f32::from(p.x - b.origin.x) * SIDE / f32::from(b.size.width)).clamp(0., SIDE),
-            (f32::from(p.y - b.origin.y) * SIDE / f32::from(b.size.height)).clamp(0., SIDE),
+            (f32::from(p.y - b.origin.y) * self.logical_height() / f32::from(b.size.height))
+                .clamp(0., self.logical_height()),
         ))
     }
     fn down(&mut self, p: (f32, f32)) {
@@ -264,6 +280,8 @@ impl ComposerView {
         self.sketch.undo.clear();
         self.sketch.redo.clear();
         self.sketch.editing_path = None;
+        self.sketch.background = None;
+        self.sketch.shape_menu = false;
         self.sketch.selected = None;
         self.sketch.active = None;
         self.sketch.text_position = None;
@@ -285,18 +303,51 @@ impl ComposerView {
         cx.notify();
     }
     pub(super) fn reopen_sketch(&mut self, path: &std::path::Path, cx: &mut Context<Self>) -> bool {
-        let Some(marks) = self.sketch.documents.get(path).cloned() else {
+        let Some(document) = self.sketch.documents.get(path).cloned() else {
             return false;
         };
         self.open_sketch(cx);
-        self.sketch.baseline = marks.clone();
-        self.sketch.marks = marks;
+        self.sketch.baseline = document.marks.clone();
+        self.sketch.marks = document.marks;
+        self.sketch.background = document.background;
         self.sketch.undo.clear();
         self.sketch.redo.clear();
         self.sketch.active = None;
         self.sketch.selected = None;
         self.sketch.editing_path = Some(path.to_owned());
         true
+    }
+    pub(crate) fn can_annotate_attachment(&self, path: &std::path::Path) -> bool {
+        self.prompt_context
+            .files
+            .iter()
+            .any(|file| file.image && file.path == path)
+    }
+    pub(crate) fn annotate_attachment(
+        &mut self,
+        path: &std::path::Path,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.can_annotate_attachment(path) {
+            return false;
+        }
+        if self.reopen_sketch(path, cx) {
+            return true;
+        }
+        match ImageBackground::read(path) {
+            Ok(background) => {
+                self.open_sketch(cx);
+                self.sketch.background = Some(background);
+                self.sketch.editing_path = Some(path.to_owned());
+                self.sketch.color = Some(0xdc2626);
+                self.sketch.tool = Tool::Pen;
+                true
+            }
+            Err(error) => {
+                self.show_toast(ToastKind::Danger, error.to_string(), cx);
+                false
+            }
+        }
     }
     fn request_close_sketch(&mut self, cx: &mut Context<Self>) {
         self.finish_sketch_text(cx);
@@ -346,7 +397,17 @@ impl ComposerView {
     }
     fn save_sketch(&mut self, cx: &mut Context<Self>) {
         self.finish_sketch_text(cx);
-        if self.sketch.marks.is_empty() {
+        if !self.sketch.can_save() {
+            return;
+        }
+        if self
+            .sketch
+            .editing_path
+            .as_ref()
+            .is_some_and(|path| !self.can_annotate_attachment(path))
+        {
+            self.sketch.open = false;
+            cx.notify();
             return;
         }
         let background = if self.mode == ThemeMode::Dark {
@@ -354,7 +415,12 @@ impl ComposerView {
         } else {
             0xffffff
         };
-        let result = export_png(&self.sketch.marks, background).and_then(|bytes| {
+        let result = export_png(
+            &self.sketch.marks,
+            background,
+            self.sketch.background.as_ref(),
+        )
+        .and_then(|bytes| {
             let root = std::env::var_os("HOME")
                 .map(PathBuf::from)
                 .ok_or_else(|| anyhow::anyhow!("Home directory unavailable"))?
@@ -372,13 +438,27 @@ impl ComposerView {
         match result {
             Ok(path) => {
                 // Each save is immutable: queued messages and undo retain their prior PNG.
-                self.sketch
-                    .documents
-                    .insert(path.clone(), self.sketch.marks.clone());
+                self.sketch.documents.insert(
+                    path.clone(),
+                    SketchDocument {
+                        marks: self.sketch.marks.clone(),
+                        background: self.sketch.background.clone(),
+                    },
+                );
                 if let Some(old) = self.sketch.editing_path.replace(path.clone()) {
-                    self.prompt_context.files.retain(|f| f.path != old);
+                    if let Some(file) = self
+                        .prompt_context
+                        .files
+                        .iter_mut()
+                        .find(|file| file.path == old)
+                    {
+                        file.path = path;
+                        file.image = true;
+                        self.draft_revision = self.draft_revision.wrapping_add(1);
+                    }
+                } else {
+                    self.attach_paths(vec![path], cx);
                 }
-                self.attach_paths(vec![path], cx);
                 self.sketch.open = false;
                 self.focus_prompt_pending = true;
             }
@@ -449,9 +529,28 @@ impl ComposerView {
         } else {
             0xffffff
         };
-        let side = (f32::from(window.viewport_size().height) - 80.)
-            .min(f32::from(window.viewport_size().width) - 80.)
-            .clamp(240., SIDE);
+        let logical_height = self.sketch.logical_height();
+        let image_backed = self.sketch.background.is_some();
+        let canvas_top = if image_backed { 48. } else { 0. };
+        let chrome_height = if image_backed { 96. } else { 0. };
+        let scale = ((f32::from(window.viewport_size().height) - 80. - chrome_height).max(80.)
+            / logical_height)
+            .min((f32::from(window.viewport_size().width) - 80.).max(80.) / SIDE)
+            .min(1.);
+        let side = SIDE * scale;
+        let height = logical_height * scale;
+        let editor_width = if image_backed {
+            side.max(480.)
+                .min(f32::from(window.viewport_size().width) - 40.)
+        } else {
+            side
+        };
+        let canvas_left = (editor_width - side) / 2.;
+        let image = self
+            .sketch
+            .background
+            .as_ref()
+            .map(|background| background.preview.clone());
         let marks = self.sketch.marks.clone();
         let bounds = self.sketch.bounds.clone();
         let selected = self.sketch.selected;
@@ -559,11 +658,11 @@ impl ComposerView {
         let toolbar = div()
             .absolute()
             .top(px(8.))
-            .left(px(side / 2. - 78.))
+            .left(px(editor_width / 2. - 78.))
             .h(px(36.))
             .px(px(4.))
             .rounded_full()
-            .bg(theme.text.alpha(0.08))
+            .bg(theme.elevated)
             .border_1()
             .border_color(theme.text.alpha(0.08))
             .flex()
@@ -623,7 +722,7 @@ impl ComposerView {
                     div()
                         .id("sketch-editor")
                         .role(Role::Dialog)
-                        .aria_label(crate::i18n::format!("草图编辑器"=>"Sketch editor"))
+                        .aria_label(if self.sketch.background.is_some() { crate::i18n::format!("图片标注"=>"Image markup") } else { crate::i18n::format!("草图编辑器"=>"Sketch editor") })
                         .track_focus(self.sketch.focus.as_ref().unwrap())
                         .on_action(cx.listener(|this, _: &crate::app::DismissPermissionUi, _, cx| {
                             if this.sketch.discard_confirm {
@@ -636,10 +735,11 @@ impl ComposerView {
                             cx.stop_propagation();
                         }))
                         .relative()
-                        .size(px(side))
+                        .w(px(editor_width))
+                        .h(px(height + chrome_height))
                         .rounded(px(20.))
                         .overflow_hidden()
-                        .bg(rgb(background))
+                        .bg(if image_backed { theme.elevated } else { rgb(background) })
                         .when(self.mode == ThemeMode::Light, |d| d.border_1().border_color(theme.text.alpha(0.05)).shadow(vec![gpui::BoxShadow::new(px(0.), px(2.), gpui::rgba(0x0000000d).into()).blur_radius(px(5.))]))
                         .text_color(theme.text)
                         .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, _, cx| {
@@ -692,8 +792,8 @@ impl ComposerView {
                             div()
                                 .id("sketch-canvas")
                                 .role(Role::Image)
-                                .aria_label(crate::i18n::format!("草图画布"=>"Sketch canvas"))
-                                .size_full()
+                                .aria_label(if self.sketch.background.is_some() { crate::i18n::format!("图片标注画布"=>"Image markup canvas") } else { crate::i18n::format!("草图画布"=>"Sketch canvas") })
+                                .absolute().top(px(canvas_top)).left(px(canvas_left)).w(px(side)).h(px(height))
                                 .on_mouse_down(
                                     MouseButton::Left,
                                     cx.listener(
@@ -732,6 +832,8 @@ impl ComposerView {
                                         cx.notify();
                                     }),
                                 )
+                                .relative()
+                                .when_some(image, |canvas, image| canvas.child(gpui::img(image).absolute().inset_0().size_full().object_fit(gpui::ObjectFit::Fill)))
                                 .child(paint),
                         )
                         .child(toolbar)
@@ -740,7 +842,7 @@ impl ComposerView {
                                 .id("sketch-close")
                                 .role(Role::Button)
                                 .aria_label(
-                                    crate::i18n::format!("关闭草图编辑器"=>"Close sketch editor"),
+                                    if self.sketch.background.is_some() { crate::i18n::format!("取消标注"=>"Cancel markup") } else { crate::i18n::format!("关闭草图编辑器"=>"Close sketch editor") },
                                 )
                                 .absolute()
                                 .left(px(8.))
@@ -797,10 +899,11 @@ impl ComposerView {
                                 div()
                                     .absolute()
                                     .top(px(50.))
-                                    .left(px(side / 2.))
+                                    .left(px(editor_width / 2. - 144.))
                                     .p(px(8.))
                                     .rounded(px(12.))
                                     .bg(theme.elevated)
+                                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                                     .flex()
                                     .children(
                                         [
@@ -827,6 +930,7 @@ impl ComposerView {
                                                     .on_click(cx.listener(move |this, _, _, cx| {
                                                         this.sketch.tool = tool;
                                                         this.sketch.shape_menu = false;
+                                                        cx.stop_propagation();
                                                         cx.notify();
                                                     }))
                                                     .child(super::super::icons::icon(label,theme.text.into()).size(px(16.)))
@@ -839,7 +943,7 @@ impl ComposerView {
                             let bounds = self.sketch.width_bounds.clone();
                             let track_color = theme.text.alpha(0.2);
                             div().id("sketch-width-slider").role(Role::Slider).aria_label(crate::i18n::format!("笔画宽度"=>"Stroke width")).aria_value(format!("{}",self.sketch.width.unwrap_or(12.)))
-                                .absolute().left(px(8.)).top(px(side/2.-88.)).w(px(32.)).h(px(176.)).cursor_pointer()
+                                .absolute().left(px(8.)).top(px(canvas_top + height/2.-88.)).w(px(32.)).h(px(176.)).rounded_full().bg(theme.elevated).cursor_pointer()
                                 .on_mouse_down(MouseButton::Left,cx.listener(|this,e: &gpui::MouseDownEvent,_,cx| {this.sketch.checkpoint();this.set_sketch_width_at(e.position);cx.stop_propagation();cx.notify();}))
                                 .on_mouse_move(cx.listener(|this,e: &gpui::MouseMoveEvent,_,cx| {if e.pressed_button==Some(MouseButton::Left){this.set_sketch_width_at(e.position);cx.stop_propagation();cx.notify();}}))
                                 .child(canvas(move |b,_,_| {bounds.set(Some(b));},move |b,_,window,_| {
@@ -856,7 +960,7 @@ impl ComposerView {
                             div()
                                 .absolute()
                                 .bottom(px(14.))
-                                .left(px((side - (PALETTE.len()+1) as f32 * 28.) / 2.))
+                                .left(px((editor_width - (PALETTE.len()+1) as f32 * 28.) / 2.))
                                 .flex()
                                 .gap(px(8.))
                                 .child(div().id("sketch-custom-color").role(Role::Button).aria_label(crate::i18n::format!("选择自定义颜色"=>"Choose custom color")).size(px(20.)).rounded_full().cursor_pointer().on_click(cx.listener(|this,_,_,cx| this.open_sketch_color(cx))).child(gpui::img("icons/sketch-color.svg").size(px(20.))))
@@ -890,7 +994,7 @@ impl ComposerView {
                             div()
                                 .id("sketch-save")
                                 .role(Role::Button)
-                                .aria_label(crate::i18n::format!("附加草图"=>"Attach sketch"))
+                                .aria_label(if self.sketch.background.is_some() { crate::i18n::format!("保存标注"=>"Save markup") } else { crate::i18n::format!("附加草图"=>"Attach sketch") })
                                 .absolute()
                                 .right(px(8.))
                                 .bottom(px(8.))
@@ -902,7 +1006,7 @@ impl ComposerView {
                                 .items_center()
                                 .justify_center()
                                 .cursor_pointer()
-                                .opacity(if self.sketch.marks.is_empty() {
+                                .opacity(if !self.sketch.can_save() {
                                     0.4
                                 } else {
                                     1.
@@ -914,8 +1018,8 @@ impl ComposerView {
                             d.child(
                                 div()
                                     .absolute()
-                                    .left(px(p.0 * side / SIDE))
-                                    .top(px(p.1 * side / SIDE))
+                                    .left(px(canvas_left + p.0 * side / SIDE))
+                                    .top(px(canvas_top + p.1 * side / SIDE))
                                     .w(px((SIDE-p.0).min(224.)*side/SIDE))
                                     .h(px(self.sketch.text_input.as_ref().map_or(30., |input| (input.read(cx).text().lines().count().max(1) as f32 * 30.).max(30.))))
                                     .border_1()
@@ -943,10 +1047,26 @@ impl ComposerView {
         )
     }
 }
-fn export_png(marks: &[Mark], background: u32) -> anyhow::Result<Vec<u8>> {
+fn export_png(
+    marks: &[Mark],
+    background: u32,
+    image: Option<&ImageBackground>,
+) -> anyhow::Result<Vec<u8>> {
+    let (width, height, logical_height) = image.map_or((760, 760, SIDE), |image| {
+        (
+            image.pixels.width(),
+            image.pixels.height(),
+            image.logical_height(),
+        )
+    });
     let mut svg = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"760\" height=\"760\"><rect width=\"760\" height=\"760\" fill=\"#{background:06x}\"/>"
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{width}\" height=\"{height}\" viewBox=\"0 0 760 {logical_height}\">"
     );
+    if image.is_none() {
+        svg.push_str(&format!(
+            "<rect width=\"760\" height=\"760\" fill=\"#{background:06x}\"/>"
+        ));
+    }
     for mark in marks {
         if mark.tool == Tool::Text {
             let p = mark.points[0];
@@ -972,13 +1092,25 @@ fn export_png(marks: &[Mark], background: u32) -> anyhow::Result<Vec<u8>> {
     let mut options = resvg::usvg::Options::default();
     options.fontdb_mut().load_system_fonts();
     let tree = resvg::usvg::Tree::from_str(&svg, &options)?;
-    let mut pixmap = resvg::tiny_skia::Pixmap::new(760, 760)
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
         .ok_or_else(|| anyhow::anyhow!("Could not allocate sketch image"))?;
     resvg::render(
         &tree,
         resvg::tiny_skia::Transform::identity(),
         &mut pixmap.as_mut(),
     );
+    if let Some(image) = image {
+        let mut combined = (*image.pixels).clone();
+        combined.draw_pixmap(
+            0,
+            0,
+            pixmap.as_ref(),
+            &resvg::tiny_skia::PixmapPaint::default(),
+            resvg::tiny_skia::Transform::identity(),
+            None,
+        );
+        pixmap = combined;
+    }
     Ok(pixmap.encode_png()?)
 }
 
@@ -1064,6 +1196,106 @@ fn color_panel_value() -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn fixture(width: u32, height: u32) -> Vec<u8> {
+        let mut image = resvg::tiny_skia::Pixmap::new(width, height).unwrap();
+        image.fill(resvg::tiny_skia::Color::from_rgba8(30, 70, 150, 255));
+        image.encode_png().unwrap()
+    }
+
+    #[test]
+    fn attachment_export_preserves_source_dimensions_pixels_and_markup_coordinates() {
+        for (width, height) in [(1200, 600), (300, 900)] {
+            let source = fixture(width, height);
+            let path = std::env::temp_dir().join(format!(
+                "echora-markup-export-{}-{width}.png",
+                std::process::id()
+            ));
+            std::fs::write(&path, &source).unwrap();
+            let background = ImageBackground::read(&path).unwrap();
+            let mark = Mark {
+                tool: Tool::Line,
+                color: 0xff0000,
+                width: 10.,
+                points: vec![(100., 100.), (200., 100.)],
+                text: String::new(),
+            };
+            let bytes = export_png(&[mark], 0xffffff, Some(&background)).unwrap();
+            let image = resvg::tiny_skia::Pixmap::decode_png(&bytes).unwrap();
+            assert_eq!((image.width(), image.height()), (width, height));
+            assert_eq!(
+                image.pixel(width - 10, height - 10),
+                background.pixels.pixel(width - 10, height - 10)
+            );
+            assert!(
+                image
+                    .pixel(
+                        (150. * width as f32 / SIDE) as u32,
+                        (100. * width as f32 / SIDE) as u32
+                    )
+                    .unwrap()
+                    .red()
+                    > 240
+            );
+            assert_eq!(std::fs::read(&path).unwrap(), source);
+            // Removing all vector marks restores the original raster, not a flattened prior edit.
+            let erased = export_png(&[], 0, Some(&background)).unwrap();
+            assert_eq!(
+                resvg::tiny_skia::Pixmap::decode_png(&erased).unwrap(),
+                *background.pixels
+            );
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn attachment_save_reopen_cancel_and_replace_leave_other_context_and_prior_pngs_intact() {
+        let source = fixture(640, 400);
+        let path =
+            std::env::temp_dir().join(format!("echora-markup-draft-{}.png", std::process::id()));
+        std::fs::write(&path, &source).unwrap();
+        let other = PathBuf::from("/tmp/keep-context.txt");
+        let mut app = gpui::TestApp::new();
+        let composer = app.new_entity(|cx| ComposerView::new(ThemeMode::Dark, cx));
+        app.update_entity(&composer, |composer, cx| {
+            composer.attach_paths(vec![path.clone(), other.clone()], cx);
+            assert!(composer.annotate_attachment(&path, cx));
+            composer.sketch.down((100., 120.));
+            composer.sketch.drag((200., 120.));
+            composer.request_close_sketch(cx);
+            assert!(composer.sketch.discard_confirm);
+            composer.choose_sketch_discard(true, cx);
+            assert_eq!(composer.prompt_context.files[0].path, path);
+            assert_eq!(std::fs::read(&path).unwrap(), source);
+            assert!(composer.annotate_attachment(&path, cx));
+            composer.sketch.down((100., 120.));
+            composer.sketch.drag((200., 120.));
+            composer.save_sketch(cx);
+            let first = composer.prompt_context.files[0].path.clone();
+            assert_ne!(first, path);
+            assert_eq!(composer.prompt_context.files[1].path, other);
+            let prior_message = composer.prompt_context.files.clone();
+            let first_bytes = std::fs::read(&first).unwrap();
+            assert!(composer.reopen_sketch(&first, cx));
+            assert_eq!(composer.sketch.marks.len(), 1);
+            composer.sketch.marks.clear();
+            composer.save_sketch(cx);
+            let second = composer.prompt_context.files[0].path.clone();
+            assert_ne!(second, first);
+            assert_eq!(prior_message[0].path, first);
+            assert_eq!(std::fs::read(&first).unwrap(), first_bytes);
+            assert_eq!(
+                resvg::tiny_skia::Pixmap::decode_png(&std::fs::read(&second).unwrap()).unwrap(),
+                resvg::tiny_skia::Pixmap::decode_png(&source).unwrap()
+            );
+            assert_eq!(std::fs::read(&path).unwrap(), source);
+            composer.prompt_context.files.clear();
+            assert!(!composer.annotate_attachment(&second, cx));
+            std::fs::remove_file(first).unwrap();
+            std::fs::remove_file(second).unwrap();
+        });
+        std::fs::remove_file(path).unwrap();
+    }
+
     #[test]
     fn select_drag_erase_undo_and_png_export_preserve_the_document() {
         let mut state = SketchState {
@@ -1085,7 +1317,7 @@ mod tests {
         assert!(state.marks.is_empty());
         state.undo();
         assert_eq!(state.marks.len(), 1);
-        let bytes = export_png(&state.marks, 0xffffff).unwrap();
+        let bytes = export_png(&state.marks, 0xffffff, None).unwrap();
         assert_eq!(
             crate::media::encoded_image_dimensions(&bytes),
             Some((760, 760))

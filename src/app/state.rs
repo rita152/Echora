@@ -96,6 +96,7 @@ impl RightPanelState {
 }
 
 pub(super) struct ImagePreviewState {
+    pub(super) composer: Option<gpui::WeakEntity<crate::components::composer::ComposerView>>,
     pub(super) path: Option<PathBuf>,
     pub(super) focus: FocusHandle,
     pub(super) focus_active: bool,
@@ -108,6 +109,7 @@ impl ImagePreviewState {
     pub(super) fn new(cx: &mut Context<ChatApp>) -> Self {
         Self {
             path: None,
+            composer: None,
             focus: cx.focus_handle(),
             focus_active: false,
             previous_focus: None,

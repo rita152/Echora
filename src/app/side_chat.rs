@@ -79,7 +79,8 @@ impl ChatApp {
                         this.deactivate_side_chat(cx);
                         this.open_diff_review(review.clone(), cx);
                     }
-                    SideChatEvent::OpenImage(path) => {
+                    SideChatEvent::OpenImage(path, composer) => {
+                        this.image_preview.composer = composer.clone();
                         this.image_preview.path = Some(path.clone());
                         this.image_preview.dimensions = read_image_dimensions(path).ok().flatten();
                         this.image_preview.zoom = 1.0;

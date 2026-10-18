@@ -40,6 +40,7 @@ mod send;
 mod shell;
 mod side_chat;
 mod sketch;
+mod sketch_image;
 mod slash_menu;
 mod slash_menu_render;
 mod submissions;

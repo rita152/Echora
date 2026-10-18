@@ -258,12 +258,16 @@ pub(super) fn image_generation_activity(
             ])
         })
         .on_click(move |_, _, cx| {
-            click_home.update(cx, |_, cx| cx.emit(OpenImagePreview(preview_path.clone())));
+            click_home.update(cx, |_, cx| {
+                cx.emit(OpenImagePreview(preview_path.clone(), None))
+            });
             cx.stop_propagation();
         })
         .on_key_down(move |event, _, cx| {
             if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                keyboard_home.update(cx, |_, cx| cx.emit(OpenImagePreview(keyboard_path.clone())));
+                keyboard_home.update(cx, |_, cx| {
+                    cx.emit(OpenImagePreview(keyboard_path.clone(), None))
+                });
                 cx.stop_propagation();
             }
         })
@@ -419,14 +423,14 @@ pub(super) fn image_view_activity(
                         })
                         .on_click(move |_, _, cx| {
                             preview_home.update(cx, |_, cx| {
-                                cx.emit(OpenImagePreview(thumbnail_path.clone()));
+                                cx.emit(OpenImagePreview(thumbnail_path.clone(), None));
                             });
                             cx.stop_propagation();
                         })
                         .on_key_down(move |event, _, cx| {
                             if matches!(event.keystroke.key.as_str(), "enter" | "space") {
                                 preview_key_home.update(cx, |_, cx| {
-                                    cx.emit(OpenImagePreview(thumbnail_key_path.clone()));
+                                    cx.emit(OpenImagePreview(thumbnail_key_path.clone(), None));
                                 });
                                 cx.stop_propagation();
                             }

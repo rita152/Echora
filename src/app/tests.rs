@@ -2648,3 +2648,30 @@ fn new_chats_inherit_confirmed_permissions_without_changing_existing_chats() {
     });
     let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn image_markup_requires_the_preview_owner_and_an_unsent_attachment() {
+    let source =
+        std::env::temp_dir().join(format!("echora-preview-markup-{}.png", std::process::id()));
+    let mut image = resvg::tiny_skia::Pixmap::new(400, 200).unwrap();
+    image.fill(resvg::tiny_skia::Color::WHITE);
+    image.save_png(&source).unwrap();
+    let mut app = TestApp::new();
+    let mut window = app.open_window(|_, cx| ChatApp::new(ThemeMode::Dark, false, cx));
+    window.update(|chat, _, cx| {
+        let composer = chat.home.read(cx).composer_entity();
+        composer.update(cx, |composer, cx| {
+            composer.attach_paths(vec![source.clone()], cx)
+        });
+        chat.image_preview.path = Some(source.clone());
+        // Transcript previews carry no draft owner, even if a draft uses the same file.
+        chat.annotate_preview_image(cx);
+        assert_eq!(chat.image_preview.path, Some(source.clone()));
+        chat.image_preview.composer = Some(composer.downgrade());
+        chat.annotate_preview_image(cx);
+        assert!(chat.image_preview.path.is_none());
+        assert!(!chat.image_preview.focus_active);
+        assert!(chat.image_preview.previous_focus.is_none());
+    });
+    std::fs::remove_file(source).unwrap();
+}

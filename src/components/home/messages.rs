@@ -323,7 +323,7 @@ pub(super) fn open_user_image(
 ) {
     match image {
         crate::agent::UserMessageAttachment::Local(path) => {
-            home.update(cx, |_, cx| cx.emit(OpenImagePreview(path.clone())))
+            home.update(cx, |_, cx| cx.emit(OpenImagePreview(path.clone(), None)))
         }
         crate::agent::UserMessageAttachment::Remote(url) => cx.open_url(url),
         crate::agent::UserMessageAttachment::File(path) => cx.open_with_system(path),

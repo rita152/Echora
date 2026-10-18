@@ -2097,6 +2097,7 @@ dependencies = [
  "cocoa 0.25.0",
  "gpui",
  "gpui_platform",
+ "image",
  "libc",
  "objc",
  "portable-pty",

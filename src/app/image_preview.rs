@@ -7,6 +7,30 @@ use gpui::Context;
 use super::ChatApp;
 
 impl ChatApp {
+    pub(super) fn annotate_preview_image(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.image_preview.path.clone() else {
+            return;
+        };
+        let Some(composer) = self
+            .image_preview
+            .composer
+            .as_ref()
+            .and_then(gpui::WeakEntity::upgrade)
+        else {
+            return;
+        };
+        if composer.update(cx, |composer, cx| composer.annotate_attachment(&path, cx)) {
+            self.image_preview.path = None;
+            self.image_preview.dimensions = None;
+            self.image_preview.composer = None;
+            self.image_preview.zoom = 1.0;
+            // The markup editor now owns focus; do not restore the preview's prompt.
+            self.image_preview.previous_focus = None;
+            self.image_preview.focus_active = false;
+        }
+        cx.notify();
+    }
+
     pub(super) fn download_preview_image(&mut self, source: PathBuf, cx: &mut Context<Self>) {
         let suggested_name = source
             .file_name()

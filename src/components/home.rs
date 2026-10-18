@@ -174,7 +174,7 @@ impl gpui::EventEmitter<ConversationThreadCreated> for HomeView {}
 pub struct OpenDiffReview(pub DiffReviewPresentation);
 impl gpui::EventEmitter<OpenDiffReview> for HomeView {}
 
-pub struct OpenImagePreview(pub PathBuf);
+pub struct OpenImagePreview(pub PathBuf, pub Option<gpui::WeakEntity<ComposerView>>);
 impl gpui::EventEmitter<OpenImagePreview> for HomeView {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -687,8 +687,11 @@ impl HomeView {
         }
         cx.subscribe(
             &composer,
-            |_, _, event: &super::composer::OpenAttachmentPreview, cx| {
-                cx.emit(OpenImagePreview(event.0.clone()));
+            |_, composer, event: &super::composer::OpenAttachmentPreview, cx| {
+                cx.emit(OpenImagePreview(
+                    event.0.clone(),
+                    Some(composer.downgrade()),
+                ));
             },
         )
         .detach();

@@ -36,6 +36,7 @@ impl ChatApp {
         .detach();
         cx.subscribe(&panel_home, |this, _, preview: &OpenImagePreview, cx| {
             this.image_preview.path = Some(preview.0.clone());
+            this.image_preview.composer = preview.1.clone();
             this.image_preview.dimensions = read_image_dimensions(&preview.0).ok().flatten();
             this.image_preview.zoom = 1.0;
             cx.notify();
