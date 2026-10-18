@@ -8,13 +8,19 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing version tag to rebuild and update (optional)'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.workflow }}-${{ github.event_name == 'release' && format('refs/tags/{0}', github.event.release.tag_name) || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'release' && !startsWith(github.ref, 'refs/tags/') }}
+  group: release-${{ github.workflow }}-${{ (inputs.release_tag || github.event.release.tag_name) && format('refs/tags/{0}', inputs.release_tag || github.event.release.tag_name) || github.ref }}
+  cancel-in-progress: ${{ inputs.release_tag == '' && github.event_name != 'release' && !startsWith(github.ref, 'refs/tags/') }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -31,11 +37,13 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
 
       - name: Read and validate version
         id: version
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.event.release.tag_name || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
         run: |
           python3 - <<'PY'
           import os
@@ -68,20 +76,37 @@ jobs:
             runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             executable: gpui-chat-clone
+            installer: linux
           - platform: macOS arm64
             runner: macos-15
             target: aarch64-apple-darwin
             executable: gpui-chat-clone
+            installer: macos
           - platform: Windows x86_64
             runner: windows-2022
             target: x86_64-pc-windows-msvc
             executable: gpui-chat-clone.exe
+            installer: windows
     defaults:
       run:
         shell: bash
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
+
+      # Rebuild older tags with the packaging tools from this workflow's commit,
+      # while keeping all application source and assets at the requested tag.
+      - name: Check out packaging tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+          sparse-checkout: |
+            scripts/release
+            scripts/gpui_capture_info.plist
+          sparse-checkout-cone-mode: false
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
@@ -90,7 +115,17 @@ jobs:
           sudo apt-get install --no-install-recommends -y \
             build-essential clang cmake libasound2-dev libfontconfig-dev \
             libglib2.0-dev libssl-dev libvulkan-dev libwayland-dev \
-            libx11-xcb-dev libxkbcommon-x11-dev libzstd-dev pkg-config
+            libx11-xcb-dev libxkbcommon-x11-dev libzstd-dev pkg-config \
+            desktop-file-utils
+
+      - name: Ensure Windows installer compiler is available
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe")) {
+            choco install innosetup --no-progress --yes
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
 
       - name: Prepare Metal compiler
         if: runner.os == 'macOS'
@@ -132,11 +167,25 @@ jobs:
           cp -R assets "dist/$package/assets"
           tar -czf "dist/$package.tar.gz" -C dist "$package"
 
-      - name: Upload release archive
+      - name: Build and verify native installer
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+          INSTALLER_PLATFORM: ${{ matrix.installer }}
+          PACKAGE_NAME: echora-${{ needs.version.outputs.version }}-${{ matrix.target }}
+        run: |
+          python .release-tools/scripts/release/package.py \
+            --payload "dist/$PACKAGE_NAME" --output dist \
+            --version "$RELEASE_VERSION" --platform "$INSTALLER_PLATFORM"
+
+      - name: Upload release packages
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: echora-${{ matrix.target }}
-          path: dist/echora-${{ needs.version.outputs.version }}-${{ matrix.target }}.tar.gz
+          path: |
+            dist/*.tar.gz
+            dist/*.dmg
+            dist/*.exe
+            dist/*.deb
           if-no-files-found: error
           retention-days: 14
 
@@ -157,10 +206,15 @@ jobs:
 
       - name: Generate SHA-256 checksums
         working-directory: dist
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
         run: |
-          archives=(*.tar.gz)
-          test "${#archives[@]}" -eq 3
-          sha256sum "${archives[@]}" > SHA256SUMS
+          test -f "Echora-$RELEASE_VERSION-macos-arm64.dmg"
+          test -f "Echora-$RELEASE_VERSION-windows-x86_64-setup.exe"
+          test -f "Echora-$RELEASE_VERSION-linux-amd64.deb"
+          packages=(*.tar.gz *.dmg *.exe *.deb)
+          test "${#packages[@]}" -eq 6
+          sha256sum "${packages[@]}" > SHA256SUMS
 
       - name: Create or update GitHub Release
         env:
@@ -169,15 +223,44 @@ jobs:
           RELEASE_TAG: ${{ needs.version.outputs.tag }}
           PRERELEASE: ${{ needs.version.outputs.prerelease }}
         run: |
+          cat > "$RUNNER_TEMP/install-notes.txt" <<EOF
+          <!-- echora-installers:start -->
+          ## Install / 安装
+
+          | Platform / 平台 | Installer / 安装包 | How to install / 安装方式 |
+          | --- | --- | --- |
+          | macOS Apple Silicon | [DMG](https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/Echora-${RELEASE_TAG#v}-macos-arm64.dmg) | Open the DMG and drag Echora into Applications / 打开后拖入“应用程序” |
+          | Windows x86_64 | [Setup EXE](https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/Echora-${RELEASE_TAG#v}-windows-x86_64-setup.exe) | Run the installer / 双击安装 |
+          | Linux x86_64 (Ubuntu 24.04+) | [DEB](https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/Echora-${RELEASE_TAG#v}-linux-amd64.deb) | Open with your package manager, or run sudo apt install ./Echora-*.deb / 使用软件安装器或 apt 安装 |
+
+          Installers are not signed with a trusted code-signing certificate or notarized. Codex CLI must be installed and configured separately. The tar.gz files are portable archives; Source code files are not installers.
+
+          安装包尚未经过受信任的代码签名或公证。需要另行安装并配置 Codex CLI。tar.gz 为便携压缩包，Source code 为源码，均不是安装程序。
+          <!-- echora-installers:end -->
+          EOF
           latest=true
           if [[ "$PRERELEASE" == true ]]; then
             latest=false
           fi
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" dist/* --clobber
-            gh release edit "$RELEASE_TAG" --prerelease="$PRERELEASE" --latest="$latest"
+            gh release view "$RELEASE_TAG" --json body --jq .body > "$RUNNER_TEMP/existing-notes.txt"
+            python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import re
+
+          root = Path(os.environ["RUNNER_TEMP"])
+          old = (root / "existing-notes.txt").read_text()
+          old = re.sub(r"<!-- echora-installers:start -->.*?<!-- echora-installers:end -->\s*", "", old, flags=re.S)
+          notes = root / "install-notes.txt"
+          notes.write_text(notes.read_text().rstrip() + "\n\n" + old.lstrip())
+          PY
+            gh release edit "$RELEASE_TAG" --prerelease="$PRERELEASE" --latest="$latest" \
+              --notes-file "$RUNNER_TEMP/install-notes.txt"
           else
             gh release create "$RELEASE_TAG" dist/* \
               --verify-tag --title "Echora $RELEASE_TAG" --generate-notes \
+              --notes-file "$RUNNER_TEMP/install-notes.txt" \
               --prerelease="$PRERELEASE" --latest="$latest"
           fi
