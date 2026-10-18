@@ -442,6 +442,18 @@ impl Render for ChatApp {
         } else {
             CHAT_CONTENT_HORIZONTAL_GUTTER
         };
+        // The header fade belongs to the transcript. Keep it outside the
+        // Environment column as well as the tool dock, including while the
+        // card's entrance animation moves it toward its final position.
+        let conversation_fade_right = px(if summary_shown {
+            chat_trailing_inset
+        } else {
+            0.0
+        }) + if self.right_panel.open {
+            right_panel_width
+        } else {
+            px(0.0)
+        };
         let summary_serial = self.summary_reveal_serial;
         let reduce_motion = cx.reduce_motion();
         let summary_island = summary_shown.then(|| {
@@ -923,10 +935,11 @@ impl Render for ChatApp {
                 shell
                     .child(
                         div()
+                            .debug_selector(|| "MAIN_CONTENT_TOP_FADE".to_owned())
                             .absolute()
                             .top(px(RESUMED_HEADER_HEIGHT))
                             .left(px(revealed_sidebar_width))
-                            .right(if self.right_panel.open { right_panel_width } else { px(0.0) })
+                            .right(conversation_fade_right)
                             .h(px(MAIN_CONTENT_TOP_FADE))
                             .bg(linear_gradient(
                                 0.0,

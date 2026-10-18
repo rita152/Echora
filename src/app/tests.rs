@@ -2518,3 +2518,68 @@ fn environment_column_keeps_long_tables_scrollable(cx: &mut gpui::TestAppContext
     );
     assert!((scrolled.right() - viewport.right()).abs() <= px(1.));
 }
+
+#[gpui::test]
+fn environment_card_stays_outside_the_conversation_header_fade(cx: &mut gpui::TestAppContext) {
+    cx.executor().allow_parking();
+    let handle = cx.add_window(|_, cx| ChatApp::new(ThemeMode::Dark, false, cx));
+    let entity = handle.root(cx).unwrap();
+    let mut visual = gpui::VisualTestContext::from_window(handle.into(), cx);
+    visual.update(|_, cx| {
+        entity.update(cx, |chat, cx| {
+            chat.complete_startup_for_capture(cx);
+            chat.home
+                .read(cx)
+                .composer_entity()
+                .update(cx, |composer, cx| {
+                    composer.set_workspace_context(
+                        PathBuf::from("/tmp/project"),
+                        None,
+                        Some("header-fade".into()),
+                        cx,
+                    );
+                });
+            chat.workspace_store
+                .insert_thread_for_test(history_fixture("header-fade", "hello").thread);
+            chat.rekey_created_thread("header-fade".into(), cx);
+        })
+    });
+    for (width, collapsed, dock) in [
+        (960., false, false),
+        (1440., false, false),
+        (960., true, false),
+        (1440., false, true),
+    ] {
+        visual.simulate_resize(size(px(width), px(700.)));
+        for open in [true, false, true] {
+            visual.update(|_, cx| {
+                entity.update(cx, |chat, cx| {
+                    chat.sidebar_layout.collapsed = collapsed;
+                    chat.sidebar_layout.reveal = if collapsed { 0. } else { 1. };
+                    chat.sidebar_layout.animation_running = false;
+                    chat.right_panel.open = dock;
+                    chat.workspace_store.set_summary_panel_pinned(open);
+                    cx.notify();
+                })
+            });
+            visual.run_until_parked();
+            visual.update(|window, cx| window.draw(cx).clear(cx));
+            let fade = visual.debug_bounds("MAIN_CONTENT_TOP_FADE").unwrap();
+            let conversation = visual.debug_bounds("MAIN_CONVERSATION_SLOT").unwrap();
+            assert!(fade.size.width > px(0.));
+            assert_eq!(fade.top(), px(46.0));
+            assert_eq!(fade.size.height, px(16.0));
+            if open {
+                let card = visual.debug_bounds("THREAD_SUMMARY_PANEL").unwrap();
+                assert!(
+                    fade.right() < card.left(),
+                    "width={width}, collapsed={collapsed}, dock={dock}: fade={fade:?}, card={card:?}"
+                );
+                assert_eq!(fade.right(), conversation.right());
+            } else {
+                assert!(visual.debug_bounds("THREAD_SUMMARY_PANEL").is_none());
+                assert!(fade.right() > conversation.right());
+            }
+        }
+    }
+}
