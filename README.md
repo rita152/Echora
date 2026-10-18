@@ -106,13 +106,23 @@ xcrun --sdk macosx metal --version
 
 Use `--theme=light` for the light theme. Add `--language=en`, `--language=zh-CN`, or `--language=auto` to choose the interface language for one launch. Settings saves your language preference for future launches.
 
-Download development previews from [GitHub Releases](https://github.com/rita152/Echora/releases). Versioned archives and `SHA256SUMS` are published for macOS arm64, Linux x86_64, and Windows x86_64. They are unsigned executable-and-assets archives; keep the executable beside its `assets/` directory. The executable is currently named `gpui-chat-clone`. Interactive verification is currently limited to macOS. Builds from branches and pull requests remain available for 14 days on the [Actions page](https://github.com/rita152/Echora/actions/workflows/release.yml).
+Download development previews from [GitHub Releases](https://github.com/rita152/Echora/releases):
+
+| Platform | Installer | Installation |
+| --- | --- | --- |
+| macOS Apple Silicon (arm64) | `Echora-<version>-macos-arm64.dmg` | Open the disk image and drag Echora into Applications. |
+| Windows x86_64 | `Echora-<version>-windows-x86_64-setup.exe` | Run Setup. Installs for the current user with a Start menu entry and an uninstaller. |
+| Linux x86_64, Ubuntu 24.04 or a compatible newer distribution | `Echora-<version>-linux-amd64.deb` | Open with your package manager, or run `sudo apt install ./Echora-<version>-linux-amd64.deb`. Launch Echora from the application menu. |
+
+Installers include application assets; Windows also includes the app-local MSVC runtime. Codex CLI must still be installed and configured separately. Development installers do not have trusted code signatures or macOS notarization, so the operating system may require approval before opening them. Interactive verification is currently limited to macOS; CI checks package installation, resource discovery, and removal on the corresponding runners, without testing the full Windows/Linux GUI.
+
+The `.tar.gz` downloads are portable executable-and-assets archives, not installers; keep the executable beside its `assets/` directory. The executable is currently named `gpui-chat-clone`. `SHA256SUMS` covers all installers and portable archives. GitHub's **Source code** downloads contain source, not an installed app. Main-branch and pull-request builds remain available for 14 days on the [Actions page](https://github.com/rita152/Echora/actions/workflows/release.yml).
 
 ### Publishing a version
 
 Versions follow SemVer: `v0.1.0-alpha.1`, `v0.1.0-alpha.2`, then beta/rc previews as needed, and `v0.1.0` for a stable release. Any version with a prerelease suffix is automatically marked **Pre-release** on GitHub and is not marked Latest.
 
-Update the root package version in `Cargo.toml` and its entry in `Cargo.lock`, commit and push the change, then push the matching `v` tag (for example, `git tag v0.1.0-alpha.2` followed by `git push origin v0.1.0-alpha.2`). The workflow validates the version, builds all three platforms, and creates a GitHub Release with the archives and checksums only after every build succeeds. Publishing a release through GitHub's UI also triggers builds and attaches the same assets; its tag must match the version in the tagged source. To retry a failed release build, rerun the workflow or manually dispatch it on the version tag.
+Update the root package version in `Cargo.toml` and its entry in `Cargo.lock`, commit and push the change, then push the matching `v` tag (for example, `git tag v0.1.0-alpha.2` followed by `git push origin v0.1.0-alpha.2`). The workflow validates the version, builds all three platforms, packages and checks native installers, and creates a GitHub Release with all downloads and checksums only after every job succeeds. Publishing a release through GitHub's UI also triggers builds and attaches the same assets; its tag must match the version in the tagged source. To retry a failed release build, rerun the workflow. To rebuild an existing release with updated packaging tools, manually dispatch the workflow from `main` with `release_tag` set to the existing tag (for example, `gh workflow run release.yml --ref main -f release_tag=v0.1.0-alpha.1`). Application source and assets come from that tag; packaging tools come from the workflow commit. This updates release assets without moving the tag.
 
 ## Current scope
 
