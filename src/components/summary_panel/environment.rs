@@ -720,7 +720,9 @@ impl SummaryPanel {
             .p(px(16.))
             .rounded(px(22.))
             .bg(theme.model_picker_surface)
-            .shadow_lg()
+            .shadow(vec![
+                gpui::BoxShadow::new(px(0.), px(0.), theme.border.into()).spread_radius(px(0.5)),
+            ])
             .flex()
             .flex_col()
             .gap(px(8.))
@@ -848,8 +850,6 @@ impl SummaryPanel {
             .bg(theme.model_picker_surface)
             .shadow(vec![
                 gpui::BoxShadow::new(px(0.), px(0.), theme.border.into()).spread_radius(px(0.5)),
-                gpui::BoxShadow::new(px(0.), px(6.), theme.text.alpha(0.10).into())
-                    .blur_radius(px(18.)),
             ])
             .text_size(px(13.))
             .text_color(theme.text)
