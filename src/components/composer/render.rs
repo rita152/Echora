@@ -444,11 +444,13 @@ impl ComposerView {
                                                 )
                                                 .child(
                                                     div()
-                                                        .id("composer-voice")
+                                                        .id("composer-send")
                                                         .role(gpui::Role::Button)
                                                         .accessibility_id("composer-send")
                                                         .debug_selector(|| "composer-send".to_owned())
                                                         .aria_label(send_action.label())
+                                                        .aria_disabled(send_action.busy())
+                                                        .aria_busy(send_action.busy())
                                                         .when(send_action.busy(), |button| button.aria_description(crate::i18n::text("正在处理")))
                                                         .focusable()
                                                         .tab_stop(send_action.enabled())
@@ -485,11 +487,13 @@ impl ComposerView {
                                                                 },
                                                                 theme.button_text.into(),
                                                             )
-                                                            .size(px(20.0)),
+                                                            .size(px(16.0))
+                                                                .debug_selector(|| "composer-send-glyph".to_owned()),
                                                         ))
                                                         .when(send_action.busy(), |button| button.child(
                                                             icon("dictation-spinner", theme.button_text.into())
-                                                                .size(px(20.0))
+                                                                .size(px(16.0))
+                                                                .debug_selector(|| "composer-send-glyph".to_owned())
                                                                 .with_animation("composer-send-busy", Animation::new(std::time::Duration::from_millis(1000)).repeat(), |spinner, progress| {
                                                                     spinner.with_transformation(gpui::Transformation::rotate(gpui::radians(progress * std::f32::consts::TAU)))
                                                                 })

@@ -80,7 +80,7 @@ impl SendAction {
         crate::i18n::text(if self == Self::Resume {
             "继续"
         } else if matches!(self, Self::Stop | Self::Stopping) {
-            "停止生成"
+            "停止"
         } else {
             "发送"
         })

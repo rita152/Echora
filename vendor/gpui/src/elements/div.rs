@@ -1283,6 +1283,19 @@ pub trait StatefulInteractiveElement: InteractiveElement {
         self
     }
 
+    /// Report availability to assistive technology. Event handlers must also
+    /// guard activation while disabled.
+    fn aria_disabled(mut self, disabled: bool) -> Self {
+        self.interactivity().aria.disabled = disabled;
+        self
+    }
+
+    /// Report that an operation is in progress to assistive technology.
+    fn aria_busy(mut self, busy: bool) -> Self {
+        self.interactivity().aria.busy = busy;
+        self
+    }
+
     /// Set the keyboard shortcut(s) that activate this element, announced by
     /// assistive technology (maps to AccessKit's `keyboard_shortcut`).
     ///
@@ -1996,6 +2009,8 @@ impl IntoElement for Div {
 
 #[derive(Default)]
 pub(crate) struct AriaProperties {
+    pub(crate) disabled: bool,
+    pub(crate) busy: bool,
     pub(crate) author_id: Option<SharedString>,
     pub(crate) label: Option<SharedString>,
     pub(crate) description: Option<SharedString>,
@@ -3390,6 +3405,12 @@ impl Interactivity {
     }
 
     pub(crate) fn write_a11y_info(&self, node: &mut accesskit::Node) {
+        if self.aria.disabled {
+            node.set_disabled();
+        }
+        if self.aria.busy {
+            node.set_busy();
+        }
         if let Some(id) = &self.aria.author_id {
             node.set_author_id(id.to_string());
         }

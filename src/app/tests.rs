@@ -101,40 +101,44 @@ fn approval_shortcuts_remain_registered_across_unrelated_shell_repaints() {
     assert!(!window.read(|chat, cx| chat.home.read(cx).has_visible_request(cx)));
 }
 
-#[test]
-fn model_picker_escape_restores_trigger_focus_with_global_escape_registered() {
-    let mut app = TestApp::new();
-    app.update(|cx| {
+#[gpui::test]
+fn model_picker_escape_restores_trigger_focus_with_global_escape_registered(
+    cx: &mut gpui::TestAppContext,
+) {
+    cx.executor().allow_parking();
+    cx.update(|cx| {
         cx.bind_keys([gpui::KeyBinding::new(
             "escape",
             super::DismissPermissionUi,
             None,
         )]);
     });
-    let mut window = app.open_window_with_options(
-        WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-                point(px(0.0), px(0.0)),
-                size(px(1440.0), px(900.0)),
-            ))),
-            ..Default::default()
-        },
-        |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
-    );
-    window.draw();
-    window.simulate_click(point(px(1080.0), px(863.0)), MouseButton::Left);
-    window.draw();
-    window.update(|_, window, cx| {
+    let handle = cx.add_window(|_, cx| {
+        let mut chat = ChatApp::new(ThemeMode::Dark, false, cx);
+        chat.complete_startup_for_capture(cx);
+        chat
+    });
+    let mut visual = gpui::VisualTestContext::from_window(handle.into(), cx);
+    visual.simulate_resize(size(px(1440.0), px(900.0)));
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    // Resolve the actual trigger after the environment panel lays out.
+    let trigger = visual
+        .debug_bounds("MODEL_PICKER_TRIGGER")
+        .unwrap()
+        .center();
+    visual.simulate_click(trigger, Default::default());
+    visual.update(|window, cx| {
+        window.draw(cx).clear(cx);
         assert!(window.is_action_available(&crate::components::composer::DismissModelPicker, cx));
     });
-    window.simulate_keystroke("escape");
-    window.draw();
-    window.update(|_, window, cx| {
+    visual.simulate_keystrokes("escape");
+    visual.update(|window, cx| {
+        window.draw(cx).clear(cx);
         assert!(!window.is_action_available(&crate::components::composer::DismissModelPicker, cx));
     });
-    window.simulate_keystroke("enter");
-    window.draw();
-    window.update(|_, window, cx| {
+    visual.simulate_keystrokes("enter");
+    visual.update(|window, cx| {
+        window.draw(cx).clear(cx);
         assert!(window.is_action_available(&crate::components::composer::DismissModelPicker, cx));
     });
 }

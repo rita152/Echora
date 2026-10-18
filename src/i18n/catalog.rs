@@ -165,6 +165,7 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "保留编辑" => "Keep edits",
         "停止当前轮次" => "Stop current turn",
         "停止生成" => "Stop generating",
+        "停止" => "Stop",
         "停用" => "Disable",
         "允许 ChatGPT " => "Allow ChatGPT to ",
         "允许 ChatGPT 与" => "Allow ChatGPT to connect to",

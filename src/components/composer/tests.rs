@@ -4316,3 +4316,95 @@ fn model_choice_without_an_adjustable_effort_closes_the_list(cx: &mut gpui::Test
     assert!(!entity.read_with(&visual, |composer, _| composer.menu_open));
     visual.update(|window, cx| assert!(entity.read(cx).model_trigger_focus.is_focused(window)));
 }
+
+#[gpui::test]
+fn send_button_keeps_reference_geometry_through_ready_running_paused_and_busy(
+    cx: &mut gpui::TestAppContext,
+) {
+    use super::send::SendAction;
+    let backend = RecordingBackend::new();
+    let window =
+        cx.add_window(|_, cx| ComposerView::new_with_backend(ThemeMode::Dark, backend, cx));
+    let composer = cx.update(|cx| window.root(cx).unwrap());
+    let mut visual = gpui::VisualTestContext::from_window(window.into(), cx);
+    for action in [
+        SendAction::Send,
+        SendAction::Stop,
+        SendAction::Resume,
+        SendAction::Starting,
+        SendAction::Stopping,
+        SendAction::Sending,
+        SendAction::Disabled,
+    ] {
+        composer.update(&mut visual, |c, cx| {
+            c.apply_model_catalog(test_model_catalog());
+            c.conversation.thread_id = Some("thread".into());
+            c.conversation.phase = match action {
+                SendAction::Stop => ConversationPhase::Thinking,
+                SendAction::Resume => ConversationPhase::Stopped,
+                SendAction::Starting => ConversationPhase::Starting,
+                SendAction::Stopping => ConversationPhase::Stopping,
+                _ => ConversationPhase::Complete,
+            };
+            c.conversation.queue.adding = usize::from(action == SendAction::Sending);
+            c.prompt_editor.update(cx, |editor, cx| {
+                editor.set_text_silently(
+                    if action == SendAction::Send {
+                        "ready"
+                    } else {
+                        ""
+                    },
+                    cx,
+                )
+            });
+            assert_eq!(c.send_action(cx), action);
+            cx.notify();
+        });
+        visual.update(|window, cx| window.draw(cx).clear(cx));
+        let button = visual.debug_bounds("composer-send").unwrap();
+        let glyph = visual.debug_bounds("composer-send-glyph").unwrap();
+        assert_eq!(button.size, size(px(28.0), px(28.0)), "{action:?}");
+        assert_eq!(glyph.size, size(px(16.0), px(16.0)), "{action:?}");
+        assert_eq!(glyph.center(), button.center(), "{action:?}");
+    }
+}
+
+#[gpui::test]
+fn stop_and_resume_use_the_whole_button_and_busy_clicks_do_not_repeat(
+    cx: &mut gpui::TestAppContext,
+) {
+    use super::send::SendAction;
+    let backend = RecordingBackend::new();
+    let control = Arc::new(TestInterruptControl::working());
+    let window =
+        cx.add_window(|_, cx| ComposerView::new_with_backend(ThemeMode::Dark, backend.clone(), cx));
+    let composer = cx.update(|cx| window.root(cx).unwrap());
+    let mut visual = gpui::VisualTestContext::from_window(window.into(), cx);
+    composer.update(&mut visual, |c, cx| {
+        c.apply_model_catalog(test_model_catalog());
+        c.conversation.thread_id = Some("thread".into());
+        c.conversation.phase = ConversationPhase::Thinking;
+        c.conversation.active_turn = Some(AgentInterruptHandle::new(control.clone()));
+        cx.notify();
+    });
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    let bounds = visual.debug_bounds("composer-send").unwrap();
+    visual.simulate_click(bounds.origin + point(px(1.0), px(1.0)), Default::default());
+    visual.simulate_click(bounds.center(), Default::default());
+    assert_eq!(control.writes.load(Ordering::Relaxed), 1);
+    composer.update(&mut visual, |c, cx| {
+        c.apply_agent_event_batch(vec![AgentEvent::Interrupted]);
+        assert_eq!(c.send_action(cx), SendAction::Resume);
+        cx.notify();
+    });
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    visual.simulate_click(
+        bounds.bottom_right() - point(px(1.0), px(1.0)),
+        Default::default(),
+    );
+    visual.simulate_click(bounds.center(), Default::default());
+    let requests = backend.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].prompt.is_empty());
+    assert_eq!(requests[0].thread_id.as_deref(), Some("thread"));
+}
