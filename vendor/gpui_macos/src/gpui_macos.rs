@@ -8,6 +8,7 @@ mod dispatcher;
 mod display;
 mod display_link;
 mod events;
+mod external_drop;
 mod keyboard;
 mod pasteboard;
 mod system_notifications;

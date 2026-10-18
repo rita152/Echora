@@ -2027,6 +2027,11 @@ impl Render for HomeView {
         let measured_home = cx.entity();
         let find_bar = self.render_find_bar(theme, cx);
         content
+            .on_drop(cx.listener(|home, paths: &gpui::ExternalPaths, _, cx| {
+                home.composer.update(cx, |composer, cx| {
+                    composer.attach_paths(paths.paths().to_vec(), cx)
+                });
+            }))
             .when(!blocking_keyboard_request_pending, |content| {
                 content.key_context(find::FIND_CONTEXT)
             })

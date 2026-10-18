@@ -10,10 +10,10 @@ use block::ConcreteBlock;
 use cocoa::{
     appkit::{
         NSApplication, NSBackingStoreBuffered, NSColor, NSEvent, NSEventModifierFlags, NSEventType,
-        NSFilenamesPboardType, NSPasteboard, NSRequestUserAttentionType, NSScreen, NSView,
-        NSViewHeightSizable, NSViewWidthSizable, NSVisualEffectMaterial, NSVisualEffectState,
-        NSVisualEffectView, NSWindow, NSWindowCollectionBehavior, NSWindowOcclusionState,
-        NSWindowOrderingMode, NSWindowStyleMask, NSWindowTitleVisibility,
+        NSRequestUserAttentionType, NSScreen, NSView, NSViewHeightSizable, NSViewWidthSizable,
+        NSVisualEffectMaterial, NSVisualEffectState, NSVisualEffectView, NSWindow,
+        NSWindowCollectionBehavior, NSWindowOcclusionState, NSWindowOrderingMode,
+        NSWindowStyleMask, NSWindowTitleVisibility,
     },
     base::{id, nil},
     foundation::{
@@ -57,7 +57,6 @@ use objc2_app_kit::{
 use objc2_foundation::{NSPoint as Objc2NSPoint, NSRect as Objc2NSRect};
 use parking_lot::Mutex;
 use raw_window_handle as rwh;
-use smallvec::SmallVec;
 use std::{
     cell::Cell,
     ffi::{CStr, CString, c_void},
@@ -1005,11 +1004,7 @@ impl MacWindow {
                 target_screen,
             );
             assert!(!native_window.is_null());
-            let () = msg_send![
-                native_window,
-                registerForDraggedTypes:
-                    NSArray::arrayWithObject(nil, NSFilenamesPboardType)
-            ];
+            crate::external_drop::register(native_window);
             let () = msg_send![
                 native_window,
                 setReleasedWhenClosed: NO
@@ -3286,24 +3281,94 @@ extern "C" fn dragging_exited(this: &Object, _: Sel, _: id) {
 extern "C" fn perform_drag_operation(this: &Object, _: Sel, dragging_info: id) -> BOOL {
     let window_state = unsafe { get_window_state(this) };
     let position = drag_event_position(&window_state, dragging_info);
-    send_file_drop_event(window_state, FileDropEvent::Submit { position }).to_objc()
+    unsafe {
+        let pasteboard: id = msg_send![dragging_info, draggingPasteboard];
+        let paths = crate::external_drop::paths(pasteboard);
+        let promises = crate::external_drop::promises(pasteboard);
+        if promises != nil && NSArray::count(promises) > 0 {
+            let Ok(destination) = crate::external_drop::destination() else {
+                return NO;
+            };
+            let destination: id = msg_send![class!(NSURL), fileURLWithPath: ns_string(&destination.to_string_lossy())];
+            let queue: id = msg_send![class!(NSOperationQueue), mainQueue];
+            // End the hover drag now. Delivery may happen after AppKit has
+            // concluded the session; dispatch the actual paths on the main queue.
+            send_file_drop_event(window_state.clone(), FileDropEvent::Exited);
+            for receiver in promises.iter() {
+                let state = Arc::downgrade(&window_state);
+                let reader = ConcreteBlock::new(move |url: id, error: id| {
+                    if error != nil {
+                        log::warn!("Receiving dropped file failed");
+                        return;
+                    }
+                    let Some(state) = state.upgrade() else {
+                        return;
+                    };
+                    let bytes: *const std::ffi::c_char = msg_send![url, fileSystemRepresentation];
+                    if bytes.is_null() {
+                        return;
+                    }
+                    let path = PathBuf::from(std::ffi::OsStr::from_bytes(
+                        CStr::from_ptr(bytes).to_bytes(),
+                    ));
+                    submit_materialized_drop(state, position, vec![path]);
+                })
+                .copy();
+                let _: () = msg_send![receiver,
+                    receivePromisedFilesAtDestination: destination
+                    options: nil operationQueue: queue reader: &*reader];
+            }
+            return YES;
+        }
+        if !paths.is_empty() && paths.iter().all(|path| path.exists()) {
+            return send_file_drop_event(window_state, FileDropEvent::Submit { position })
+                .to_objc();
+        }
+        match crate::external_drop::image(pasteboard) {
+            Ok(Some(path)) => {
+                submit_materialized_drop(window_state, position, vec![path]);
+                YES
+            }
+            Ok(None) => NO,
+            Err(error) => {
+                log::warn!("Receiving dropped image failed: {error}");
+                NO
+            }
+        }
+    }
+}
+
+fn submit_materialized_drop(
+    state: Arc<Mutex<MacWindowState>>,
+    position: Point<Pixels>,
+    paths: Vec<PathBuf>,
+) {
+    send_file_drop_event(state.clone(), FileDropEvent::Exited);
+    send_file_drop_event(
+        state.clone(),
+        FileDropEvent::Entered {
+            position,
+            paths: ExternalPaths(paths.into_iter().collect()),
+        },
+    );
+    send_file_drop_event(state.clone(), FileDropEvent::Submit { position });
+    send_file_drop_event(state, FileDropEvent::Exited);
 }
 
 fn external_paths_from_event(dragging_info: *mut Object) -> Option<ExternalPaths> {
-    let mut paths = SmallVec::new();
-    let pasteboard: id = unsafe { msg_send![dragging_info, draggingPasteboard] };
-    let filenames = unsafe { NSPasteboard::propertyListForType(pasteboard, NSFilenamesPboardType) };
-    if filenames == nil {
-        return None;
+    unsafe {
+        let pasteboard: id = msg_send![dragging_info, draggingPasteboard];
+        let paths = crate::external_drop::paths(pasteboard);
+        let promises = crate::external_drop::promises(pasteboard);
+        if !paths.is_empty()
+            || (promises != nil && NSArray::count(promises) > 0)
+            || crate::external_drop::has_image(pasteboard)
+        {
+            Some(ExternalPaths(paths.into_iter().collect()))
+        } else {
+            None
+        }
     }
-    for file in unsafe { filenames.iter() } {
-        let path = unsafe {
-            let f = NSString::UTF8String(file);
-            CStr::from_ptr(f).to_string_lossy().into_owned()
-        };
-        paths.push(PathBuf::from(path))
-    }
-    Some(ExternalPaths(paths))
 }
 
 extern "C" fn conclude_drag_operation(this: &Object, _: Sel, _: id) {

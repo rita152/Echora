@@ -192,3 +192,38 @@ fn composer_toolbar_controls_are_centred_in_the_visible_strip(cx: &mut gpui::Tes
         );
     }
 }
+
+#[gpui::test]
+fn screenshot_drop_on_landing_background_attaches_to_the_draft(cx: &mut gpui::TestAppContext) {
+    use gpui::{ExternalPaths, FileDropEvent, InputEvent, px};
+    let handle = cx.add_window(|_, cx| HomeView::new(ThemeMode::Dark, cx));
+    let composer = handle
+        .read_with(cx, |home, _| home.composer.clone())
+        .unwrap();
+    let mut visual = VisualTestContext::from_window(handle.into(), cx);
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    let path =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/images/workspace-dark.png");
+    let position = point(px(500.0), px(150.0));
+    visual.update(|window, cx| {
+        window.dispatch_event(
+            FileDropEvent::Entered {
+                position,
+                paths: ExternalPaths(vec![path.clone()].into_iter().collect()),
+            }
+            .to_platform_input(),
+            cx,
+        );
+        window.draw(cx).clear(cx);
+        window.dispatch_event(FileDropEvent::Submit { position }.to_platform_input(), cx);
+    });
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(
+        visual.debug_bounds("COMPOSER_IMAGE_0").is_some(),
+        "a drop outside the editor creates an image preview"
+    );
+    visual.update(|_, cx| {
+        // The same file follows the normal submission attachment path.
+        assert!(composer.read(cx).prompt_text(cx).is_empty());
+    });
+}

@@ -66,7 +66,7 @@ impl ComposerView {
         .detach();
         cx.notify();
     }
-    pub(super) fn attach_paths(&mut self, paths: Vec<std::path::PathBuf>, cx: &mut Context<Self>) {
+    pub(crate) fn attach_paths(&mut self, paths: Vec<std::path::PathBuf>, cx: &mut Context<Self>) {
         if !paths.is_empty() {
             self.draft_revision = self.draft_revision.wrapping_add(1);
         }
