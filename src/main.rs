@@ -15,6 +15,8 @@ mod mcp;
 mod media;
 mod plugins;
 mod pull_requests;
+#[cfg(all(feature = "screenshot", target_os = "macos"))]
+mod screenshot;
 mod settings;
 mod skills;
 #[cfg(feature = "screenshot")]
@@ -133,7 +135,18 @@ fn save_screenshot(window: &gpui::Window, path: &str) -> anyhow::Result<()> {
     {
         fs::create_dir_all(parent)?;
     }
-    window.render_to_image()?.save(path)?;
+    let frame = window.render_to_image()?;
+    // Metal readback contains premultiplied RGB, while PNG requires straight
+    // alpha. Native vibrancy sits behind this scene and is not part of it.
+    #[cfg(target_os = "macos")]
+    let frame = {
+        let mut frame = frame;
+        for pixel in frame.pixels_mut() {
+            pixel.0 = screenshot::straight_alpha(pixel.0);
+        }
+        frame
+    };
+    frame.save(path)?;
     // Every capture describes itself: without the DPR and the resolved assets a
     // 1x frame or an iconless build can pass as a valid comparison input.
     let metadata = serde_json::json!({
