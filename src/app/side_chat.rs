@@ -1,12 +1,9 @@
 //! Attach temporary chat panels to the parent conversation's UI lifetime.
 
 use super::ChatApp;
-use crate::{
-    components::{
-        composer::{ComposerView, OpenQueuedInSideChat},
-        side_chat::{SideChatEvent, SideChatPanel},
-    },
-    media::read_image_dimensions,
+use crate::components::{
+    composer::{ComposerView, OpenQueuedInSideChat},
+    side_chat::{SideChatEvent, SideChatPanel},
 };
 use gpui::{Context, Entity, prelude::*};
 
@@ -82,8 +79,6 @@ impl ChatApp {
                     SideChatEvent::OpenImage(path, composer) => {
                         this.image_preview.composer = composer.clone();
                         this.image_preview.path = Some(path.clone());
-                        this.image_preview.dimensions = read_image_dimensions(path).ok().flatten();
-                        this.image_preview.zoom = 1.0;
                     }
                     SideChatEvent::OpenHookSettings => {
                         this.open_settings_page("hooks-settings", cx);

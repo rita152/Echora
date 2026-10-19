@@ -646,8 +646,6 @@ impl Render for ChatApp {
                 }
                 if this.image_preview.path.is_some() {
                     this.image_preview.path = None;
-                    this.image_preview.dimensions = None;
-                    this.image_preview.zoom = 1.0;
                     cx.stop_propagation();
                     cx.notify();
                 } else if this.project_creation.open {
@@ -1153,11 +1151,8 @@ impl Render for ChatApp {
             })
             .when_some(self.image_preview.path.clone(), |shell, path| {
                 let viewport = window.viewport_size();
-                let zoom = self.image_preview.zoom;
-                let image_width = (f32::from(viewport.width) - 64.0).max(160.0) * zoom;
-                let image_height = (f32::from(viewport.height) - 128.0).max(120.0) * zoom;
-                let percentage = format!("{}%", (zoom * 100.0).round() as i32);
-                let preview_dimensions = self.image_preview.dimensions;
+                let image_width = (f32::from(viewport.width) - 64.0).max(160.0);
+                let image_height = (f32::from(viewport.height) - 80.0).max(120.0);
                 let editable = self.image_preview.composer.as_ref().and_then(gpui::WeakEntity::upgrade)
                     .is_some_and(|composer| composer.read(cx).can_annotate_attachment(&path));
                 shell.child(
@@ -1172,8 +1167,6 @@ impl Render for ChatApp {
                         .overflow_hidden()
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.image_preview.path = None;
-                            this.image_preview.dimensions = None;
-                            this.image_preview.zoom = 1.0;
                             cx.notify();
                         }))
                         .child(
@@ -1181,8 +1174,8 @@ impl Render for ChatApp {
                                 .id("image-preview-image-scroll")
                                 .absolute()
                                 .inset_0()
-                                .pt(px(48.0))
-                                .pb(px(80.0))
+                                .pt(px(64.0))
+                                .pb(px(16.0))
                                 .px(px(32.0))
                                 .overflow_scroll()
                                 .flex()
@@ -1295,8 +1288,6 @@ impl Render for ChatApp {
                                         .hover(move |button| button.bg(theme.elevated))
                                         .on_click(cx.listener(|this, _, _, cx| {
                                             this.image_preview.path = None;
-                                            this.image_preview.dimensions = None;
-                                            this.image_preview.zoom = 1.0;
                                             cx.stop_propagation();
                                             cx.notify();
                                         }))
@@ -1307,94 +1298,12 @@ impl Render for ChatApp {
                                                     "enter" | "space"
                                                 ) {
                                                     this.image_preview.path = None;
-                                                    this.image_preview.dimensions = None;
-                                                    this.image_preview.zoom = 1.0;
                                                     cx.stop_propagation();
                                                     cx.notify();
                                                 }
                                             },
                                         ))
                                         .child(icon("close-dialog", theme.text.into()).size(px(21.0))),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .absolute()
-                                .bottom(px(32.0))
-                                .left_0()
-                                .right_0()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .child(
-                                    div()
-                                        .id("image-preview-zoom-controls")
-                                        .h(px(36.0))
-                                        .flex()
-                                        .items_center()
-                                        .gap(px(8.0))
-                                        .on_click(|_, _, cx| cx.stop_propagation())
-                                        .when_some(preview_dimensions, |controls, (width, height)| {
-                                            controls.child(
-                                                div()
-                                                    .px(px(10.0))
-                                                    .text_size(px(13.0))
-                                                    .text_color(theme.text_secondary)
-                                                    .child(format!("{width} × {height}")),
-                                            )
-                                        })
-                                        .child(
-                                            div()
-                                                .id("image-preview-zoom-out")
-                                                .size(px(36.0))
-                                                .rounded_full()
-                                                .bg(theme.text.alpha(0.10))
-                                                .role(Role::Button)
-                                                .aria_label(crate::i18n::text("缩小图片"))
-                                                .focusable()
-                                                .tab_stop(true)
-                                                .cursor_pointer()
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .text_size(px(20.0))
-                                                .on_click(cx.listener(|this, _, _, cx| {
-                                                    this.image_preview.zoom =
-                                                        (this.image_preview.zoom - 0.25).max(0.5);
-                                                    cx.notify();
-                                                }))
-                                                .child("−"),
-                                        )
-                                        .child(
-                                            div()
-                                                .w(px(56.0))
-                                                .text_center()
-                                                .text_size(px(13.0))
-                                                .text_color(theme.text)
-                                                .child(percentage),
-                                        )
-                                        .child(
-                                            div()
-                                                .id("image-preview-zoom-in")
-                                                .size(px(36.0))
-                                                .rounded_full()
-                                                .bg(theme.text.alpha(0.10))
-                                                .role(Role::Button)
-                                                .aria_label(crate::i18n::text("放大图片"))
-                                                .focusable()
-                                                .tab_stop(true)
-                                                .cursor_pointer()
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .text_size(px(20.0))
-                                                .on_click(cx.listener(|this, _, _, cx| {
-                                                    this.image_preview.zoom =
-                                                        (this.image_preview.zoom + 0.25).min(3.0);
-                                                    cx.notify();
-                                                }))
-                                                .child("+"),
-                                        ),
                                 ),
                         ),
                 )

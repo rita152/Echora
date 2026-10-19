@@ -21,9 +21,7 @@ impl ChatApp {
         };
         if composer.update(cx, |composer, cx| composer.annotate_attachment(&path, cx)) {
             self.image_preview.path = None;
-            self.image_preview.dimensions = None;
             self.image_preview.composer = None;
-            self.image_preview.zoom = 1.0;
             // The markup editor now owns focus; do not restore the preview's prompt.
             self.image_preview.previous_focus = None;
             self.image_preview.focus_active = false;

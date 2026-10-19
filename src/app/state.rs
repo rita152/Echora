@@ -101,8 +101,6 @@ pub(super) struct ImagePreviewState {
     pub(super) focus: FocusHandle,
     pub(super) focus_active: bool,
     pub(super) previous_focus: Option<FocusHandle>,
-    pub(super) dimensions: Option<(u32, u32)>,
-    pub(super) zoom: f32,
 }
 
 impl ImagePreviewState {
@@ -113,8 +111,6 @@ impl ImagePreviewState {
             focus: cx.focus_handle(),
             focus_active: false,
             previous_focus: None,
-            dimensions: None,
-            zoom: 1.0,
         }
     }
 }

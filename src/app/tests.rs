@@ -210,8 +210,6 @@ fn image_preview_download_copies_the_source_and_close_unmounts_the_overlay() {
         chat.startup_sidebar_resolved = true;
         chat.startup_minimum_duration_elapsed = true;
         chat.image_preview.path = Some(source.clone());
-        chat.image_preview.dimensions = Some((1024, 1024));
-        chat.image_preview.zoom = 1.75;
         cx.notify();
     });
     window.draw();
@@ -231,8 +229,6 @@ fn image_preview_download_copies_the_source_and_close_unmounts_the_overlay() {
     window.simulate_click(point(px(866.0), px(32.0)), MouseButton::Left);
     window.read(|chat, _| {
         assert_eq!(chat.image_preview.path, None);
-        assert_eq!(chat.image_preview.dimensions, None);
-        assert_eq!(chat.image_preview.zoom, 1.0);
     });
 
     window.draw();
