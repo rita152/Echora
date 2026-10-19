@@ -1064,6 +1064,42 @@ fn right_panel_resize_handle_matches_reference_limits_without_hiding_the_panel()
 }
 
 #[test]
+fn right_panel_full_resize_hit_area_preserves_grab_offset_and_release_position() {
+    let mut app = TestApp::new();
+    let mut window = app.open_window_with_options(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                point(px(0.), px(0.)),
+                size(px(1440.), px(900.)),
+            ))),
+            ..Default::default()
+        },
+        |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
+    );
+    window.update(|chat, _, cx| chat.open_right_panel(cx));
+    for y in [50., 450., 875.] {
+        for offset in [-7.5, 0., 7.5] {
+            window.update(|chat, _, cx| {
+                chat.right_panel.width = Some(500.);
+                cx.notify();
+            });
+            window.draw();
+            window.simulate_mouse_down(point(px(940. + offset), px(y)), MouseButton::Left);
+            assert!(window.read(|chat, _| chat.right_panel.resize_dragging));
+            window.simulate_mouse_move(point(px(900. + offset), px(y)));
+            assert_eq!(window.read(|chat, _| chat.right_panel.width), Some(540.));
+            // A release without a matching final move must still set the final
+            // width and end capture, including outside the window's bounds.
+            window.simulate_mouse_up(point(px(1000. + offset), px(-20.)), MouseButton::Left);
+            assert_eq!(window.read(|chat, _| chat.right_panel.width), Some(440.));
+            assert!(!window.read(|chat, _| chat.right_panel.resize_dragging));
+            window.simulate_mouse_move(point(px(800.), px(450.)));
+            assert_eq!(window.read(|chat, _| chat.right_panel.width), Some(440.));
+        }
+    }
+}
+
+#[test]
 fn settings_event_from_profile_menu_navigates_to_settings() {
     let mut app = TestApp::new();
     let window = app.open_window_with_options(

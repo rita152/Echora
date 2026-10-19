@@ -1070,7 +1070,10 @@ fn render_block_sequence(
     fade: &MarkdownFadeHandle,
     disclosures: Option<&disclosure::State>,
 ) -> Div {
-    let mut sequence = div().w_full().min_w(px(0.0)).flex().flex_col();
+    // Document blocks use normal vertical flow. A flex column asks each
+    // nested block for intrinsic main-axis sizes during width changes, even
+    // though this document has no height constraint or flexible children.
+    let mut sequence = div().w_full().min_w(px(0.0));
     let mut previous: Option<&MarkdownBlock> = None;
     let mut previous_bottom = 0.0_f32;
 

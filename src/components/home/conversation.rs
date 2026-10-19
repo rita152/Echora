@@ -829,7 +829,10 @@ pub(super) fn conversation_list_state(item_count: usize) -> ListState {
         ListAlignment::Top,
         px(CONVERSATION_LIST_OVERDRAW),
     );
-    #[cfg(any(feature = "screenshot", test))]
+    // Native verification uses the same lazy measurement as production.
+    // Measuring the entire history on every width change hides virtualization
+    // and makes resize measurements depend on offscreen message count.
+    #[cfg(test)]
     let state = state.measure_all();
     state.set_follow_mode(FollowMode::Tail);
     state

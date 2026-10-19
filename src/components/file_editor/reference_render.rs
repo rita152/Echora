@@ -29,12 +29,12 @@ pub(super) fn color(reference: &AgentInputReference, mode: ThemeMode) -> gpui::R
 }
 
 impl FileEditor {
-    pub(super) fn reference_at(&self, point: Point<Pixels>) -> Option<usize> {
+    pub(super) fn reference_at(&self, point: Point<Pixels>, window: &Window) -> Option<usize> {
         let bounds = self.bounds?;
         if !bounds.contains(&point) {
             return None;
         }
-        let source = self.offset_at(point);
+        let source = self.offset_at(point, window);
         self.buffer
             .references
             .iter()
@@ -59,7 +59,9 @@ impl FileEditor {
             let origin = point(
                 bounds.left()
                     + px(self.gutter())
-                    + row.line.x_for_index(row.display(reference.range.start)),
+                    + row
+                        .line(window)
+                        .x_for_index(row.display(reference.range.start)),
                 y + px((self.line_height() - 16.) / 2.),
             );
             let tint = color(reference, self.mode);
@@ -126,11 +128,11 @@ mod tests {
             e.focus.focus(w, cx);
         });
         window.draw();
-        window.read(|e, _| {
+        window.update(|e, window, _| {
             let row = &e.rows[0];
             assert_eq!(row.source(row.display(0)), 0);
-            assert!(f32::from(row.line.x_for_index(row.display(1))) > 16.);
-            assert_eq!(row.source(row.line.closest_index_for_x(px(5.))), 0);
+            assert!(f32::from(row.line(window).x_for_index(row.display(1))) > 16.);
+            assert_eq!(row.source(row.line(window).closest_index_for_x(px(5.))), 0);
         });
         window.simulate_keystrokes("backspace");
         window.read(|e, _| {

@@ -262,8 +262,11 @@ impl ChatApp {
             |bounds, _, _| bounds,
             move |bounds, _, window, _| {
                 let mouse_down_entity = entity.clone();
-                window.on_mouse_event(move |event: &MouseDownEvent, _, window, cx| {
-                    if event.button != MouseButton::Left || !bounds.contains(&event.position) {
+                window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
+                    if !phase.capture()
+                        || event.button != MouseButton::Left
+                        || !bounds.contains(&event.position)
+                    {
                         return;
                     }
                     mouse_down_entity.update(cx, |this, cx| {
@@ -277,42 +280,42 @@ impl ChatApp {
                         if this.right_panel.width.is_none() {
                             this.right_panel.width = Some(current_width);
                         }
+                        cx.stop_propagation();
                         cx.notify();
                     });
                 });
 
                 let mouse_move_entity = entity.clone();
-                window.on_mouse_event(move |event: &MouseMoveEvent, _, window, cx| {
+                window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
+                    if !phase.capture() {
+                        return;
+                    }
                     mouse_move_entity.update(cx, |this, cx| {
                         if !this.right_panel.resize_dragging {
                             return;
                         }
-                        let viewport_width = f32::from(window.viewport_size().width);
-                        let revealed_sidebar_width =
-                            this.sidebar.read(cx).width() * this.sidebar_layout.reveal;
-                        let divider_x =
-                            f32::from(event.position.x) + this.right_panel.resize_pointer_offset;
-                        let next_width = clamp_right_panel_width(
-                            viewport_width - divider_x,
-                            viewport_width,
-                            revealed_sidebar_width,
-                        );
-                        if this
-                            .right_panel
-                            .width
-                            .is_none_or(|width| (width - next_width).abs() > f32::EPSILON)
-                        {
-                            this.right_panel.width = Some(next_width);
-                            cx.notify();
-                        }
+                        gpui::performance::event("RightPanel.resize_input");
+                        this.resize_right_panel_to_pointer(f32::from(event.position.x), window, cx);
+                        cx.stop_propagation();
                     });
                 });
 
                 let mouse_up_entity = entity.clone();
-                window.on_mouse_event(move |event: &MouseUpEvent, _, _, cx| {
-                    if event.button == MouseButton::Left {
-                        mouse_up_entity
-                            .update(cx, |this, _| this.right_panel.resize_dragging = false);
+                window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
+                    if phase.capture() && event.button == MouseButton::Left {
+                        mouse_up_entity.update(cx, |this, cx| {
+                            if this.right_panel.resize_dragging {
+                                // Use the release position even if the final move
+                                // was coalesced, including releases outside the card.
+                                this.resize_right_panel_to_pointer(
+                                    f32::from(event.position.x),
+                                    window,
+                                    cx,
+                                );
+                                this.right_panel.resize_dragging = false;
+                                cx.stop_propagation();
+                            }
+                        });
                     }
                 });
             },
@@ -323,6 +326,34 @@ impl ChatApp {
         // The card floats over the window, so its divider is only a hit area
         // with the resize cursor: no line runs through the window's height.
         panel_resize_handle("right-panel-resize-handle", -8.0, false, theme, input_layer)
+    }
+    fn resize_right_panel_to_pointer(
+        &mut self,
+        pointer_x: f32,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
+        let started = gpui::performance::start();
+        let viewport_width = f32::from(window.viewport_size().width);
+        let revealed_sidebar_width = self.sidebar.read(cx).width() * self.sidebar_layout.reveal;
+        let divider_x = pointer_x + self.right_panel.resize_pointer_offset;
+        let next_width = clamp_right_panel_width(
+            viewport_width - divider_x,
+            viewport_width,
+            revealed_sidebar_width,
+        );
+        if self
+            .right_panel
+            .width
+            .is_none_or(|width| (width - next_width).abs() > f32::EPSILON)
+        {
+            if self.right_panel.resize_measurement.get().is_none() {
+                self.right_panel.resize_measurement.set(started);
+            }
+            gpui::performance::event("RightPanel.resize_width_changed");
+            self.right_panel.width = Some(next_width);
+            cx.notify();
+        }
     }
     pub(super) fn subagent_right_panel(
         &self,
@@ -726,6 +757,7 @@ impl ChatApp {
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
         let inset = px(RIGHT_PANEL_CARD_INSET);
+        let resize_measurement = self.right_panel.resize_measurement.clone();
         div()
             .id("right-panel")
             .w(panel_width)
@@ -746,6 +778,21 @@ impl ChatApp {
                     .child(right_panel_card_chrome(tint_top, theme)),
             )
             .child(self.right_panel_resize_handle(theme, cx))
+            // Measures event delivery to painting the actual divider's frame;
+            // this is CPU paint completion, not physical display presentation.
+            .child(
+                canvas(
+                    |_, _, _| (),
+                    move |_, _, _, _| {
+                        gpui::performance::end(
+                            "RightPanel.resize_delivery_to_paint",
+                            resize_measurement.take(),
+                        );
+                    },
+                )
+                .absolute()
+                .inset_0(),
+            )
     }
 }
 

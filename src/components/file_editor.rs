@@ -1,7 +1,7 @@
 mod reference_render;
 
 use std::{
-    cell::Cell,
+    cell::{Cell, OnceCell},
     ops::Range,
     rc::Rc,
     time::{Duration, Instant},
@@ -205,6 +205,8 @@ pub struct FileEditor {
     focus: FocusHandle,
     marked: Option<Range<usize>>,
     rows: Vec<Row>,
+    // One document revision, independent of viewport width.
+    logical_lines: Vec<Rc<LogicalLine>>,
     layout_width: f32,
     layout_metrics: (f32, f32),
     layout_dirty: bool,
@@ -219,12 +221,55 @@ pub struct FileEditor {
     caret_blink_generation: u64,
     input_error: Option<&'static str>,
 }
+struct LogicalLine {
+    font_size: f32,
+    display: String,
+    runs: Vec<TextRun>,
+    map: Rc<Vec<(usize, usize)>>,
+    full: Rc<ShapedLine>,
+}
 struct Row {
-    line: ShapedLine,
-    map: Vec<(usize, usize)>,
+    logical: Rc<LogicalLine>,
+    range: Range<usize>,
+    shaped: OnceCell<Rc<ShapedLine>>,
+    map: Rc<Vec<(usize, usize)>>,
     number: Option<usize>,
 }
 impl Row {
+    // Keep exactly the original substring shaping for Unicode/IME hit testing,
+    // but only pay for rows that are painted or queried by an interaction.
+    fn line(&self, window: &Window) -> &ShapedLine {
+        if self.range.start == 0 && self.range.end == self.logical.display.len() {
+            return &self.logical.full;
+        }
+        self.shaped
+            .get_or_init(|| {
+                gpui::performance::event("FileEditor.shape_wrapped_row");
+                let mut offset = 0;
+                let runs = self
+                    .logical
+                    .runs
+                    .iter()
+                    .filter_map(|run| {
+                        let start = offset;
+                        offset += run.len;
+                        let overlap = self.range.start.max(start)..self.range.end.min(offset);
+                        (overlap.start < overlap.end).then(|| {
+                            let mut run = run.clone();
+                            run.len = overlap.len();
+                            run
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                Rc::new(window.text_system().shape_line(
+                    self.logical.display[self.range.clone()].to_owned().into(),
+                    px(self.logical.font_size),
+                    &runs,
+                    None,
+                ))
+            })
+            .as_ref()
+    }
     fn start(&self) -> usize {
         self.map.first().unwrap().1
     }
@@ -276,6 +321,7 @@ impl FileEditor {
             focus: cx.focus_handle(),
             marked: None,
             rows: Vec::new(),
+            logical_lines: Vec::new(),
             layout_width: 0.,
             layout_metrics: (0.0, 0.0),
             layout_dirty: true,
@@ -344,6 +390,7 @@ impl FileEditor {
     }
     pub fn set_accessible_name(&mut self, label: impl Into<String>) {
         self.prose_label = Some(label.into());
+        self.layout_dirty = true;
     }
     /// Uses `font_size` type on a `line_height` line box, like the Pull
     /// Requests composers' 14/28 textareas.
@@ -767,7 +814,7 @@ impl FileEditor {
                 let x = self.desired_x.unwrap_or_else(|| {
                     f32::from(
                         self.rows[row]
-                            .line
+                            .line(window)
                             .x_for_index(self.rows[row].display(cursor)),
                     )
                 });
@@ -784,7 +831,7 @@ impl FileEditor {
                 } else {
                     (row + step).min(self.rows.len() - 1)
                 };
-                self.rows[index].source(self.rows[index].line.closest_index_for_x(px(x)))
+                self.rows[index].source(self.rows[index].line(window).closest_index_for_x(px(x)))
             }
             _ => return,
         };
@@ -794,7 +841,7 @@ impl FileEditor {
         self.move_to(target, select, cx);
         cx.stop_propagation();
     }
-    fn offset_at(&self, p: Point<Pixels>) -> usize {
+    fn offset_at(&self, p: Point<Pixels>, window: &Window) -> usize {
         let Some(b) = self.bounds else {
             return 0;
         };
@@ -804,11 +851,12 @@ impl FileEditor {
         let row = ((f32::from(p.y - b.top()) + self.scroll).max(0.) / self.line_height()) as usize;
         let row = &self.rows[row.min(self.rows.len() - 1)];
         row.source(
-            row.line
+            row.line(window)
                 .closest_index_for_x((p.x - b.left() - px(self.gutter())).max(px(0.))),
         )
     }
     fn prepare(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+        let prepare_started = gpui::performance::start();
         self.bounds = Some(bounds);
         let width = (f32::from(bounds.size.width)
             - self.gutter()
@@ -822,115 +870,158 @@ impl FileEditor {
             let old_height = self.composer_height();
             let old_rows = self.rows.len();
             self.rows.clear();
+            let rebuild_document = self.layout_dirty || self.layout_metrics != metrics;
             self.layout_width = width;
             self.layout_metrics = metrics;
             self.layout_dirty = false;
-            let theme = Theme::for_mode(self.mode);
-            let mut font = ui_font();
-            font.family = UI_MONOSPACE_FONT_FAMILY.into();
-            // The reference Files viewer shares the diff viewer's Codex
-            // code theme.
-            let spans = super::diff_syntax::code_spans(
-                &self.buffer.text,
-                self.language.as_deref(),
-                self.mode,
-            );
-            let mut source = 0;
-            let mut span_index = 0;
-            for (number, raw) in self.buffer.text.split('\n').enumerate() {
-                let mut display = String::new();
-                let mut map = Vec::new();
-                let mut runs: Vec<TextRun> = Vec::new();
-                for (offset, g) in raw.grapheme_indices(true) {
-                    let start = source + offset;
-                    map.push((display.len(), start));
-                    if self
-                        .buffer
-                        .references
-                        .iter()
-                        .any(|r| r.range.start == start)
-                    {
-                        display.push_str(reference_render::ICON_SPACE);
-                        let mut run = window
-                            .text_style()
-                            .to_run(reference_render::ICON_SPACE.len());
-                        run.font = ui_font();
-                        runs.push(run);
-                        map.push((display.len(), start));
-                    }
-                    while span_index + 1 < spans.len() && spans[span_index].0.end <= start {
-                        span_index += 1;
-                    }
-                    let expanded = if g == "\t" {
-                        "    "
-                    } else if g == "\r" {
-                        ""
-                    } else {
-                        g
-                    };
-                    display.push_str(expanded);
-                    let mut run = spans
-                        .get(span_index)
-                        .map(|s| s.1.clone())
-                        .unwrap_or(TextRun {
-                            len: 0,
-                            font: font.clone(),
-                            color: theme.text.into(),
-                            background_color: None,
-                            underline: None,
-                            strikethrough: None,
-                        });
-                    if self.prose_label.is_some() {
-                        run.font = ui_font();
-                        run.color = theme.text.into();
-                    }
-                    if self.read_only {
-                        run.font.family = UI_MONOSPACE_FONT_FAMILY.into();
-                        run.font.weight = gpui::FontWeight::MEDIUM;
-                        run.color = theme.text_tertiary.into();
-                    }
-                    if let Some(reference) = self
-                        .buffer
-                        .references
-                        .iter()
-                        .find(|r| r.range.contains(&start))
-                    {
-                        run.color = reference_render::color(reference, self.mode).into();
-                        run.font.weight = gpui::FontWeight::MEDIUM;
-                    }
-                    run.len = expanded.len();
-                    if self
-                        .marked
-                        .as_ref()
-                        .is_some_and(|r| r.start <= start && start < r.end)
-                    {
-                        run.underline = Some(gpui::UnderlineStyle {
-                            thickness: px(1.),
-                            color: None,
-                            wavy: false,
-                        });
-                    }
-                    runs.push(run);
-                }
-                map.push((display.len(), source + raw.len()));
-                let full = window.text_system().shape_line(
-                    display.clone().into(),
-                    px(self.font_size()),
-                    &runs,
-                    None,
+            if rebuild_document {
+                self.logical_lines.clear();
+                let theme = Theme::for_mode(self.mode);
+                let mut font = ui_font();
+                font.family = UI_MONOSPACE_FONT_FAMILY.into();
+                // The reference Files viewer shares the diff viewer's Codex
+                // code theme.
+                let syntax_started = gpui::performance::start();
+                let spans = super::diff_syntax::code_spans(
+                    &self.buffer.text,
+                    self.language.as_deref(),
+                    self.mode,
                 );
+                gpui::performance::end("FileEditor.syntax", syntax_started);
+                let mut source = 0;
+                let mut span_index = 0;
+                for raw in self.buffer.text.split('\n') {
+                    let mut display = String::new();
+                    let mut map = Vec::new();
+                    let mut runs: Vec<TextRun> = Vec::new();
+                    for (offset, g) in raw.grapheme_indices(true) {
+                        let start = source + offset;
+                        map.push((display.len(), start));
+                        if self
+                            .buffer
+                            .references
+                            .iter()
+                            .any(|r| r.range.start == start)
+                        {
+                            display.push_str(reference_render::ICON_SPACE);
+                            let mut run = window
+                                .text_style()
+                                .to_run(reference_render::ICON_SPACE.len());
+                            run.font = ui_font();
+                            runs.push(run);
+                            map.push((display.len(), start));
+                        }
+                        while span_index + 1 < spans.len() && spans[span_index].0.end <= start {
+                            span_index += 1;
+                        }
+                        let expanded = if g == "\t" {
+                            "    "
+                        } else if g == "\r" {
+                            ""
+                        } else {
+                            g
+                        };
+                        display.push_str(expanded);
+                        let mut run =
+                            spans
+                                .get(span_index)
+                                .map(|s| s.1.clone())
+                                .unwrap_or(TextRun {
+                                    len: 0,
+                                    font: font.clone(),
+                                    color: theme.text.into(),
+                                    background_color: None,
+                                    underline: None,
+                                    strikethrough: None,
+                                });
+                        if self.prose_label.is_some() {
+                            run.font = ui_font();
+                            run.color = theme.text.into();
+                        }
+                        if self.read_only {
+                            run.font.family = UI_MONOSPACE_FONT_FAMILY.into();
+                            run.font.weight = gpui::FontWeight::MEDIUM;
+                            run.color = theme.text_tertiary.into();
+                        }
+                        if let Some(reference) = self
+                            .buffer
+                            .references
+                            .iter()
+                            .find(|r| r.range.contains(&start))
+                        {
+                            run.color = reference_render::color(reference, self.mode).into();
+                            run.font.weight = gpui::FontWeight::MEDIUM;
+                        }
+                        run.len = expanded.len();
+                        if self
+                            .marked
+                            .as_ref()
+                            .is_some_and(|r| r.start <= start && start < r.end)
+                        {
+                            run.underline = Some(gpui::UnderlineStyle {
+                                thickness: px(1.),
+                                color: None,
+                                wavy: false,
+                            });
+                        }
+                        // Adjacent graphemes usually share the same style. A
+                        // single run avoids per-character shaping bookkeeping.
+                        if let Some(previous) = runs.last_mut() {
+                            let len = run.len;
+                            run.len = previous.len;
+                            if *previous == run {
+                                previous.len += len;
+                                continue;
+                            }
+                            run.len = len;
+                        }
+                        runs.push(run);
+                    }
+                    map.push((display.len(), source + raw.len()));
+                    let full = window.text_system().shape_line(
+                        display.clone().into(),
+                        px(self.font_size()),
+                        &runs,
+                        None,
+                    );
+                    self.logical_lines.push(Rc::new(LogicalLine {
+                        font_size: self.font_size(),
+                        display,
+                        runs,
+                        map: Rc::new(map),
+                        full: Rc::new(full),
+                    }));
+                    source += raw.len() + 1;
+                }
+            }
+            for (number, logical) in self.logical_lines.iter().enumerate() {
+                let LogicalLine {
+                    display, map, full, ..
+                } = logical.as_ref();
+                // Most source lines fit without wrapping. Reuse both the shaped
+                // line and its Unicode/source mapping instead of copying them.
+                if f32::from(full.width()) <= width {
+                    self.rows.push(Row {
+                        logical: logical.clone(),
+                        range: 0..display.len(),
+                        shaped: OnceCell::new(),
+                        map: map.clone(),
+                        number: Some(number + 1),
+                    });
+                    continue;
+                }
                 let mut start = 0;
                 let mut first = true;
                 loop {
                     let desired = full.closest_index_for_x(full.x_for_index(start) + px(width));
-                    let mut end = map
-                        .iter()
-                        .filter(|(d, _)| *d > start && *d <= desired)
+                    let upper = map.partition_point(|(d, _)| *d <= desired);
+                    let mut end = upper
+                        .checked_sub(1)
+                        .and_then(|i| map.get(i))
+                        .filter(|(d, _)| *d > start)
                         .map(|(d, _)| *d)
-                        .next_back()
                         .unwrap_or_else(|| {
-                            map.iter()
-                                .find(|(d, _)| *d > start)
+                            map.get(map.partition_point(|(d, _)| *d <= start))
                                 .map_or(display.len(), |(d, _)| *d)
                         });
                     if f32::from(full.width() - full.x_for_index(start)) <= width {
@@ -938,48 +1029,30 @@ impl FileEditor {
                     }
                     // Keep an inline reference on one row when it fits there;
                     // exceptionally long labels still wrap without changing identity.
-                    if let Some((_, source_end)) = map.iter().find(|(d, _)| *d == end)
+                    if let Some((_, source_end)) = map.get(map.partition_point(|(d, _)| *d < end))
                         && let Some(reference) = self
                             .buffer
                             .references
                             .iter()
                             .find(|r| r.range.start < *source_end && *source_end < r.range.end)
-                        && let Some((reference_start, _)) =
-                            map.iter().find(|(_, s)| *s == reference.range.start)
+                        && let Some((reference_start, _)) = map
+                            .get(map.partition_point(|(_, s)| *s < reference.range.start))
+                            .filter(|(_, s)| *s == reference.range.start)
                         && *reference_start > start
                     {
                         end = *reference_start;
                     }
-                    let mut run_start = 0;
-                    let row_runs = runs
+                    let row_start = map.partition_point(|(d, _)| *d < start);
+                    let row_end = map.partition_point(|(d, _)| *d <= end);
+                    let row_map = map[row_start..row_end]
                         .iter()
-                        .filter_map(|r| {
-                            let a = run_start;
-                            run_start += r.len;
-                            let overlap = start.max(a)..end.min(run_start);
-                            if overlap.start < overlap.end {
-                                let mut r = r.clone();
-                                r.len = overlap.len();
-                                Some(r)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    let line = window.text_system().shape_line(
-                        display[start..end].to_string().into(),
-                        px(self.font_size()),
-                        &row_runs,
-                        None,
-                    );
-                    let row_map = map
-                        .iter()
-                        .filter(|(d, _)| *d >= start && *d <= end)
                         .map(|(d, s)| (d - start, *s))
                         .collect();
                     self.rows.push(Row {
-                        line,
-                        map: row_map,
+                        logical: logical.clone(),
+                        range: start..end,
+                        shaped: OnceCell::new(),
+                        map: Rc::new(row_map),
                         number: first.then_some(number + 1),
                     });
                     first = false;
@@ -988,7 +1061,6 @@ impl FileEditor {
                     }
                     start = end;
                 }
-                source += raw.len() + 1;
             }
             if self.composer && self.composer_height() != old_height {
                 cx.emit(EditorEvent::HeightChanged);
@@ -1018,6 +1090,7 @@ impl FileEditor {
             self.scroll = 0.0;
         }
         let _ = cx;
+        gpui::performance::end("FileEditor.prepare", prepare_started);
     }
     fn paint(
         &mut self,
@@ -1060,10 +1133,10 @@ impl FileEditor {
             if !selection.is_empty() && selection.end > row.start() && selection.start <= row.end()
             {
                 let left = row
-                    .line
+                    .line(window)
                     .x_for_index(row.display(selection.start.max(row.start())));
                 let mut right = row
-                    .line
+                    .line(window)
                     .x_for_index(row.display(selection.end.min(row.end())));
                 if selection.end > row.end() {
                     right += px(7.);
@@ -1102,7 +1175,7 @@ impl FileEditor {
                     cx,
                 );
             }
-            let _ = row.line.paint(
+            let _ = row.line(window).paint(
                 origin,
                 px(self.line_height()),
                 gpui::TextAlign::Left,
@@ -1117,10 +1190,10 @@ impl FileEditor {
                 && reference.range.start < row.end()
             {
                 let left = row
-                    .line
+                    .line(window)
                     .x_for_index(row.display(reference.range.start.max(row.start())));
                 let right = row
-                    .line
+                    .line(window)
                     .x_for_index(row.display(reference.range.end.min(row.end())));
                 window.paint_quad(fill(
                     Bounds::new(
@@ -1136,7 +1209,9 @@ impl FileEditor {
                 && caret_visible
                 && index == self.row_for(self.buffer.cursor)
             {
-                let x = row.line.x_for_index(row.display(self.buffer.cursor));
+                let x = row
+                    .line(window)
+                    .x_for_index(row.display(self.buffer.cursor));
                 window.paint_quad(fill(
                     Bounds::new(origin + point(x, px(3.)), size(px(1.), px(16.))),
                     theme.text,
@@ -1278,10 +1353,10 @@ impl Render for FileEditor {
                 cx.listener(|s, e: &gpui::MouseDownEvent, w, cx| {
                     s.focus.focus(w, cx);
                     s.reference_press = (!e.modifiers.shift && e.click_count == 1)
-                        .then(|| s.reference_at(e.position).map(|i| (i, e.position)))
+                        .then(|| s.reference_at(e.position, w).map(|i| (i, e.position)))
                         .flatten();
                     s.reset_caret_blink();
-                    let raw = s.offset_at(e.position);
+                    let raw = s.offset_at(e.position, w);
                     let p = s.buffer.snap_reference(raw, raw >= s.buffer.cursor);
                     if !e.modifiers.shift {
                         s.buffer.anchor = p;
@@ -1333,8 +1408,8 @@ impl Render for FileEditor {
                     cx.notify();
                 }
             }))
-            .on_mouse_move(cx.listener(|s, e: &gpui::MouseMoveEvent, _, cx| {
-                let hover = s.reference_at(e.position);
+            .on_mouse_move(cx.listener(|s, e: &gpui::MouseMoveEvent, window, cx| {
+                let hover = s.reference_at(e.position, window);
                 if s.hovered_reference != hover {
                     s.hovered_reference = hover;
                     cx.notify();
@@ -1347,7 +1422,7 @@ impl Render for FileEditor {
                             s.scroll += s.line_height();
                         }
                     }
-                    let raw = s.offset_at(e.position);
+                    let raw = s.offset_at(e.position, window);
                     s.buffer.cursor = s.buffer.snap_reference(raw, raw >= s.buffer.anchor);
                     cx.emit(EditorEvent::SelectionChanged);
                     cx.notify();
@@ -1355,12 +1430,12 @@ impl Render for FileEditor {
             }))
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|s, e: &gpui::MouseUpEvent, _, cx| {
+                cx.listener(|s, e: &gpui::MouseUpEvent, window, cx| {
                     s.selecting = false;
                     if let Some((index, position)) = s.reference_press.take()
                         && (f32::from(e.position.x - position.x)).abs() < 3.
                         && (f32::from(e.position.y - position.y)).abs() < 3.
-                        && s.reference_at(e.position) == Some(index)
+                        && s.reference_at(e.position, window) == Some(index)
                         && let Some(reference) = s.buffer.references.get(index)
                     {
                         cx.emit(ReferenceActivated(reference.clone()));
@@ -1551,7 +1626,7 @@ impl EntityInputHandler for FileEditor {
         &mut self,
         r: Range<usize>,
         _: Bounds<Pixels>,
-        _: &mut Window,
+        window: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
         let b = self.bounds?;
@@ -1560,7 +1635,7 @@ impl EntityInputHandler for FileEditor {
         let row = self.rows.get(index)?;
         Some(Bounds::new(
             point(
-                b.left() + px(self.gutter()) + row.line.x_for_index(row.display(p)),
+                b.left() + px(self.gutter()) + row.line(window).x_for_index(row.display(p)),
                 b.top() + px(index as f32 * self.line_height() - self.scroll),
             ),
             size(px(1.), px(self.line_height())),
@@ -1569,15 +1644,129 @@ impl EntityInputHandler for FileEditor {
     fn character_index_for_point(
         &mut self,
         p: Point<Pixels>,
-        _: &mut Window,
+        window: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<usize> {
-        Some(self.buffer.to_utf16(self.offset_at(p)))
+        Some(self.buffer.to_utf16(self.offset_at(p, window)))
     }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn long_document_only_shapes_wrapped_rows_needed_by_paint_and_ime() {
+        let mut app = gpui::TestApp::new();
+        let source = format!("{}\n", "中文 🦀 identifier ".repeat(60)).repeat(25);
+        let mut window = app.open_window_with_options(
+            gpui::WindowOptions {
+                window_bounds: Some(gpui::WindowBounds::Windowed(Bounds::new(
+                    point(px(0.), px(0.)),
+                    size(px(300.), px(160.)),
+                ))),
+                ..Default::default()
+            },
+            |_, cx| FileEditor::new(source.clone(), None, ThemeMode::Dark, cx),
+        );
+        window.draw();
+        window.update(|editor, window, cx| {
+            let shaped = editor
+                .rows
+                .iter()
+                .filter(|row| row.shaped.get().is_some())
+                .count();
+            assert!(
+                shaped > 0 && shaped < 12,
+                "only viewport rows should shape: {shaped}"
+            );
+            assert!(editor.rows.len() > 200);
+            // Native IME may query an offscreen range before a new paint.
+            // It must shape that row on demand, preserving the source mapping.
+            let offset = source.len() / 2;
+            let offset = source.char_indices().find(|(i, _)| *i >= offset).unwrap().0;
+            let row_index = editor.row_for(offset);
+            assert!(editor.rows[row_index].shaped.get().is_none());
+            let utf16 = editor.buffer.to_utf16(offset);
+            assert!(
+                editor
+                    .bounds_for_range(utf16..utf16, editor.bounds.unwrap(), window, cx)
+                    .is_some()
+            );
+            assert!(editor.rows[row_index].shaped.get().is_some());
+            editor.go_to_line(20, cx);
+        });
+        window.draw();
+        window.update(|editor, window, cx| {
+            assert!(editor.scroll > 0.);
+            assert_eq!(editor.text(), source);
+            let bounds = Bounds::new(point(px(0.), px(0.)), size(px(260.), px(160.)));
+            editor.prepare(bounds, window, cx);
+            assert!(
+                editor.rows.iter().all(|row| row.shaped.get().is_none()),
+                "width changes retain no stale wrapped shapes"
+            );
+            let row = &editor.rows[editor.row_for(editor.buffer.cursor)];
+            let line = row.line(window);
+            assert!(source.is_char_boundary(row.source(line.closest_index_for_x(px(0.)))));
+        });
+    }
+
+    #[test]
+    fn resizing_reuses_document_layout_and_invalidates_on_edit_theme_and_ime() {
+        let mut app = gpui::TestApp::new();
+        let source = "let 中文 = \"🦀\";\n\t// é and a deliberately long identifier ".repeat(30);
+        let mut window = app.open_window(|_, cx| {
+            FileEditor::new(source.clone(), Some("rust".into()), ThemeMode::Dark, cx)
+        });
+        window.update(|editor, window, cx| {
+            let bounds = |width| Bounds::new(point(px(0.), px(0.)), size(px(width), px(150.)));
+            editor.prepare(bounds(600.), window, cx);
+            let full = editor.logical_lines[0].full.clone();
+            editor.buffer.anchor = 0;
+            editor.buffer.cursor = "let 中文".len();
+            editor.scroll = 40.;
+            for width in [280., 820., 320., 600.] {
+                editor.prepare(bounds(width), window, cx);
+                assert!(Rc::ptr_eq(&full, &editor.logical_lines[0].full));
+                assert_eq!(editor.buffer.selection(), 0.."let 中文".len());
+                assert_eq!(editor.scroll, 40.);
+                assert_eq!(editor.text(), source);
+                for row in &editor.rows {
+                    assert!(source.is_char_boundary(row.start()));
+                    assert!(source.is_char_boundary(row.end()));
+                    for &(_, offset) in row.map.iter() {
+                        assert!(source.is_char_boundary(offset));
+                    }
+                }
+            }
+            editor.set_mode(ThemeMode::Light, cx);
+            editor.prepare(bounds(600.), window, cx);
+            assert!(!Rc::ptr_eq(&full, &editor.logical_lines[0].full));
+            let themed = editor.logical_lines[0].full.clone();
+            editor.replace_range(0..3, "const", cx);
+            editor.prepare(bounds(600.), window, cx);
+            assert!(!Rc::ptr_eq(&themed, &editor.logical_lines[0].full));
+            editor.undo(cx);
+            editor.prepare(bounds(600.), window, cx);
+            assert_eq!(editor.text(), source);
+            editor.replace_and_mark_text_in_range(Some(0..0), "输入", Some(0..2), window, cx);
+            editor.prepare(bounds(280.), window, cx);
+            assert!(
+                editor.logical_lines[0]
+                    .runs
+                    .iter()
+                    .any(|r| r.underline.is_some())
+            );
+            editor.unmark_text(window, cx);
+            editor.prepare(bounds(280.), window, cx);
+            assert!(
+                editor.logical_lines[0]
+                    .runs
+                    .iter()
+                    .all(|r| r.underline.is_none())
+            );
+        });
+    }
 
     #[test]
     fn font_size_change_reflows_existing_unicode_editor_without_changing_selection_or_text() {
