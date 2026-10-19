@@ -997,10 +997,16 @@ impl Render for ChatApp {
                                 .when(sidebar_reveal < 1.0, |controls| {
                                     controls.opacity(sidebar_reveal)
                                 })
-                                .child(titlebar_icon_button("back", false, false, theme))
-                                // The captured reference has no forward history, so this
-                                // control is intentionally disabled and 40% opaque.
-                                .child(titlebar_icon_button("forward", true, false, theme)),
+                                .child(titlebar_icon_button("back", self.conversation_back.is_empty(), false, theme)
+                                    .role(gpui::Role::Button)
+                                    .aria_label(crate::i18n::text("返回").to_owned())
+                                    .aria_disabled(self.conversation_back.is_empty())
+                                    .on_click(cx.listener(|this, _, _, cx| this.navigate_conversation(false, cx))))
+                                .child(titlebar_icon_button("forward", self.conversation_forward.is_empty(), false, theme)
+                                    .role(gpui::Role::Button)
+                                    .aria_label(crate::i18n::format!("前进" => "Forward"))
+                                    .aria_disabled(self.conversation_forward.is_empty())
+                                    .on_click(cx.listener(|this, _, _, cx| this.navigate_conversation(true, cx)))),
                         )
                     })
                     // A conversation offers `New chat` after the trigger once

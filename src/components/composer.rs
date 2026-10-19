@@ -652,6 +652,17 @@ impl ComposerView {
         cx.notify();
     }
 
+    #[cfg(test)]
+    pub(crate) fn pending_input_for_test(
+        &self,
+        cx: &gpui::App,
+    ) -> (String, crate::agent::AgentPromptContext) {
+        (
+            self.prompt_editor.read(cx).text().to_owned(),
+            self.prompt_context.clone(),
+        )
+    }
+
     /// Enters the reference's rewrite mode for the newest user message and
     /// returns its text for the transcript's inline editor. The transcript owns
     /// the editor; the composer only owns the revert that submitting it runs.

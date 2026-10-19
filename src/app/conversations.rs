@@ -20,12 +20,20 @@ impl ChatApp {
         let composer = host.composer.clone();
         let cwd = host.cwd.clone();
         let project_id = host.project_id.clone();
+        if self.active_conversation != key {
+            self.conversation_back
+                .push(self.active_conversation.clone());
+            self.conversation_forward.clear();
+        }
         let thread_id = match &key {
             ConversationKey::Draft(_) => None,
             ConversationKey::Thread(thread_id) => Some(thread_id.clone()),
         };
         composer.update(cx, |composer, cx| {
-            composer.set_workspace_context(cwd, project_id, thread_id, cx);
+            composer.set_workspace_context(cwd, project_id.clone(), thread_id.clone(), cx);
+        });
+        self.sidebar.update(cx, |sidebar, cx| {
+            sidebar.set_conversation_selection(project_id, thread_id, cx);
         });
         self.sync_project_labels(&self.workspace_store.snapshot().projects, cx);
         self.deactivate_review(cx);
@@ -202,6 +210,65 @@ impl ChatApp {
             },
         );
         self.switch_home_to(key, cx);
+    }
+
+    /// New-chat navigation returns to the unsent draft for this destination.
+    /// Explicit prompt creation (PR chat, review, /new) still allocates a host.
+    pub(super) fn resume_or_start_draft(
+        &mut self,
+        project_id: Option<ProjectId>,
+        cwd: PathBuf,
+        section: Option<crate::agent::ThreadSectionId>,
+        cx: &mut Context<Self>,
+    ) {
+        let existing = self
+            .conversation_hosts
+            .iter()
+            .filter_map(|(key, host)| {
+                let ConversationKey::Draft(id) = key else {
+                    return None;
+                };
+                (host.project_id == project_id
+                    && host.cwd == cwd
+                    && self.draft_sections.get(key) == section.as_ref())
+                .then_some((id.0, key.clone()))
+            })
+            .max_by_key(|(id, _)| *id)
+            .map(|(_, key)| key);
+        self.draft_focus_pending = true;
+        if let Some(key) = existing {
+            self.switch_home_to(key, cx);
+        } else {
+            self.start_draft(project_id, cwd, cx);
+            if let Some(section) = section {
+                self.draft_sections
+                    .insert(self.active_conversation.clone(), section);
+            }
+        }
+    }
+
+    pub(super) fn navigate_conversation(&mut self, forward: bool, cx: &mut Context<Self>) {
+        let (mut back, mut next) = (
+            std::mem::take(&mut self.conversation_back),
+            std::mem::take(&mut self.conversation_forward),
+        );
+        let (source, destination) = if forward {
+            (&mut next, &mut back)
+        } else {
+            (&mut back, &mut next)
+        };
+        while let Some(key) = source.pop() {
+            if key != self.active_conversation && self.conversation_hosts.contains_key(&key) {
+                destination.push(self.active_conversation.clone());
+                self.switch_home_to(key, cx);
+                self.close_pull_requests(cx);
+                self.draft_focus_pending = true;
+                break;
+            }
+        }
+        self.conversation_back = back;
+        self.conversation_forward = next;
+        cx.notify();
     }
     pub(super) fn ensure_thread_conversation(
         &mut self,
@@ -404,6 +471,15 @@ impl ChatApp {
             );
         }
         let real_key = ConversationKey::Thread(thread_id.clone());
+        for key in self
+            .conversation_back
+            .iter_mut()
+            .chain(&mut self.conversation_forward)
+        {
+            if key == &draft_key {
+                *key = real_key.clone();
+            }
+        }
         if self.active_conversation == draft_key {
             self.active_conversation = real_key.clone();
         }

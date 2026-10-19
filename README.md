@@ -26,6 +26,7 @@ Start a conversation in a local project, attach context, and follow the agent's 
 - Add files, folders, images, skills, plugins, local chats, and pages from the in-app browser as context. Drop files or macOS screenshot thumbnails anywhere in the conversation to attach them; unsaved screenshots are received locally and shown as image previews. Open an unsent image attachment and choose **Mark up** to add strokes, shapes, or text, with erasing and undo/redo. Adjust stroke width by clicking or dragging the left slider, scrolling over it, or focusing it and using the arrow keys; saving replaces that draft attachment at its original image size without changing the source file.
 - Choose the permission options exposed by your Codex configuration. New chats remember your last confirmed choice; permission options refresh automatically after a backend reconnect.
 - Send new instructions while the agent works, or queue follow-ups for later.
+- Return to an unsent draft with **New chat** in the same project or section. Its prompt and attachments stay in memory while switching chats; titlebar Back/Forward also restores the original conversation.
 - Use plan mode, set a goal, or start a code review from the slash menu when supported by the backend.
 - Stop a turn, resume an interrupted conversation, search its messages, and jump between prompts.
 - Open a temporary side chat to explore a separate question alongside the main conversation.

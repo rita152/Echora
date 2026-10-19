@@ -94,6 +94,8 @@ pub struct ChatApp {
     /// section once it is created.
     draft_sections: HashMap<ConversationKey, crate::agent::ThreadSectionId>,
     active_conversation: ConversationKey,
+    conversation_back: Vec<ConversationKey>,
+    conversation_forward: Vec<ConversationKey>,
     next_draft_id: u64,
     mode: ThemeMode,
     root_focus: gpui::FocusHandle,
@@ -274,7 +276,7 @@ impl ChatApp {
             let (project_id, cwd) = this
                 .sidebar
                 .update(cx, |sidebar, _| sidebar.new_conversation_target());
-            this.start_draft(project_id, cwd, cx);
+            this.resume_or_start_draft(project_id, cwd, None, cx);
         })
         .detach();
         cx.subscribe(&chat_search, |this, _, _: &OpenFolder, cx| {
@@ -438,7 +440,7 @@ impl ChatApp {
         })
         .detach();
         cx.subscribe(&sidebar, |this, _, event: &NewConversation, cx| {
-            this.start_draft(event.project_id.clone(), event.cwd.clone(), cx);
+            this.resume_or_start_draft(event.project_id.clone(), event.cwd.clone(), None, cx);
             this.close_pull_requests(cx);
         })
         .detach();
@@ -447,9 +449,7 @@ impl ChatApp {
             |this, sidebar, event: &crate::components::sidebar::NewChatInSection, cx| {
                 let (project_id, cwd) =
                     sidebar.update(cx, |sidebar, _| sidebar.new_conversation_target());
-                this.start_draft(project_id, cwd, cx);
-                this.draft_sections
-                    .insert(this.active_conversation.clone(), event.0.clone());
+                this.resume_or_start_draft(project_id, cwd, Some(event.0.clone()), cx);
                 this.close_pull_requests(cx);
             },
         )
@@ -653,6 +653,8 @@ impl ChatApp {
             conversation_hosts,
             draft_sections: HashMap::new(),
             active_conversation,
+            conversation_back: Vec::new(),
+            conversation_forward: Vec::new(),
             next_draft_id: 2,
             mode,
             root_focus: cx.focus_handle(),

@@ -1569,6 +1569,19 @@ impl SidebarView {
         cx.notify();
     }
 
+    pub fn set_conversation_selection(
+        &mut self,
+        project_id: Option<ProjectId>,
+        thread_id: Option<ThreadId>,
+        cx: &mut Context<Self>,
+    ) {
+        self.selected_project_id = project_id;
+        self.selected_thread_id = thread_id;
+        self.close_transient_menus(cx);
+        self.archived_open = false;
+        cx.notify();
+    }
+
     fn new_conversation(&mut self, project: Option<&Project>, cx: &mut Context<Self>) {
         let (project_id, cwd) = new_conversation_target(project);
         self.selected_project_id = project_id.clone();

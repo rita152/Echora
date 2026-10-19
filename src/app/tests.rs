@@ -1296,6 +1296,91 @@ fn switching_drafts_preserves_the_background_conversation_host() {
 }
 
 #[test]
+fn returning_from_running_thread_restores_unsent_prompt_and_attachments() {
+    let mut app = TestApp::new();
+    let mut window = app.open_window(|_, cx| ChatApp::new(ThemeMode::Dark, false, cx));
+    let (draft, composer, expected, running) = window.update(|chat, _, cx| {
+        let draft = chat.active_conversation.clone();
+        let composer = chat.home.read(cx).composer_entity();
+        composer.update(cx, |composer, cx| {
+            composer.set_draft_text("请检查附件，并保留这段尚未发送的 Prompt", cx);
+            composer.attach_paths(
+                vec![
+                    PathBuf::from("/tmp/draft-context.txt"),
+                    PathBuf::from("/tmp/draft-image.png"),
+                ],
+                cx,
+            );
+        });
+        let expected = composer.read(cx).pending_input_for_test(cx);
+        let running = ConversationKey::Thread("running-draft-regression".into());
+        let other = chat.new_host_composer(cx);
+        other.update(cx, |composer, cx| {
+            composer.set_command_tool_for_capture(true, cx)
+        });
+        chat.conversation_hosts.insert(
+            running.clone(),
+            super::ConversationHost {
+                composer: other,
+                cwd: crate::components::composer::projectless_cwd(),
+                project_id: None,
+            },
+        );
+        chat.switch_home_to(running.clone(), cx);
+        assert_eq!(
+            chat.home
+                .read(cx)
+                .composer_entity()
+                .read(cx)
+                .conversation_phase(),
+            ConversationPhase::Streaming
+        );
+        chat.sidebar
+            .update(cx, |sidebar, cx| sidebar.start_new_conversation(cx));
+        (draft, composer, expected, running)
+    });
+    app.run_until_parked();
+    window.update(|chat, _, cx| {
+        assert_eq!(chat.active_conversation, draft);
+        assert_eq!(chat.home.read(cx).composer_entity(), composer);
+        assert_eq!(composer.read(cx).pending_input_for_test(cx), expected);
+        assert_eq!(
+            chat.conversation_hosts.len(),
+            2,
+            "returning must not create an inaccessible replacement draft"
+        );
+        chat.navigate_conversation(false, cx);
+        assert_eq!(chat.active_conversation, running);
+        chat.navigate_conversation(true, cx);
+        assert_eq!(chat.active_conversation, draft);
+        assert_eq!(composer.read(cx).pending_input_for_test(cx), expected);
+        // Another project/section owns its own draft; neither can overwrite this one.
+        chat.resume_or_start_draft(
+            Some("other-project".into()),
+            PathBuf::from("/tmp/other-project"),
+            None,
+            cx,
+        );
+        assert_ne!(chat.active_conversation, draft);
+        chat.resume_or_start_draft(
+            None,
+            crate::components::composer::projectless_cwd(),
+            Some("custom-section".into()),
+            cx,
+        );
+        assert_ne!(chat.active_conversation, draft);
+        chat.resume_or_start_draft(
+            None,
+            crate::components::composer::projectless_cwd(),
+            None,
+            cx,
+        );
+        assert_eq!(chat.active_conversation, draft);
+        assert_eq!(composer.read(cx).pending_input_for_test(cx), expected);
+    });
+}
+
+#[test]
 fn thread_created_rekeys_the_draft_without_replacing_its_host() {
     let mut app = TestApp::new();
     let mut window = app.open_window_with_options(
@@ -1334,7 +1419,14 @@ fn thread_created_rekeys_the_draft_without_replacing_its_host() {
         });
     });
 
-    window.update(|chat, _, cx| chat.rekey_created_thread("thread-stable-id".to_owned(), cx));
+    window.update(|chat, _, cx| {
+        chat.conversation_back.push(draft_key.clone());
+        chat.conversation_forward.push(draft_key.clone());
+        chat.rekey_created_thread("thread-stable-id".to_owned(), cx);
+        let key = ConversationKey::Thread("thread-stable-id".into());
+        assert_eq!(chat.conversation_back.last(), Some(&key));
+        assert_eq!(chat.conversation_forward.last(), Some(&key));
+    });
     let thread_key = ConversationKey::Thread("thread-stable-id".to_owned());
     assert!(!window.read(|chat, _| chat.conversation_hosts.contains_key(&draft_key)));
     assert_eq!(

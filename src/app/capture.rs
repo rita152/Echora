@@ -28,6 +28,32 @@ pub(super) struct BrowserCapture {
 
 impl ChatApp {
     #[cfg(feature = "screenshot")]
+    pub fn capture_draft_navigation(&mut self, cx: &mut Context<Self>) {
+        self.complete_startup_for_capture(cx);
+        let cwd = crate::components::composer::projectless_cwd();
+        let thread_id = "capture-running-draft-navigation".to_owned();
+        let composer = self.new_host_composer(cx);
+        composer.update(cx, |composer, cx| {
+            composer.set_workspace_context(cwd.clone(), None, Some(thread_id.clone()), cx);
+            composer.set_command_tool_for_capture(true, cx);
+        });
+        self.workspace_store.register_created_thread(
+            thread_id.clone(),
+            cwd.clone(),
+            None,
+            "Running navigation fixture".into(),
+        );
+        self.conversation_hosts.insert(
+            ConversationKey::Thread(thread_id),
+            super::ConversationHost {
+                composer,
+                cwd,
+                project_id: None,
+            },
+        );
+    }
+
+    #[cfg(feature = "screenshot")]
     pub(crate) fn live_capture_status(
         &self,
         cx: &gpui::App,

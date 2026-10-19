@@ -1790,6 +1790,10 @@ fn main() {
                         if !composer_attachments.is_empty() {
                             app.attach_composer_files_for_capture(composer_attachments.clone(), cx);
                         }
+                        #[cfg(feature = "screenshot")]
+                        if args.iter().any(|arg| arg == "--draft-navigation-ui-state") {
+                            app.capture_draft_navigation(cx);
+                        }
                         if model_picker_open {
                             app.open_model_picker(cx);
                         }
