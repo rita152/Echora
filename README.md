@@ -43,7 +43,7 @@ The right panel holds multiple tabs, so you can keep a file, terminal, browser p
 
 | Tool | What you can do |
 |---|---|
-| **Files** | Browse and search local files, edit text with autosave, preview Markdown and images, and follow file links to a specific line. |
+| **Files** | Browse and search local files, edit text with autosave, preview Markdown and images, and follow file links to a specific line. Markdown previews render HTML headings, aligned paragraphs, emphasis, links, and expandable details; relative links and images resolve beside the document. Scripts and embedded applications do not run. |
 | **Terminal** | Run a local shell in the conversation's working directory, with multiple tabs, scrollback, selection, and clipboard support. |
 | **Browser** | Browse pages in the embedded WebKit browser, use address and history suggestions, search within a page, manage downloads, and attach page content to a chat. |
 | **Changes** | Review Git diffs in unified or split view, add line comments, stage or unstage changes, revert files or hunks, commit, create branches, push, and create pull requests. |

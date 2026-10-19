@@ -653,7 +653,18 @@ fn hook_prompt_document(text: &str) -> MarkdownDocument {
                         blocks(&mut item.blocks);
                     }
                 }
-                MarkdownBlock::BlockQuote(children) => blocks(children),
+                MarkdownBlock::BlockQuote(children)
+                | MarkdownBlock::Aligned {
+                    blocks: children, ..
+                } => blocks(children),
+                MarkdownBlock::Details {
+                    summary,
+                    blocks: children,
+                    ..
+                } => {
+                    inlines(summary);
+                    blocks(children);
+                }
                 MarkdownBlock::Table { header, rows, .. } => {
                     for cell in header.iter_mut().chain(rows.iter_mut().flatten()) {
                         inlines(&mut cell.content);

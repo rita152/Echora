@@ -19,7 +19,7 @@ use super::{
     file_editor::{EditorEvent, FileEditor},
     file_io::{self, FileEntry, TextFile},
     icons::icon,
-    markdown::{MarkdownPreview, parse_markdown},
+    markdown::{MarkdownPreview, parse_markdown, parse_markdown_file},
     prompt_input::{PromptChanged, PromptInput, PromptSubmitted},
 };
 use crate::theme::{Theme, ThemeMode};
@@ -580,10 +580,11 @@ impl FilePanel {
         let (id, revision) = (d.id, d.revision);
         let window = window.window_handle();
         let source = editor.read(cx).buffer.text.clone();
+        let path = d.path.clone();
         d.markdown_pending_revision = Some(revision);
         let task = cx
             .background_executor()
-            .spawn(async move { parse_markdown(&source) });
+            .spawn(async move { parse_markdown_file(&source, &path) });
         cx.spawn(async move |this, cx| {
             let document = task.await;
             let _ = this.update(cx, |s, cx| {

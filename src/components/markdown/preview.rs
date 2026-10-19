@@ -74,14 +74,17 @@ pub struct MarkdownPreview {
     focus: FocusHandle,
     identity: u64,
     selectable: bool,
+    disclosures: disclosure::State,
 }
 
 impl MarkdownPreview {
     pub fn new(document: MarkdownDocument, mode: ThemeMode, cx: &mut Context<Self>) -> Self {
         let items = preview_items(&document);
+        let scroll = ListState::new(items.len(), ListAlignment::Top, px(200.))
+            .with_uniform_item_height(px(ESTIMATED_ITEM_HEIGHT));
         Self {
-            scroll: ListState::new(items.len(), ListAlignment::Top, px(200.))
-                .with_uniform_item_height(px(ESTIMATED_ITEM_HEIGHT)),
+            disclosures: disclosure::State::new(Some(scroll.clone())),
+            scroll,
             items: Rc::new(items),
             document: Rc::new(document),
             mode,
@@ -149,6 +152,7 @@ impl Render for MarkdownPreview {
         let mut style = MarkdownRenderStyle::new(Theme::for_mode(self.mode));
         style.selectable = self.selectable;
         let identity = self.identity;
+        let disclosures = self.disclosures.clone();
         div()
             .id("file-markdown-preview")
             .debug_selector(|| "file-markdown-preview".into())
@@ -175,9 +179,17 @@ impl Render for MarkdownPreview {
             .text_color(style.palette.text)
             .child(
                 list(self.scroll.clone(), move |index, window, cx| {
-                    render_item(&items[index], &document, style, identity, window, cx)
-                        .debug_selector(move || format!("file-preview-item-{index}"))
-                        .into_any_element()
+                    render_item(
+                        &items[index],
+                        &document,
+                        style,
+                        identity,
+                        &disclosures,
+                        window,
+                        cx,
+                    )
+                    .debug_selector(move || format!("file-preview-item-{index}"))
+                    .into_any_element()
                 })
                 .size_full()
                 .py(px(24.)),
@@ -190,6 +202,7 @@ fn render_item(
     document: &MarkdownDocument,
     style: MarkdownRenderStyle,
     identity: u64,
+    disclosures: &disclosure::State,
     window: &mut Window,
     cx: &mut App,
 ) -> Div {
@@ -294,6 +307,7 @@ fn render_item(
                     SequenceContext::Root,
                     block_identity,
                     &MarkdownFadeHandle::none(),
+                    Some(disclosures),
                 )),
         )
     }
@@ -322,6 +336,57 @@ mod tests {
             |_, cx| MarkdownPreview::new(document, ThemeMode::Light, cx),
         );
         (app, window)
+    }
+
+    #[test]
+    fn html_disclosure_supports_full_row_click_keyboard_and_virtual_scroll() {
+        let source =
+            "<details><summary>浅色主题</summary>\n\nVisible **Markdown** body.\n\n</details>\n\n"
+                .to_owned()
+                + &"Following paragraph.\n\n".repeat(100);
+        let (_app, mut window) = window(&source, 360., 240.);
+        window.draw();
+        let identity = window.read(|p, _| markdown_hash(&(p.identity, 0usize)));
+        let closed = window.read(|p, _| p.scroll.bounds_for_item(0).unwrap().size.height);
+        // Far from the text and chevron: the full summary row is clickable.
+        window.simulate_click(point(px(320.), px(40.)), MouseButton::Left);
+        window.draw();
+        window.read(|p, _| {
+            assert!(p.disclosures.is_open(identity, false));
+            assert!(p.scroll.bounds_for_item(0).unwrap().size.height > closed);
+        });
+        activate_disclosure(&mut window, "enter");
+        window.draw();
+        window.read(|p, _| assert!(!p.disclosures.is_open(identity, false)));
+        activate_disclosure(&mut window, "space");
+        window.draw();
+        window.read(|p, _| assert!(p.disclosures.is_open(identity, false)));
+        window.update(|p, _, _| p.scroll.scroll_to_end());
+        window.draw();
+        window.read(|p, _| assert!(p.scroll.logical_scroll_top().item_ix > 10));
+        window.update(|p, _, _| p.scroll.scroll_to(ListOffset::default()));
+        window.draw();
+        window.read(|p, _| {
+            assert!(
+                p.disclosures.is_open(identity, false),
+                "offscreen virtualization must retain expansion"
+            );
+            assert!(p.scroll.bounds_for_item(0).unwrap().size.height > closed);
+        });
+    }
+
+    fn activate_disclosure(window: &mut gpui::TestAppWindow<MarkdownPreview>, key: &str) {
+        // Real activation includes key-up: GPUI maps the pair to one click.
+        // A key-down-only test misses duplicate custom key/click handlers.
+        window.simulate_keystroke(key);
+        window.update(|_, window, cx| {
+            window.dispatch_event(
+                gpui::PlatformInput::KeyUp(gpui::KeyUpEvent {
+                    keystroke: gpui::Keystroke::parse(key).unwrap(),
+                }),
+                cx,
+            );
+        });
     }
 
     #[test]

@@ -27,9 +27,12 @@ use crate::{
     theme::{Theme, UI_MONOSPACE_FONT_FAMILY, ui_font},
 };
 
+mod disclosure;
 mod fade;
 pub(crate) mod find;
 mod highlight;
+mod html;
+pub use html::parse_markdown_file;
 mod link_preview;
 use highlight::highlighted_code_spans;
 mod preview;
@@ -47,6 +50,15 @@ pub struct MarkdownDocument {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum MarkdownBlock {
+    Aligned {
+        alignment: MarkdownAlignment,
+        blocks: Vec<MarkdownBlock>,
+    },
+    Details {
+        summary: Vec<MarkdownInline>,
+        blocks: Vec<MarkdownBlock>,
+        open: bool,
+    },
     Image {
         destination: String,
         alt: String,
@@ -116,6 +128,12 @@ struct RawFrame {
 }
 
 enum RawNode {
+    Html(String),
+    HtmlElement {
+        name: String,
+        attributes: std::collections::BTreeMap<String, String>,
+        children: Vec<RawNode>,
+    },
     Element {
         tag: Tag<'static>,
         children: Vec<RawNode>,
@@ -155,9 +173,10 @@ pub fn parse_markdown(source: &str) -> MarkdownDocument {
                     );
                 }
             }
+            Event::Html(text) | Event::InlineHtml(text) => {
+                push_raw(&mut roots, &mut stack, RawNode::Html(text.into_string()));
+            }
             Event::Text(text)
-            | Event::Html(text)
-            | Event::InlineHtml(text)
             | Event::InlineMath(text)
             | Event::DisplayMath(text)
             | Event::FootnoteReference(text) => {
@@ -187,7 +206,7 @@ pub fn parse_markdown(source: &str) -> MarkdownDocument {
     }
 
     MarkdownDocument {
-        blocks: raw_nodes_to_blocks(roots),
+        blocks: raw_nodes_to_blocks(html::normalize(roots)),
     }
 }
 
@@ -218,7 +237,11 @@ fn raw_nodes_to_blocks(nodes: Vec<RawNode>) -> Vec<MarkdownBlock> {
 fn flush_pending_paragraph(pending: &mut Vec<RawNode>, blocks: &mut Vec<MarkdownBlock>) {
     if !pending.is_empty() {
         let content = raw_nodes_to_inlines(std::mem::take(pending));
-        if !content.is_empty() {
+        if !content.is_empty()
+            && content
+                .iter()
+                .any(|part| !matches!(part, MarkdownInline::Text(text) if text.trim().is_empty()))
+        {
             blocks.push(MarkdownBlock::Paragraph(content));
         }
     }
@@ -226,6 +249,7 @@ fn flush_pending_paragraph(pending: &mut Vec<RawNode>, blocks: &mut Vec<Markdown
 
 fn is_block_node(node: &RawNode) -> bool {
     match node {
+        RawNode::HtmlElement { name, .. } => html::is_block(name),
         RawNode::Rule => true,
         RawNode::Element { tag, .. } => matches!(
             tag,
@@ -248,11 +272,21 @@ fn is_block_node(node: &RawNode) -> bool {
 
 fn append_block(node: RawNode, blocks: &mut Vec<MarkdownBlock>) {
     match node {
+        RawNode::HtmlElement {
+            name,
+            attributes,
+            children,
+        } => html::append_block(name, attributes, children, blocks),
         RawNode::Rule => blocks.push(MarkdownBlock::HorizontalRule),
         RawNode::Element { tag, children } => match tag {
             Tag::Paragraph => {
                 let mut pending = Vec::new();
                 for child in children {
+                    if is_block_node(&child) {
+                        flush_pending_paragraph(&mut pending, blocks);
+                        append_block(child, blocks);
+                        continue;
+                    }
                     if let RawNode::Element {
                         tag: Tag::Image { dest_url, .. },
                         children,
@@ -427,7 +461,10 @@ fn collect_raw_text(nodes: Vec<RawNode>) -> String {
         match node {
             RawNode::Text(value) | RawNode::Code(value) => text.push_str(&value),
             RawNode::SoftBreak | RawNode::HardBreak => text.push('\n'),
-            RawNode::Element { children, .. } => text.push_str(&collect_raw_text(children)),
+            RawNode::Element { children, .. } | RawNode::HtmlElement { children, .. } => {
+                text.push_str(&collect_raw_text(children))
+            }
+            RawNode::Html(_) => {}
             RawNode::Rule => text.push_str("---"),
             RawNode::TaskListMarker(checked) => {
                 text.push_str(if checked { "[x] " } else { "[ ] " });
@@ -441,6 +478,16 @@ fn raw_nodes_to_inlines(nodes: Vec<RawNode>) -> Vec<MarkdownInline> {
     let mut inlines = Vec::new();
     for node in nodes {
         match node {
+            RawNode::HtmlElement {
+                name,
+                attributes,
+                children,
+            } => {
+                for inline in html::inlines(&name, &attributes, children) {
+                    push_inline(&mut inlines, inline);
+                }
+            }
+            RawNode::Html(_) => {}
             RawNode::Text(text) => push_inline(&mut inlines, MarkdownInline::Text(text)),
             RawNode::Code(code) => inlines.push(MarkdownInline::Code(code)),
             RawNode::SoftBreak => inlines.push(MarkdownInline::SoftBreak),
@@ -632,6 +679,7 @@ pub struct MarkdownLineClamp {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct MarkdownRenderStyle {
+    alignment: MarkdownAlignment,
     selectable: bool,
     code_weight: FontWeight,
     layout: MarkdownLayout,
@@ -649,6 +697,7 @@ struct MarkdownRenderStyle {
 impl MarkdownRenderStyle {
     fn new(theme: Theme) -> Self {
         Self {
+            alignment: MarkdownAlignment::None,
             selectable: false,
             code_weight: CHATGPT_MARKDOWN_BODY_WEIGHT,
             body_weight: CHATGPT_MARKDOWN_BODY_WEIGHT,
@@ -741,6 +790,7 @@ pub fn render_pull_request_markdown(source: &str, theme: Theme, scope: &str) -> 
         SequenceContext::Root,
         markdown_hash(scope),
         &MarkdownFadeHandle::none(),
+        None,
     )
     .w_full()
     .min_w(px(0.0))
@@ -813,6 +863,7 @@ fn render_small_markdown(source: &str, style: MarkdownRenderStyle, scope: &str) 
         SequenceContext::Root,
         markdown_hash(scope),
         &MarkdownFadeHandle::none(),
+        None,
     )
     .w_full()
     .min_w(px(0.0))
@@ -897,6 +948,7 @@ pub fn render_selectable_markdown_document(
         SequenceContext::Root,
         markdown_hash(scope),
         &MarkdownFadeHandle::none(),
+        None,
     )
     .w_full()
     .min_w(px(0.0))
@@ -921,6 +973,7 @@ fn render_markdown_document(
         SequenceContext::Root,
         identity_seed,
         fade,
+        None,
     )
     .w_full()
     .min_w(px(0.0))
@@ -938,6 +991,7 @@ fn render_block_sequence(
     context: SequenceContext,
     identity_seed: u64,
     fade: &MarkdownFadeHandle,
+    disclosures: Option<&disclosure::State>,
 ) -> Div {
     let mut sequence = div().w_full().min_w(px(0.0)).flex().flex_col();
     let mut previous: Option<&MarkdownBlock> = None;
@@ -984,6 +1038,7 @@ fn render_block_sequence(
                     context,
                     block_identity,
                     fade,
+                    disclosures,
                 )),
         );
         previous = Some(block);
@@ -1000,6 +1055,9 @@ fn block_margins(
     context: SequenceContext,
 ) -> (f32, f32) {
     let default = match block {
+        MarkdownBlock::Aligned { .. } | MarkdownBlock::Details { .. } => {
+            (0., layout.paragraph_space)
+        }
         MarkdownBlock::Image { .. } => (12.0, 12.0),
         MarkdownBlock::Paragraph(_) => (0.0, layout.paragraph_space),
         MarkdownBlock::Heading { level: 1, .. } => (0.0, layout.markdown_space * 2.0),
@@ -1059,8 +1117,41 @@ fn render_block(
     context: SequenceContext,
     block_identity: u64,
     fade: &MarkdownFadeHandle,
+    disclosures: Option<&disclosure::State>,
 ) -> Div {
     match block {
+        MarkdownBlock::Aligned { alignment, blocks } => {
+            let mut style = style;
+            style.alignment = *alignment;
+            style.centered_measure = false;
+            div()
+                .w_full()
+                .min_w(px(0.))
+                .when(*alignment == MarkdownAlignment::Center, |d| d.text_center())
+                .when(*alignment == MarkdownAlignment::Right, |d| d.text_right())
+                .when(*alignment == MarkdownAlignment::Left, |d| d.text_left())
+                .child(render_block_sequence(
+                    blocks,
+                    style,
+                    list_depth,
+                    context,
+                    block_identity,
+                    fade,
+                    disclosures,
+                ))
+        }
+        MarkdownBlock::Details {
+            summary,
+            blocks,
+            open,
+        } => div().child(disclosure::Disclosure {
+            summary: summary.clone(),
+            blocks: blocks.clone(),
+            default_open: *open,
+            identity: block_identity,
+            style,
+            state: disclosures.cloned(),
+        }),
         MarkdownBlock::Image {
             destination,
             alt,
@@ -1142,9 +1233,15 @@ fn render_block(
                 fade,
             )
         }
-        MarkdownBlock::List { start, items } => {
-            render_list(*start, items, style, list_depth, block_identity, fade)
-        }
+        MarkdownBlock::List { start, items } => render_list(
+            *start,
+            items,
+            style,
+            list_depth,
+            block_identity,
+            fade,
+            disclosures,
+        ),
         MarkdownBlock::BlockQuote(blocks) => div()
             .relative()
             .w_full()
@@ -1173,6 +1270,7 @@ fn render_block(
                 SequenceContext::BlockQuote,
                 block_identity,
                 fade,
+                disclosures,
             )),
         MarkdownBlock::HorizontalRule => div()
             .w_full()
@@ -1201,6 +1299,7 @@ fn render_list(
     depth: usize,
     block_identity: u64,
     fade: &MarkdownFadeHandle,
+    disclosures: Option<&disclosure::State>,
 ) -> Div {
     let is_task_list = list_uses_task_layout(start, items);
     let mut list = div()
@@ -1277,6 +1376,7 @@ fn render_list(
                     SequenceContext::ListItem,
                     item_identity,
                     fade,
+                    disclosures,
                 )),
         );
     }
@@ -1852,7 +1952,13 @@ fn render_inline_boxes(
             .flex()
             .flex_row()
             .flex_wrap()
-            .items_start(),
+            .items_start()
+            .when(style.alignment == MarkdownAlignment::Center, |line| {
+                line.justify_center()
+            })
+            .when(style.alignment == MarkdownAlignment::Right, |line| {
+                line.justify_end()
+            }),
         |line, mut group| {
             if group.len() == 1
                 && let Some(element) = group.pop()

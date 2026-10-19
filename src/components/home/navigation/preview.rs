@@ -248,7 +248,7 @@ fn block_text(block: &MarkdownBlock) -> Styled {
         } => Styled::from_inlines(inlines),
         MarkdownBlock::CodeBlock { code, .. } => Styled::plain(code),
         MarkdownBlock::Image { alt, .. } => Styled::plain(alt),
-        MarkdownBlock::BlockQuote(blocks) => {
+        MarkdownBlock::BlockQuote(blocks) | MarkdownBlock::Aligned { blocks, .. } => {
             blocks.iter().fold(Styled::default(), |text, block| {
                 text.joined(&block_text(block))
             })
@@ -259,6 +259,20 @@ fn block_text(block: &MarkdownBlock) -> Styled {
                 .fold(text, |text, block| text.joined(&block_text(block)))
         }),
         MarkdownBlock::Table { .. } | MarkdownBlock::HorizontalRule => Styled::default(),
+        MarkdownBlock::Details {
+            summary,
+            blocks,
+            open,
+        } => {
+            let summary = Styled::from_inlines(summary);
+            if *open {
+                blocks
+                    .iter()
+                    .fold(summary, |text, block| text.joined(&block_text(block)))
+            } else {
+                summary
+            }
+        }
     }
 }
 
@@ -272,6 +286,15 @@ fn root_nodes(source: &str) -> Vec<Node> {
     let mut nodes: Vec<Node> = Vec::new();
     for block in parse_markdown(source).blocks {
         let node = match &block {
+            MarkdownBlock::Aligned { .. } | MarkdownBlock::Details { .. } => {
+                let text = block_text(&block).collapsed();
+                Node::Element(
+                    ElementKind::Paragraph {
+                        han: text.has_han(),
+                    },
+                    vec![(text, None, 0)],
+                )
+            }
             MarkdownBlock::Paragraph(inlines) => {
                 let text = Styled::from_inlines(inlines).collapsed();
                 if text.is_empty() {
