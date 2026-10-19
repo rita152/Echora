@@ -248,6 +248,11 @@ impl ChatApp {
     }
 
     pub(super) fn navigate_conversation(&mut self, forward: bool, cx: &mut Context<Self>) {
+        if self.showing_plugins && !forward {
+            self.close_plugins(cx);
+            self.draft_focus_pending = true;
+            return;
+        }
         let (mut back, mut next) = (
             std::mem::take(&mut self.conversation_back),
             std::mem::take(&mut self.conversation_forward),

@@ -3,7 +3,8 @@
 use super::*;
 use crate::agent::{
     AgentAppsListRequest, AgentPluginCatalogRequest, AgentPluginInstallReceipt,
-    AgentPluginInstallRequest, AgentPluginOperationOutcome, AgentPluginSearchRequest,
+    AgentPluginInstallRequest, AgentPluginInstalledRequest, AgentPluginOperationOutcome,
+    AgentPluginSearchRequest, AgentPluginsErrorKind,
 };
 
 /// Waits for the first connection event the predicate accepts, ignoring the
@@ -256,4 +257,37 @@ fn plugin_catalog_and_search_keep_the_servers_own_rows() {
     assert_eq!(page.search_term, "doc");
     assert_eq!(page.results.len(), 1);
     assert_eq!(page.results[0].marketplace_name, "openai-primary-runtime");
+}
+
+#[test]
+fn plugin_server_refusals_preserve_the_error_without_claiming_disconnection() {
+    let (manager, spawner) = manager_with_fake();
+    let unsupported = manager.load_plugin_catalog(AgentPluginCatalogRequest::default());
+    let mut endpoint = spawner.next_endpoint();
+    handshake(&mut endpoint);
+    let request = endpoint.recv();
+    endpoint.send(json!({
+        "id": request["id"],
+        "error": {"code": -32601, "message": "plugin/list is unavailable"}
+    }));
+    let error = wait_value(&unsupported).unwrap_err();
+    assert_eq!(error.kind, AgentPluginsErrorKind::Unsupported);
+    assert_eq!(error.data.unwrap()["code"], -32601);
+    assert!(!error.outcome_unknown);
+
+    let refused = manager.load_installed_plugins(AgentPluginInstalledRequest::default());
+    let request = endpoint.recv();
+    endpoint.send(json!({
+        "id": request["id"],
+        "error": {"code": -32000, "message": "authentication required"}
+    }));
+    let error = wait_value(&refused).unwrap_err();
+    assert_eq!(error.kind, AgentPluginsErrorKind::Protocol);
+    assert!(error.message.contains("authentication required"));
+
+    // A server refusal must leave the connection usable for the next read.
+    let loaded = manager.load_plugin_catalog(AgentPluginCatalogRequest::default());
+    let request = endpoint.recv();
+    endpoint.respond(&request, catalog_payload(true));
+    assert_eq!(wait_value(&loaded).unwrap().installed_plugin_count(), 1);
 }

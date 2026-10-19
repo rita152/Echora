@@ -107,6 +107,7 @@ pub struct ChatApp {
     home: Entity<HomeView>,
     settings: Entity<SettingsView>,
     showing_settings: bool,
+    showing_plugins: bool,
     pull_requests: Entity<PullRequestsView>,
     /// True while the main content area shows the Pull Requests page.
     showing_pull_requests: bool,
@@ -346,6 +347,13 @@ impl ChatApp {
         .detach();
         cx.subscribe(
             &sidebar,
+            |this, _, _: &crate::components::sidebar::OpenPlugins, cx| {
+                this.open_plugins(cx);
+            },
+        )
+        .detach();
+        cx.subscribe(
+            &sidebar,
             |this, _, _: &crate::components::sidebar::OpenPullRequests, cx| {
                 this.open_pull_requests(cx);
             },
@@ -457,6 +465,7 @@ impl ChatApp {
         cx.subscribe(
             &settings,
             |this, _, event: &crate::settings::OpenSettingsFile, cx| {
+                this.close_plugins(cx);
                 this.showing_settings = false;
                 this.sync_right_panel_page(cx);
                 this.open_matched_file(event.0.display().to_string(), false, cx);
@@ -465,6 +474,7 @@ impl ChatApp {
         )
         .detach();
         cx.subscribe(&settings, |this, _, _: &CloseSettings, cx| {
+            this.close_plugins(cx);
             this.showing_settings = false;
             this.showing_pull_requests = false;
             this.sync_right_panel_page(cx);
@@ -668,6 +678,7 @@ impl ChatApp {
             home,
             settings,
             showing_settings: false,
+            showing_plugins: false,
             pull_requests,
             showing_pull_requests: false,
             capture_pull_requests_locked: false,
@@ -1133,6 +1144,9 @@ impl ChatApp {
     }
 
     pub fn open_settings(&mut self, cx: &mut Context<Self>) {
+        self.close_plugins(cx);
+        self.settings
+            .update(cx, |settings, cx| settings.show_settings_shell(cx));
         let cwd = self
             .conversation_hosts
             .get(&self.active_conversation)
@@ -1188,6 +1202,7 @@ impl ChatApp {
     /// Opens the Pull Requests page in the main content area; the sidebar stays
     /// visible and highlights its own `Pull requests` row.
     pub fn open_pull_requests(&mut self, cx: &mut Context<Self>) {
+        self.close_plugins(cx);
         self.showing_settings = false;
         self.showing_pull_requests = true;
         // The page is not a chat: the chat's right panel does not stay beside it.
@@ -1348,6 +1363,7 @@ impl ChatApp {
     }
 
     pub fn close_pull_requests(&mut self, cx: &mut Context<Self>) {
+        self.close_plugins(cx);
         if self.capture_pull_requests_locked || !self.showing_pull_requests {
             return;
         }
@@ -1362,6 +1378,35 @@ impl ChatApp {
         self.settings
             .update(cx, |settings, cx| settings.select(slug, cx));
         self.open_settings(cx);
+    }
+
+    pub fn open_plugins(&mut self, cx: &mut Context<Self>) {
+        let cwd = self
+            .conversation_hosts
+            .get(&self.active_conversation)
+            .map(|host| host.cwd.clone())
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        self.showing_settings = false;
+        self.showing_pull_requests = false;
+        self.showing_plugins = true;
+        self.sidebar.update(cx, |sidebar, cx| {
+            sidebar.set_pull_requests_open(false, cx);
+            sidebar.set_plugins_open(true, cx);
+        });
+        self.settings
+            .update(cx, |settings, cx| settings.open_plugin_directory(cwd, cx));
+        self.sync_right_panel_page(cx);
+        cx.notify();
+    }
+
+    fn close_plugins(&mut self, cx: &mut Context<Self>) {
+        if self.showing_plugins {
+            self.showing_plugins = false;
+            self.sidebar
+                .update(cx, |sidebar, cx| sidebar.set_plugins_open(false, cx));
+            self.sync_right_panel_page(cx);
+            cx.notify();
+        }
     }
 
     /// Capture-only fixture selection for the plugins page. Every argument is

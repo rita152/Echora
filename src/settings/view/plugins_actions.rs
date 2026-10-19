@@ -28,15 +28,19 @@ impl SettingsView {
             force_refetch,
             // Browsing the directory asks for every marketplace kind the account
             // can see; an ordinary load keeps the server's own default set.
-            marketplace_kinds: force_refetch.then(|| {
-                vec![
-                    crate::agent::AgentPluginMarketplaceKind::Local,
-                    crate::agent::AgentPluginMarketplaceKind::Vertical,
-                    crate::agent::AgentPluginMarketplaceKind::WorkspaceDirectory,
-                    crate::agent::AgentPluginMarketplaceKind::SharedWithMe,
-                    crate::agent::AgentPluginMarketplaceKind::CreatedByMeRemote,
-                ]
-            }),
+            marketplace_kinds: if self.directory_presentation {
+                Some(self.directory_scope.marketplace_kinds())
+            } else {
+                force_refetch.then(|| {
+                    vec![
+                        crate::agent::AgentPluginMarketplaceKind::Local,
+                        crate::agent::AgentPluginMarketplaceKind::Vertical,
+                        crate::agent::AgentPluginMarketplaceKind::WorkspaceDirectory,
+                        crate::agent::AgentPluginMarketplaceKind::SharedWithMe,
+                        crate::agent::AgentPluginMarketplaceKind::CreatedByMeRemote,
+                    ]
+                })
+            },
         });
         let installed_reader = self
             .backend
@@ -51,6 +55,7 @@ impl SettingsView {
                 match catalog {
                     Ok(Ok(catalog)) => {
                         if this.plugins_catalog.directory.apply_catalog(cycle, catalog) {
+                            this.plugins_generation = this.plugins_catalog.directory.generation;
                             this.plugins_catalog.directory.clear_settled_operations();
                         }
                     }
@@ -63,15 +68,47 @@ impl SettingsView {
                             .apply_error(cycle, disconnected_plugins_error());
                     }
                 }
-                if let Ok(Ok(installed)) = installed {
-                    this.plugins_catalog
-                        .directory
-                        .apply_installed(cycle, installed);
+                match installed {
+                    Ok(Ok(installed)) => {
+                        if this
+                            .plugins_catalog
+                            .directory
+                            .apply_installed(cycle, installed)
+                        {
+                            this.plugins_generation = this.plugins_catalog.directory.generation;
+                        }
+                    }
+                    Ok(Err(error)) => {
+                        this.plugins_catalog
+                            .directory
+                            .apply_installed_error(cycle, error);
+                    }
+                    Err(_) => {
+                        this.plugins_catalog
+                            .directory
+                            .apply_installed_error(cycle, disconnected_plugins_error());
+                    }
+                }
+                // Detail actions and installed badges follow the confirmed
+                // readback after a mutation, including the new connection id.
+                if this.directory_presentation
+                    && this.plugins_catalog.directory.cycle == cycle
+                    && let Some(id) = this.plugins_catalog.open_plugin.clone()
+                {
+                    this.open_plugin_detail(id, cx);
                 }
                 if this.plugins_catalog.directory.cycle == cycle
                     && let Some(id) = this.plugins_catalog.pending_reference.take()
                 {
                     this.open_plugin_detail(id, cx);
+                }
+                // Refresh invalidates searches from the previous catalog cycle.
+                // Reissue the active query so it cannot remain pending forever.
+                if this.directory_presentation
+                    && this.plugins_catalog.directory.cycle == cycle
+                    && !this.plugins_catalog.directory.search_term.trim().is_empty()
+                {
+                    this.submit_plugin_search(cx);
                 }
                 cx.notify();
             });
@@ -163,11 +200,15 @@ impl SettingsView {
             .directory
             .visible_plugins()
             .into_iter()
+            .chain(self.plugins_catalog.directory.installed_rows())
             .find(|row| row.plugin.id == plugin_id)
             .map(|row| {
                 (
                     row.plugin.name.clone(),
                     row.marketplace_path.map(str::to_owned),
+                    row.marketplace_path
+                        .is_none()
+                        .then(|| row.marketplace_name.to_owned()),
                 )
             })
         else {
@@ -182,13 +223,13 @@ impl SettingsView {
             cx.notify();
             return;
         };
-        let (plugin_name, marketplace_path) = row;
+        let (plugin_name, marketplace_path, remote_marketplace_name) = row;
         self.plugins_catalog.directory.clear_detail();
         self.plugins_catalog.open_plugin = Some(plugin_id.clone());
         let cycle = self.plugins_catalog.directory.cycle;
         let reader = self.backend.read_plugin(AgentPluginReadRequest {
             marketplace_path,
-            remote_marketplace_name: None,
+            remote_marketplace_name,
             plugin_name,
         });
         cx.spawn(async move |this, cx| {
@@ -265,12 +306,15 @@ impl SettingsView {
             PluginConfirmation::Install {
                 plugin_name,
                 marketplace_path,
+                marketplace_name,
                 ..
             } => {
+                let remote_marketplace_name =
+                    marketplace_path.is_none().then_some(marketplace_name);
                 let intent = PluginIntent::Install {
                     plugin_name: plugin_name.clone(),
                     marketplace_path: marketplace_path.clone(),
-                    remote_marketplace_name: None,
+                    remote_marketplace_name: remote_marketplace_name.clone(),
                 };
                 let sequence = self
                     .plugins_catalog
@@ -280,7 +324,7 @@ impl SettingsView {
                     generation,
                     plugin_name,
                     marketplace_path,
-                    remote_marketplace_name: None,
+                    remote_marketplace_name,
                     install_attempt_id: None,
                 });
                 cx.spawn(async move |this, cx| {
@@ -641,6 +685,16 @@ impl SettingsView {
     /// Runs a search with the current term. An empty term returns to the full
     /// catalog instead of querying for nothing.
     pub(super) fn submit_plugin_search(&mut self, cx: &mut Context<Self>) {
+        if self.directory_presentation
+            && self.directory_scope == super::plugin_directory::Scope::Installed
+        {
+            // Installed inventory is authoritative and searched locally. Global
+            // search may be unavailable even when installed plugins can be read.
+            self.plugins_catalog.directory.searching = false;
+            self.plugins_catalog.directory.search_error = None;
+            cx.notify();
+            return;
+        }
         let term = self.plugins_catalog.directory.search_term.clone();
         if term.trim().is_empty() {
             self.plugins_catalog.directory.clear_search();
@@ -648,6 +702,13 @@ impl SettingsView {
             return;
         }
         self.plugins_catalog.directory.searching = true;
+        self.plugins_catalog.directory.search_revision = self
+            .plugins_catalog
+            .directory
+            .search_revision
+            .wrapping_add(1);
+        let revision = self.plugins_catalog.directory.search_revision;
+        let cycle = self.plugins_catalog.directory.cycle;
         let reader = self.backend.search_plugins(AgentPluginSearchRequest {
             cursor: None,
             limit: None,
@@ -660,6 +721,11 @@ impl SettingsView {
         cx.spawn(async move |this, cx| {
             let result = reader.recv().await;
             let _ = this.update(cx, |this, cx| {
+                if this.plugins_catalog.directory.cycle != cycle
+                    || this.plugins_catalog.directory.search_revision != revision
+                {
+                    return;
+                }
                 match result {
                     Ok(Ok(page)) => {
                         this.plugins_catalog.directory.apply_search(page);

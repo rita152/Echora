@@ -355,11 +355,11 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `modelProvider/capabilities/read` | 默认 | 已接入 | params `{}`，随配置读取与权限目录按 generation 读取；webSearch=false 时「网页搜索」只可选关闭并说明「当前模型提供方不支持网页搜索」，imageGeneration=false 时隐藏图片生成失败后的重试；namespaceTools 只保存。读取失败视为未知、不做门控。参考不读取响应字段，此处为 Echora 新增门控。 | `manager/catalog`、`settings/view/configuration` |
 | `permissionProfile/list` | 默认 | 已接入 | cwd、limit=100、遍历 nextCursor，拒绝循环游标及重复 id；消费 id/allowed/description，兼容可选 extends；设置展示 profile，Composer 菜单仅列三种权限模式并据目录判定禁用原因，提交前复核 allowed。 | `manager/catalog`、`catalog` |
 | `plugin/install` | 默认 | 已接入 | pluginName + marketplacePath/remoteMarketplaceName（未用一侧显式 null），可选 installAttemptId；120s 操作窗口，成功回执保留 authPolicy 与 appsNeedingAuth；超时与不可读结果分别建模为 TimedOut/Unknown，不自动重试。 | `manager/plugins`、`plugins_catalog` |
-| `plugin/installed` | 默认 | 已接入 | cwds 与 installSuggestionPluginNames；与 `plugin/list` 分别缓存，安装开关状态以该响应为准；输入框添加选择器按 cwd/generation 读取并展示已安装启用条目。 | `manager/plugins`、`plugins` |
-| `plugin/list` | 默认 | 已接入 | cwds、forceRefetch、marketplaceKinds（浏览目录时请求全部类型）；保留 marketplaceLoadErrors、featuredPluginIds、interface、source 四种变体与未知字段；行内容与分段徽标计数均来自该响应。 | `manager/plugins`、`plugins` |
+| `plugin/installed` | 默认 | 已接入 | cwds 与 installSuggestionPluginNames；与 `plugin/list` 分别缓存，侧栏已安装列表与安装状态以该响应为准；读取失败独立展示，写操作采用返回的连接代次并等待回读确认；输入框添加选择器按 cwd/generation 读取并展示已安装启用条目。 | `manager/plugins`、`plugins` |
+| `plugin/list` | 默认 | 已接入 | cwds、forceRefetch、marketplaceKinds；侧栏独立插件目录按公开 vertical、个人 local/workspace-directory/shared-with-me/created-by-me-remote、已安装全部类型读取；保留 marketplaceLoadErrors、featuredPluginIds、interface、source 四种变体与未知字段；行内容与分段徽标计数均来自该响应。 | `manager/plugins`、`plugins` |
 | `plugin/reconcile` | 默认 | 已接入 | reason；每个连接 generation 首次加载插件目录时执行一次，回执中的 changedPlugins 与失败 id 列表按服务端上报展示。 | `manager/plugins`、`plugins_catalog` |
-| `plugin/read` | 默认 | 已接入 | pluginName + marketplacePath/remoteMarketplaceName；保留 description、apps、appTemplates、hooks、mcpServers、scheduledTasks、skills 与未知字段。 | `manager/plugins`、`plugins` |
-| `plugin/search` | 实验 | 已接入 | searchTerm + cursor/limit/scope/cwds；scope=global 表示跨全部可见 marketplace；遍历 nextCursor 并拒绝重复游标；结果行保留其自身的 marketplace 身份。 | `manager/plugins`、`plugins` |
+| `plugin/read` | 默认 | 已接入 | pluginName + marketplacePath/remoteMarketplaceName；保留 description、apps、appTemplates、hooks、mcpServers、scheduledTasks、skills 与未知字段；侧栏详情显示 interface 的介绍、开发者、类别、版本、链接与截图；远程 marketplace 身份传递至读取与安装。 | `manager/plugins`、`plugins` |
+| `plugin/search` | 实验 | 已接入 | searchTerm + cursor/limit/scope/cwds；scope=global 表示跨全部可见 marketplace；遍历 nextCursor 并拒绝重复游标；结果行保留其自身的 marketplace 身份；侧栏即时搜索隔离读取周期及查询版本，全局结果再按当前目录范围筛选，已安装清单本地过滤；plugin/* 保留结构化服务端错误，-32601 显示不支持，其他拒绝不误报连接断开。 | `manager/plugins`、`plugins` |
 | `plugin/share/checkout` | 默认 | 未接入 | — | — |
 | `plugin/share/delete` | 默认 | 已接入 | remotePluginId；经确认卡发送，结果未知不自动重试。 | `manager/plugins`、`plugins_catalog` |
 | `plugin/share/list` | 默认 | 已接入 | 无参数；未登录 ChatGPT 时服务端返回 -32600，错误原文按服务端语义展示，不伪造空列表。 | `manager/plugins`、`plugins_catalog` |

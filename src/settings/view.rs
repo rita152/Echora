@@ -14,6 +14,7 @@ mod language;
 mod memories;
 mod navigation;
 mod personalization;
+mod plugin_directory;
 mod plugins;
 mod plugins_actions;
 mod plugins_catalog;
@@ -56,6 +57,9 @@ pub(super) enum PluginSegment {
 }
 
 pub struct SettingsView {
+    directory_presentation: bool,
+    directory_scope: plugin_directory::Scope,
+    directory_titlebar_inset: f32,
     mode: ThemeMode,
     selected: &'static str,
     nav_scroll: ScrollHandle,
@@ -236,9 +240,21 @@ impl SettingsView {
         cx.subscribe(
             &plugin_search_input,
             |this, _, event: &crate::components::prompt_input::PromptSubmitted, cx| {
+                if this.directory_presentation && this.plugins_segment == PluginSegment::Skills {
+                    this.skills.query = event.0.clone();
+                    cx.notify();
+                    return;
+                }
                 let term = event.0.clone();
                 this.plugins_catalog.directory.set_search_term(term);
                 this.submit_plugin_search(cx);
+            },
+        )
+        .detach();
+        cx.subscribe(
+            &plugin_search_input,
+            |this, input, _: &crate::components::prompt_input::PromptChanged, cx| {
+                this.directory_search_changed(input.read(cx).text().to_owned(), cx);
             },
         )
         .detach();
@@ -322,6 +338,9 @@ impl SettingsView {
         })
         .detach();
         Self {
+            directory_presentation: false,
+            directory_scope: plugin_directory::Scope::Public,
+            directory_titlebar_inset: 0.,
             language_menu_open: false,
             language_menu_index: 0,
             language_focus: cx.focus_handle().tab_stop(true),
@@ -529,6 +548,9 @@ impl Render for SettingsView {
             f32::from(viewport.height),
             window.scale_factor(),
         );
+        if self.directory_presentation {
+            return self.plugin_directory_page(theme, cx).into_any_element();
+        }
         let selected =
             page(self.selected).unwrap_or_else(|| pages().next().expect("settings pages"));
         let nav_scroll = self.nav_scroll.clone();
@@ -729,6 +751,7 @@ impl Render for SettingsView {
                     .flatten(),
             )
             .children(self.render_toasts(cx))
+            .into_any_element()
     }
 }
 

@@ -180,7 +180,7 @@ impl SettingsView {
         self.apps.directory.entries().len()
     }
 
-    fn catalog_state_card(
+    pub(super) fn catalog_state_card(
         &self,
         message: &str,
         detail: Option<&str>,
@@ -277,7 +277,7 @@ impl SettingsView {
             .into_any_element()
     }
 
-    fn plugin_icon(
+    pub(super) fn plugin_icon(
         &self,
         plugin: &AgentPluginSummary,
         theme: &Theme,
@@ -738,7 +738,7 @@ impl SettingsView {
         card.into_any_element()
     }
 
-    fn confirmation_card(
+    pub(super) fn confirmation_card(
         &self,
         confirmation: &PluginConfirmation,
         theme: &Theme,
@@ -780,6 +780,10 @@ impl SettingsView {
                     .child(
                         div()
                             .id("catalog-confirm")
+                            .role(gpui::Role::Button)
+                            .aria_label(confirmation.confirm_label())
+                            .focusable()
+                            .tab_stop(true)
                             .h(px(28.0))
                             .px(px(12.0))
                             .rounded(px(12.5))
@@ -799,6 +803,10 @@ impl SettingsView {
                     .child(
                         div()
                             .id("catalog-cancel")
+                            .role(gpui::Role::Button)
+                            .aria_label(crate::i18n::text("取消"))
+                            .focusable()
+                            .tab_stop(true)
                             .h(px(28.0))
                             .px(px(12.0))
                             .rounded(px(12.5))
@@ -822,7 +830,7 @@ impl SettingsView {
     /// Detail read through `plugin/read`: the server's own description, the
     /// skills it ships, its MCP servers, and the share actions that the account
     /// is allowed to perform.
-    fn plugin_detail_card(
+    pub(super) fn plugin_detail_card(
         &self,
         detail: &crate::agent::AgentPluginDetail,
         theme: &Theme,
@@ -830,37 +838,41 @@ impl SettingsView {
     ) -> gpui::AnyElement {
         let mut card = div()
             .w_full()
-            .rounded(px(20.0))
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.settings_panel)
-            .px(px(16.0))
-            .py(px(12.0))
+            .when(!self.directory_presentation, |card| {
+                card.rounded(px(20.0))
+                    .border_1()
+                    .border_color(theme.border)
+                    .bg(theme.settings_panel)
+                    .px(px(16.0))
+                    .py(px(12.0))
+            })
             .flex()
             .flex_col()
             .gap(px(6.0))
-            .child(
-                div()
-                    .text_size(px(13.0))
-                    .line_height(px(18.5625))
-                    .font_weight(gpui::FontWeight(500.0))
-                    .child(detail.summary.display_name().to_owned()),
-            )
-            .child(
-                div()
-                    .text_size(px(12.0))
-                    .line_height(px(16.0))
-                    .text_color(theme.settings_description)
-                    .child(crate::i18n::format!(
-                        "来源：{} · 市场：{}" => "Source: {} · Marketplace: {}",
-                        detail.summary.source.kind(),
-                        detail.marketplace_name
-                    ))
-                    .child(match &detail.description {
-                        Some(description) => description.clone(),
-                        None => format!("marketplace：{}", detail.marketplace_name),
-                    }),
-            );
+            .when(!self.directory_presentation, |card| {
+                card.child(
+                    div()
+                        .text_size(px(13.0))
+                        .line_height(px(18.5625))
+                        .font_weight(gpui::FontWeight(500.0))
+                        .child(detail.summary.display_name().to_owned()),
+                )
+                .child(
+                    div()
+                        .text_size(px(12.0))
+                        .line_height(px(16.0))
+                        .text_color(theme.settings_description)
+                        .child(crate::i18n::format!(
+                            "来源：{} · 市场：{}" => "Source: {} · Marketplace: {}",
+                            detail.summary.source.kind(),
+                            detail.marketplace_name
+                        ))
+                        .child(match &detail.description {
+                            Some(description) => description.clone(),
+                            None => format!("marketplace：{}", detail.marketplace_name),
+                        }),
+                )
+            });
         let remote_plugin_id = detail.summary.remote_plugin_id.clone().or_else(|| {
             detail
                 .summary
@@ -879,6 +891,10 @@ impl SettingsView {
             card = card.child(
                 div()
                     .id(("plugin-skill", index))
+                    .role(gpui::Role::Button)
+                    .aria_label(skill.name.clone())
+                    .focusable()
+                    .tab_stop(true)
                     .cursor_pointer()
                     .text_size(px(12.0))
                     .line_height(px(16.0))

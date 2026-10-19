@@ -64,6 +64,18 @@ fn decode_result<T>(
     response: Value,
     decode: impl FnOnce(&Value) -> Result<T, anyhow::Error>,
 ) -> Result<T, AgentPluginsError> {
+    if let Some(error) = response.get("error") {
+        return Err(AgentPluginsError {
+            kind: if error.get("code").and_then(Value::as_i64) == Some(-32601) {
+                AgentPluginsErrorKind::Unsupported
+            } else {
+                AgentPluginsErrorKind::Protocol
+            },
+            message: server_error_message(method, error),
+            data: Some(error.clone()),
+            outcome_unknown: false,
+        });
+    }
     let result = response
         .get("result")
         .cloned()

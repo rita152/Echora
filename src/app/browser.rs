@@ -129,7 +129,8 @@ impl ChatApp {
             && self.right_panel.subagent.is_none()
             && self.right_panel.diff_review.is_none()
             && !self.showing_settings
-            && !self.showing_pull_requests;
+            && !self.showing_pull_requests
+            && !self.showing_plugins;
         let occluded = self
             .conversation_hosts
             .get(&self.active_conversation)

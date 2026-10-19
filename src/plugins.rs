@@ -112,6 +112,8 @@ pub struct PluginsDirectory {
     /// The installed subset from `plugin/installed`, kept apart from the full
     /// catalog because the two are different reads with different freshness.
     pub installed: Option<AgentPluginCatalog>,
+    pub installed_loading: bool,
+    pub installed_error: Option<AgentPluginsError>,
     pub loading: bool,
     pub error: Option<AgentPluginsError>,
     /// True when a change signal arrived after the last successful read.
@@ -122,6 +124,7 @@ pub struct PluginsDirectory {
     pub search_error: Option<AgentPluginsError>,
     pub search_term: String,
     pub searching: bool,
+    pub search_revision: u64,
     /// Plugin shares the account reported through `plugin/share/list`.
     pub shares: Option<crate::agent::AgentPluginShareList>,
     pub shares_error: Option<AgentPluginsError>,
@@ -148,6 +151,9 @@ impl PluginsDirectory {
         self.cycle = self.cycle.wrapping_add(1);
         self.generation = generation;
         self.loading = true;
+        self.installed_loading = true;
+        self.error = None;
+        self.installed_error = None;
         self.cycle
     }
 
@@ -168,8 +174,46 @@ impl PluginsDirectory {
             return false;
         }
         self.generation = catalog.generation;
+        self.installed_loading = false;
+        self.installed_error = None;
         self.installed = Some(catalog);
         true
+    }
+
+    pub fn apply_installed_error(&mut self, cycle: u64, error: AgentPluginsError) -> bool {
+        if cycle != self.cycle {
+            return false;
+        }
+        self.installed_loading = false;
+        self.installed_error = Some(error);
+        true
+    }
+
+    pub fn installed_rows(&self) -> Vec<PluginRow<'_>> {
+        self.installed
+            .as_ref()
+            .map(|catalog| {
+                catalog
+                    .plugins()
+                    .filter(|(_, plugin)| plugin.installed)
+                    .map(|(marketplace, plugin)| PluginRow {
+                        marketplace_name: &marketplace.name,
+                        marketplace_path: marketplace.path.as_deref(),
+                        plugin,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The installed snapshot is authoritative when available; never infer a
+    /// completed install from a pending operation or a stale catalog row.
+    pub fn confirmed_installed(&self, plugin: &crate::agent::AgentPluginSummary) -> bool {
+        self.installed.as_ref().map_or(plugin.installed, |catalog| {
+            catalog
+                .plugins()
+                .any(|(_, installed)| installed.id == plugin.id && installed.installed)
+        })
     }
 
     pub fn apply_error(&mut self, cycle: u64, error: AgentPluginsError) -> bool {
@@ -256,6 +300,7 @@ impl PluginsDirectory {
             return;
         }
         self.search_term = term;
+        self.search_revision = self.search_revision.wrapping_add(1);
         // A new term invalidates the previous answer; it is never shown against
         // a query it did not answer.
         self.search = None;
@@ -264,6 +309,7 @@ impl PluginsDirectory {
 
     pub fn clear_search(&mut self) {
         self.search_term.clear();
+        self.search_revision = self.search_revision.wrapping_add(1);
         self.search = None;
         self.search_error = None;
         self.searching = false;

@@ -512,10 +512,11 @@ impl Connection {
         let (result, fatal_error) = match (message.get("result"), message.get("error")) {
             (Some(_), None) => (Ok(message), None),
             (None, Some(_))
-                if matches!(
-                    pending.method.as_str(),
-                    "config/read" | "configRequirements/read" | "config/batchWrite"
-                ) =>
+                if pending.method.starts_with("plugin/")
+                    || matches!(
+                        pending.method.as_str(),
+                        "config/read" | "configRequirements/read" | "config/batchWrite"
+                    ) =>
             {
                 (Ok(message), None)
             }

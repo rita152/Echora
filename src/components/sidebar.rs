@@ -44,6 +44,7 @@ use activity::ActivityTooltipTarget;
 pub use activity::{ActivityArchiveConfirmation, ActivityCaptureRequest};
 
 pub struct OpenSettings;
+pub struct OpenPlugins;
 pub struct OpenProjectCreation;
 
 struct ProjectActionTooltip(String);
@@ -95,6 +96,7 @@ pub struct NewConversation {
 }
 
 impl gpui::EventEmitter<OpenSettings> for SidebarView {}
+impl gpui::EventEmitter<OpenPlugins> for SidebarView {}
 impl gpui::EventEmitter<OpenPullRequests> for SidebarView {}
 impl gpui::EventEmitter<AccountAction> for SidebarView {}
 impl gpui::EventEmitter<OpenProjectCreation> for SidebarView {}
@@ -939,6 +941,7 @@ pub struct SidebarView {
     archived_open: bool,
     /// True while the main content area shows the Pull Requests page.
     pull_requests_open: bool,
+    plugins_open: bool,
     local_error: Option<String>,
     /// Threads whose rows this frame drew; their pull requests are loaded.
     rendered_threads: RefCell<Vec<ThreadSummary>>,
@@ -1110,6 +1113,7 @@ impl SidebarView {
             activity_capture_scroll: Cell::new(None),
             archived_open: false,
             pull_requests_open: false,
+            plugins_open: false,
             local_error: None,
             rendered_threads: RefCell::new(Vec::new()),
             requested_pull_request_threads: Vec::new(),
@@ -1117,6 +1121,11 @@ impl SidebarView {
     }
 
     /// Highlights the `Pull requests` row while that page owns the main area.
+    pub fn set_plugins_open(&mut self, open: bool, cx: &mut Context<Self>) {
+        self.plugins_open = open;
+        cx.notify();
+    }
+
     pub fn set_pull_requests_open(&mut self, open: bool, cx: &mut Context<Self>) {
         if self.pull_requests_open == open {
             return;
@@ -2501,6 +2510,7 @@ impl SidebarView {
         // next conversation targets keeps the row's ghost-hover plate.
         let active = self.selected_thread_id.is_none()
             && !self.pull_requests_open
+            && !self.plugins_open
             && self.selected_project_id.as_deref() == Some(project_id.as_str());
         let rename_active = self.rename_target.as_ref() == Some(&project_id);
         let menu_open = self.project_menu_id.as_deref() == Some(project_id.as_str());
@@ -3827,12 +3837,23 @@ impl SidebarView {
                         "scheduled",
                         theme,
                     ))
-                    .child(Self::static_nav_row(
-                        "sidebar-plugins",
-                        crate::i18n::text("插件"),
-                        "plugins",
-                        theme,
-                    )),
+                    .child(
+                        Self::static_nav_row(
+                            "sidebar-plugins",
+                            crate::i18n::text("插件"),
+                            "plugins",
+                            theme,
+                        )
+                        .debug_selector(|| "sidebar-plugins".into())
+                        .role(gpui::Role::Button)
+                        .aria_label(crate::i18n::text("插件"))
+                        .aria_selected(self.plugins_open)
+                        .focusable()
+                        .tab_stop(true)
+                        .cursor_pointer()
+                        .when(self.plugins_open, |row| row.bg(theme.sidebar_hover))
+                        .on_click(cx.listener(|_, _, _, cx| cx.emit(OpenPlugins))),
+                    ),
             )
             .when(self.activity.is_some(), |content| {
                 content.child(self.activity_list(theme, window, cx))

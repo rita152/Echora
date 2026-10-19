@@ -154,7 +154,7 @@ impl ChatApp {
     /// after the page changes. The Settings page neither hides nor restores
     /// it, as it covers the content and the panel returns with the chat.
     pub(super) fn sync_right_panel_page(&mut self, cx: &mut Context<Self>) {
-        if self.showing_pull_requests {
+        if self.showing_pull_requests || self.showing_plugins {
             self.park_right_panel(cx);
         } else if !self.showing_settings {
             self.unpark_right_panel(cx);
