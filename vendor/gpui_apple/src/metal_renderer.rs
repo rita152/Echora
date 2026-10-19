@@ -473,6 +473,7 @@ impl MetalRenderer {
             (viewport_size.width.ceil() as i32).into(),
             (viewport_size.height.ceil() as i32).into(),
         );
+        let acquire = gpui::performance::start();
         let drawable = if let Some(drawable) = layer.next_drawable() {
             drawable
         } else {
@@ -482,7 +483,9 @@ impl MetalRenderer {
             );
             return;
         };
+        gpui::performance::end("metal_acquire_drawable", acquire);
 
+        let encode = gpui::performance::start();
         let command_buffer = match self.render_frame(scene, drawable.texture(), viewport_size) {
             Ok(command_buffer) => command_buffer,
             Err(error) => {
@@ -490,6 +493,22 @@ impl MetalRenderer {
                 return;
             }
         };
+        gpui::performance::end("metal_encode", encode);
+        if let Some(frame) =
+            gpui::performance::presentation_frame(cocoa::quartzcore::current_media_time())
+        {
+            let callback = ConcreteBlock::new(move |drawable: &metal::DrawableRef| {
+                gpui::performance::presented(
+                    frame,
+                    drawable.drawable_id(),
+                    drawable.presented_time(),
+                    viewport_size.width.0 as f32,
+                    viewport_size.height.0 as f32,
+                );
+            })
+            .copy();
+            drawable.add_presented_handler(&callback);
+        }
 
         if self.presents_with_transaction {
             command_buffer.commit();

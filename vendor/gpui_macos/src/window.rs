@@ -70,7 +70,7 @@ use std::{
         Arc, Weak,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 const WINDOW_STATE_IVAR: &str = "windowState";
@@ -606,6 +606,11 @@ struct MacWindowState {
     frame_source: Option<WindowFrameSource>,
     renderer: renderer::Renderer,
     request_frame_callback: Option<Box<dyn FnMut(RequestFrameOptions)>>,
+    // AppKit's resize transaction can supersede drawables from queued display
+    // callbacks too. Briefly re-present the latest scene after the last layer
+    // transaction, without repeating layout. Use elapsed time, since queued
+    // callbacks can arrive together; the deadline bounds idle presentation.
+    post_transaction_present_until: Option<Instant>,
     event_callback: Option<Box<dyn FnMut(PlatformInput) -> gpui::DispatchEventResult>>,
     activate_callback: Option<Box<dyn FnMut(bool)>>,
     resize_callback: Option<Box<dyn FnMut(Size<Pixels>, f32)>>,
@@ -1034,6 +1039,7 @@ impl MacWindow {
                     false,
                 ),
                 request_frame_callback: None,
+                post_transaction_present_until: None,
                 event_callback: None,
                 activate_callback: None,
                 resize_callback: None,
@@ -2992,6 +2998,7 @@ extern "C" fn display_layer(this: &Object, _: Sel, _: id) {
         let mut lock = window_state.lock();
         lock.request_frame_callback = Some(callback);
         lock.renderer.set_presents_with_transaction(false);
+        lock.post_transaction_present_until = Some(Instant::now() + Duration::from_millis(100));
         lock.start_display_link();
     }
 }
@@ -3002,8 +3009,20 @@ extern "C" fn step(view: *mut c_void) {
     let mut lock = window_state.lock();
 
     if let Some(mut callback) = lock.request_frame_callback.take() {
+        let require_presentation = lock
+            .post_transaction_present_until
+            .is_some_and(|deadline| Instant::now() < deadline);
+        if !require_presentation {
+            lock.post_transaction_present_until = None;
+        }
         drop(lock);
-        callback(Default::default());
+        if require_presentation {
+            gpui::performance::event("window.post_transaction_present");
+        }
+        callback(RequestFrameOptions {
+            require_presentation,
+            ..Default::default()
+        });
         window_state.lock().request_frame_callback = Some(callback);
     }
 }

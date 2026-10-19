@@ -1,6 +1,6 @@
 #!/bin/sh
 # Keep drivers on the internal disk and in the invoking app's TCC responsibility.
-# Usage: scripts/run_native_verification.sh workspace|live|links|resize [driver arguments]
+# Usage: scripts/run_native_verification.sh workspace|live|links|resize|zoom [driver arguments]
 # Check grants without opening an app or requesting consent:
 #   scripts/run_native_verification.sh workspace --check-permissions
 set -eu
@@ -11,7 +11,8 @@ case "${1:-}" in
   live) source="$root/scripts/capture_live_conversation_native.swift" ;;
   links) source="$root/scripts/verify_link_preview_native.swift" ;;
   resize) source="$root/scripts/verify_resize_native.swift" ;;
-  *) echo "usage: $0 workspace|live|links|resize [driver arguments]" >&2; exit 2 ;;
+  zoom) source="$root/scripts/verify_zoom_native.swift" ;;
+  *) echo "usage: $0 workspace|live|links|resize|zoom [driver arguments]" >&2; exit 2 ;;
 esac
 driver="$1"
 shift

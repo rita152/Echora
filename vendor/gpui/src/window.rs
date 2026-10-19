@@ -3032,7 +3032,9 @@ impl Window {
         #[cfg(feature = "profiler")]
         let present_start = Instant::now();
         let perf_present = crate::performance::start();
-        self.platform_window.draw(&self.rendered_frame.scene);
+        crate::performance::with_presentation_window(self.handle.window_id().as_u64(), || {
+            self.platform_window.draw(&self.rendered_frame.scene);
+        });
         crate::performance::end("submit", perf_present);
         #[cfg(feature = "profiler")]
         self.window_profiler.record_present(
@@ -5071,7 +5073,7 @@ impl Window {
     #[profiling::function]
     pub fn dispatch_event(&mut self, event: PlatformInput, cx: &mut App) -> DispatchEventResult {
         if matches!(&event, PlatformInput::ScrollWheel(_)) {
-            crate::performance::scroll_input();
+            crate::performance::scroll_input(self.handle.window_id().as_u64());
         }
         #[cfg(feature = "profiler")]
         self.window_profiler.begin_input(event.kind_name());

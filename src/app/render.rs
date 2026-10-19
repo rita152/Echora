@@ -102,6 +102,8 @@ pub(super) fn titlebar_interaction_area() -> impl IntoElement {
         .h(px(46.0))
         .on_click(|event, window, _| {
             if event.click_count() == 2 {
+                gpui::performance::event("Titlebar.zoom");
+                gpui::performance::interaction_input(window.window_handle().window_id().as_u64());
                 window.zoom_window();
             }
         })

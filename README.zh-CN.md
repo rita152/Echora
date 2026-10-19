@@ -124,9 +124,11 @@ xcrun --sdk macosx metal --version
 
 `.tar.gz` 是可执行文件与资源的便携压缩包，不是安装程序；使用时请让可执行文件与 `assets/` 目录保持相邻。可执行文件目前名为 `gpui-chat-clone`。`SHA256SUMS` 覆盖全部安装包和便携压缩包。GitHub 的 **Source code** 下载项为源码，不是安装后的应用。主分支和拉取请求的构建仍在 [Actions 页面](https://github.com/rita152/Echora/actions/workflows/release.yml)保留 14 天。
 
-性能诊断按需开启：启动 Echora 时设置 `ECHORA_PERF_LOG=/tmp/echora-frames.jsonl`，再运行 `python3 scripts/summarize_performance.py /tmp/echora-frames.jsonl`。JSONL 记录 CPU 帧阶段、窗口尺寸/DPR、滚动/面板拖动事件送达至绘制完成的耗时、文件编辑器准备耗时，以及失效/重建来源，不记录聊天或补丁正文；不代表物理显示呈现时间或输入设备延迟。`--print-diagnostics` 会打印构建提交及工作树修改标记。
+性能诊断按需开启：启动 Echora 时设置 `ECHORA_PERF_LOG=/tmp/echora-frames.jsonl`，再运行 `python3 scripts/summarize_performance.py /tmp/echora-frames.jsonl`。JSONL 记录 CPU 帧阶段、窗口尺寸/DPR、滚动/面板拖动事件送达至绘制完成的耗时、文件编辑器准备耗时，以及失效/重建来源，不记录聊天或补丁正文。macOS 另外通过 Metal drawable 的 `presentedTime` 记录显示时间戳和事件送达至显示的延迟；不可用时间戳单独计数并排除。显示间隔包含空闲间隙，因此不能仅凭它或 CPU 提交耗时认定动画 FPS；测量也不包含输入设备延迟和事件在系统队列中的等待。`--print-diagnostics` 会打印构建提交及工作树修改标记。
 
 可重复的原生分隔线拖动先运行 `scripts/run_native_verification.sh resize --check-permissions`，再运行 `scripts/run_native_verification.sh resize --app="<验收 bundle 名称>" --start-x=750 --end-x=1080 --y=420 --seconds=2 --cycles=4 --capture="<应用截图绝对路径>" --output=artifacts/resize`。用 `scripts/package_gpui_capture.sh` 和 `scripts/launch_verify_instance.sh` 打包、启动当前工作树，按实际分隔线位置和启动器打印的截图路径填写参数。驱动记录输入时序，并保留应用自己生成的 PNG 和渲染元数据。
+
+标题栏放大/还原先运行 `scripts/run_native_verification.sh zoom --check-permissions`，再运行 `scripts/run_native_verification.sh zoom --app="<验收 bundle 名称>" --cycles=2 --seconds=2 --capture="<应用截图绝对路径>" --output=artifacts/zoom`。驱动记录每次双击和动画中的窗口几何，检查还原后是否恢复原始窗口位置与尺寸，并保留应用自己生成的截图。
 
 ### 发布版本
 
