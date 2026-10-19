@@ -7,6 +7,8 @@ use gpui::{
 };
 use std::{cell::Cell, collections::HashMap, path::PathBuf, rc::Rc};
 
+mod width;
+
 const SIDE: f32 = 760.;
 const PALETTE: [u32; 13] = [
     0xffffff, 0x6b7280, 0x92400e, 0xdc2626, 0xf97316, 0xf59e0b, 0x16a34a, 0x0d9488, 0x06b6d4,
@@ -169,6 +171,8 @@ pub(super) struct SketchState {
     focus_pending: bool,
     shape_menu: bool,
     width_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
+    width_dragging: bool,
+    width_focus: Option<FocusHandle>,
     color_panel_open: bool,
     text_input: Option<gpui::Entity<crate::components::file_editor::FileEditor>>,
     text_position: Option<(f32, f32)>,
@@ -284,12 +288,16 @@ impl ComposerView {
         self.sketch.shape_menu = false;
         self.sketch.selected = None;
         self.sketch.active = None;
+        self.sketch.width_dragging = false;
         self.sketch.text_position = None;
         self.sketch.discard_confirm = false;
         self.sketch.open = true;
         self.sketch.focus_pending = true;
         if self.sketch.focus.is_none() {
             self.sketch.focus = Some(cx.focus_handle());
+        }
+        if self.sketch.width_focus.is_none() {
+            self.sketch.width_focus = Some(cx.focus_handle());
         }
         if self.sketch.text_input.is_none() {
             let mode = self.mode;
@@ -469,11 +477,7 @@ impl ComposerView {
     fn set_sketch_width_at(&mut self, position: Point<Pixels>) {
         if let Some(bounds) = self.sketch.width_bounds.get() {
             let y = f32::from(position.y - bounds.origin.y);
-            let width = (48. - (y - 16.) / 144. * 46.).round().clamp(2., 48.);
-            self.sketch.width = Some(width);
-            if let Some(i) = self.sketch.selected {
-                self.sketch.marks[i].width = width;
-            }
+            self.set_sketch_width(width::width_at(y));
         }
     }
     fn open_sketch_color(&mut self, cx: &mut Context<Self>) {
@@ -939,23 +943,7 @@ impl ComposerView {
                                     ),
                             )
                         })
-                        .child({
-                            let bounds = self.sketch.width_bounds.clone();
-                            let track_color = theme.text.alpha(0.2);
-                            div().id("sketch-width-slider").role(Role::Slider).aria_label(crate::i18n::format!("笔画宽度"=>"Stroke width")).aria_value(format!("{}",self.sketch.width.unwrap_or(12.)))
-                                .absolute().left(px(8.)).top(px(canvas_top + height/2.-88.)).w(px(32.)).h(px(176.)).rounded_full().bg(theme.elevated).cursor_pointer()
-                                .on_mouse_down(MouseButton::Left,cx.listener(|this,e: &gpui::MouseDownEvent,_,cx| {this.sketch.checkpoint();this.set_sketch_width_at(e.position);cx.stop_propagation();cx.notify();}))
-                                .on_mouse_move(cx.listener(|this,e: &gpui::MouseMoveEvent,_,cx| {if e.pressed_button==Some(MouseButton::Left){this.set_sketch_width_at(e.position);cx.stop_propagation();cx.notify();}}))
-                                .child(canvas(move |b,_,_| {bounds.set(Some(b));},move |b,_,window,_| {
-                                    let mut path = PathBuilder::fill();
-                                    path.move_to(b.origin + point(px(6.), px(8.)));
-                                    path.line_to(b.origin + point(px(26.), px(8.)));
-                                    path.line_to(b.origin + point(px(16.), px(168.)));
-                                    path.close();
-                                    if let Ok(path) = path.build() { window.paint_path(path, track_color); }
-                                }).size_full())
-                                .child(div().absolute().left(px(8.)).top(px((48.-self.sketch.width.unwrap_or(12.))/46.*144.+8.)).size(px(16.)).rounded_full().bg(gpui::rgb(0xffffff)).border_1().border_color(gpui::rgba(0x00000033)))
-                        })
+                        .child(self.sketch_width_slider(canvas_top + height/2.-88., theme, cx))
                         .child(
                             div()
                                 .absolute()
