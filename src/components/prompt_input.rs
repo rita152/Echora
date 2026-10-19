@@ -997,6 +997,7 @@ impl PromptInput {
         &self,
         text_color: gpui::Hsla,
         placeholder_color: gpui::Hsla,
+        window: &Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let inline = self.kind == PromptInputKind::InlineOther;
@@ -1116,31 +1117,41 @@ impl PromptInput {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
-            .with_animation(
-                "prompt-input-caret-blink",
-                Animation::new(Duration::from_millis(1_000)).repeat(),
+            .map(|prompt| {
+                let input = cx.entity();
+                let text = move |caret_visible| PromptTextElement {
+                    input: input.clone(),
+                    text_color,
+                    placeholder_color,
+                    selection_color: selection_color.into(),
+                    caret_visible,
+                    center_placeholder: browser_address,
+                    font_size,
+                    font_weight,
+                    line_height,
+                };
+                if self.focus_handle.is_focused(window)
+                    && window.is_window_active()
+                    && self.selected_range.is_empty()
                 {
-                    let input = cx.entity();
-                    move |prompt, progress| {
-                        prompt.child(PromptTextElement {
-                            input: input.clone(),
-                            text_color,
-                            placeholder_color,
-                            selection_color: selection_color.into(),
-                            caret_visible: progress < 0.55,
-                            center_placeholder: browser_address,
-                            font_size,
-                            font_weight,
-                            line_height,
-                        })
-                    }
-                },
-            )
+                    prompt
+                        .with_animation(
+                            "prompt-input-caret-blink",
+                            Animation::new(Duration::from_millis(1_000))
+                                .repeat()
+                                .with_max_fps(2.0),
+                            move |prompt, progress| prompt.child(text(progress < 0.5)),
+                        )
+                        .into_any_element()
+                } else {
+                    prompt.child(text(true)).into_any_element()
+                }
+            })
     }
 }
 
 impl Render for PromptInput {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::for_mode(self.mode);
         let placeholder = if self.kind == PromptInputKind::ChatSearch {
             // CDP: ::placeholder resolves to the input colour at 50% alpha.
@@ -1177,7 +1188,7 @@ impl Render for PromptInput {
         } else {
             theme.text
         };
-        self.element(text.into(), placeholder.into(), cx)
+        self.element(text.into(), placeholder.into(), window, cx)
     }
 }
 
@@ -1191,6 +1202,18 @@ impl Focusable for PromptInput {
 mod tests {
     use super::*;
     use gpui::{KeyBinding, TestApp, WindowBounds, WindowOptions};
+
+    #[test]
+    fn unfocused_input_does_not_schedule_continuous_animation_frames() {
+        let mut app = TestApp::new();
+        let mut window = app.open_window(|_, cx| PromptInput::rename_chat(ThemeMode::Dark, "", cx));
+        for _ in 0..5 {
+            window.draw();
+            window.update(|_, window, cx| {
+                assert_eq!(window.simulate_next_frame(cx), 0);
+            });
+        }
+    }
 
     fn bind_prompt_keys(app: &mut TestApp) {
         app.update(|cx| {

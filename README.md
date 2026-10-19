@@ -122,6 +122,8 @@ Installers include application assets; Windows also includes the app-local MSVC 
 
 The `.tar.gz` downloads are portable executable-and-assets archives, not installers; keep the executable beside its `assets/` directory. The executable is currently named `gpui-chat-clone`. `SHA256SUMS` covers all installers and portable archives. GitHub's **Source code** downloads contain source, not an installed app. Main-branch and pull-request builds remain available for 14 days on the [Actions page](https://github.com/rita152/Echora/actions/workflows/release.yml).
 
+Performance diagnostics are opt-in: set `ECHORA_PERF_LOG=/tmp/echora-frames.jsonl` when launching Echora, then run `python3 scripts/summarize_performance.py /tmp/echora-frames.jsonl`. The JSONL records CPU frame phases, viewport/DPR, scroll delivery to draw completion, and invalidation/rebuild sources without chat or patch content. It does not measure physical display presentation or input-device latency. `--print-diagnostics` includes the build commit and a dirty-tree marker.
+
 ### Publishing a version
 
 Versions follow SemVer: `v0.1.0-alpha.1`, `v0.1.0-alpha.2`, then beta/rc previews as needed, and `v0.1.0` for a stable release. Any version with a prerelease suffix is automatically marked **Pre-release** on GitHub and is not marked Latest.

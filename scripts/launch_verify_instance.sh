@@ -123,7 +123,7 @@ for argument in "$@"; do
 done
 
 forwarded=""
-for name in GPUI_UI_PREFERENCES_PATH GPUI_ASSETS_DIR GPUI_CAPTURE_OUTPUT CODEX_HOME DEVELOPER_DIR; do
+for name in GPUI_UI_PREFERENCES_PATH GPUI_ASSETS_DIR GPUI_CAPTURE_OUTPUT CODEX_HOME DEVELOPER_DIR ECHORA_PERF_LOG; do
   value="$(eval "printf '%s' \"\${$name:-}\"")"
   [ -n "$value" ] || continue
   forwarded="$forwarded

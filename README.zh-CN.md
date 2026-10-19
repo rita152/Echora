@@ -122,6 +122,8 @@ xcrun --sdk macosx metal --version
 
 `.tar.gz` 是可执行文件与资源的便携压缩包，不是安装程序；使用时请让可执行文件与 `assets/` 目录保持相邻。可执行文件目前名为 `gpui-chat-clone`。`SHA256SUMS` 覆盖全部安装包和便携压缩包。GitHub 的 **Source code** 下载项为源码，不是安装后的应用。主分支和拉取请求的构建仍在 [Actions 页面](https://github.com/rita152/Echora/actions/workflows/release.yml)保留 14 天。
 
+性能诊断按需开启：启动 Echora 时设置 `ECHORA_PERF_LOG=/tmp/echora-frames.jsonl`，再运行 `python3 scripts/summarize_performance.py /tmp/echora-frames.jsonl`。JSONL 记录 CPU 帧阶段、窗口尺寸/DPR、滚动事件送达至绘制完成的耗时，以及失效/重建来源，不记录聊天或补丁正文；不代表物理显示呈现时间或输入设备延迟。`--print-diagnostics` 会打印构建提交及工作树修改标记。
+
 ### 发布版本
 
 版本号遵循 SemVer：从 `v0.1.0-alpha.1`、`v0.1.0-alpha.2` 开始，按需推进到 beta/rc 预览版，稳定后发布 `v0.1.0`。带预发布后缀的版本会自动标记为 GitHub **Pre-release**，不标记为 Latest。

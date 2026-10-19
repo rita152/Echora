@@ -2014,7 +2014,9 @@ impl Window {
     }
 
     /// Mark the window as dirty, scheduling it to be redrawn on the next frame.
+    #[track_caller]
     pub fn refresh(&mut self) {
+        crate::performance::event("window.refresh");
         if self.invalidator.not_drawing() {
             self.refreshing = true;
             self.invalidator.set_dirty(true);
@@ -2349,7 +2351,9 @@ impl Window {
     }
 
     /// Schedule the given closure to be run directly after the current frame is rendered.
+    #[track_caller]
     pub fn on_next_frame(&self, callback: impl FnOnce(&mut Window, &mut App) + 'static) {
+        crate::performance::event("window.next_frame");
         RefCell::borrow_mut(&self.next_frame_callbacks).push(Box::new(callback));
         // Next-frame callbacks create frame demand without dirtying the
         // window, so the platform's frame source must be woken explicitly.
@@ -2368,7 +2372,9 @@ impl Window {
     /// which automatically respects [`App::reduce_motion`]. When using this
     /// method directly for decorative motion, check [`App::reduce_motion`]
     /// and skip the frame request when it is set.
+    #[track_caller]
     pub fn request_animation_frame(&self) {
+        crate::performance::event("window.animation_frame");
         let entity = self.current_view();
         self.on_next_frame(move |_, cx| cx.notify(entity));
     }
@@ -2852,6 +2858,7 @@ impl Window {
     /// the contents of the new [`Scene`], use [`Self::present`].
     #[profiling::function]
     pub fn draw(&mut self, cx: &mut App) -> ArenaClearNeeded {
+        let perf_frame = crate::performance::start();
         // Drain every draw in profiler builds so a previous frame's
         // first-invalidation timestamp can't be attributed to this one.
         #[cfg(feature = "profiler")]
@@ -2987,6 +2994,12 @@ impl Window {
 
         // Exit the scope to obtain the arena-clear token this draw owes; the
         // scope's teardown itself happens in `ElementArenaScope::drop`.
+        crate::performance::frame(
+            perf_frame,
+            self.viewport_size.width.into(),
+            self.viewport_size.height.into(),
+            self.scale_factor(),
+        );
         arena_scope.exit(&cx.element_arena)
     }
 
@@ -3018,7 +3031,9 @@ impl Window {
         let _foreground_turn = profiler::journal::foreground_turn();
         #[cfg(feature = "profiler")]
         let present_start = Instant::now();
+        let perf_present = crate::performance::start();
         self.platform_window.draw(&self.rendered_frame.scene);
+        crate::performance::end("submit", perf_present);
         #[cfg(feature = "profiler")]
         self.window_profiler.record_present(
             present_start,
@@ -3114,7 +3129,10 @@ impl Window {
         // fill the window when their size is `auto`.
         let scale_factor = self.scale_factor();
         let mut root_element = self.root.as_ref().unwrap().clone().into_any_element();
+        let perf_render = crate::performance::start();
         let root_layout_id = root_element.request_layout(self, cx);
+        crate::performance::end("request_layout_render", perf_render);
+        let perf_prepaint = crate::performance::start();
         self.layout_engine
             .as_mut()
             .unwrap()
@@ -3151,6 +3169,8 @@ impl Window {
 
         self.mouse_hit_test = self.next_frame.hit_test(self.mouse_position);
 
+        crate::performance::end("layout_prepaint", perf_prepaint);
+        let perf_paint = crate::performance::start();
         // Now actually paint the elements.
         self.invalidator.set_phase(DrawPhase::Paint);
         root_element.paint(self, cx);
@@ -3171,6 +3191,7 @@ impl Window {
         #[cfg(any(feature = "inspector", debug_assertions))]
         self.paint_inspector_hitbox(cx);
 
+        crate::performance::end("paint", perf_paint);
         // a11y may have been activated/deactivated halfway through the frame
         let a11y_active_start_of_frame = self.a11y.is_active();
         self.a11y.sync_active_flag();
@@ -5049,6 +5070,9 @@ impl Window {
     /// Dispatch a mouse or keyboard event on the window.
     #[profiling::function]
     pub fn dispatch_event(&mut self, event: PlatformInput, cx: &mut App) -> DispatchEventResult {
+        if matches!(&event, PlatformInput::ScrollWheel(_)) {
+            crate::performance::scroll_input();
+        }
         #[cfg(feature = "profiler")]
         self.window_profiler.begin_input(event.kind_name());
         let update_count_before = self.invalidator.update_count();

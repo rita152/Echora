@@ -942,11 +942,12 @@ pub(super) fn resumed_file_summary(
         if let ConversationActivity::FileChange(change) = activity
             && change.status == AgentFileChangeStatus::Completed
         {
-            for file in &change.review.files {
+            for file in change.review.files.iter() {
                 if let Some(existing) = files.iter_mut().find(|entry| entry.path == file.path) {
                     existing.additions += file.additions;
                     existing.deletions += file.deletions;
-                    existing.lines.extend(file.lines.clone());
+                    std::sync::Arc::make_mut(&mut existing.lines)
+                        .extend(file.lines.iter().cloned());
                 } else {
                     files.push(file.clone());
                 }
@@ -969,7 +970,7 @@ pub(super) fn resumed_file_summary(
                 }
             })
             .collect::<String>();
-        review.raw_diff = (!raw.is_empty()).then_some(raw);
+        review.raw_diff = (!raw.is_empty()).then_some(raw.into());
         review
     })
 }

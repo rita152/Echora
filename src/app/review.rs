@@ -186,11 +186,10 @@ impl ChatApp {
                 self.right_panel.open = false;
             }
             DiffReviewEvent::ToggleFile(index) => {
-                let Some(file) = self
-                    .right_panel
-                    .diff_review
-                    .as_mut()
-                    .and_then(|review| review.files.get_mut(index))
+                let Some(file) =
+                    self.right_panel.diff_review.as_mut().and_then(|review| {
+                        std::sync::Arc::make_mut(&mut review.files).get_mut(index)
+                    })
                 else {
                     return;
                 };
@@ -201,11 +200,10 @@ impl ChatApp {
                 };
             }
             DiffReviewEvent::HeaderHoverChanged { index, hovered } => {
-                let Some(file) = self
-                    .right_panel
-                    .diff_review
-                    .as_mut()
-                    .and_then(|review| review.files.get_mut(index))
+                let Some(file) =
+                    self.right_panel.diff_review.as_mut().and_then(|review| {
+                        std::sync::Arc::make_mut(&mut review.files).get_mut(index)
+                    })
                 else {
                     return;
                 };

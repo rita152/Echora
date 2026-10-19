@@ -520,6 +520,7 @@ impl FilePanel {
                                 EditorEvent::Changed => s.schedule_save(id, cx),
                                 EditorEvent::Save => s.save(id, cx),
                                 EditorEvent::SelectionChanged
+                                | EditorEvent::HeightChanged
                                 | EditorEvent::Submit
                                 | EditorEvent::SubmitInverted => {}
                             }

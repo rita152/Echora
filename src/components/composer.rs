@@ -333,7 +333,6 @@ impl ComposerView {
             editor.set_accessible_name("聊天输入框");
             editor
         });
-        cx.observe(&prompt_editor, |_, _, cx| cx.notify()).detach();
         let user_input_other_input = cx.new(|cx| {
             PromptInput::inline_other(mode, "否，并告诉 ChatGPT 应该如何做得不同", false, cx)
         });
@@ -365,7 +364,8 @@ impl ComposerView {
                         this.update_mentions(true, cx);
                         this.update_slash_menu(cx)
                     }
-                    crate::components::file_editor::EditorEvent::Save => {}
+                    crate::components::file_editor::EditorEvent::Save
+                    | crate::components::file_editor::EditorEvent::HeightChanged => {}
                 }
                 cx.notify();
             },
@@ -957,7 +957,7 @@ impl ComposerView {
                 if let crate::conversation::ConversationActivity::FileChange(change) = activity
                     && change.status == crate::agent::AgentFileChangeStatus::Completed
                 {
-                    files.extend(change.review.files.clone());
+                    files.extend(change.review.files.iter().cloned());
                     if let Some(patch) = &change.review.raw_diff {
                         raw.push_str(patch);
                     }
@@ -973,7 +973,7 @@ impl ComposerView {
                     crate::i18n::text("上一轮"),
                     files,
                 );
-                review.raw_diff = (!raw.is_empty()).then_some(raw);
+                review.raw_diff = (!raw.is_empty()).then_some(raw.into());
                 return Some(review);
             }
         }

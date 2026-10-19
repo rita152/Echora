@@ -526,7 +526,8 @@ impl ReviewPanel {
         } else {
             review
                 .files
-                .into_iter()
+                .iter()
+                .cloned()
                 .map(|f| FileDiff {
                     path: f.path,
                     old_path: None,
@@ -542,7 +543,8 @@ impl ReviewPanel {
                         patch: String::new(),
                         lines: f
                             .lines
-                            .into_iter()
+                            .iter()
+                            .cloned()
                             .map(|l| Line {
                                 old: l.old_line,
                                 new: l.new_line,

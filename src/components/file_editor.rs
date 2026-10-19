@@ -182,6 +182,8 @@ impl gpui::EventEmitter<ReferenceActivated> for FileEditor {}
 pub enum EditorEvent {
     Changed,
     SelectionChanged,
+    /// Wrapped composer height changed after layout.
+    HeightChanged,
     Save,
     Submit,
     /// ⌘⏎ in a composer: send with the opposite follow-up behavior.
@@ -983,6 +985,7 @@ impl FileEditor {
                 source += raw.len() + 1;
             }
             if self.composer && self.composer_height() != old_height {
+                cx.emit(EditorEvent::HeightChanged);
                 cx.notify();
             }
             if self.read_only && self.rows.len() != old_rows {
@@ -1154,7 +1157,7 @@ impl FileEditor {
     }
 }
 impl Render for FileEditor {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let entity = cx.entity();
         let paint_entity = entity.clone();
         div()
@@ -1415,7 +1418,11 @@ impl Render for FileEditor {
                     },
                 )
                 .size_full();
-                let canvas: AnyElement = if self.read_only {
+                let canvas: AnyElement = if self.read_only
+                    || !self.focus.is_focused(window)
+                    || !window.is_window_active()
+                    || !self.buffer.selection().is_empty()
+                {
                     canvas.into_any_element()
                 } else {
                     canvas
@@ -1424,7 +1431,9 @@ impl Render for FileEditor {
                                 "file-editor-caret-blink",
                                 self.caret_blink_generation as usize,
                             ),
-                            Animation::new(Duration::from_millis(1_000)).repeat(),
+                            Animation::new(Duration::from_millis(1_000))
+                                .repeat()
+                                .with_max_fps(2.0),
                             move |canvas, progress| {
                                 caret_visible.set(progress < 0.5);
                                 canvas
@@ -1593,6 +1602,22 @@ mod tests {
             assert!(!editor.composing());
             assert!(!editor.can_undo());
         });
+    }
+
+    #[test]
+    fn unfocused_editor_does_not_schedule_continuous_animation_frames() {
+        let mut app = gpui::TestApp::new();
+        let mut window = app.open_window(|_, cx| FileEditor::composer(ThemeMode::Dark, cx));
+        for _ in 0..5 {
+            window.draw();
+            window.update(|_, window, cx| {
+                assert_eq!(
+                    window.simulate_next_frame(cx),
+                    0,
+                    "an unfocused editor must not request the next display frame"
+                );
+            });
+        }
     }
 
     #[test]

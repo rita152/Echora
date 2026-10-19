@@ -106,6 +106,7 @@ impl FilePanel {
                 EditorEvent::Save => panel.save_goal(id, cx),
                 EditorEvent::Changed => {}
                 EditorEvent::SelectionChanged
+                | EditorEvent::HeightChanged
                 | EditorEvent::Submit
                 | EditorEvent::SubmitInverted => {}
             }

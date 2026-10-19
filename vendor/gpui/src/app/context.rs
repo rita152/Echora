@@ -226,7 +226,9 @@ impl<'a, T: 'static> Context<'a, T> {
     }
 
     /// Tell GPUI that this entity has changed and observers of it should be notified.
+    #[track_caller]
     pub fn notify(&mut self) {
+        crate::performance::event(std::any::type_name::<T>());
         self.app.notify(self.entity_state.entity_id);
     }
 
@@ -289,6 +291,7 @@ impl<'a, T: 'static> Context<'a, T> {
     }
 
     /// Sets a given callback to be run on the next frame.
+    #[track_caller]
     pub fn on_next_frame(
         &self,
         window: &mut Window,
@@ -296,6 +299,7 @@ impl<'a, T: 'static> Context<'a, T> {
     ) where
         T: 'static,
     {
+        crate::performance::event(std::any::type_name::<T>());
         let view = self.entity();
         window.on_next_frame(move |window, cx| view.update(cx, |view, cx| f(view, window, cx)));
     }

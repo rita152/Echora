@@ -24,6 +24,8 @@ mod element;
 mod elements;
 mod executor;
 mod platform_scheduler;
+/// Optional, content-free frame diagnostics enabled with ECHORA_PERF_LOG.
+pub mod performance;
 pub(crate) use platform_scheduler::PlatformScheduler;
 mod geometry;
 mod gestures;

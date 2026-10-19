@@ -475,6 +475,7 @@ impl HomeView {
     }
 
     fn refresh_conversation_cache(&mut self, cx: &mut Context<Self>) {
+        gpui::performance::event("HomeView.cache");
         let transcript = self.composer.read(cx).transcript_render_snapshot();
         let (
             phase,
@@ -1693,6 +1694,7 @@ impl HomeView {
 
 impl Render for HomeView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        gpui::performance::event("HomeView.render");
         let theme = Theme::for_mode(self.mode);
         // Every alpha of this frame reads one clock. Frames keep coming only
         // while a newly revealed word may still be fading; a model pause with

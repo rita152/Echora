@@ -1027,6 +1027,7 @@ fn print_diagnostics() {
     use std::fmt::Write as _;
     let status = assets::status();
     let mut out = String::new();
+    let _ = writeln!(out, "build SHA: {}", env!("ECHORA_BUILD_SHA"));
     let _ = writeln!(
         out,
         "executable: {}",

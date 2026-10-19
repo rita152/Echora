@@ -1120,7 +1120,7 @@ impl FileChangeActivityPresentation {
                 resolved_path: Some(path.clone()),
                 additions,
                 deletions,
-                lines: Vec::new(),
+                lines: Default::default(),
                 visual_state: DiffFileVisualState::Expanded,
             }],
         );
@@ -1207,7 +1207,7 @@ pub fn captured_file_change_activity_fixture(_state: &str) -> FileChangeActivity
                 ),
                 additions: 1,
                 deletions: 0,
-                lines: vec![DiffLinePresentation::added(1, "APPROVAL_A")],
+                lines: vec![DiffLinePresentation::added(1, "APPROVAL_A")].into(),
                 visual_state: DiffFileVisualState::Expanded,
             },
             DiffFilePresentation {
@@ -1217,7 +1217,7 @@ pub fn captured_file_change_activity_fixture(_state: &str) -> FileChangeActivity
                 ),
                 additions: 1,
                 deletions: 0,
-                lines: vec![DiffLinePresentation::added(1, "APPROVAL_B")],
+                lines: vec![DiffLinePresentation::added(1, "APPROVAL_B")].into(),
                 visual_state: DiffFileVisualState::Expanded,
             },
         ],
@@ -1500,7 +1500,7 @@ fn render_inline_file_change_file(
         .clone()
         .unwrap_or_else(|| file.path.clone());
     let lines = if file.lines.is_empty() {
-        vec![DiffLinePresentation::context(1, 1, "")]
+        vec![DiffLinePresentation::context(1, 1, "")].into()
     } else {
         file.lines.clone()
     };
@@ -1653,7 +1653,7 @@ pub struct DiffFilePresentation {
     pub resolved_path: Option<String>,
     pub additions: u32,
     pub deletions: u32,
-    pub lines: Vec<DiffLinePresentation>,
+    pub lines: std::sync::Arc<Vec<DiffLinePresentation>>,
     pub visual_state: DiffFileVisualState,
 }
 
@@ -1671,10 +1671,10 @@ impl DiffFilePresentation {
 pub struct DiffReviewPresentation {
     pub review_id: String,
     pub turn_label: String,
-    pub files: Vec<DiffFilePresentation>,
+    pub files: std::sync::Arc<Vec<DiffFilePresentation>>,
     /// Preserve the server's patch for copying and historical review. Never
     /// reconstruct a historical patch from the current checkout.
-    pub raw_diff: Option<String>,
+    pub raw_diff: Option<std::sync::Arc<str>>,
     pub show_summary: bool,
     pub show_file_tree: bool,
     /// Stable vertical scroll state for the full Review viewport.
@@ -1703,7 +1703,7 @@ impl DiffReviewPresentation {
         Self {
             review_id: review_id.into(),
             turn_label: turn_label.into(),
-            files,
+            files: std::sync::Arc::new(files),
             raw_diff: None,
             show_summary: false,
             show_file_tree: true,
@@ -1773,7 +1773,7 @@ impl DiffReviewPresentation {
                     resolved_path,
                     additions: 0,
                     deletions: 0,
-                    lines: Vec::new(),
+                    lines: Default::default(),
                     visual_state: DiffFileVisualState::Expanded,
                 });
                 continue;
@@ -1784,7 +1784,7 @@ impl DiffReviewPresentation {
                     resolved_path: None,
                     additions: 0,
                     deletions: 0,
-                    lines: Vec::new(),
+                    lines: Default::default(),
                     visual_state: DiffFileVisualState::Expanded,
                 });
             }
@@ -1812,15 +1812,15 @@ impl DiffReviewPresentation {
                 continue;
             }
             if let Some(content) = raw_line.strip_prefix('+') {
-                file.lines
+                std::sync::Arc::make_mut(&mut file.lines)
                     .push(DiffLinePresentation::added(new_line, content));
                 new_line = new_line.saturating_add(1);
             } else if let Some(content) = raw_line.strip_prefix('-') {
-                file.lines
+                std::sync::Arc::make_mut(&mut file.lines)
                     .push(DiffLinePresentation::deleted(old_line, content));
                 old_line = old_line.saturating_add(1);
             } else if let Some(content) = raw_line.strip_prefix(' ') {
-                file.lines
+                std::sync::Arc::make_mut(&mut file.lines)
                     .push(DiffLinePresentation::context(old_line, new_line, content));
                 old_line = old_line.saturating_add(1);
                 new_line = new_line.saturating_add(1);
@@ -1900,14 +1900,14 @@ impl DiffReviewPresentation {
                     resolved_path,
                     additions,
                     deletions,
-                    lines,
+                    lines: lines.into(),
                     visual_state: DiffFileVisualState::Expanded,
                 }
             })
             .collect();
         let mut review = Self::new(review_id, turn_label, files);
         let mut patch = String::new();
-        for (change, file) in changes.iter().zip(&review.files) {
+        for (change, file) in changes.iter().zip(review.files.iter()) {
             if change.diff.starts_with("diff --git ") {
                 patch.push_str(&change.diff);
                 continue;
@@ -1955,7 +1955,7 @@ impl DiffReviewPresentation {
                 }
             }
         }
-        review.raw_diff = Some(patch);
+        review.raw_diff = Some(patch.into());
         review
     }
 }
@@ -2035,7 +2035,7 @@ pub fn captured_diff_review_fixture(state: &str) -> DiffReviewPresentation {
         CAPTURED_LONG_TWO_FILE_TURN_DIFF,
         Some(Path::new("/Users/zp/Desktop/GPUI")),
     );
-    if let Some(first) = review.files.first_mut() {
+    if let Some(first) = std::sync::Arc::make_mut(&mut review.files).first_mut() {
         first.visual_state = match state {
             "file-collapsed" | "first-file-collapsed" | "collapsed" => {
                 DiffFileVisualState::Collapsed
@@ -2414,6 +2414,7 @@ fn render_review_file(
                 1,
                 if name.is_empty() { "" } else { " " },
             )]
+            .into()
         } else {
             file.lines.clone()
         };
@@ -2702,7 +2703,7 @@ mod tests {
             resolved_path: Some("/tmp/chatgpt-cdp-file-approval-approved.txt".to_owned()),
             additions: 1,
             deletions: 0,
-            lines: vec![DiffLinePresentation::added(1, "APPROVED_PROBE")],
+            lines: vec![DiffLinePresentation::added(1, "APPROVED_PROBE")].into(),
             visual_state: state,
         }
     }
@@ -2994,6 +2995,30 @@ mod tests {
     }
 
     #[test]
+    fn large_history_reviews_share_patch_files_and_lines_and_isolate_ui_state() {
+        use std::sync::Arc;
+        for count in [1_000, 100_000] {
+            let patch = format!(
+                "diff --git a/history.rs b/history.rs\n--- a/history.rs\n+++ b/history.rs\n@@ -0,0 +1,{count} @@\n{}",
+                "+historical line\n".repeat(count)
+            );
+            let original =
+                DiffReviewPresentation::from_unified_diff("history", "turn", &patch, None);
+            let mut copy = original.clone();
+            assert!(Arc::ptr_eq(&original.files, &copy.files));
+            assert!(Arc::ptr_eq(
+                original.raw_diff.as_ref().unwrap(),
+                copy.raw_diff.as_ref().unwrap()
+            ));
+            Arc::make_mut(&mut copy.files)[0].visual_state = DiffFileVisualState::Collapsed;
+            assert!(original.files[0].visual_state.is_expanded());
+            assert!(Arc::ptr_eq(&original.files[0].lines, &copy.files[0].lines));
+            assert_eq!(copy.files[0].lines.len(), count);
+            assert_eq!(copy.raw_diff.as_deref(), Some(patch.as_str()));
+        }
+    }
+
+    #[test]
     fn review_totals_are_per_file_sums() {
         let mut model = DiffReviewPresentation::new(
             "review-1",
@@ -3005,7 +3030,7 @@ mod tests {
                     resolved_path: Some("/tmp/deleted.txt".to_owned()),
                     additions: 0,
                     deletions: 3,
-                    lines: Vec::new(),
+                    lines: Default::default(),
                     visual_state: DiffFileVisualState::Collapsed,
                 },
             ],
@@ -3053,7 +3078,7 @@ mod tests {
         );
         assert_eq!(model.files[0].lines.len(), 5);
         assert_eq!(
-            model.files[0].lines,
+            *model.files[0].lines,
             vec![
                 DiffLinePresentation::context(10, 10, "context before"),
                 DiffLinePresentation::deleted(11, "old value"),

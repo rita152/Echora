@@ -400,7 +400,9 @@ impl ListState {
     ///
     /// Use this when item heights may have changed (e.g., font size changes)
     /// but the number and identity of items remains the same.
+    #[track_caller]
     pub fn remeasure(&self) {
+        crate::performance::event("list.remeasure");
         let count = self.item_count();
         self.remeasure_items_with_scroll_anchor(0..count, ScrollAnchor::Proportional);
     }

@@ -38,6 +38,7 @@ mod sections;
 #[cfg(test)]
 mod sections_tests;
 mod sticky;
+mod thread_list;
 pub use sections::{NewChatInSection, SectionDialog};
 
 use activity::ActivityTooltipTarget;
@@ -945,6 +946,7 @@ pub struct SidebarView {
     local_error: Option<String>,
     /// Threads whose rows this frame drew; their pull requests are loaded.
     rendered_threads: RefCell<Vec<ThreadSummary>>,
+    thread_lists: RefCell<HashMap<String, Rc<Vec<ThreadSummary>>>>,
     requested_pull_request_threads: Vec<(ThreadId, PathBuf, Option<String>)>,
 }
 
@@ -990,6 +992,7 @@ impl SidebarView {
                     .await;
                 project_index = index;
                 let _ = this.update(cx, |this, cx| {
+                    this.thread_lists.borrow_mut().clear();
                     this.snapshot = snapshot;
                     this.thread_project_ids = project_ids;
                     this.refresh_activity();
@@ -1116,6 +1119,7 @@ impl SidebarView {
             plugins_open: false,
             local_error: None,
             rendered_threads: RefCell::new(Vec::new()),
+            thread_lists: RefCell::new(HashMap::new()),
             requested_pull_request_threads: Vec::new(),
         }
     }
@@ -2495,7 +2499,7 @@ impl SidebarView {
         project: &Project,
         pinned_ids: &HashSet<&str>,
         theme: Theme,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
         let project_id = project.project_id.clone();
@@ -2514,17 +2518,16 @@ impl SidebarView {
             && self.selected_project_id.as_deref() == Some(project_id.as_str());
         let rename_active = self.rename_target.as_ref() == Some(&project_id);
         let menu_open = self.project_menu_id.as_deref() == Some(project_id.as_str());
-        let threads = self
-            .snapshot
-            .preferences
-            .sidebar
-            .ordered(&self.snapshot.recent_threads)
-            .into_iter()
-            .filter(|thread| {
-                self.thread_project_id(thread) == Some(project_id.as_str())
-                    && !pinned_ids.contains(thread.thread_id.as_str())
-            })
-            .collect::<Vec<_>>();
+        let threads = self.cached_threads(&format!("project-{project_id}"), || {
+            self.ordered_threads()
+                .iter()
+                .filter(|thread| {
+                    self.thread_project_id(thread) == Some(project_id.as_str())
+                        && !pinned_ids.contains(thread.thread_id.as_str())
+                })
+                .cloned()
+                .collect()
+        });
         let show_all = self.show_all_projects.contains(&project_id);
         let toggle_id = project_id.clone();
         let hover_id = project_id.clone();
@@ -2692,19 +2695,18 @@ impl SidebarView {
             } else {
                 threads.len().min(MAX_VISIBLE_PROJECT_THREADS)
             };
-            for thread in threads.iter().take(visible) {
-                thread_list = thread_list.child(self.thread_row(
-                    thread,
-                    ThreadRowPlacement {
-                        indented: true,
-                        pinned: false,
-                        archived: false,
-                    },
-                    theme,
-                    window,
-                    cx,
-                ));
-            }
+            thread_list = thread_list.child(self.windowed_threads(
+                format!("project-{project_id}"),
+                threads.clone(),
+                visible,
+                ThreadRowPlacement {
+                    indented: true,
+                    pinned: false,
+                    archived: false,
+                },
+                theme,
+                cx,
+            ));
             if threads.len() > MAX_VISIBLE_PROJECT_THREADS {
                 let show_id = project_id.clone();
                 thread_list = thread_list.child(
@@ -3359,19 +3361,19 @@ impl SidebarView {
                 list = list.child(self.project_group(project, &sectioned, theme, window, cx));
             }
         }
-        for thread in &self.snapshot.pinned_threads {
-            list = list.child(self.thread_row(
-                thread,
-                ThreadRowPlacement {
-                    indented: false,
-                    pinned: true,
-                    archived: false,
-                },
-                theme,
-                window,
-                cx,
-            ));
-        }
+        let threads = self.cached_threads("pinned", || self.snapshot.pinned_threads.clone());
+        list = list.child(self.windowed_threads(
+            "pinned".into(),
+            threads.clone(),
+            threads.len(),
+            ThreadRowPlacement {
+                indented: false,
+                pinned: true,
+                archived: false,
+            },
+            theme,
+            cx,
+        ));
         section.child(list)
     }
 
@@ -3543,19 +3545,18 @@ impl SidebarView {
     fn recent_section(
         &self,
         theme: Theme,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
         let collapsed = self.snapshot.preferences.recent_collapsed;
-        let pinned_ids = self.sectioned_thread_ids();
-        let threads = self
-            .snapshot
-            .preferences
-            .sidebar
-            .ordered(&self.snapshot.recent_threads)
-            .into_iter()
-            .filter(|thread| !pinned_ids.contains(thread.thread_id.as_str()))
-            .collect::<Vec<_>>();
+        let threads = self.cached_threads("recent", || {
+            let pinned_ids = self.sectioned_thread_ids();
+            self.ordered_threads()
+                .iter()
+                .filter(|thread| !pinned_ids.contains(thread.thread_id.as_str()))
+                .cloned()
+                .collect()
+        });
         let has_more = threads.len() > self.recent_visible_count;
         let section = self
             .section_exit_drop(
@@ -3590,19 +3591,18 @@ impl SidebarView {
             .flex()
             .flex_col()
             .gap(px(ROW_GAP));
-        for thread in threads.into_iter().take(self.recent_visible_count) {
-            list = list.child(self.thread_row(
-                thread,
-                ThreadRowPlacement {
-                    indented: false,
-                    pinned: false,
-                    archived: false,
-                },
-                theme,
-                window,
-                cx,
-            ));
-        }
+        list = list.child(self.windowed_threads(
+            "recent".into(),
+            threads,
+            self.recent_visible_count,
+            ThreadRowPlacement {
+                indented: false,
+                pinned: false,
+                archived: false,
+            },
+            theme,
+            cx,
+        ));
         section.child(list).when(has_more, |section| {
             section.child(self.recents_loader(theme, cx))
         })
@@ -3611,7 +3611,7 @@ impl SidebarView {
     fn archived_content(
         &self,
         theme: Theme,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
         let mut content = div()
@@ -3655,19 +3655,19 @@ impl SidebarView {
                 theme,
             ));
         }
-        for thread in &self.snapshot.archived_threads {
-            content = content.child(self.thread_row(
-                thread,
-                ThreadRowPlacement {
-                    indented: false,
-                    pinned: false,
-                    archived: true,
-                },
-                theme,
-                window,
-                cx,
-            ));
-        }
+        let threads = self.cached_threads("archived", || self.snapshot.archived_threads.clone());
+        content = content.child(self.windowed_threads(
+            "archived".into(),
+            threads.clone(),
+            threads.len(),
+            ThreadRowPlacement {
+                indented: false,
+                pinned: false,
+                archived: true,
+            },
+            theme,
+            cx,
+        ));
         content
     }
 
@@ -4535,6 +4535,7 @@ impl SidebarView {
 
 impl Render for SidebarView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        gpui::performance::event("SidebarView.render");
         self.rendered_threads.borrow_mut().clear();
         if std::mem::take(&mut self.scroll_to_bottom) {
             self.scroll.scroll_to_bottom();
@@ -4696,8 +4697,20 @@ impl Render for SidebarView {
                     .child(self.thread_hover_card(&thread, project.as_ref(), theme, cx)),
             ));
         }
-        self.request_rendered_pull_requests();
-        sidebar
+        // Overlay anchors above read the last frame; prepaint now replaces them
+        // with only the rows participating in this viewport.
+        self.thread_row_bounds.borrow_mut().clear();
+        let rendered_view = cx.entity();
+        sidebar.child(
+            canvas(
+                |_, _, _| (),
+                move |_, (), _, cx| {
+                    rendered_view.update(cx, |view, _| view.request_rendered_pull_requests());
+                },
+            )
+            .absolute()
+            .inset_0(),
+        )
     }
 }
 
@@ -4718,7 +4731,7 @@ mod tests {
     use super::{
         ACCOUNT_MENU_ITEM_HEIGHT, ACCOUNT_MENU_SEPARATOR_HEIGHT, AccountMenuRhythm,
         PROJECT_HOVER_CARD_CLOSE_DELAY, PROJECT_HOVER_CARD_DELAY, PROJECT_HOVER_HEADER_HEIGHT,
-        ROW_HEIGHT, ROW_RADIUS, SIDEBAR_TITLEBAR_SAFE_TOP, SIDEBAR_WIDTH, SidebarView,
+        ROW_GAP, ROW_HEIGHT, ROW_RADIUS, SIDEBAR_TITLEBAR_SAFE_TOP, SIDEBAR_WIDTH, SidebarView,
         THREAD_HOVER_CARD_CLOSE_DELAY, THREAD_HOVER_CARD_DELAY, compact_relative_time,
         home_shortened_path, hover_card_surface, project_hover_paths, project_hover_summary,
         rename_panel_title,
@@ -4746,6 +4759,7 @@ mod tests {
         /// When set, the fixture lists one task that belongs to no project, the
         /// state the reference renders in the Recents section.
         projectless: bool,
+        thread_count: Option<usize>,
         /// When set, the fixture advertises `thread/name/set` and records every
         /// rename it is asked to perform.
         thread_rename: bool,
@@ -4769,6 +4783,7 @@ mod tests {
                 _events: events,
                 event_receiver,
                 projectless,
+                thread_count: None,
                 thread_rename: false,
                 renames: Mutex::new(Vec::new()),
                 title: "Stable thread",
@@ -4781,6 +4796,7 @@ mod tests {
                 _events: events,
                 event_receiver,
                 projectless: false,
+                thread_count: None,
                 thread_rename: false,
                 renames: Mutex::new(Vec::new()),
                 title,
@@ -4793,10 +4809,17 @@ mod tests {
                 _events: events,
                 event_receiver,
                 projectless: false,
+                thread_count: None,
                 thread_rename: true,
                 renames: Mutex::new(Vec::new()),
                 title: "Stable thread",
             })
+        }
+
+        fn with_thread_count(count: usize) -> Arc<Self> {
+            let mut backend = Self::projectless();
+            Arc::get_mut(&mut backend).unwrap().thread_count = Some(count);
+            backend
         }
 
         fn renames(&self) -> Vec<String> {
@@ -4867,6 +4890,24 @@ mod tests {
             &self,
             request: ThreadListRequest,
         ) -> Receiver<WorkspaceResult<Page<ThreadSummary>>> {
+            if let Some(count) = self.thread_count {
+                let threads = (0..if request.archived { 0 } else { count })
+                    .map(|index| ThreadSummary {
+                        thread_id: format!("fixture-{index}"),
+                        title: format!("Thread {index}"),
+                        preview: String::new(),
+                        cwd: PathBuf::from("/tmp/virtual-sidebar"),
+                        project_id: None,
+                        section: None,
+                        created_at: index as i64,
+                        updated_at: index as i64,
+                        recency_at: None,
+                        activity: ThreadActivity::Idle,
+                        git: Default::default(),
+                    })
+                    .collect();
+                return response(Ok(Page::single(threads)));
+            }
             let threads = (!request.archived).then(|| ThreadSummary {
                 thread_id: "thread-stable-id".to_owned(),
                 title: self.title.to_owned(),
@@ -4898,6 +4939,79 @@ mod tests {
             let (sender, receiver) = async_channel::unbounded::<AgentEvent>();
             drop(sender);
             AgentRun::new(receiver, None)
+        }
+    }
+
+    #[test]
+    fn large_sidebars_build_only_viewport_rows_and_click_after_scrolling() {
+        for count in [100, 1_000, 10_000] {
+            let preferences = std::env::temp_dir()
+                .join(format!(
+                    "echora-virtual-sidebar-{}-{count}",
+                    std::process::id()
+                ))
+                .join("preferences.json");
+            let store = WorkspaceStore::with_preferences_path(
+                SidebarBackend::with_thread_count(count),
+                preferences.clone(),
+            );
+            let mut sidebar_preferences = store.snapshot().preferences.sidebar;
+            sidebar_preferences.projects_hidden = true;
+            store.set_sidebar_preferences(sidebar_preferences);
+            store.refresh_all();
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while store.snapshot().loading.recent {
+                assert!(Instant::now() < deadline, "sidebar fixture did not load");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            assert_eq!(store.snapshot().recent_threads.len(), count);
+            let mut app = TestApp::new();
+            let mut window = app.open_window_with_options(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                        point(px(0.), px(0.)),
+                        size(px(SIDEBAR_WIDTH), px(700.)),
+                    ))),
+                    ..Default::default()
+                },
+                |_, cx| SidebarView::new(ThemeMode::Dark, false, store, cx),
+            );
+            window.update(|sidebar, _, cx| {
+                sidebar.recent_visible_count = count;
+                cx.notify();
+            });
+            window.draw();
+            window.read(|sidebar, _| {
+                let built = sidebar.thread_row_bounds.borrow().len();
+                assert!(built > 0 && built < 30, "built {built} of {count} rows");
+                assert!(f32::from(sidebar.scroll.max_offset().y) > count as f32 * 25.);
+            });
+            window.update(|sidebar, _, cx| {
+                sidebar.thread_row_bounds.borrow_mut().clear();
+                sidebar.scroll.set_offset(point(
+                    px(0.),
+                    px(-(count as f32 / 2.) * (ROW_HEIGHT + ROW_GAP)),
+                ));
+                cx.notify();
+            });
+            window.draw();
+            let (id, bounds) = window.read(|sidebar, _| {
+                assert_eq!(sidebar.snapshot.recent_threads.len(), count);
+                let rows = sidebar.thread_row_bounds.borrow();
+                assert!(rows.len() < 30);
+                rows.iter()
+                    .find(|(_, b)| f32::from(b.center().y) > 300. && f32::from(b.center().y) < 400.)
+                    .map(|(id, bounds)| (id.clone(), *bounds))
+                    .unwrap_or_else(|| {
+                        panic!("no visible row after scrolling {count} threads: {rows:?}")
+                    })
+            });
+            window.simulate_click(bounds.center(), MouseButton::Left);
+            assert_eq!(
+                window.read(|sidebar, _| sidebar.selected_thread_id.clone()),
+                Some(id)
+            );
+            let _ = std::fs::remove_dir_all(preferences.parent().unwrap());
         }
     }
 

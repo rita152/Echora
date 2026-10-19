@@ -210,19 +210,20 @@ impl SidebarView {
         for project in projects {
             list = list.child(self.project_group(project, &sectioned, theme, window, cx));
         }
-        for thread in &section.threads {
-            list = list.child(self.thread_row(
-                thread,
-                ThreadRowPlacement {
-                    indented: false,
-                    pinned: false,
-                    archived: false,
-                },
-                theme,
-                window,
-                cx,
-            ));
-        }
+        let key = format!("section-{section_id}");
+        let threads = self.cached_threads(&key, || section.threads.clone());
+        list = list.child(self.windowed_threads(
+            key,
+            threads.clone(),
+            threads.len(),
+            ThreadRowPlacement {
+                indented: false,
+                pinned: false,
+                archived: false,
+            },
+            theme,
+            cx,
+        ));
         container = container.child(list);
         container
     }

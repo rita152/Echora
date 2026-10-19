@@ -220,6 +220,7 @@ pub(super) fn conversation(
     let user_message_actions_visible_for_capture = render.user_message_actions_visible_for_capture;
     sync_list_item_count(&conversation_list, rows.len());
     let conversation_rows = list(conversation_list, move |index, window, _cx| {
+        gpui::performance::event("ConversationList.row");
         let Some(row) = rows.get(index).cloned() else {
             return div().into_any_element();
         };
@@ -716,12 +717,7 @@ pub(super) fn resumed_file_summary_card(
         .take(if expanded { usize::MAX } else { 3 })
     {
         let click_home = home.clone();
-        let mut single = DiffReviewPresentation::new(
-            format!("{}-{index}", review.review_id),
-            crate::i18n::text("本轮更改"),
-            vec![file.clone()],
-        );
-        single.show_file_tree = false;
+        let file_review = review.clone();
         card = card.child(
             div()
                 .id(SharedString::from(format!(
@@ -739,7 +735,13 @@ pub(super) fn resumed_file_summary_card(
                 .aria_label(crate::i18n::format!("审核 {}" => "Review {}", file.path))
                 .hover(move |s| s.bg(theme.sidebar_hover))
                 .on_click(move |_, _, cx| {
-                    click_home.update(cx, |_, cx| cx.emit(OpenDiffReview(single.clone())))
+                    let mut single = DiffReviewPresentation::new(
+                        format!("{}-{index}", file_review.review_id),
+                        crate::i18n::text("本轮更改"),
+                        vec![file_review.files[index].clone()],
+                    );
+                    single.show_file_tree = false;
+                    click_home.update(cx, |_, cx| cx.emit(OpenDiffReview(single)))
                 })
                 .child(div().flex_1().min_w(px(0.0)).truncate().child(
                     gpui::StyledText::new(file.path.clone()).with_highlights(
