@@ -8,6 +8,10 @@ pub const UI_FONT_FAMILY: &str = ".SystemUIFont";
 // CDP's platform-font probe resolves ChatGPT's `ui-monospace` stack to Menlo
 // (PostScript face Menlo-Regular) on macOS.
 pub const UI_MONOSPACE_FONT_FAMILY: &str = "Menlo";
+/// Command output typography, shared by shell and Computer Use results.
+pub const COMMAND_OUTPUT_TEXT_SIZE: f32 = 13.0;
+pub const COMMAND_OUTPUT_LINE_HEIGHT: f32 = 19.5;
+pub const COMMAND_OUTPUT_FONT_WEIGHT: FontWeight = FontWeight::MEDIUM;
 /// Live ChatGPT body/`font-normal` token; explicit 400-weight controls stay 400.
 pub const UI_BODY_FONT_WEIGHT: FontWeight = FontWeight(430.0);
 /// Shared outer inset for main and side conversation content. Toolbar chrome

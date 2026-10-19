@@ -368,6 +368,46 @@ impl ComposerView {
     }
 
     pub fn set_mcp_tool_call_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
+        if state == "computer-text" {
+            let output = "Computer Use / Terminal: identical output\nconst chooser = await tab.waitForEvent(\"filechooser\");\n中文输出与 English output 0123456789";
+            self.conversation.user_message = Some("Compare command output typography".into());
+            self.conversation.assistant_message.clear();
+            self.conversation.phase = ConversationPhase::Complete;
+            self.conversation.activities = vec![
+                ConversationActivity::Command(CommandExecution {
+                    id: "typography-shell".into(),
+                    command: "echo output".into(),
+                    actions: vec![],
+                    cwd: "/tmp".into(),
+                    output: output.into(),
+                    terminal_process_id: None,
+                    status: CommandExecutionStatus::Completed,
+                    exit_code: Some(0),
+                    source: crate::agent::CommandExecutionSource::Agent,
+                    timed_out: false,
+                }),
+                ConversationActivity::McpToolCall(Box::new(AgentMcpToolCall {
+                    id: "typography-computer".into(),
+                    server: "cua_repl".into(),
+                    tool: "js".into(),
+                    status: AgentMcpToolCallStatus::Completed,
+                    arguments: serde_json::json!({"title": "Computer Use output"}),
+                    app_context: None,
+                    plugin_id: None,
+                    result: Some(
+                        serde_json::json!({"content": [{"type": "text", "text": output}]}),
+                    ),
+                    error: None,
+                    legacy_resource_uri: None,
+                    read_only_hint: Some(true),
+                    duration_ms: Some(100),
+                    progress: vec![],
+                })),
+            ];
+            cx.emit(ConversationChanged);
+            cx.notify();
+            return;
+        }
         let status = match state {
             "running" => AgentMcpToolCallStatus::InProgress,
             "failed" => AgentMcpToolCallStatus::Failed,

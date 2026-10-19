@@ -919,7 +919,7 @@ pub(super) fn command_activity(
                                 .p(px(8.0))
                                 .text_size(px(COMMAND_CARD_TEXT_SIZE))
                                 .line_height(px(COMMAND_CARD_LINE_HEIGHT))
-                                .font_weight(FontWeight::MEDIUM)
+                                .font_weight(crate::theme::COMMAND_OUTPUT_FONT_WEIGHT)
                                 .font_family(UI_MONOSPACE_FONT_FAMILY)
                                 .text_color(theme.command_text)
                                 .child(output),

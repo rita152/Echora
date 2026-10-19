@@ -96,7 +96,7 @@ pub(super) fn computer_use_activity(
         {
             for (index, part) in parts.iter().enumerate() {
                 if let Some(text) = part.get("text").and_then(serde_json::Value::as_str) {
-                    body = body.child(crate::components::markdown::render_tool_text(
+                    body = body.child(crate::components::markdown::render_command_tool_text(
                         text,
                         theme,
                         &format!("{id}-{index}"),

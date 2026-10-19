@@ -633,6 +633,7 @@ pub struct MarkdownLineClamp {
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct MarkdownRenderStyle {
     selectable: bool,
+    code_weight: FontWeight,
     layout: MarkdownLayout,
     /// Body text weight (430 for chat and pull request prose).
     body_weight: FontWeight,
@@ -649,6 +650,7 @@ impl MarkdownRenderStyle {
     fn new(theme: Theme) -> Self {
         Self {
             selectable: false,
+            code_weight: CHATGPT_MARKDOWN_BODY_WEIGHT,
             body_weight: CHATGPT_MARKDOWN_BODY_WEIGHT,
             layout: CHATGPT_MARKDOWN_LAYOUT,
             line_clamp: None,
@@ -2109,6 +2111,15 @@ pub(super) fn render_tool_text(text: &str, theme: Theme, identity: &str) -> Div 
     )
 }
 
+pub(super) fn render_command_tool_text(text: &str, theme: Theme, identity: &str) -> Div {
+    let mut style = MarkdownRenderStyle::new(theme);
+    style.layout.code_size = crate::theme::COMMAND_OUTPUT_TEXT_SIZE;
+    style.layout.code_line_height = crate::theme::COMMAND_OUTPUT_LINE_HEIGHT;
+    style.code_weight = crate::theme::COMMAND_OUTPUT_FONT_WEIGHT;
+    style.palette.text = theme.command_text;
+    render_code_block(None, text, style, markdown_hash(&identity))
+}
+
 fn render_code_block(
     language: Option<&str>,
     code: &str,
@@ -2504,7 +2515,7 @@ fn highlighted_code_text(
 ) -> StyledText {
     let mut base_font = ui_font();
     base_font.family = UI_MONOSPACE_FONT_FAMILY.into();
-    base_font.weight = CHATGPT_MARKDOWN_BODY_WEIGHT;
+    base_font.weight = style.code_weight;
     let spans = highlighted_code_spans(code, language).unwrap_or_else(|| {
         (!code.is_empty())
             .then_some(CodeHighlightSpan {
