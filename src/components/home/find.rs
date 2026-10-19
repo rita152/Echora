@@ -534,7 +534,7 @@ impl HomeView {
                                         .id("find-count")
                                         .role(Role::Status)
                                         .aria_label(SharedString::from(status.clone()))
-                                        .text_size(px(14.0))
+                                        .text_size(px(crate::typography::ui_size(14.0)))
                                         .line_height(px(24.0))
                                         .text_color(theme.text.alpha(0.5))
                                         .child(status),

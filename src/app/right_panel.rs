@@ -369,8 +369,8 @@ impl ChatApp {
                     .min_w(px(0.0))
                     .flex_1()
                     .truncate()
-                    .text_size(px(13.0))
-                    .line_height(px(18.5714))
+                    .text_size(px(crate::typography::ui_size(13.0)))
+                    .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
                     .text_color(theme.text)
                     .child(crate::i18n::text("子智能体")),
             )
@@ -434,7 +434,7 @@ impl ChatApp {
             }))
             .child(
                 div()
-                    .text_size(px(21.0))
+                    .text_size(px(crate::typography::ui_size(21.0)))
                     .line_height(px(21.0))
                     .font_weight(gpui::FontWeight(350.0))
                     .text_color(theme.text_tertiary)
@@ -517,8 +517,8 @@ impl ChatApp {
                     .min_w(px(0.0))
                     .flex_1()
                     .truncate()
-                    .text_size(px(13.0))
-                    .line_height(px(18.5714))
+                    .text_size(px(crate::typography::ui_size(13.0)))
+                    .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.text)
                     .child(panel_name.clone()),
@@ -554,16 +554,16 @@ impl ChatApp {
             .child(
                 div()
                     .px(px(4.0))
-                    .text_size(px(14.0))
-                    .line_height(px(21.0))
+                    .text_size(px(crate::typography::ui_size(14.0)))
+                    .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                     .text_color(theme.text_tertiary)
                     .child(crate::i18n::text("环境信息")),
             )
             .child(
                 div()
                     .px(px(4.0))
-                    .text_size(px(14.0))
-                    .line_height(px(21.0))
+                    .text_size(px(crate::typography::ui_size(14.0)))
+                    .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                     .text_color(theme.text_tertiary)
                     .child(crate::i18n::text("变更")),
             )
@@ -575,8 +575,8 @@ impl ChatApp {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .text_size(px(14.0))
-                    .line_height(px(21.0))
+                    .text_size(px(crate::typography::ui_size(14.0)))
+                    .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                     .text_color(theme.text_tertiary)
                     .child(crate::i18n::text("子智能体"))
                     .child(crate::i18n::text("1 完成")),
@@ -616,8 +616,8 @@ impl ChatApp {
                             .min_w(px(0.0))
                             .flex_1()
                             .truncate()
-                            .text_size(px(13.0))
-                            .line_height(px(18.5714))
+                            .text_size(px(crate::typography::ui_size(13.0)))
+                            .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(theme.text)
                             .child(panel_name),

@@ -23,6 +23,17 @@ const CELL_WIDTH: f32 = 7.224;
 const LINE_HEIGHT: f32 = 16.5098;
 const SCROLLBACK: usize = 10_000;
 
+// The reference xterm grid follows code size independently of UI size.
+fn font_size() -> f32 {
+    crate::typography::code_size()
+}
+fn cell_width() -> f32 {
+    CELL_WIDTH * (font_size() / FONT_SIZE)
+}
+fn line_height() -> f32 {
+    LINE_HEIGHT * (font_size() / FONT_SIZE)
+}
+
 gpui::actions!(
     terminal,
     [
@@ -315,8 +326,8 @@ impl TerminalView {
     }
     fn resize(&mut self, bounds: Bounds<Pixels>) {
         self.bounds = Some(bounds);
-        let cols = ((f32::from(bounds.size.width) / CELL_WIDTH).floor() as u16).max(2);
-        let rows = ((f32::from(bounds.size.height) / LINE_HEIGHT).floor() as u16).max(1);
+        let cols = ((f32::from(bounds.size.width) / cell_width()).floor() as u16).max(2);
+        let rows = ((f32::from(bounds.size.height) / line_height()).floor() as u16).max(1);
         if self.parser.screen().size() != (rows, cols) {
             if let Some(process) = &self.process
                 && let Err(error) = process.master.resize(PtySize {
@@ -338,8 +349,8 @@ impl TerminalView {
         let bounds = self.bounds.unwrap_or_default();
         let (rows, cols) = self.parser.screen().size();
         (
-            ((f32::from(position.y - bounds.top()) / LINE_HEIGHT).max(0.0) as u16).min(rows - 1),
-            ((f32::from(position.x - bounds.left()) / CELL_WIDTH).max(0.0) as u16).min(cols),
+            ((f32::from(position.y - bounds.top()) / line_height()).max(0.0) as u16).min(rows - 1),
+            ((f32::from(position.x - bounds.left()) / cell_width()).max(0.0) as u16).min(cols),
         )
     }
     fn selected_text(&self) -> String {
@@ -593,10 +604,10 @@ impl Render for TerminalView {
                         }),
                     )
                     .on_scroll_wheel(cx.listener(|this, event: &gpui::ScrollWheelEvent, _, cx| {
-                        let delta = f32::from(event.delta.pixel_delta(px(LINE_HEIGHT)).y);
+                        let delta = f32::from(event.delta.pixel_delta(px(line_height())).y);
                         this.scroll_delta += delta;
-                        let rows = (this.scroll_delta / LINE_HEIGHT).trunc();
-                        this.scroll_delta -= rows * LINE_HEIGHT;
+                        let rows = (this.scroll_delta / line_height()).trunc();
+                        this.scroll_delta -= rows * line_height();
                         let screen = this.parser.screen_mut();
                         let offset = (screen.scrollback() as isize + rows as isize).max(0) as usize;
                         screen.set_scrollback(offset);
@@ -635,13 +646,13 @@ impl Render for TerminalView {
                                             }
                                             let origin = bounds.origin
                                                 + point(
-                                                    px(col as f32 * CELL_WIDTH),
-                                                    px(row as f32 * LINE_HEIGHT),
+                                                    px(col as f32 * cell_width()),
+                                                    px(row as f32 * line_height()),
                                                 );
                                             let width = if cell.is_wide() {
-                                                CELL_WIDTH * 2.
+                                                cell_width() * 2.
                                             } else {
-                                                CELL_WIDTH
+                                                cell_width()
                                             };
                                             let mut fg = ansi_color(cell.fgcolor(), foreground);
                                             let mut bg =
@@ -658,7 +669,7 @@ impl Render for TerminalView {
                                                 window.paint_quad(fill(
                                                     Bounds::new(
                                                         origin,
-                                                        size(px(width), px(LINE_HEIGHT)),
+                                                        size(px(width), px(line_height())),
                                                     ),
                                                     bg,
                                                 ));
@@ -675,7 +686,7 @@ impl Render for TerminalView {
                                                     cell.contents().to_owned().into();
                                                 let line = window.text_system().shape_line(
                                                     text.clone(),
-                                                    px(FONT_SIZE),
+                                                    px(font_size()),
                                                     &[TextRun {
                                                         len: text.len(),
                                                         font,
@@ -694,7 +705,7 @@ impl Render for TerminalView {
                                                 );
                                                 let _ = line.paint(
                                                     origin,
-                                                    px(LINE_HEIGHT),
+                                                    px(line_height()),
                                                     gpui::TextAlign::Left,
                                                     None,
                                                     window,
@@ -712,11 +723,11 @@ impl Render for TerminalView {
                                     {
                                         let origin = bounds.origin
                                             + point(
-                                                px(col as f32 * CELL_WIDTH),
-                                                px(row as f32 * LINE_HEIGHT),
+                                                px(col as f32 * cell_width()),
+                                                px(row as f32 * line_height()),
                                             );
                                         window.paint_quad(fill(
-                                            Bounds::new(origin, size(px(1.), px(LINE_HEIGHT))),
+                                            Bounds::new(origin, size(px(1.), px(line_height()))),
                                             foreground,
                                         ));
                                     }
@@ -724,7 +735,7 @@ impl Render for TerminalView {
                                         let text: SharedString = this.marked.clone().into();
                                         let line = window.text_system().shape_line(
                                             text.clone(),
-                                            px(FONT_SIZE),
+                                            px(font_size()),
                                             &[TextRun {
                                                 len: text.len(),
                                                 font: gpui::font("Menlo"),
@@ -742,10 +753,10 @@ impl Render for TerminalView {
                                         let _ = line.paint(
                                             bounds.origin
                                                 + point(
-                                                    px(col as f32 * CELL_WIDTH),
-                                                    px(row as f32 * LINE_HEIGHT),
+                                                    px(col as f32 * cell_width()),
+                                                    px(row as f32 * line_height()),
                                                 ),
-                                            px(LINE_HEIGHT),
+                                            px(line_height()),
                                             gpui::TextAlign::Left,
                                             None,
                                             window,
@@ -762,7 +773,7 @@ impl Render for TerminalView {
                 body.child(
                     div()
                         .py(px(6.))
-                        .text_size(px(12.))
+                        .text_size(px(crate::typography::ui_size(12.)))
                         .text_color(theme.text_secondary)
                         .child(status),
                 )
@@ -836,8 +847,8 @@ impl EntityInputHandler for TerminalView {
     ) -> Option<Bounds<Pixels>> {
         let (r, c) = self.parser.screen().cursor_position();
         Some(Bounds::new(
-            bounds.origin + point(px(c as f32 * CELL_WIDTH), px(r as f32 * LINE_HEIGHT)),
-            size(px(CELL_WIDTH), px(LINE_HEIGHT)),
+            bounds.origin + point(px(c as f32 * cell_width()), px(r as f32 * line_height())),
+            size(px(cell_width()), px(line_height())),
         ))
     }
     fn character_index_for_point(
@@ -1129,9 +1140,9 @@ mod tests {
         window.draw();
         let bounds = window.read(|view, _| view.bounds.unwrap());
         window.simulate_mouse_down(bounds.origin + point(px(1.), px(5.)), MouseButton::Left);
-        window.simulate_mouse_move(bounds.origin + point(px(CELL_WIDTH * 9.), px(5.)));
+        window.simulate_mouse_move(bounds.origin + point(px(cell_width() * 9.), px(5.)));
         window.simulate_mouse_up(
-            bounds.origin + point(px(CELL_WIDTH * 9.), px(5.)),
+            bounds.origin + point(px(cell_width() * 9.), px(5.)),
             MouseButton::Left,
         );
         assert_eq!(

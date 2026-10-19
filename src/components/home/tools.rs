@@ -344,8 +344,11 @@ pub(super) fn tool_activity_group(
                                 .min_w(px(0.0))
                                 .max_w(px(if has_header_icon { 696.0 } else { 718.0 }))
                                 .truncate()
-                                .text_size(px(TOOL_GROUP_TEXT_SIZE))
-                                .line_height(px(TOOL_GROUP_LINE_HEIGHT))
+                                .text_size(px(crate::typography::ui_size(TOOL_GROUP_TEXT_SIZE)))
+                                .line_height(px(crate::typography::ui_leading(
+                                    TOOL_GROUP_TEXT_SIZE,
+                                    TOOL_GROUP_LINE_HEIGHT,
+                                )))
                                 .font_family(".SystemUIFont")
                                 .font_weight(FontWeight::NORMAL)
                                 .child(if active {
@@ -516,8 +519,11 @@ pub(super) fn static_command_action_activity(
                 .min_w(px(0.0))
                 .max_w(px(696.0))
                 .truncate()
-                .text_size(px(TOOL_GROUP_TEXT_SIZE))
-                .line_height(px(TOOL_GROUP_LINE_HEIGHT))
+                .text_size(px(crate::typography::ui_size(TOOL_GROUP_TEXT_SIZE)))
+                .line_height(px(crate::typography::ui_leading(
+                    TOOL_GROUP_TEXT_SIZE,
+                    TOOL_GROUP_LINE_HEIGHT,
+                )))
                 .font_family(".SystemUIFont")
                 .text_color(theme.text.alpha(0.60))
                 .group_hover(hover_group, move |label| label.text_color(theme.text))
@@ -821,8 +827,8 @@ pub(super) fn command_activity(
                                 .min_w(px(0.0))
                                 .max_w(px(696.0))
                                 .truncate()
-                                .text_size(px(14.0))
-                                .line_height(px(21.0))
+                                .text_size(px(crate::typography::ui_size(14.0)))
+                                .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                                 .font_family(".SystemUIFont")
                                 .child(if command.status == CommandExecutionStatus::InProgress {
                                     RunningToolLabel {
@@ -865,8 +871,11 @@ pub(super) fn command_activity(
                                 .py(px(4.0))
                                 .flex()
                                 .items_center()
-                                .text_size(px(COMMAND_CARD_HEADER_SIZE))
-                                .line_height(px(COMMAND_CARD_HEADER_LINE_HEIGHT))
+                                .text_size(px(crate::typography::ui_size(COMMAND_CARD_HEADER_SIZE)))
+                                .line_height(px(crate::typography::ui_leading(
+                                    COMMAND_CARD_HEADER_SIZE,
+                                    COMMAND_CARD_HEADER_LINE_HEIGHT,
+                                )))
                                 .font_weight(FontWeight::NORMAL)
                                 .font_family(".SystemUIFont")
                                 .text_color(theme.command_text)
@@ -876,8 +885,11 @@ pub(super) fn command_activity(
                             div()
                                 .px(px(8.0))
                                 .pt(px(8.0))
-                                .text_size(px(COMMAND_CARD_TEXT_SIZE))
-                                .line_height(px(COMMAND_CARD_LINE_HEIGHT))
+                                .text_size(px(crate::typography::ui_size(COMMAND_CARD_TEXT_SIZE)))
+                                .line_height(px(crate::typography::ui_leading(
+                                    COMMAND_CARD_TEXT_SIZE,
+                                    COMMAND_CARD_LINE_HEIGHT,
+                                )))
                                 .font_weight(FontWeight::NORMAL)
                                 .font_family(UI_MONOSPACE_FONT_FAMILY)
                                 .text_color(theme.command_text)
@@ -917,8 +929,11 @@ pub(super) fn command_activity(
                                     }
                                 })
                                 .p(px(8.0))
-                                .text_size(px(COMMAND_CARD_TEXT_SIZE))
-                                .line_height(px(COMMAND_CARD_LINE_HEIGHT))
+                                .text_size(px(crate::typography::ui_size(COMMAND_CARD_TEXT_SIZE)))
+                                .line_height(px(crate::typography::ui_leading(
+                                    COMMAND_CARD_TEXT_SIZE,
+                                    COMMAND_CARD_LINE_HEIGHT,
+                                )))
                                 .font_weight(crate::theme::COMMAND_OUTPUT_FONT_WEIGHT)
                                 .font_family(UI_MONOSPACE_FONT_FAMILY)
                                 .text_color(theme.command_text)
@@ -934,8 +949,8 @@ pub(super) fn command_activity(
                                 .items_center()
                                 .justify_end()
                                 .gap(px(4.0))
-                                .text_size(px(14.0))
-                                .line_height(px(21.0))
+                                .text_size(px(crate::typography::ui_size(14.0)))
+                                .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                                 .font_weight(FontWeight::NORMAL)
                                 .text_color(status_color)
                                 .child(icon(status_icon, status_color.into()).size(px(12.0)))

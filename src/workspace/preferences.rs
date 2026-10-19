@@ -12,10 +12,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent::{ProjectId, ThreadId, ThreadSectionId};
 
+mod font_sizes;
+pub use font_sizes::FontSizes;
+
 const PREFERENCES_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiPreferences {
+    /// App-local typography; never written to the agent or reference config.
+    #[serde(default)]
+    pub font_sizes: FontSizes,
     /// Last permission choice explicitly confirmed by the user, for new chats.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub new_chat_permission_mode: Option<crate::agent::AgentPermissionMode>,
@@ -392,6 +398,37 @@ pub fn preferred_language() -> crate::i18n::Language {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn font_size_preferences_recover_each_bad_field_without_losing_other_preferences() {
+        for json in [
+            r#"{"font_sizes":{"ui":99,"code":18},"pinned_collapsed":true}"#,
+            r#"{"font_sizes":{"ui":"invalid","code":18},"pinned_collapsed":true}"#,
+            r#"{"font_sizes":{"ui":null,"code":18},"pinned_collapsed":true}"#,
+        ] {
+            let preferences: UiPreferences = serde_json::from_str(json).unwrap();
+            assert_eq!(preferences.font_sizes.ui(), 14.0);
+            assert_eq!(preferences.font_sizes.code(), 18.0);
+            assert!(preferences.pinned_collapsed);
+        }
+        for json in ["{}", r#"{"font_sizes":null}"#, r#"{"font_sizes":[]}"#] {
+            let preferences: UiPreferences = serde_json::from_str(json).unwrap();
+            assert_eq!(preferences.font_sizes, FontSizes::default());
+        }
+        let sizes = FontSizes::default()
+            .with_value(false, 14.5)
+            .unwrap()
+            .with_value(true, 23.5)
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<FontSizes>(&serde_json::to_string(&sizes).unwrap()).unwrap(),
+            sizes
+        );
+        for invalid in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.0, 99.0] {
+            assert!(sizes.with_value(false, invalid).is_none());
+            assert!(sizes.with_value(true, invalid).is_none());
+        }
+    }
 
     #[test]
     fn existing_and_future_language_preferences_remain_readable() {

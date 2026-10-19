@@ -116,7 +116,7 @@ impl SettingsView {
                 .bg(theme.text.alpha(0.06))
                 .flex()
                 .items_center()
-                .text_size(px(13.0))
+                .text_size(px(crate::typography::ui_size(13.0)))
                 .cursor_pointer()
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.reload_config(cx);
@@ -213,7 +213,7 @@ impl SettingsView {
             .bg(gpui::Rgba { a: 0.1, ..danger })
             .flex()
             .items_center()
-            .text_size(px(13.0))
+            .text_size(px(crate::typography::ui_size(13.0)))
             .line_height(px(18.0))
             .text_color(danger)
             .when(resetting, |button| button.opacity(0.5))
@@ -303,7 +303,7 @@ impl SettingsView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_size(px(14.0))
+                .text_size(px(crate::typography::ui_size(14.0)))
                 .cursor_pointer()
                 // Delete is tinted, Cancel a text button, as the reference.
                 .when(destructive, |button| {
@@ -352,7 +352,7 @@ impl SettingsView {
                                 .justify_between()
                                 .child(
                                     div()
-                                        .text_size(px(20.0))
+                                        .text_size(px(crate::typography::ui_size(20.0)))
                                         .line_height(px(28.0))
                                         .font_weight(gpui::FontWeight::SEMIBOLD)
                                         .child(crate::i18n::format!("要删除全部 Codex 记忆吗？" => "Delete all Codex memories?")),
@@ -388,8 +388,8 @@ impl SettingsView {
                         .child(
                             div()
                                 .mt(px(4.0))
-                                .text_size(px(14.0))
-                                .line_height(px(21.0))
+                                .text_size(px(crate::typography::ui_size(14.0)))
+                                .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                                 .text_color(theme.text.alpha(0.5))
                                 .child(crate::i18n::format!("此操作将删除本地的所有 Codex 记忆" => "This deletes all Codex memories for Local")),
                         )

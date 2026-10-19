@@ -54,7 +54,7 @@ impl PullRequestsView {
         let footer = div()
             .px(px(12.0))
             .py(px(8.0))
-            .text_size(px(13.0))
+            .text_size(px(crate::typography::ui_size(13.0)))
             .line_height(px(20.0))
             .text_color(theme.text_muted);
         if reply_open {

@@ -758,7 +758,7 @@ fn keycap(label: &'static str, color: gpui::Rgba) -> Div {
         .justify_center()
         .rounded(px(6.0))
         .bg(color.alpha(0.10))
-        .text_size(px(12.0))
+        .text_size(px(crate::typography::ui_size(12.0)))
         .line_height(px(16.0))
         .font_weight(FontWeight::NORMAL)
         .text_color(color)

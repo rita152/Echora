@@ -1199,7 +1199,7 @@ pub fn render_mcp_elicitation_url_activity(
     let message_line = div()
         .min_w(px(0.0))
         .max_w_full()
-        .text_size(px(13.0))
+        .text_size(px(crate::typography::ui_size(13.0)))
         .line_height(px(20.0))
         .text_color(description_text)
         .child(message.clone());
@@ -1209,7 +1209,7 @@ pub fn render_mcp_elicitation_url_activity(
         .flex()
         .items_center()
         .gap(px(8.0))
-        .text_size(px(13.0))
+        .text_size(px(crate::typography::ui_size(13.0)))
         .line_height(px(20.0))
         .child(div().flex_none().text_color(description_text).child("URL"))
         .child(
@@ -1259,7 +1259,7 @@ pub fn render_mcp_elicitation_url_activity(
                     div()
                         .min_w(px(0.0))
                         .truncate()
-                        .text_size(px(MCP_ELICITATION_TITLE_SIZE))
+                        .text_size(px(crate::typography::ui_size(MCP_ELICITATION_TITLE_SIZE)))
                         .line_height(px(MCP_ELICITATION_TITLE_LINE_HEIGHT))
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(title_text)
@@ -1384,7 +1384,7 @@ fn url_action_button(
         })
         .child(
             div()
-                .text_size(px(13.0))
+                .text_size(px(crate::typography::ui_size(13.0)))
                 .line_height(px(18.0))
                 .font_weight(FontWeight::MEDIUM)
                 .child(label.to_owned()),
@@ -1420,7 +1420,7 @@ fn render_header(
                 .flex()
                 .items_center()
                 .gap(px(8.0))
-                .text_size(px(MCP_ELICITATION_TITLE_SIZE))
+                .text_size(px(crate::typography::ui_size(MCP_ELICITATION_TITLE_SIZE)))
                 .line_height(px(MCP_ELICITATION_TITLE_LINE_HEIGHT))
                 .font_weight(FontWeight::MEDIUM)
                 .child(icon("mcp-form-server", palette.text.into()).size(px(18.0)))
@@ -1487,7 +1487,7 @@ fn render_field(
                 .gap(px(6.0))
                 .child(
                     div()
-                        .text_size(px(MCP_ELICITATION_LABEL_SIZE))
+                        .text_size(px(crate::typography::ui_size(MCP_ELICITATION_LABEL_SIZE)))
                         .line_height(px(if select_control {
                             19.5
                         } else {
@@ -1505,7 +1505,7 @@ fn render_field(
     if let Some(description) = &field.description {
         column = column.child(
             div()
-                .text_size(px(MCP_ELICITATION_LABEL_SIZE))
+                .text_size(px(crate::typography::ui_size(MCP_ELICITATION_LABEL_SIZE)))
                 .line_height(px(if select_control {
                     19.5
                 } else {
@@ -1524,12 +1524,15 @@ fn render_field(
     if let Some(error) = &field.error {
         column = column.child(
             div()
-                .text_size(px(MCP_ELICITATION_LABEL_SIZE))
+                .text_size(px(crate::typography::ui_size(MCP_ELICITATION_LABEL_SIZE)))
                 // The DOM uses `pt-1` plus the normal 18.5714px text line;
                 // keeping those separate preserves both the baseline and the
                 // 22.5625px validation block height.
                 .pt(px(4.0))
-                .line_height(px(MCP_ELICITATION_LABEL_LINE_HEIGHT))
+                .line_height(px(crate::typography::ui_leading(
+                    MCP_ELICITATION_LABEL_SIZE,
+                    MCP_ELICITATION_LABEL_LINE_HEIGHT,
+                )))
                 .text_color(palette.error)
                 .child(error.clone()),
         );
@@ -1631,8 +1634,11 @@ fn render_text_control(
                 .into_any_element()
         } else if empty {
             div()
-                .text_size(px(MCP_ELICITATION_LABEL_SIZE))
-                .line_height(px(MCP_ELICITATION_LABEL_LINE_HEIGHT))
+                .text_size(px(crate::typography::ui_size(MCP_ELICITATION_LABEL_SIZE)))
+                .line_height(px(crate::typography::ui_leading(
+                    MCP_ELICITATION_LABEL_SIZE,
+                    MCP_ELICITATION_LABEL_LINE_HEIGHT,
+                )))
                 .text_color(palette.secondary)
                 .child(field.placeholder())
                 .into_any_element()
@@ -1641,8 +1647,11 @@ fn render_text_control(
                 .flex_1()
                 .min_w(px(0.0))
                 .overflow_hidden()
-                .text_size(px(MCP_ELICITATION_LABEL_SIZE))
-                .line_height(px(MCP_ELICITATION_LABEL_LINE_HEIGHT))
+                .text_size(px(crate::typography::ui_size(MCP_ELICITATION_LABEL_SIZE)))
+                .line_height(px(crate::typography::ui_leading(
+                    MCP_ELICITATION_LABEL_SIZE,
+                    MCP_ELICITATION_LABEL_LINE_HEIGHT,
+                )))
                 .child(text)
                 .into_any_element()
         })
@@ -1696,8 +1705,11 @@ fn render_boolean_control(
                 .flex()
                 .flex_1()
                 .min_w(px(0.0))
-                .text_size(px(MCP_ELICITATION_LABEL_SIZE))
-                .line_height(px(MCP_ELICITATION_LABEL_LINE_HEIGHT))
+                .text_size(px(crate::typography::ui_size(MCP_ELICITATION_LABEL_SIZE)))
+                .line_height(px(crate::typography::ui_leading(
+                    MCP_ELICITATION_LABEL_SIZE,
+                    MCP_ELICITATION_LABEL_LINE_HEIGHT,
+                )))
                 .child(field.display_title().to_owned()),
         )
 }
@@ -1773,8 +1785,11 @@ fn render_select_control(
                     div()
                         .flex_1()
                         .min_w(px(0.0))
-                        .text_size(px(MCP_ELICITATION_LABEL_SIZE))
-                        .line_height(px(MCP_ELICITATION_LABEL_LINE_HEIGHT))
+                        .text_size(px(crate::typography::ui_size(MCP_ELICITATION_LABEL_SIZE)))
+                        .line_height(px(crate::typography::ui_leading(
+                            MCP_ELICITATION_LABEL_SIZE,
+                            MCP_ELICITATION_LABEL_LINE_HEIGHT,
+                        )))
                         .child(option.title.clone()),
                 ),
         );
@@ -1828,8 +1843,11 @@ fn render_url_body(
                 .py(px(10.0))
                 .rounded(px(14.0))
                 .bg(palette.soft)
-                .text_size(px(MCP_ELICITATION_LABEL_SIZE))
-                .line_height(px(MCP_ELICITATION_LABEL_LINE_HEIGHT))
+                .text_size(px(crate::typography::ui_size(MCP_ELICITATION_LABEL_SIZE)))
+                .line_height(px(crate::typography::ui_leading(
+                    MCP_ELICITATION_LABEL_SIZE,
+                    MCP_ELICITATION_LABEL_LINE_HEIGHT,
+                )))
                 .text_color(palette.secondary)
                 .overflow_hidden()
                 .child(url.to_owned()),
@@ -1864,7 +1882,7 @@ fn render_url_body(
                 .child(icon("approval-link-globe", palette.text.into()).size(px(14.0)))
                 .child(
                     div()
-                        .text_size(px(13.0))
+                        .text_size(px(crate::typography::ui_size(13.0)))
                         .line_height(px(18.0))
                         .child(if opened {
                             crate::i18n::text("重新打开链接")
@@ -1876,8 +1894,8 @@ fn render_url_body(
         .when(opened, |body| {
             body.child(
                 div()
-                    .text_size(px(12.0))
-                    .line_height(px(18.0))
+                    .text_size(px(crate::typography::ui_size(12.0)))
+                    .line_height(px(crate::typography::ui_leading(12.0, 18.0)))
                     .text_color(palette.secondary)
                     .child(crate::i18n::text(
                         "已打开链接。请在浏览器中完成操作后再选择“继续”。",
@@ -1991,7 +2009,7 @@ fn button(
                 .gap(px(4.0))
                 .child(
                     div()
-                        .text_size(px(13.0))
+                        .text_size(px(crate::typography::ui_size(13.0)))
                         .line_height(px(18.0))
                         .font_weight(FontWeight::MEDIUM)
                         .child(label.to_owned()),
@@ -2007,7 +2025,7 @@ fn button(
                             .justify_center()
                             .rounded(px(6.0))
                             .bg(palette.primary_text.alpha(0.10))
-                            .text_size(px(12.0))
+                            .text_size(px(crate::typography::ui_size(12.0)))
                             .line_height(px(16.0))
                             .text_color(palette.primary_text)
                             .child("⏎"),
@@ -2054,7 +2072,7 @@ fn render_status_card(
         .when(!invalid, |card| card.opacity(0.98))
         .child(
             div()
-                .text_size(px(12.0))
+                .text_size(px(crate::typography::ui_size(12.0)))
                 .line_height(px(16.0))
                 .text_color(palette.secondary)
                 .child(
@@ -2063,14 +2081,14 @@ fn render_status_card(
         )
         .child(
             div()
-                .text_size(px(14.0))
-                .line_height(px(20.0))
+                .text_size(px(crate::typography::ui_size(14.0)))
+                .line_height(px(crate::typography::ui_leading(14.0, 20.0)))
                 .font_weight(FontWeight::MEDIUM)
                 .child(model.message().to_owned()),
         )
         .child(
             div()
-                .text_size(px(13.0))
+                .text_size(px(crate::typography::ui_size(13.0)))
                 .line_height(px(19.0))
                 .text_color(if invalid {
                     palette.error
@@ -2082,8 +2100,8 @@ fn render_status_card(
         .when_some(model.failure_message.clone(), |card, message| {
             card.child(
                 div()
-                    .text_size(px(12.0))
-                    .line_height(px(18.0))
+                    .text_size(px(crate::typography::ui_size(12.0)))
+                    .line_height(px(crate::typography::ui_leading(12.0, 18.0)))
                     .text_color(palette.secondary)
                     .child(message),
             )

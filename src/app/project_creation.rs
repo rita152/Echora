@@ -271,7 +271,7 @@ impl ChatApp {
             .flex()
             .items_center()
             .justify_center()
-            .text_size(px(14.))
+            .text_size(px(crate::typography::ui_size(14.)))
             .line_height(px(18.))
             .cursor_pointer()
             .hover(move |s| s.bg(theme.sidebar_hover))
@@ -302,8 +302,8 @@ impl ChatApp {
             .border_1()
             .border_color(theme.border)
             .bg(theme.control)
-            .text_size(px(13.))
-            .line_height(px(18.5714))
+            .text_size(px(crate::typography::ui_size(13.)))
+            .line_height(px(crate::typography::ui_leading(13., 18.5714)))
             .max_h(px(360.))
             .overflow_y_scroll();
         if self.project_creation.roots.is_empty() && editing {
@@ -318,12 +318,12 @@ impl ChatApp {
         } else if self.project_creation.roots.is_empty() {
             sources = sources.child(div().h(px(102.5625)).p(px(24.)).flex().flex_col().items_center().gap(px(12.))
                 .child(div().id("project-creation-device").role(gpui::Role::Button).aria_label(crate::i18n::format!("项目所在设备" => "Project device"))
-                    .track_focus(&self.project_creation.device_focus).tab_stop(true).h(px(18.5625)).flex().items_center().gap(px(4.)).text_size(px(13.)).line_height(px(18.5714)).text_color(theme.text.alpha(0.65)).cursor_pointer()
+                    .track_focus(&self.project_creation.device_focus).tab_stop(true).h(px(18.5625)).flex().items_center().gap(px(4.)).text_size(px(crate::typography::ui_size(13.))).line_height(px(crate::typography::ui_leading(13., 18.5714))).text_color(theme.text.alpha(0.65)).cursor_pointer()
                     .on_click(cx.listener(|this,_,_,cx|{ if !this.project_creation.creating {this.project_creation.device_menu = !this.project_creation.device_menu;} cx.notify(); }))
                     .on_key_down(cx.listener(|this,e: &KeyDownEvent,_,cx|{ if matches!(e.keystroke.key.as_str(),"enter"|"space"|"down") { this.project_creation.device_menu=true; cx.stop_propagation(); cx.notify(); }}))
                     .child(crate::i18n::format!("在此电脑上添加文件夹" => "Add a folder on this computer")).child(icon("chevron-down",theme.text.into()).size(px(16.))))
                 .child(div().id("project-creation-add-source").role(gpui::Role::Button).aria_label(crate::i18n::text("添加")).focusable().tab_stop(true)
-                    .h(px(24.)).px(px(8.)).rounded_full().bg(theme.text.alpha(0.05)).flex().items_center().gap(px(4.)).text_size(px(13.)).line_height(px(18.)).cursor_pointer()
+                    .h(px(24.)).px(px(8.)).rounded_full().bg(theme.text.alpha(0.05)).flex().items_center().gap(px(4.)).text_size(px(crate::typography::ui_size(13.))).line_height(px(18.)).cursor_pointer()
                     .hover(move |s|s.bg(theme.text.alpha(0.10))).on_click(cx.listener(Self::add_project_sources_click))
                     .on_key_down(cx.listener(|this,e: &KeyDownEvent,_,cx|{if matches!(e.keystroke.key.as_str(),"enter"|"space"){this.add_project_sources(cx);cx.stop_propagation();}}))
                     .child(icon("project-add-folder",theme.text.into()).size(px(16.))).child(crate::i18n::text("添加"))));
@@ -533,15 +533,15 @@ impl ChatApp {
             ])
             .font(crate::theme::ui_font())
             .font_weight(crate::theme::UI_BODY_FONT_WEIGHT)
-            .text_size(px(14.))
-            .line_height(px(21.))
+            .text_size(px(crate::typography::ui_size(14.)))
+            .line_height(px(crate::typography::ui_leading(14., 21.)))
             .text_color(theme.text)
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(|_, _, cx| cx.stop_propagation())
             .child(
                 div()
                     .h(px(28.))
-                    .text_size(px(20.))
+                    .text_size(px(crate::typography::ui_size(20.)))
                     .line_height(px(28.))
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .child(title),
@@ -555,7 +555,7 @@ impl ChatApp {
                     .gap(px(8.))
                     .child(
                         div()
-                            .text_size(px(13.))
+                            .text_size(px(crate::typography::ui_size(13.)))
                             .line_height(px(18.5625))
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .child(crate::i18n::format!("源文件夹" => "Source folders")),
@@ -762,8 +762,8 @@ impl ChatApp {
                     }))
                     .h(px(28.5625))
                     .rounded(px(15.))
-                    .text_size(px(13.))
-                    .line_height(px(18.5714))
+                    .text_size(px(crate::typography::ui_size(13.)))
+                    .line_height(px(crate::typography::ui_leading(13., 18.5714)))
                     .px(px(8.))
                     .flex()
                     .items_center()

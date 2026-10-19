@@ -135,8 +135,8 @@ fn hero_title(heading: Option<HeroHeading>, theme: Theme, composer: Entity<Compo
         .items_end()
         .justify_center()
         .text_center()
-        .text_size(px(28.0))
-        .line_height(px(33.6))
+        .text_size(px(crate::typography::ui_size(28.0)))
+        .line_height(px(crate::typography::ui_leading(28.0, 33.6)))
         .font_weight(gpui::FontWeight::NORMAL)
         .text_color(theme.text);
     let Some(heading) = heading else {
@@ -320,8 +320,8 @@ pub(super) fn home(
                             )
                             .child(
                                 div()
-                                    .text_size(px(16.0))
-                                    .line_height(px(24.0))
+                                    .text_size(px(crate::typography::ui_size(16.0)))
+                                    .line_height(px(crate::typography::ui_leading(16.0, 24.0)))
                                     .font_weight(gpui::FontWeight::NORMAL)
                                     .text_color(theme.text)
                                     .child(crate::i18n::text("侧边聊天")),
@@ -329,8 +329,8 @@ pub(super) fn home(
                             .child(
                                 div()
                                     .mt(px(-4.0))
-                                    .text_size(px(13.0))
-                                    .line_height(px(18.5714))
+                                    .text_size(px(crate::typography::ui_size(13.0)))
+                                    .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
                                     .text_color(theme.text_secondary)
                                     .text_center()
                                     .child(crate::i18n::text(

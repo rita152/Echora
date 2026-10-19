@@ -176,8 +176,8 @@ pub(super) fn computer_use_activity(
                             div()
                                 .min_w(px(0.0))
                                 .truncate()
-                                .text_size(px(14.0))
-                                .line_height(px(21.0))
+                                .text_size(px(crate::typography::ui_size(14.0)))
+                                .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                                 .font_family(".SystemUIFont")
                                 .font_weight(FontWeight::NORMAL)
                                 .text_color(color)
@@ -326,7 +326,7 @@ pub(super) fn mcp_tool_call_activity(
                     div()
                         .min_w(px(0.0))
                         .truncate()
-                        .text_size(px(MCP_TOOL_CALL_TEXT_SIZE))
+                        .text_size(px(crate::typography::ui_size(MCP_TOOL_CALL_TEXT_SIZE)))
                         .line_height(px(MCP_TOOL_CALL_ROW_HEIGHT))
                         .font_family(".SystemUIFont")
                         // CoreText exposes the system UI face as a discrete
@@ -341,7 +341,7 @@ pub(super) fn mcp_tool_call_activity(
             activity.child(
                 div()
                     .ml(px(22.0))
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .line_height(px(20.0))
                     .font_family(".SystemUIFont")
                     .text_color(theme.warning)

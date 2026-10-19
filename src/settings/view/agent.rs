@@ -105,7 +105,7 @@ impl SettingsView {
                 .border(px(1.))
                 .border_color(theme.border)
                 .bg(theme.command_surface)
-                .text_size(px(13.))
+                .text_size(px(crate::typography::ui_size(13.)))
                 .line_height(px(18.))
                 .text_color(theme.text)
                 .cursor_pointer()
@@ -198,7 +198,7 @@ impl SettingsView {
             .gap(px(2.0))
             .child(
                 div()
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .line_height(px(18.5625))
                     .font_weight(gpui::FontWeight(500.0))
                     .text_color(theme.markdown_text)
@@ -207,7 +207,7 @@ impl SettingsView {
             .when(!subtitle.is_empty(), |column| {
                 column.child(
                     div()
-                        .text_size(px(12.0))
+                        .text_size(px(crate::typography::ui_size(12.0)))
                         .line_height(px(16.0))
                         .text_color(theme.settings_description)
                         .child(crate::i18n::text(&subtitle).to_owned()),
@@ -220,7 +220,7 @@ impl SettingsView {
                     .role(gpui::Role::Alert)
                     .aria_label(error.clone())
                     .mt(px(2.))
-                    .text_size(px(13.))
+                    .text_size(px(crate::typography::ui_size(13.)))
                     .line_height(px(18.5625))
                     .text_color(if self.mode == crate::theme::ThemeMode::Dark {
                         gpui::rgba(0xff6764ff)
@@ -353,24 +353,24 @@ impl SettingsView {
             .pb(px(80.))
             .child(
                 div()
-                    .text_size(px(24.))
-                    .line_height(px(28.8))
+                    .text_size(px(crate::typography::ui_size(24.)))
+                    .line_height(px(crate::typography::ui_leading(24., 28.8)))
                     .font_weight(gpui::FontWeight::NORMAL)
                     .child(crate::i18n::text(page.label)),
             )
             .child(
                 div()
                     .mt(px(6.))
-                    .text_size(px(14.))
-                    .line_height(px(21.))
+                    .text_size(px(crate::typography::ui_size(14.)))
+                    .line_height(px(crate::typography::ui_leading(14., 21.)))
                     .text_color(theme.settings_description)
                     .child(crate::i18n::text("配置新聊天的权限、网页访问和智能体回复")),
             )
             .child(
                 div()
                     .mt(px(41.5))
-                    .text_size(px(14.))
-                    .line_height(px(21.))
+                    .text_size(px(crate::typography::ui_size(14.)))
+                    .line_height(px(crate::typography::ui_leading(14., 21.)))
                     .font_weight(gpui::FontWeight(500.))
                     .child(crate::i18n::text("智能体默认设置")),
             )
@@ -408,7 +408,7 @@ impl SettingsView {
                     .role(gpui::Role::Alert)
                     .aria_label(text.clone())
                     .mt(px(12.))
-                    .text_size(px(13.))
+                    .text_size(px(crate::typography::ui_size(13.)))
                     .text_color(theme.warning)
                     .child(text),
             );
@@ -420,7 +420,7 @@ impl SettingsView {
                     .role(gpui::Role::Status)
                     .aria_label(feedback.clone())
                     .mt(px(12.))
-                    .text_size(px(13.))
+                    .text_size(px(crate::typography::ui_size(13.)))
                     .line_height(px(20.))
                     .child(feedback.clone()),
             );
@@ -437,7 +437,7 @@ impl SettingsView {
                     .child(
                         div()
                             .flex_1()
-                            .text_size(px(13.))
+                            .text_size(px(crate::typography::ui_size(13.)))
                             .text_color(theme.text_tertiary)
                             .child(crate::i18n::format!("{} 项未保存的修改" => "{} unsaved changes", self.config_editor.edits.len())),
                     )
@@ -556,7 +556,7 @@ impl SettingsView {
                 content = content.child(
                     div()
                         .mt(px(8.))
-                        .text_size(px(13.))
+                        .text_size(px(crate::typography::ui_size(13.)))
                         .text_color(theme.warning)
                         .child(crate::i18n::format!("权限配置列表不可用：{error}" => "Permission profiles unavailable: {error}")),
                 );
@@ -569,7 +569,11 @@ impl SettingsView {
                     .flex()
                     .items_center()
                     .gap(px(8.))
-                    .child(div().text_size(px(13.)).child(key.clone()))
+                    .child(
+                        div()
+                            .text_size(px(crate::typography::ui_size(13.)))
+                            .child(key.clone()),
+                    )
                     .child(div().flex_1().child(self.config_input.clone()))
                     .child(self.config_button(
                         "config-apply-custom",
@@ -597,8 +601,8 @@ impl SettingsView {
                         div()
                             .id("config-source-details")
                             .mt(px(12.))
-                            .text_size(px(12.))
-                            .line_height(px(18.))
+                            .text_size(px(crate::typography::ui_size(12.)))
+                            .line_height(px(crate::typography::ui_leading(12., 18.)))
                             .text_color(theme.text_tertiary)
                             .child(crate::components::markdown::render_selectable_plan(
                                 &self.config_diagnostics(),
@@ -608,9 +612,9 @@ impl SettingsView {
                     ),
             );
         }
-        content.child(div().mt(px(24.)).text_size(px(12.)).line_height(px(18.)).text_color(theme.settings_description)
+        content.child(div().mt(px(24.)).text_size(px(crate::typography::ui_size(12.))).line_height(px(crate::typography::ui_leading(12., 18.))).text_color(theme.settings_description)
             .child(crate::i18n::format!("工作目录：{}" => "Working directory: {}",self.config_cwd.display())))
-            .child(div().mt(px(6.)).text_size(px(12.)).line_height(px(18.)).text_color(theme.settings_description)
+            .child(div().mt(px(6.)).text_size(px(crate::typography::ui_size(12.))).line_height(px(crate::typography::ui_leading(12., 18.))).text_color(theme.settings_description)
                 .child(crate::i18n::text("保存后会回读有效配置。配置默认值与当前线程权限分别管理；线程权限变更从下一轮起生效，复核者会同步到进行中的轮次。")))
             .into_any_element()
     }

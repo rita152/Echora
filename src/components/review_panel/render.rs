@@ -47,8 +47,8 @@ impl Render for ReviewPanel {
                     .justify_center()
                     .child(
                         div()
-                            .text_size(px(16.))
-                            .line_height(px(24.))
+                            .text_size(px(crate::typography::ui_size(16.)))
+                            .line_height(px(crate::typography::ui_leading(16., 24.)))
                             .text_color(t.text)
                             .child(crate::i18n::text("无法加载更改")),
                     )
@@ -56,7 +56,7 @@ impl Render for ReviewPanel {
                         div()
                             .mt(px(4.))
                             .px(px(20.))
-                            .text_size(px(13.))
+                            .text_size(px(crate::typography::ui_size(13.)))
                             .text_color(t.text_tertiary)
                             .child(crate::i18n::text("刷新以尝试重新加载更改")),
                     )
@@ -79,17 +79,20 @@ impl Render for ReviewPanel {
                     .justify_center()
                     .gap(px(12.))
                     .child(icon("panel-review", t.text_tertiary.into()).size(px(64.)))
-                    .child(div().text_size(px(16.)).text_color(t.text).child(
-                        if self.show_initial_loading() {
-                            crate::i18n::text("正在加载更改…")
-                        } else {
-                            crate::i18n::text("尚无文件更改")
-                        },
-                    ))
+                    .child(
+                        div()
+                            .text_size(px(crate::typography::ui_size(16.)))
+                            .text_color(t.text)
+                            .child(if self.show_initial_loading() {
+                                crate::i18n::text("正在加载更改…")
+                            } else {
+                                crate::i18n::text("尚无文件更改")
+                            }),
+                    )
                     .child(
                         div()
                             .px(px(20.))
-                            .text_size(px(13.))
+                            .text_size(px(crate::typography::ui_size(13.)))
                             .text_color(t.text_tertiary)
                             .child(if self.scope == Scope::LastTurn {
                                 crate::i18n::text("此轮没有文件更改。")
@@ -254,7 +257,7 @@ impl Render for ReviewPanel {
                             .px(px(12.))
                             .py(px(8.))
                             .flex_none()
-                            .text_size(px(12.))
+                            .text_size(px(crate::typography::ui_size(12.)))
                             .text_color(deletion_color(self.mode))
                             .child(e),
                     )
@@ -287,7 +290,7 @@ impl Render for ReviewPanel {
                         .bg(t.elevated)
                         .border_1()
                         .border_color(t.border)
-                        .text_size(px(12.))
+                        .text_size(px(crate::typography::ui_size(12.)))
                         .text_color(t.text_secondary)
                         .child(n),
                 )

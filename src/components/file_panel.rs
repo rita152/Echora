@@ -891,7 +891,7 @@ impl Render for FilePanel {
                 content = content.child(
                     div()
                         .p(px(12.))
-                        .text_size(px(12.))
+                        .text_size(px(crate::typography::ui_size(12.)))
                         .text_color(theme.warning)
                         .child(error.clone())
                         .child(
@@ -1095,7 +1095,7 @@ impl Render for FilePanel {
                     .child(icon("panel-files", theme.text_secondary.into()).size(px(32.)))
                     .child(
                         div()
-                            .text_size(px(16.))
+                            .text_size(px(crate::typography::ui_size(16.)))
                             .child(crate::i18n::text("打开文件")),
                     )
                     .child(
@@ -1220,7 +1220,7 @@ impl Render for FilePanel {
                     div()
                         .px(px(12.))
                         .py(px(4.))
-                        .text_size(px(11.))
+                        .text_size(px(crate::typography::ui_size(11.)))
                         .text_color(theme.text_tertiary)
                         .child(if count == 500 {
                             crate::i18n::text("显示前 500 个结果").into()
@@ -1239,7 +1239,7 @@ impl Render for FilePanel {
             .flex_col()
             .bg(theme.surface)
             .text_color(theme.text)
-            .text_size(px(13.))
+            .text_size(px(crate::typography::ui_size(13.)))
             .line_height(px(18.))
             .children(self.open_menu(theme, cx))
             .map(|panel| match goal_toolbar {

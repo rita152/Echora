@@ -69,8 +69,8 @@ pub(super) fn heading(title: String, subtitle: Option<AnyElement>, theme: Theme)
         .gap(px(2.0))
         .child(
             div()
-                .text_size(px(14.0))
-                .line_height(px(21.0))
+                .text_size(px(crate::typography::ui_size(14.0)))
+                .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                 .font_weight(gpui::FontWeight(500.0))
                 .text_color(theme.text)
                 .child(title),
@@ -117,8 +117,8 @@ pub(super) fn row(
                 .gap(px(2.0))
                 .child(
                     div()
-                        .text_size(px(13.0))
-                        .line_height(px(18.5714))
+                        .text_size(px(crate::typography::ui_size(13.0)))
+                        .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
                         .font_weight(gpui::FontWeight(500.0))
                         .text_color(theme.text)
                         .child(label),
@@ -126,7 +126,7 @@ pub(super) fn row(
                 .when_some(description, |column, description| {
                     column.child(
                         div()
-                            .text_size(px(12.0))
+                            .text_size(px(crate::typography::ui_size(12.0)))
                             .line_height(px(16.0))
                             .text_color(theme.settings_description)
                             .child(description),
@@ -180,7 +180,7 @@ pub(super) fn outline_button(
         .flex()
         .items_center()
         .gap(px(4.0))
-        .text_size(px(13.0))
+        .text_size(px(crate::typography::ui_size(13.0)))
         .line_height(px(18.0))
         .text_color(theme.text)
         .cursor_pointer()
@@ -221,7 +221,7 @@ impl SettingsView {
                             .relative()
                             .top(px(-1.0))
                             .font_family(crate::theme::UI_FONT_FAMILY)
-                            .text_size(px(24.0))
+                            .text_size(px(crate::typography::ui_size(24.0)))
                             .line_height(px(31.0))
                             .font_weight(gpui::FontWeight::NORMAL)
                             .child(title),

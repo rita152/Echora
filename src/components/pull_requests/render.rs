@@ -153,7 +153,7 @@ impl gpui::Render for PullRequestsView {
                             .py(px(6.0))
                             .rounded(px(12.0))
                             .bg(theme.menu_surface)
-                            .text_size(px(13.0))
+                            .text_size(px(crate::typography::ui_size(13.0)))
                             .text_color(theme.text)
                             .shadow(vec![
                                 gpui::BoxShadow::new(px(0.0), px(8.0), theme.menu_shadow.into())
@@ -325,7 +325,7 @@ impl PullRequestsView {
             .items_center()
             .gap(px(4.0))
             .rounded(px(12.5))
-            .text_size(px(13.0))
+            .text_size(px(crate::typography::ui_size(13.0)))
             .line_height(px(18.0))
             .whitespace_nowrap()
             .when(secondary, |button| {
@@ -376,8 +376,11 @@ impl PullRequestsView {
                     .blur_radius(px(16.0))
                     .spread_radius(px(-4.0)),
             ])
-            .text_size(px(MENU_TEXT_SIZE))
-            .line_height(px(MENU_LINE_HEIGHT))
+            .text_size(px(crate::typography::ui_size(MENU_TEXT_SIZE)))
+            .line_height(px(crate::typography::ui_leading(
+                MENU_TEXT_SIZE,
+                MENU_LINE_HEIGHT,
+            )))
             .text_color(theme.text)
     }
 
@@ -456,7 +459,7 @@ impl PullRequestsView {
                         gpui::BoxShadow::new(px(0.0), px(8.0), gpui::rgba(0x0f172a33).into())
                             .blur_radius(px(18.0)),
                     ])
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .line_height(px(18.0))
                     .font_weight(crate::theme::UI_BODY_FONT_WEIGHT)
                     // The tooltip text theme's `letter-spacing: -0.15px`.
@@ -711,7 +714,7 @@ impl PullRequestsView {
         if self.reviewers_results.is_empty() {
             results = results.child(
                 div()
-                    .text_size(px(14.0))
+                    .text_size(px(crate::typography::ui_size(14.0)))
                     .text_color(theme.text_muted)
                     .child(if let Some(error) = &self.reviewers_error {
                         error.clone()

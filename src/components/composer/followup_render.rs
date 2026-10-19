@@ -84,8 +84,8 @@ pub(crate) fn tray_row(id: SharedString, colors: &TrayColors) -> Stateful<Div> {
         .gap(px(8.0))
         .px(px(10.0))
         .py(px(2.0))
-        .text_size(px(14.0))
-        .line_height(px(20.0))
+        .text_size(px(crate::typography::ui_size(14.0)))
+        .line_height(px(crate::typography::ui_leading(14.0, 20.0)))
         .text_color(colors.secondary)
 }
 
@@ -150,7 +150,7 @@ pub(crate) fn tray_text_button(
         .flex()
         .items_center()
         .gap(px(4.0))
-        .text_size(px(13.0))
+        .text_size(px(crate::typography::ui_size(13.0)))
         .line_height(px(18.0))
         .text_color(colors.secondary)
         .cursor_pointer()
@@ -466,7 +466,7 @@ impl ComposerView {
                 .rounded(px(6.0))
                 .flex()
                 .items_center()
-                .text_size(px(14.0))
+                .text_size(px(crate::typography::ui_size(14.0)))
                 .text_color(theme.text)
                 .cursor_pointer()
                 .hover(move |s| s.bg(theme.sidebar_hover))
@@ -549,7 +549,7 @@ impl Render for TrayTooltip {
             .rounded(px(6.0))
             .bg(rgba(0x333333ff))
             .text_color(rgba(0xffffffff))
-            .text_size(px(12.0))
+            .text_size(px(crate::typography::ui_size(12.0)))
             .line_height(px(16.0))
             .child(self.0.clone())
     }

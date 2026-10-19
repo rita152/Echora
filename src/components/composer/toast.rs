@@ -208,7 +208,7 @@ pub(crate) fn toast_card(
         .border_color(border)
         .bg(background)
         .text_color(text)
-        .text_size(px(14.))
+        .text_size(px(crate::typography::ui_size(14.)))
         .line_height(px(19.6))
         .shadow(vec![gpui::BoxShadow {
             color: rgba(0x0000001a).into(),

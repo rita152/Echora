@@ -198,7 +198,7 @@ pub(super) fn permission_risk_row(
                 .flex_1()
                 .flex()
                 .flex_col()
-                .text_size(px(13.0))
+                .text_size(px(crate::typography::ui_size(13.0)))
                 .line_height(px(18.0))
                 .child(div().text_color(theme.markdown_text).child(title))
                 .child(div().text_color(theme.text_tertiary).child(detail)),
@@ -817,8 +817,8 @@ impl Render for ChatApp {
                                         .child(icon("permission-warning", theme.markdown_text.into()).size(px(20.0)))
                                         .child(
                                             div()
-                                                .text_size(px(20.0))
-                                                .line_height(px(24.0))
+                                                .text_size(px(crate::typography::ui_size(20.0)))
+                                                .line_height(px(crate::typography::ui_leading(20.0, 24.0)))
                                                 .font_weight(gpui::FontWeight(600.0))
                                                 .child(crate::i18n::text("要开启完整访问权限吗？")),
                                         ),
@@ -826,8 +826,8 @@ impl Render for ChatApp {
                                 .child(
                                     div()
                                         .mt(px(12.0))
-                                        .text_size(px(14.0))
-                                        .line_height(px(21.0))
+                                        .text_size(px(crate::typography::ui_size(14.0)))
+                                        .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                                         .text_color(theme.text_tertiary)
                                         .child(crate::i18n::text("Codex 将能够在未经您许可的情况下，在这台计算机上的任何位置运行命令、使用互联网，以及创建和编辑文件。这包括但不限于：")),
                                 )
@@ -847,8 +847,8 @@ impl Render for ChatApp {
                                         .h(px(21.0))
                                         .flex()
                                         .items_center()
-                                        .text_size(px(14.0))
-                                        .line_height(px(21.0))
+                                        .text_size(px(crate::typography::ui_size(14.0)))
+                                        .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                                         .text_color(theme.text_tertiary)
                                         .child(div().flex_1().child(crate::i18n::text("这会带来敏感数据丢失或泄露、提示注入等风险。你可以将其关闭。")))
                                         .child(div().text_color(theme.accent).child(crate::i18n::text("了解更多"))),
@@ -871,7 +871,7 @@ impl Render for ChatApp {
                                                 .bg(theme.text.alpha(0.05))
                                                 .flex()
                                                 .items_center()
-                                                .text_size(px(14.0))
+                                                .text_size(px(crate::typography::ui_size(14.0)))
                                                 .cursor_pointer()
                                                 .hover(move |style| style.bg(theme.text.alpha(0.10)))
                                                 .on_click(cx.listener(|this,_,window,cx|this.resolve_permission_confirmation(false,window,cx)))
@@ -889,7 +889,7 @@ impl Render for ChatApp {
                                                 .flex()
                                                 .items_center()
                                                 .gap(px(4.0))
-                                                .text_size(px(14.0))
+                                                .text_size(px(crate::typography::ui_size(14.0)))
                                                 .text_color(rgba(0xff6764ff))
                                                 .cursor_pointer()
                                                 .hover(|style| style.bg(rgba(0xff676433)))
@@ -972,7 +972,7 @@ impl Render for ChatApp {
                     .bg(theme.surface)
                     .pl(px(header_start - revealed_sidebar_width + RESUMED_TITLE_INSET)).pr(px(100.0))
                     .flex().items_center()
-                        .text_size(px(14.0)).line_height(px(20.0)).font_weight(gpui::FontWeight::MEDIUM)
+                        .text_size(px(crate::typography::ui_size(14.0))).line_height(px(crate::typography::ui_leading(14.0, 20.0))).font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(theme.text)
                     .child(div().min_w(px(0.0)).max_w(px(RESUMED_TITLE_MAX_WIDTH)).truncate().child(title)))
             })
@@ -1327,7 +1327,7 @@ impl Render for ChatApp {
                         .flex()
                         .items_center()
                         .bg(rgba(0xb3261eff))
-                        .text_size(px(12.0))
+                        .text_size(px(crate::typography::ui_size(12.0)))
                         .text_color(rgba(0xffffffff))
                         .child(crate::i18n::format!(
                             "assets 缺失，图标不会渲染：{detail}" =>
@@ -1543,8 +1543,8 @@ fn thread_rename_overlay(
                         .child(
                             div()
                                 .h(px(21.0))
-                                .text_size(px(14.0))
-                                .line_height(px(21.0))
+                                .text_size(px(crate::typography::ui_size(14.0)))
+                                .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                                 .text_color(theme.chat_search_description)
                                 .child(crate::i18n::text("保持简短且易于识别")),
                         ),
@@ -1584,7 +1584,7 @@ fn thread_rename_overlay(
                                 .bg(theme.edit_button_surface)
                                 .flex()
                                 .items_center()
-                                .text_size(px(14.0))
+                                .text_size(px(crate::typography::ui_size(14.0)))
                                 .line_height(px(18.0))
                                 .cursor_pointer()
                                 .hover(move |style| style.bg(theme.sidebar_hover))
@@ -1607,7 +1607,7 @@ fn thread_rename_overlay(
                                 .bg(theme.button)
                                 .flex()
                                 .items_center()
-                                .text_size(px(14.0))
+                                .text_size(px(crate::typography::ui_size(14.0)))
                                 .line_height(px(18.0))
                                 .text_color(theme.button_text)
                                 .cursor_pointer()
@@ -1712,8 +1712,8 @@ fn section_dialog_overlay(
                         .child(
                             div()
                                 .h(px(21.0))
-                                .text_size(px(14.0))
-                                .line_height(px(21.0))
+                                .text_size(px(crate::typography::ui_size(14.0)))
+                                .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                                 .text_color(theme.chat_search_description)
                                 .child(crate::i18n::format!(
                                     "按你的方式组织聊天和项目" => "Group chats and projects however you like"
@@ -1756,7 +1756,7 @@ fn section_dialog_overlay(
                                 .bg(theme.edit_button_surface)
                                 .flex()
                                 .items_center()
-                                .text_size(px(14.0))
+                                .text_size(px(crate::typography::ui_size(14.0)))
                                 .line_height(px(18.0))
                                 .cursor_pointer()
                                 .hover(move |style| style.bg(theme.sidebar_hover))
@@ -1780,7 +1780,7 @@ fn section_dialog_overlay(
                                 .bg(theme.button)
                                 .flex()
                                 .items_center()
-                                .text_size(px(14.0))
+                                .text_size(px(crate::typography::ui_size(14.0)))
                                 .line_height(px(18.0))
                                 .text_color(theme.button_text)
                                 .when(!submittable, |button| button.opacity(0.5))
@@ -1895,7 +1895,7 @@ impl ChatApp {
                     .child(
                         div()
                             .pr(px(28.0))
-                            .text_size(px(20.0))
+                            .text_size(px(crate::typography::ui_size(20.0)))
                             .line_height(px(28.0))
                             .font_weight(gpui::FontWeight(600.0))
                             .child(confirmation.title()),
@@ -1903,8 +1903,8 @@ impl ChatApp {
                     .child(
                         div()
                             .mt(px(4.0))
-                            .text_size(px(14.0))
-                            .line_height(px(21.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
+                            .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                             .text_color(theme.chat_search_description)
                             .child(confirmation.description()),
                     )
@@ -1928,7 +1928,7 @@ impl ChatApp {
                                     .bg(theme.edit_button_surface)
                                     .flex()
                                     .items_center()
-                                    .text_size(px(14.0))
+                                    .text_size(px(crate::typography::ui_size(14.0)))
                                     .line_height(px(18.0))
                                     .when(archiving, |button| button.opacity(0.4))
                                     .when(!archiving, |button| {
@@ -1955,7 +1955,7 @@ impl ChatApp {
                                     .bg(rgba(0xe02e2a1a))
                                     .flex()
                                     .items_center()
-                                    .text_size(px(14.0))
+                                    .text_size(px(crate::typography::ui_size(14.0)))
                                     .line_height(px(18.0))
                                     .text_color(rgba(0xe02e2aff))
                                     .when(archiving, |button| button.opacity(0.4))
@@ -2038,7 +2038,7 @@ impl ChatApp {
                     .h(px(28.0))
                     .flex()
                     .items_center()
-                    .text_size(px(20.0))
+                    .text_size(px(crate::typography::ui_size(20.0)))
                     .line_height(px(28.0))
                     .font_weight(gpui::FontWeight(600.0))
                     .child(crate::i18n::text("要退出登录？")),
@@ -2046,8 +2046,8 @@ impl ChatApp {
             .child(
                 div()
                     .mt(px(4.0))
-                    .text_size(px(14.0))
-                    .line_height(px(21.0))
+                    .text_size(px(crate::typography::ui_size(14.0)))
+                    .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                     .text_color(theme.text_tertiary)
                     .child(match &email {
                         Some(email) => {
@@ -2059,8 +2059,8 @@ impl ChatApp {
             .child(
                 div()
                     .mt(px(11.0))
-                    .text_size(px(14.0))
-                    .line_height(px(21.0))
+                    .text_size(px(crate::typography::ui_size(14.0)))
+                    .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                     .child(crate::i18n::text("你需要重新登录才能继续使用 ChatGPT")),
             )
             .child(
@@ -2107,7 +2107,7 @@ impl ChatApp {
                             .rounded(px(12.5))
                             .flex()
                             .items_center()
-                            .text_size(px(14.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
                             .line_height(px(18.0))
                             .text_color(theme.text_tertiary)
                             .cursor_pointer()
@@ -2133,7 +2133,7 @@ impl ChatApp {
                             .bg(rgba(0xe02e2a1a))
                             .flex()
                             .items_center()
-                            .text_size(px(14.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
                             .line_height(px(18.0))
                             .text_color(rgba(0xe02e2aff))
                             .cursor_pointer()
@@ -2188,19 +2188,24 @@ impl ChatApp {
             .text_color(theme.markdown_text)
             .child(
                 div()
-                    .text_size(px(20.0))
+                    .text_size(px(crate::typography::ui_size(20.0)))
                     .line_height(px(28.0))
                     .font_weight(gpui::FontWeight(600.0))
                     .child(crate::i18n::text("登录 ChatGPT")),
             );
         let mut actions = div().mt(px(8.0)).flex().justify_end().gap(px(12.0));
         if let Some(error) = self.account.login_error().map(str::to_owned) {
-            dialog = dialog.child(div().text_size(px(14.0)).line_height(px(21.0)).child(error));
+            dialog = dialog.child(
+                div()
+                    .text_size(px(crate::typography::ui_size(14.0)))
+                    .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
+                    .child(error),
+            );
         } else if let Some(challenge) = &challenge {
             dialog = dialog.child(
                 div()
-                    .text_size(px(14.0))
-                    .line_height(px(21.0))
+                    .text_size(px(crate::typography::ui_size(14.0)))
+                    .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                     .text_color(theme.text_tertiary)
                     .child(match challenge {
                         AgentLoginChallenge::AuthUrl { .. } => {
@@ -2223,14 +2228,14 @@ impl ChatApp {
                         .items_center()
                         .justify_center()
                         .font_family(crate::theme::UI_MONOSPACE_FONT_FAMILY)
-                        .text_size(px(18.0))
+                        .text_size(px(crate::typography::ui_size(18.0)))
                         .child(code.clone()),
                 );
             }
             if let Some(url) = &url {
                 dialog = dialog.child(
                     div()
-                        .text_size(px(13.0))
+                        .text_size(px(crate::typography::ui_size(13.0)))
                         .line_height(px(18.0))
                         .text_color(theme.accent)
                         .overflow_hidden()
@@ -2241,8 +2246,8 @@ impl ChatApp {
         } else {
             dialog = dialog.child(
                 div()
-                    .text_size(px(14.0))
-                    .line_height(px(21.0))
+                    .text_size(px(crate::typography::ui_size(14.0)))
+                    .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                     .text_color(theme.text_tertiary)
                     .child(crate::i18n::text(
                         "已请求登录，正在等待服务端返回授权信息。",
@@ -2262,7 +2267,7 @@ impl ChatApp {
                     .bg(theme.text.alpha(0.05))
                     .flex()
                     .items_center()
-                    .text_size(px(14.0))
+                    .text_size(px(crate::typography::ui_size(14.0)))
                     .line_height(px(18.0))
                     .cursor_pointer()
                     .hover(move |style| style.bg(theme.text.alpha(0.10)))
@@ -2291,7 +2296,7 @@ impl ChatApp {
                 .rounded(px(12.5))
                 .flex()
                 .items_center()
-                .text_size(px(14.0))
+                .text_size(px(crate::typography::ui_size(14.0)))
                 .line_height(px(18.0))
                 .cursor_pointer()
                 .hover(move |style| style.bg(theme.text.alpha(0.05)))

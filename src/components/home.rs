@@ -932,6 +932,7 @@ impl HomeView {
 
     pub fn set_mode(&mut self, mode: ThemeMode, cx: &mut Context<Self>) {
         self.mode = mode;
+        self.conversation_list.remeasure();
         self.computer_preview
             .update(cx, |preview, _| preview.mode = mode);
         self.composer

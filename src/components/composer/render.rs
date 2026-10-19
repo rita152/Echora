@@ -229,7 +229,7 @@ impl ComposerView {
                                 )
                                 .child(
                                     div()
-                                        .text_size(px(12.))
+                                        .text_size(px(crate::typography::ui_size(12.)))
                                         .text_color(theme.text_secondary)
                                         .child(crate::i18n::format!("{} 个评论" => "{} comments", self.review_comments.len())),
                                 ),
@@ -289,7 +289,7 @@ impl ComposerView {
                                                     .flex()
                                                     .items_center()
                                                     .gap(px(4.0))
-                                                    .text_size(px(13.0))
+                                                    .text_size(px(crate::typography::ui_size(13.0)))
                                                     .line_height(px(18.0))
                                                     .text_color(permission_color)
                                                     .cursor_pointer()
@@ -383,7 +383,7 @@ impl ComposerView {
                                                 .flex()
                                                 .items_center()
                                                 .gap(px(4.0))
-                                                .text_size(px(13.0))
+                                                .text_size(px(crate::typography::ui_size(13.0)))
                                                 .line_height(px(18.0))
                                                 .cursor_pointer()
                                                 .when(self.menu_open, |button| {
@@ -536,8 +536,8 @@ impl ComposerView {
                             .border_color(rgba(0xdfdfdfff))
                             .bg(rgba(0xdfdfdfff))
                             .font_family(".SystemUIFont")
-                            .text_size(px(13.0))
-                            .line_height(px(18.5714))
+                            .text_size(px(crate::typography::ui_size(13.0)))
+                            .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
                             .font_weight(gpui::FontWeight::NORMAL)
                             .text_color(rgba(0x2d2d2dff))
                             .flex()
@@ -554,7 +554,7 @@ impl ComposerView {
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .text_size(px(12.0))
+                                    .text_size(px(crate::typography::ui_size(12.0)))
                                     .line_height(px(12.0))
                                     .child("⌃⇧M"),
                             ),
@@ -599,7 +599,7 @@ pub(super) fn project_utility(label: Option<SharedString>, theme: Theme) -> gpui
                 .flex()
                 .items_center()
                 .gap(px(4.0))
-                .text_size(px(13.0))
+                .text_size(px(crate::typography::ui_size(13.0)))
                 .line_height(px(18.0))
                 .font_weight(gpui::FontWeight::NORMAL)
                 .text_color(foreground)
@@ -631,7 +631,7 @@ pub(super) fn branch_utility(branch: SharedString, theme: Theme) -> gpui::Statef
         .flex_none()
         .items_center()
         .gap(px(6.0))
-        .text_size(px(13.0))
+        .text_size(px(crate::typography::ui_size(13.0)))
         .line_height(px(18.0))
         .font_weight(gpui::FontWeight::NORMAL)
         .text_color(theme.text)

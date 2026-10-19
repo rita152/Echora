@@ -104,6 +104,7 @@ impl Row {
 }
 #[derive(PartialEq, Eq)]
 struct RowsKey {
+    font_sizes: crate::workspace::FontSizes,
     generation: u64,
     count: usize,
     loading: bool,
@@ -138,7 +139,7 @@ impl Default for DiffViewport {
         Self {
             key: None,
             rows: Vec::new(),
-            scroll: ListState::new(0, ListAlignment::Top, px(LINE_HEIGHT * 10.0)),
+            scroll: ListState::new(0, ListAlignment::Top, px(line_height() * 10.0)),
             syntax: RefCell::new(SyntaxCache::default()),
             mode: None,
             data: None,
@@ -197,6 +198,7 @@ impl PullRequestsView {
             return;
         }
         let key = RowsKey {
+            font_sizes: crate::typography::sizes(),
             generation: self.diff_generation,
             count: self.diff.len(),
             loading: self.diff_loading,
@@ -242,7 +244,12 @@ impl PullRequestsView {
                 .collect();
             *self.diff_viewport.syntax.borrow_mut() = SyntaxCache::default();
         }
-        let mode_changed = self.diff_viewport.mode != Some(self.mode);
+        let font_changed = self
+            .diff_viewport
+            .key
+            .as_ref()
+            .is_some_and(|old| old.font_sizes != key.font_sizes);
+        let mode_changed = self.diff_viewport.mode != Some(self.mode) || font_changed;
         if mode_changed {
             self.diff_viewport.mode = Some(self.mode);
             *self.diff_viewport.syntax.borrow_mut() = SyntaxCache::default();
@@ -272,7 +279,7 @@ impl PullRequestsView {
                 .diff_viewport
                 .scroll
                 .clone()
-                .with_uniform_item_height(px(LINE_HEIGHT));
+                .with_uniform_item_height(px(line_height()));
             self.diff_viewport.rows = rows;
             // Source indices from another PR/scope are not valid anchors.
             let same_data = self
@@ -308,7 +315,7 @@ impl PullRequestsView {
                     let runs = self.code_runs(text, language);
                     let line = window.text_system().shape_line(
                         text.to_owned().into(),
-                        px(12.0),
+                        px(crate::typography::code_size()),
                         runs.as_slice(),
                         None,
                     );
@@ -332,7 +339,8 @@ impl PullRequestsView {
                     _ => {}
                 }
             }
-            self.diff_viewport.max_line_width = Some(maximum + GUTTER_WIDTH + CELL_PADDING * 2.0);
+            self.diff_viewport.max_line_width =
+                Some(maximum + gutter_width() + cell_padding() * 2.0);
         }
     }
 
@@ -674,7 +682,7 @@ impl PullRequestsView {
             .flex_col()
             .child(element)
             .on_scroll_wheel(cx.listener(|view, event: &gpui::ScrollWheelEvent, _, cx| {
-                let delta = event.delta.pixel_delta(px(LINE_HEIGHT));
+                let delta = event.delta.pixel_delta(px(line_height()));
                 if delta.x.abs() > delta.y.abs() || event.modifiers.shift {
                     if !view.wrap {
                         let horizontal = if event.modifiers.shift && delta.y != px(0.0) {
@@ -759,6 +767,7 @@ mod tests {
         view.update(cx, |view, _| {
             view.diff = crate::git_review::parse_unified("diff --git a/a.rs b/a.rs\n--- a/a.rs\n+++ b/a.rs\n@@ -1 +1 @@\n-old\n+new\ndiff --git a/b.rs b/b.rs\n--- a/b.rs\n+++ b/b.rs\n@@ -4 +4 @@\n-before\n+after\n");
             let mut key = RowsKey {
+                font_sizes: crate::workspace::FontSizes::default(),
                 generation: 1, count: 2, loading: false, filter: String::new(), collapsed: Default::default(), layout: Default::default(),
                 rich: false, contexts: Default::default(), expanded: None, errors: Default::default(), inline: None,
             };

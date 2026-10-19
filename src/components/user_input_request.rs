@@ -840,8 +840,8 @@ pub fn render_user_input_request(
                 .child(
                     div()
                         .min_w(px(0.0))
-                        .text_size(px(14.0))
-                        .line_height(px(20.0))
+                        .text_size(px(crate::typography::ui_size(14.0)))
+                        .line_height(px(crate::typography::ui_leading(14.0, 20.0)))
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(palette.text)
                         .relative()
@@ -977,14 +977,14 @@ fn render_user_input_status(model: &UserInputRequestPresentation, theme: Theme) 
         .text_color(palette.text)
         .child(
             div()
-                .text_size(px(14.0))
-                .line_height(px(20.0))
+                .text_size(px(crate::typography::ui_size(14.0)))
+                .line_height(px(crate::typography::ui_leading(14.0, 20.0)))
                 .font_weight(FontWeight::MEDIUM)
                 .child(title),
         )
         .child(
             div()
-                .text_size(px(13.0))
+                .text_size(px(crate::typography::ui_size(13.0)))
                 .line_height(px(19.0))
                 .text_color(palette.secondary)
                 .child(status),
@@ -992,8 +992,8 @@ fn render_user_input_status(model: &UserInputRequestPresentation, theme: Theme) 
         .when_some(model.failure_message.clone(), |card, message| {
             card.child(
                 div()
-                    .text_size(px(12.0))
-                    .line_height(px(18.0))
+                    .text_size(px(crate::typography::ui_size(12.0)))
+                    .line_height(px(crate::typography::ui_leading(12.0, 18.0)))
                     .text_color(palette.secondary)
                     .child(message),
             )
@@ -1017,7 +1017,7 @@ fn render_question_navigation(
         .flex()
         .items_center()
         .gap(px(4.0))
-        .text_size(px(12.0))
+        .text_size(px(crate::typography::ui_size(12.0)))
         .line_height(px(16.0))
         .text_color(palette.secondary)
         .child(
@@ -1171,8 +1171,8 @@ fn render_option(
         .child(
             div()
                 .min_w(px(0.0))
-                .text_size(px(13.0))
-                .line_height(px(18.5714))
+                .text_size(px(crate::typography::ui_size(13.0)))
+                .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(palette.text)
                 .child(label.clone()),
@@ -1189,7 +1189,7 @@ fn render_option(
                 .justify_center()
                 .rounded(px(4.0))
                 .bg(palette.recommendation)
-                .text_size(px(12.0))
+                .text_size(px(crate::typography::ui_size(12.0)))
                 .line_height(px(12.0))
                 .font_weight(FontWeight::NORMAL)
                 .text_color(palette.recommendation_text)
@@ -1212,8 +1212,8 @@ fn render_option(
         copy = copy.child(
             div()
                 .min_w(px(0.0))
-                .text_size(px(13.0))
-                .line_height(px(18.5714))
+                .text_size(px(crate::typography::ui_size(13.0)))
+                .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
                 .font_weight(FontWeight::NORMAL)
                 .text_color(palette.secondary)
                 .when(option.recommended, |description| {
@@ -1289,7 +1289,7 @@ fn render_option(
                 .border_1()
                 .border_color(palette.border)
                 .bg(palette.soft)
-                .text_size(px(12.0))
+                .text_size(px(crate::typography::ui_size(12.0)))
                 .line_height(px(12.0))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(palette.secondary)
@@ -1444,7 +1444,7 @@ fn render_other_row(
                 } else {
                     palette.card
                 })
-                .text_size(px(13.0))
+                .text_size(px(crate::typography::ui_size(13.0)))
                 .line_height(px(18.0))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(if has_other_answer {

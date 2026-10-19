@@ -58,7 +58,7 @@ impl SideChatPanel {
             )
             .child(
                 div()
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .child(crate::i18n::text("不再询问")),
             );
         let action = |id: &'static str, label: &'static str, danger: bool| {
@@ -74,7 +74,7 @@ impl SideChatPanel {
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_size(px(13.0))
+                .text_size(px(crate::typography::ui_size(13.0)))
                 .font_weight(FontWeight::MEDIUM)
                 .cursor_pointer()
                 .bg(if danger {
@@ -135,14 +135,14 @@ impl SideChatPanel {
                         }))
                         .child(
                             div()
-                                .text_size(px(18.0))
+                                .text_size(px(crate::typography::ui_size(18.0)))
                                 .line_height(px(25.0))
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .child(crate::i18n::text("关闭侧边聊天？")),
                         )
                         .child(
                             div()
-                                .text_size(px(13.0))
+                                .text_size(px(crate::typography::ui_size(13.0)))
                                 .line_height(px(20.0))
                                 .text_color(theme.text_secondary)
                                 .child(crate::i18n::text(
@@ -246,7 +246,7 @@ impl Render for SideChatPanel {
                         .flex()
                         .items_center()
                         .cursor_pointer()
-                        .text_size(px(13.0))
+                        .text_size(px(crate::typography::ui_size(13.0)))
                         .text_color(theme.text)
                         .child(crate::i18n::text("重试回复"))
                         .on_click(move |_, _, cx| {
@@ -272,7 +272,7 @@ impl Render for SideChatPanel {
                         .p(px(12.0))
                         .rounded(px(12.0))
                         .bg(theme.control_soft)
-                        .text_size(px(13.0))
+                        .text_size(px(crate::typography::ui_size(13.0)))
                         .text_color(theme.text_secondary)
                         .child(error.clone())
                         .when(tab.thread_id.is_none(), |d| {

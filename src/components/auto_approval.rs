@@ -545,7 +545,7 @@ impl AutoApprovalReviewView {
             .max_w(px(711.586))
             .w_full()
             .font(ui_font())
-            .text_size(px(14.))
+            .text_size(px(crate::typography::ui_size(14.)))
             .line_height(px(22.75))
             .text_color(theme.markdown_text.alpha(0.60))
             .track_focus(&self.text_focus)
@@ -755,8 +755,8 @@ impl Render for AutoApprovalReviewView {
             .flex_col()
             .items_start()
             .font(ui_font())
-            .text_size(px(14.))
-            .line_height(px(21.));
+            .text_size(px(crate::typography::ui_size(14.)))
+            .line_height(px(crate::typography::ui_leading(14., 21.)));
         if !self.attached {
             result = result.child(self.header(
                 action_label(&self.model.review.action),
@@ -909,8 +909,8 @@ pub(crate) fn strict_review(requirement: &StrictReviewPresentation, theme: Theme
         .items_start()
         .gap(px(6.))
         .font(ui_font())
-        .text_size(px(14.))
-        .line_height(px(21.))
+        .text_size(px(crate::typography::ui_size(14.)))
+        .line_height(px(crate::typography::ui_leading(14., 21.)))
         .text_color(theme.markdown_text.alpha(0.60))
         .child(
             icon("auto-review-shield", theme.markdown_text.alpha(0.60).into())
@@ -940,8 +940,8 @@ pub(crate) fn guardian_warning(warning: &AgentGuardianWarning, theme: Theme) -> 
         .items_center()
         .gap(px(8.))
         .font(ui_font())
-        .text_size(px(14.))
-        .line_height(px(21.))
+        .text_size(px(crate::typography::ui_size(14.)))
+        .line_height(px(crate::typography::ui_leading(14., 21.)))
         .text_color(theme.markdown_text.alpha(0.65))
         .when(interrupted, |row| {
             row.child(div().flex_1().h(px(1.)).bg(theme.border))
@@ -1039,7 +1039,7 @@ impl Render for WarningTooltip {
             .border(px(1.))
             .border_color(self.theme.border)
             .font(ui_font())
-            .text_size(px(13.))
+            .text_size(px(crate::typography::ui_size(13.)))
             .line_height(px(130. / 7.))
             .text_color(self.theme.markdown_text)
             .text_center()

@@ -196,14 +196,14 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap(px(2.0))
-            .text_size(px(13.0))
+            .text_size(px(crate::typography::ui_size(13.0)))
             .line_height(px(19.0))
             .text_color(theme.settings_description)
             .child(message.to_owned())
             .when_some(detail.map(str::to_owned), |card, detail| {
                 card.child(
                     div()
-                        .text_size(px(12.0))
+                        .text_size(px(crate::typography::ui_size(12.0)))
                         .line_height(px(17.0))
                         .text_color(theme.text_tertiary)
                         .child(detail),
@@ -255,8 +255,8 @@ impl SettingsView {
                     .gap(px(3.0))
                     .child(
                         div()
-                            .text_size(px(14.0))
-                            .line_height(px(21.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
+                            .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                             .font_weight(gpui::FontWeight(500.0))
                             .child(title),
                     )
@@ -265,7 +265,7 @@ impl SettingsView {
                             div()
                                 .relative()
                                 .top(px(-1.0))
-                                .text_size(px(13.0))
+                                .text_size(px(crate::typography::ui_size(13.0)))
                                 .line_height(px(21.125))
                                 .font_weight(crate::theme::UI_BODY_FONT_WEIGHT)
                                 .text_color(subtitle_color)
@@ -539,7 +539,7 @@ impl SettingsView {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .text_size(px(14.0))
+                    .text_size(px(crate::typography::ui_size(14.0)))
                     .text_color(theme.text_tertiary)
                     .child(app.name.chars().next().unwrap_or('?').to_string())
                     .into_any_element(),
@@ -682,7 +682,7 @@ impl SettingsView {
                     .gap(px(12.0))
                     .child(
                         div()
-                            .text_size(px(12.0))
+                            .text_size(px(crate::typography::ui_size(12.0)))
                             .line_height(px(16.0))
                             .text_color(theme.settings_description)
                             .child(display_name),
@@ -702,7 +702,7 @@ impl SettingsView {
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .text_size(px(12.0))
+                                    .text_size(px(crate::typography::ui_size(12.0)))
                                     .line_height(px(16.0))
                                     .text_color(theme.text)
                                     .cursor_pointer()
@@ -722,7 +722,7 @@ impl SettingsView {
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .text_size(px(12.0))
+                                    .text_size(px(crate::typography::ui_size(12.0)))
                                     .line_height(px(16.0))
                                     .text_color(theme.text)
                                     .cursor_pointer()
@@ -759,14 +759,14 @@ impl SettingsView {
             .gap(px(10.0))
             .child(
                 div()
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .line_height(px(18.5625))
                     .font_weight(gpui::FontWeight(500.0))
                     .child(confirmation.title()),
             )
             .child(
                 div()
-                    .text_size(px(12.0))
+                    .text_size(px(crate::typography::ui_size(12.0)))
                     .line_height(px(16.0))
                     .text_color(theme.settings_description)
                     .child(confirmation.body()),
@@ -791,7 +791,7 @@ impl SettingsView {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_size(px(14.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
                             .line_height(px(18.0))
                             .text_color(gpui::white())
                             .cursor_pointer()
@@ -814,7 +814,7 @@ impl SettingsView {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_size(px(14.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
                             .line_height(px(18.0))
                             .text_color(theme.text)
                             .cursor_pointer()
@@ -852,14 +852,14 @@ impl SettingsView {
             .when(!self.directory_presentation, |card| {
                 card.child(
                     div()
-                        .text_size(px(13.0))
+                        .text_size(px(crate::typography::ui_size(13.0)))
                         .line_height(px(18.5625))
                         .font_weight(gpui::FontWeight(500.0))
                         .child(detail.summary.display_name().to_owned()),
                 )
                 .child(
                     div()
-                        .text_size(px(12.0))
+                        .text_size(px(crate::typography::ui_size(12.0)))
                         .line_height(px(16.0))
                         .text_color(theme.settings_description)
                         .child(crate::i18n::format!(
@@ -896,7 +896,7 @@ impl SettingsView {
                     .focusable()
                     .tab_stop(true)
                     .cursor_pointer()
-                    .text_size(px(12.0))
+                    .text_size(px(crate::typography::ui_size(12.0)))
                     .line_height(px(16.0))
                     .text_color(theme.text_tertiary)
                     .on_click(cx.listener(move |this, _, _, cx| {
@@ -913,7 +913,7 @@ impl SettingsView {
         for server in &detail.mcp_servers {
             card = card.child(
                 div()
-                    .text_size(px(12.0))
+                    .text_size(px(crate::typography::ui_size(12.0)))
                     .line_height(px(16.0))
                     .text_color(theme.text_tertiary)
                     .child(format!("MCP：{server}")),
@@ -922,7 +922,7 @@ impl SettingsView {
         if let Some(content) = &self.plugins_catalog.directory.skill {
             card = card.child(
                 div()
-                    .text_size(px(12.0))
+                    .text_size(px(crate::typography::ui_size(12.0)))
                     .line_height(px(16.0))
                     .text_color(theme.text_tertiary)
                     .child(match &content.contents {
@@ -934,7 +934,7 @@ impl SettingsView {
         if let Some(error) = &self.plugins_catalog.directory.skill_error {
             card = card.child(
                 div()
-                    .text_size(px(12.0))
+                    .text_size(px(crate::typography::ui_size(12.0)))
                     .line_height(px(16.0))
                     .text_color(theme.settings_description)
                     .child(error.message.clone()),
@@ -960,7 +960,7 @@ impl SettingsView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_size(px(13.0))
+                .text_size(px(crate::typography::ui_size(13.0)))
                 .line_height(px(18.0))
                 .text_color(theme.text)
                 .cursor_pointer()
@@ -1028,7 +1028,7 @@ impl SettingsView {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .text_size(px(13.0))
+                        .text_size(px(crate::typography::ui_size(13.0)))
                         .line_height(px(18.0))
                         .text_color(theme.text)
                         .cursor_pointer()
@@ -1048,7 +1048,7 @@ impl SettingsView {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .text_size(px(13.0))
+                        .text_size(px(crate::typography::ui_size(13.0)))
                         .line_height(px(18.0))
                         .text_color(theme.text)
                         .cursor_pointer()
@@ -1063,7 +1063,7 @@ impl SettingsView {
         if let Some(error) = &self.plugins_catalog.directory.shares_error {
             card = card.child(
                 div()
-                    .text_size(px(12.0))
+                    .text_size(px(crate::typography::ui_size(12.0)))
                     .line_height(px(16.0))
                     .text_color(theme.settings_description)
                     .child(error.message.clone()),
@@ -1073,7 +1073,7 @@ impl SettingsView {
             for entry in shares.entries.iter().take(5) {
                 card = card.child(
                     div()
-                        .text_size(px(12.0))
+                        .text_size(px(crate::typography::ui_size(12.0)))
                         .line_height(px(16.0))
                         .text_color(theme.text_tertiary)
                         .child(crate::i18n::format!(
@@ -1088,7 +1088,7 @@ impl SettingsView {
             div()
                 .id("plugin-share-list")
                 .h(px(24.0))
-                .text_size(px(12.0))
+                .text_size(px(crate::typography::ui_size(12.0)))
                 .line_height(px(16.0))
                 .text_color(theme.settings_description)
                 .cursor_pointer()

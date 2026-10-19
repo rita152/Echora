@@ -123,7 +123,7 @@ pub(super) fn dynamic_tool_call_activity(
                     div()
                         .min_w(px(0.0))
                         .truncate()
-                        .text_size(px(MCP_TOOL_CALL_TEXT_SIZE))
+                        .text_size(px(crate::typography::ui_size(MCP_TOOL_CALL_TEXT_SIZE)))
                         .text_color(label_color)
                         .font_family(".SystemUIFont")
                         .font_weight(FontWeight::NORMAL)
@@ -155,7 +155,7 @@ pub(super) fn dynamic_tool_call_activity(
         {
             body = body.child(
                 div()
-                    .text_size(px(MCP_TOOL_CALL_TEXT_SIZE))
+                    .text_size(px(crate::typography::ui_size(MCP_TOOL_CALL_TEXT_SIZE)))
                     .text_color(theme.text.alpha(0.60))
                     .child(
                         crate::i18n::format!("耗时 {duration_ms} 毫秒" => "Took {duration_ms} ms"),

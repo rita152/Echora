@@ -104,7 +104,7 @@ pub(super) fn image_generation_error_activity(
                         .child(
                             div()
                                 .font_family(".SystemUIFont")
-                                .text_size(px(14.0))
+                                .text_size(px(crate::typography::ui_size(14.0)))
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(theme.text)
                                 .child(title),
@@ -112,7 +112,7 @@ pub(super) fn image_generation_error_activity(
                         .child(
                             div()
                                 .font_family(".SystemUIFont")
-                                .text_size(px(13.0))
+                                .text_size(px(crate::typography::ui_size(13.0)))
                                 .line_height(px(18.0))
                                 .text_color(theme.text_secondary)
                                 .child(detail),
@@ -143,7 +143,7 @@ pub(super) fn image_generation_error_activity(
                     .items_center()
                     .justify_center()
                     .font_family(".SystemUIFont")
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(theme.text)
                     .hover(move |button| button.bg(theme.elevated))
@@ -370,8 +370,8 @@ pub(super) fn image_view_activity(
                             div()
                                 .min_w(px(0.0))
                                 .truncate()
-                                .text_size(px(14.0))
-                                .line_height(px(21.0))
+                                .text_size(px(crate::typography::ui_size(14.0)))
+                                .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                                 .font_family(".SystemUIFont")
                                 .font_weight(FontWeight::NORMAL)
                                 .text_color(theme.text.alpha(0.40))

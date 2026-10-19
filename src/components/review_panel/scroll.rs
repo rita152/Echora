@@ -31,7 +31,9 @@ impl ReviewPanel {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let delta = event.delta.pixel_delta(px(21.6));
+        let delta = event
+            .delta
+            .pixel_delta(px(crate::typography::diff_line_height()));
         if delta.x.abs() > delta.y.abs() || event.modifiers.shift {
             if !self.wrap {
                 let horizontal = if event.modifiers.shift && delta.y != px(0.) {

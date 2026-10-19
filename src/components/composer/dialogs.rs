@@ -148,7 +148,7 @@ impl ComposerView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_size(px(14.0))
+                .text_size(px(crate::typography::ui_size(14.0)))
                 .cursor_pointer()
                 .when(primary, |d| {
                     d.bg(theme.button).text_color(theme.button_text)
@@ -213,7 +213,7 @@ impl ComposerView {
                                 .justify_between()
                                 .child(
                                     div()
-                                        .text_size(px(20.0))
+                                        .text_size(px(crate::typography::ui_size(20.0)))
                                         .line_height(px(28.0))
                                         .font_weight(FontWeight::SEMIBOLD)
                                         .child(title),
@@ -243,8 +243,8 @@ impl ComposerView {
                         .child(
                             div()
                                 .mt(px(title_gap))
-                                .text_size(px(14.0))
-                                .line_height(px(21.0))
+                                .text_size(px(crate::typography::ui_size(14.0)))
+                                .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                                 .text_color(theme.text.alpha(0.5))
                                 .child(body),
                         )
@@ -256,7 +256,7 @@ impl ComposerView {
                                     .py(px(8.0))
                                     .rounded(px(12.5))
                                     .bg(theme.text.alpha(0.04))
-                                    .text_size(px(13.0))
+                                    .text_size(px(crate::typography::ui_size(13.0)))
                                     .line_height(px(18.57))
                                     .max_h(px(120.0))
                                     .overflow_hidden()

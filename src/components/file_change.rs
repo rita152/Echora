@@ -54,13 +54,17 @@ pub const REVIEW_GUTTER_WIDTH: f32 = 52.546875;
 pub const REVIEW_GUTTER_BAR_WIDTH: f32 = 4.0;
 pub const REVIEW_LINE_HORIZONTAL_PADDING: f32 = 7.2246094;
 
+fn review_diff_line_height() -> f32 {
+    REVIEW_DIFF_LINE_HEIGHT * crate::typography::code_size() / 12.0
+}
+
 fn review_diff_row_top(index: usize) -> f32 {
-    REVIEW_DIFF_TOP_PADDING + index as f32 * REVIEW_DIFF_LINE_HEIGHT
+    REVIEW_DIFF_TOP_PADDING + index as f32 * review_diff_line_height()
 }
 
 fn review_diff_rows_height(line_count: usize) -> f32 {
     REVIEW_DIFF_TOP_PADDING
-        + line_count.max(1) as f32 * REVIEW_DIFF_LINE_HEIGHT
+        + line_count.max(1) as f32 * review_diff_line_height()
         + REVIEW_DIFF_BOTTOM_PADDING
 }
 
@@ -587,7 +591,7 @@ pub fn render_file_approval_card(
                 .flex()
                 .items_center()
                 .gap(px(8.0))
-                .text_size(px(13.0))
+                .text_size(px(crate::typography::ui_size(13.0)))
                 .line_height(px(20.0))
                 .font_weight(FontWeight::NORMAL)
                 .text_color(palette.approval_secondary)
@@ -600,8 +604,8 @@ pub fn render_file_approval_card(
                 .max_h(px(160.0))
                 .min_w(px(0.0))
                 .overflow_y_scroll()
-                .text_size(px(14.0))
-                .line_height(px(20.0))
+                .text_size(px(crate::typography::ui_size(14.0)))
+                .line_height(px(crate::typography::ui_leading(14.0, 20.0)))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(palette.text)
                 .child(model.question().to_owned()),
@@ -629,7 +633,7 @@ pub fn render_file_approval_card(
                 .aria_label(error.clone())
                 .h(px(40.0))
                 .px(px(16.0))
-                .text_size(px(13.0))
+                .text_size(px(crate::typography::ui_size(13.0)))
                 .line_height(px(20.0))
                 .text_color(theme.warning)
                 .child(error.clone()),
@@ -696,8 +700,8 @@ fn render_approval_files(
                 .on_click(move |_, window, cx| {
                     open.emit(FileApprovalEvent::ReviewFile(index), window, cx)
                 })
-                .text_size(px(14.0))
-                .line_height(px(21.0))
+                .text_size(px(crate::typography::ui_size(14.0)))
+                .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                 .font_family(UI_FONT_FAMILY)
                 .text_color(palette.text)
                 .child(
@@ -734,7 +738,7 @@ fn render_approval_files(
             div()
                 .h(px(33.0))
                 .px(px(6.0))
-                .text_size(px(13.0))
+                .text_size(px(crate::typography::ui_size(13.0)))
                 .text_color(palette.tertiary)
                 .child(crate::i18n::text("正在加载待审批的文件更改…")),
         );
@@ -789,7 +793,7 @@ fn render_file_approval_actions(
                     .border_1()
                     .border_color(palette.outline)
                     .text_color(palette.text)
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .flex()
                     .items_center()
                     .cursor_pointer()
@@ -820,7 +824,7 @@ fn render_file_approval_actions(
                 palette.soft
             },
         )
-        .text_size(px(13.0))
+        .text_size(px(crate::typography::ui_size(13.0)))
         .line_height(px(18.0))
         .text_color(palette.approval_decline_text)
         .cursor_pointer()
@@ -861,7 +865,7 @@ fn render_file_approval_actions(
         .border_l_1()
         .border_color(palette.approval_button_border)
         .bg(primary_fill)
-        .text_size(px(13.0))
+        .text_size(px(crate::typography::ui_size(13.0)))
         .line_height(px(18.0))
         .text_color(palette.approval_primary_text)
         .when(!model.changes_ready || !model.is_interactive(), |button| {
@@ -1001,8 +1005,8 @@ fn file_approval_menu_row(
         .items_center()
         .rounded(px(12.5))
         .when(focused, |row| row.bg(palette.soft_hover))
-        .text_size(px(13.0))
-        .line_height(px(18.5714))
+        .text_size(px(crate::typography::ui_size(13.0)))
+        .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
         .text_color(palette.text)
         .cursor_pointer()
         .hover(move |row| row.bg(palette.soft_hover))
@@ -1046,7 +1050,7 @@ fn keycap(label: &'static str, color: gpui::Rgba) -> Div {
         .justify_center()
         .rounded(px(6.0))
         .bg(color.alpha(0.10))
-        .text_size(px(12.0))
+        .text_size(px(crate::typography::ui_size(12.0)))
         .line_height(px(16.0))
         .text_color(color)
         .child(label)
@@ -1058,7 +1062,7 @@ fn change_counts(additions: u32, deletions: u32, palette: FilePalette) -> Div {
         .flex()
         .items_center()
         .gap(px(4.0))
-        .text_size(px(13.0))
+        .text_size(px(crate::typography::ui_size(13.0)))
         .line_height(px(18.0))
         .child(
             div()
@@ -1078,7 +1082,7 @@ fn approval_change_counts(additions: u32, deletions: u32, palette: FilePalette) 
         .flex()
         .items_center()
         .gap(px(4.0))
-        .text_size(px(16.0))
+        .text_size(px(crate::typography::ui_size(16.0)))
         .line_height(px(16.0))
         .child(
             div()
@@ -1327,7 +1331,7 @@ pub fn render_file_change_activity(
                         .flex()
                         .items_center()
                         .truncate()
-                        .text_size(px(14.0))
+                        .text_size(px(crate::typography::ui_size(14.0)))
                         .line_height(px(FILE_CHANGE_ACTIVITY_ROW_HEIGHT))
                         .font_family(".SystemUIFont")
                         .font_weight(FontWeight::NORMAL)
@@ -1456,8 +1460,8 @@ pub(super) fn render_grouped_file_change(
                                 div()
                                     .min_w(px(0.0))
                                     .truncate()
-                                    .text_size(px(14.0))
-                                    .line_height(px(21.0))
+                                    .text_size(px(crate::typography::ui_size(14.0)))
+                                    .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                                     .child(label),
                             )
                             .child(change_counts(file.additions, file.deletions, palette))
@@ -1547,8 +1551,8 @@ fn render_inline_file_change_file(
                     ThemeMode::Light => rgba(0xf7f7f7ff),
                     ThemeMode::Dark => rgba(0x232323ff),
                 })
-                .text_size(px(14.0))
-                .line_height(px(21.0))
+                .text_size(px(crate::typography::ui_size(14.0)))
+                .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                 .text_color(palette.tertiary)
                 .child(name.to_owned())
                 .child(change_counts(file.additions, file.deletions, palette))
@@ -2096,8 +2100,8 @@ pub fn render_diff_review_panel(
                 .gap(px(8.0))
                 .rounded(px(12.5))
                 .bg(palette.surface)
-                .text_size(px(13.0))
-                .line_height(px(18.5714))
+                .text_size(px(crate::typography::ui_size(13.0)))
+                .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
                 .text_color(palette.text)
                 .child(icon("panel-review", palette.text.into()).size(px(16.0)))
                 .child(
@@ -2135,7 +2139,7 @@ pub fn render_diff_review_panel(
         .items_center()
         .border_b_1()
         .border_color(palette.outline)
-        .text_size(px(14.0))
+        .text_size(px(crate::typography::ui_size(14.0)))
         .line_height(px(18.0))
         .text_color(palette.text)
         .child(
@@ -2215,8 +2219,8 @@ fn render_review_summary(model: &DiffReviewPresentation, palette: FilePalette) -
         .flex()
         .flex_col()
         .gap(px(4.0))
-        .text_size(px(14.0))
-        .line_height(px(21.0))
+        .text_size(px(crate::typography::ui_size(14.0)))
+        .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
         .child(
             div()
                 .h(px(24.0))
@@ -2303,8 +2307,8 @@ fn render_review_file(
                 .flex()
                 .items_center()
                 .gap(px(8.0))
-                .text_size(px(14.0))
-                .line_height(px(21.0))
+                .text_size(px(crate::typography::ui_size(14.0)))
+                .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                 .child(icon("panel-files", palette.tertiary.into()).size(px(16.0)))
                 .child(
                     div()
@@ -2479,7 +2483,9 @@ fn render_diff_line(line: &DiffLinePresentation, palette: FilePalette) -> Div {
 
     let mut gutter = div()
         .h_full()
-        .w(px(REVIEW_GUTTER_WIDTH))
+        .w(px(
+            REVIEW_GUTTER_WIDTH * crate::typography::code_size() / 12.0
+        ))
         .flex_none()
         .flex()
         .items_center()
@@ -2500,7 +2506,9 @@ fn render_diff_line(line: &DiffLinePresentation, palette: FilePalette) -> Div {
             .h_full()
             .min_w(px(0.0))
             .flex_1()
-            .pr(px(REVIEW_LINE_HORIZONTAL_PADDING))
+            .pr(px(REVIEW_LINE_HORIZONTAL_PADDING
+                * crate::typography::code_size()
+                / 12.0))
             .flex()
             .items_center()
             .justify_end()
@@ -2509,13 +2517,13 @@ fn render_diff_line(line: &DiffLinePresentation, palette: FilePalette) -> Div {
     );
 
     div()
-        .h(px(REVIEW_DIFF_LINE_HEIGHT))
+        .h(px(review_diff_line_height()))
         .w_full()
         .flex()
         .items_center()
         .font_family(UI_MONOSPACE_FONT_FAMILY)
-        .text_size(px(12.0))
-        .line_height(px(21.6))
+        .text_size(px(crate::typography::code_size()))
+        .line_height(px(crate::typography::diff_line_height()))
         .text_color(palette.text)
         .child(gutter)
         .child(
@@ -2523,7 +2531,9 @@ fn render_diff_line(line: &DiffLinePresentation, palette: FilePalette) -> Div {
                 .h_full()
                 .min_w(px(0.0))
                 .flex_1()
-                .px(px(REVIEW_LINE_HORIZONTAL_PADDING))
+                .px(px(REVIEW_LINE_HORIZONTAL_PADDING
+                    * crate::typography::code_size()
+                    / 12.0))
                 .flex()
                 .items_center()
                 .bg(background)
@@ -2542,7 +2552,7 @@ fn render_review_file_tree(model: &DiffReviewPresentation, palette: FilePalette)
         .flex()
         .flex_col()
         .gap(px(4.0))
-        .text_size(px(13.0))
+        .text_size(px(crate::typography::ui_size(13.0)))
         .line_height(px(18.0))
         .text_color(palette.text)
         .child(

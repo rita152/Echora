@@ -674,7 +674,7 @@ pub fn render_permissions_approval(
                 .flex()
                 .items_center()
                 .gap(px(8.0))
-                .text_size(px(12.95))
+                .text_size(px(crate::typography::ui_size(12.95)))
                 .line_height(px(20.0))
                 .font_weight(FontWeight::NORMAL)
                 .text_color(palette.secondary)
@@ -697,8 +697,8 @@ pub fn render_permissions_approval(
                     content.child(
                         div()
                             .h(px(19.5))
-                            .text_size(px(13.0))
-                            .line_height(px(19.5))
+                            .text_size(px(crate::typography::ui_size(13.0)))
+                            .line_height(px(crate::typography::ui_leading(13.0, 19.5)))
                             .font_weight(FontWeight::NORMAL)
                             .text_color(palette.description)
                             .child(reason),
@@ -708,7 +708,7 @@ pub fn render_permissions_approval(
                     content.child(
                         div()
                             .h(px(19.5))
-                            .text_size(px(12.0))
+                            .text_size(px(crate::typography::ui_size(12.0)))
                             .line_height(px(19.5))
                             .font_weight(FontWeight::NORMAL)
                             .text_color(palette.description)
@@ -743,7 +743,7 @@ pub fn render_permissions_approval(
         .when(decline_focused, |button| {
             button.shadow(palette.focus_shadow(false))
         })
-        .text_size(px(12.95))
+        .text_size(px(crate::typography::ui_size(12.95)))
         .line_height(px(18.0))
         .font_weight(FontWeight::NORMAL)
         .text_color(if palette.mode == ThemeMode::Dark {
@@ -812,7 +812,7 @@ pub fn render_permissions_approval(
         .when(allow_focused, |button| {
             button.shadow(palette.focus_shadow(true))
         })
-        .text_size(px(12.95))
+        .text_size(px(crate::typography::ui_size(12.95)))
         .line_height(px(18.0))
         .font_weight(FontWeight::NORMAL)
         .text_color(palette.approve_text)
@@ -956,16 +956,16 @@ fn render_permissions_status(
         .text_color(palette.text)
         .child(
             div()
-                .text_size(px(14.0))
-                .line_height(px(20.0))
+                .text_size(px(crate::typography::ui_size(14.0)))
+                .line_height(px(crate::typography::ui_leading(14.0, 20.0)))
                 .font_weight(FontWeight::MEDIUM)
                 .child(status),
         )
         .when_some(model.failure_message.clone(), |card, message| {
             card.child(
                 div()
-                    .text_size(px(12.0))
-                    .line_height(px(18.0))
+                    .text_size(px(crate::typography::ui_size(12.0)))
+                    .line_height(px(crate::typography::ui_leading(12.0, 18.0)))
                     .text_color(palette.description)
                     .child(message),
             )
@@ -979,8 +979,8 @@ fn render_question(model: &PermissionApprovalPresentation, palette: PermissionPa
         .flex()
         .items_center()
         .overflow_hidden()
-        .text_size(px(14.0))
-        .line_height(px(20.0))
+        .text_size(px(crate::typography::ui_size(14.0)))
+        .line_height(px(crate::typography::ui_leading(14.0, 20.0)))
         .font_weight(FontWeight::MEDIUM)
         .text_color(palette.text);
     for part in model.question_parts() {
@@ -1017,7 +1017,7 @@ fn keycap(label: &'static str, color: gpui::Rgba) -> Div {
         .justify_center()
         .rounded(px(6.0))
         .bg(color.alpha(0.10))
-        .text_size(px(12.0))
+        .text_size(px(crate::typography::ui_size(12.0)))
         .line_height(px(16.0))
         .font_weight(FontWeight::NORMAL)
         .text_color(color)
@@ -1087,8 +1087,8 @@ fn menu_row(
         .items_center()
         .rounded(px(12.5))
         .when(focused, |row| row.bg(palette.menu_focus))
-        .text_size(px(13.0))
-        .line_height(px(18.5714))
+        .text_size(px(crate::typography::ui_size(13.0)))
+        .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
         .font_weight(FontWeight::NORMAL)
         .text_color(palette.text)
         .cursor_pointer()

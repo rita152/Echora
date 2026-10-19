@@ -21,7 +21,15 @@ const GUTTER_WIDTH: f32 = 52.5625;
 const CELL_PADDING: f32 = 7.22461;
 /// The diff line box, `calc(12px * 1.8)`. Rows take it from their text rather
 /// than an authored height, which layout would snap to 21.5px and drift.
-pub(super) const LINE_HEIGHT: f32 = 21.6;
+pub(super) fn line_height() -> f32 {
+    crate::typography::diff_line_height()
+}
+fn gutter_width() -> f32 {
+    GUTTER_WIDTH * crate::typography::code_size() / 12.0
+}
+fn cell_padding() -> f32 {
+    CELL_PADDING * crate::typography::code_size() / 12.0
+}
 /// The sticky file header block: the 32px header and 2px below it.
 const STICKY_HEADER_HEIGHT: f32 = 34.0;
 /// A hunk separator row (`[data-separator="line-info"]`).
@@ -156,7 +164,7 @@ impl PullRequestsView {
         // The file tree floats over the diff, which keeps its width.
         let tree = 0.0;
         let cell = self.pane_width - tree - self.scrollbar_gutter();
-        let code = |cell: f32| (cell - GUTTER_WIDTH - CELL_PADDING * 2.0).max(40.0);
+        let code = |cell: f32| (cell - gutter_width() - cell_padding() * 2.0).max(40.0);
         // A split half gives 1px to the 2px gap between the halves.
         self.set_code_width(code(cell), code(cell / 2.0 - 1.0));
     }
@@ -288,8 +296,8 @@ impl PullRequestsView {
                     .flex()
                     .items_center()
                     .gap(px(8.0))
-                    .text_size(px(13.0))
-                    .line_height(px(18.5714))
+                    .text_size(px(crate::typography::ui_size(13.0)))
+                    .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
                     .text_color(theme.text_muted)
                     .child(div().min_w(px(0.0)).truncate().child(head))
                     .child(
@@ -398,7 +406,7 @@ impl PullRequestsView {
             .p(px(8.0))
             .flex()
             .items_center()
-            .text_size(px(13.0))
+            .text_size(px(crate::typography::ui_size(13.0)))
             .child(
                 self.with_tooltip(
                     pill(
@@ -615,7 +623,7 @@ impl PullRequestsView {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .text_color(theme.text_muted)
                     .child("Loading pull request changes")
                     .into_any_element(),
@@ -629,7 +637,7 @@ impl PullRequestsView {
                     .items_center()
                     .justify_center()
                     .px(px(16.0))
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .text_color(theme.warning)
                     .child(error)
                     .flex_col()
@@ -660,7 +668,7 @@ impl PullRequestsView {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .text_color(theme.text_muted)
                     .child("No changed files")
                     .into_any_element(),
@@ -716,8 +724,8 @@ impl PullRequestsView {
                     .flex()
                     .items_center()
                     .gap(px(8.0))
-                    .text_size(px(14.0))
-                    .line_height(px(21.0))
+                    .text_size(px(crate::typography::ui_size(14.0)))
+                    .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                     .bg(theme.diff_header_surface)
                     // `hover:bg-primary-ghost-hover`
                     .hover(move |style| style.bg(theme.row_hover))
@@ -1028,8 +1036,8 @@ impl PullRequestsView {
                     .when(!review, |content| content.rounded_l(px(6.0)))
                     .rounded_r(px(8.0))
                     .bg(theme.diff_expander_surface)
-                    .text_size(px(12.0))
-                    .line_height(px(LINE_HEIGHT))
+                    .text_size(px(crate::typography::code_size()))
+                    .line_height(px(line_height()))
                     .text_color(theme.diff_gutter_text)
                     .child(div().truncate().child(label)),
             )
@@ -1048,13 +1056,13 @@ impl PullRequestsView {
             .child(
                 div()
                     .min_w(px(0.0))
-                    .px(px(CELL_PADDING))
+                    .px(px(cell_padding()))
                     .font_family(UI_MONOSPACE_FONT_FAMILY)
-                    .text_size(px(12.0))
+                    .text_size(px(crate::typography::code_size()))
                     .text_color(theme.diff_context_text)
-                    .line_height(px(LINE_HEIGHT))
+                    .line_height(px(line_height()))
                     .when(self.wrap, |code| {
-                        code.w(px(self.code_width(split) + CELL_PADDING * 2.0))
+                        code.w(px(self.code_width(split) + cell_padding() * 2.0))
                             .whitespace_normal()
                     })
                     .when(!self.wrap, |code| code.whitespace_nowrap())
@@ -1080,7 +1088,7 @@ impl PullRequestsView {
                     .mr(px(1.0))
                     .flex()
                     .bg(theme.diff_expander_surface)
-                    .child(div().flex_none().w(px(GUTTER_WIDTH)))
+                    .child(div().flex_none().w(px(gutter_width())))
                     .child(
                         div()
                             .flex_1()
@@ -1088,8 +1096,8 @@ impl PullRequestsView {
                             .flex()
                             .items_center()
                             .px(px(7.6242))
-                            .text_size(px(12.0))
-                            .line_height(px(LINE_HEIGHT))
+                            .text_size(px(crate::typography::code_size()))
+                            .line_height(px(line_height()))
                             .text_color(theme.diff_gutter_text)
                             .child(div().truncate().child(label)),
                     ),
@@ -1115,16 +1123,16 @@ impl PullRequestsView {
         };
         div()
             .relative()
-            .w(px(GUTTER_WIDTH))
+            .w(px(gutter_width()))
             .flex_none()
             .flex()
             .justify_end()
-            .pr(px(CELL_PADDING))
+            .pr(px(cell_padding()))
             .border_r(px(2.0))
             .border_color(theme.surface)
             .bg(surface)
-            .text_size(px(12.0))
-            .line_height(px(LINE_HEIGHT))
+            .text_size(px(crate::typography::code_size()))
+            .line_height(px(line_height()))
             .font_family(UI_MONOSPACE_FONT_FAMILY)
             .text_color(color)
             .when(kind == LineKind::Added, |cell| {
@@ -1192,14 +1200,14 @@ impl PullRequestsView {
                 // holds the text; a flex child would be measured unconstrained.
                 div()
                     .min_w(px(0.0))
-                    .px(px(CELL_PADDING))
+                    .px(px(cell_padding()))
                     .font_family(UI_MONOSPACE_FONT_FAMILY)
-                    .text_size(px(12.0))
+                    .text_size(px(crate::typography::code_size()))
                     .text_color(theme.diff_context_text)
-                    .line_height(px(LINE_HEIGHT))
+                    .line_height(px(line_height()))
                     .when(self.wrap, |code| {
                         code.w(px(
-                            self.code_width(self.file_splits(file)) + CELL_PADDING * 2.0
+                            self.code_width(self.file_splits(file)) + cell_padding() * 2.0
                         ))
                         .whitespace_normal()
                     })
@@ -1228,7 +1236,7 @@ impl PullRequestsView {
                     .absolute()
                     .left(px(28.96875))
                     .top(px(0.0))
-                    .size(px(LINE_HEIGHT))
+                    .size(px(line_height()))
                     .flex()
                     .items_center()
                     .justify_center()
@@ -1307,7 +1315,7 @@ impl PullRequestsView {
             div()
                 .min_w(px(0.0))
                 .truncate()
-                .text_size(px(12.0))
+                .text_size(px(crate::typography::ui_size(12.0)))
                 .line_height(px(16.0))
                 .text_color(theme.text_muted)
                 .child(text)
@@ -1323,7 +1331,7 @@ impl PullRequestsView {
                 .rounded(px(12.5))
                 .border(px(1.0))
                 .border_color(gpui::transparent_black())
-                .text_size(px(12.0))
+                .text_size(px(crate::typography::ui_size(12.0)))
                 .line_height(px(16.0))
                 .role(gpui::Role::Button)
                 .aria_label(label)
@@ -1422,7 +1430,7 @@ impl PullRequestsView {
             .child(
                 div()
                     .flex_none()
-                    .w(px(GUTTER_WIDTH))
+                    .w(px(gutter_width()))
                     .bg(theme.diff_annotation_gutter),
             )
             .child(
@@ -1502,7 +1510,7 @@ impl PullRequestsView {
                     .min_h(px(0.0))
                     .overflow_hidden()
                     .px(px(4.0))
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .font_weight(gpui::FontWeight::NORMAL)
                     .child(rows),
             )
@@ -1778,7 +1786,7 @@ impl PullRequestsView {
                     .blur_radius(px(16.0))
                     .spread_radius(px(-4.0)),
             ])
-            .text_size(px(13.0))
+            .text_size(px(crate::typography::ui_size(13.0)))
             .text_color(theme.text);
         for status in crate::pull_requests::PullRequestStatus::selectable() {
             let disabled = status == current
@@ -1834,7 +1842,7 @@ impl PullRequestsView {
                     .blur_radius(px(16.0))
                     .spread_radius(px(-4.0)),
             ])
-            .text_size(px(13.0))
+            .text_size(px(crate::typography::ui_size(13.0)))
             .text_color(theme.text);
         for entry in entries {
             let view = view.clone();
@@ -2060,7 +2068,7 @@ impl PullRequestsView {
                             .flex()
                             .items_center()
                             .text_color(TREE_CHEVRON)
-                            .text_size(px(12.0))
+                            .text_size(px(crate::typography::ui_size(12.0)))
                             .child(icon("pr-tree-comment", TREE_CHEVRON.into()).size(px(18.0)))
                             // `review-file-tree-comment-N` sets the count at
                             // x 22 of its 29px glyph.

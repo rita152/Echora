@@ -94,7 +94,7 @@ impl ReviewPanel {
             .rounded(px(22.))
             .bg(theme.model_picker_surface)
             .shadow_lg()
-            .text_size(px(13.))
+            .text_size(px(crate::typography::ui_size(13.)))
             .text_color(theme.text)
             .flex()
             .flex_col()
@@ -106,7 +106,11 @@ impl ReviewPanel {
                     .flex_col()
                     .gap(px(4.))
                     .child(div().text_color(theme.text_tertiary).child("Commit"))
-                    .child(div().text_size(px(14.)).child(self.snapshot.branch.clone()))
+                    .child(
+                        div()
+                            .text_size(px(crate::typography::ui_size(14.)))
+                            .child(self.snapshot.branch.clone()),
+                    )
                     .when(self.new_branch, |s| {
                         s.child(div().h(px(32.)).child(self.branch_input.clone()))
                     })

@@ -817,7 +817,11 @@ impl ComposerView {
             .flex()
             .items_center()
             .gap(px(4.0))
-            .text_size(px(if explicit { 12.0 } else { 14.0 }))
+            .text_size(px(crate::typography::ui_size(if explicit {
+                12.0
+            } else {
+                14.0
+            })))
             .line_height(px(if explicit { 16.0 } else { 20.0 }))
             .text_color(if explicit {
                 theme.text_secondary
@@ -849,8 +853,8 @@ impl ComposerView {
             .when(explicit, |d| {
                 d.child(
                     div()
-                        .text_size(px(14.0))
-                        .line_height(px(20.0))
+                        .text_size(px(crate::typography::ui_size(14.0)))
+                        .line_height(px(crate::typography::ui_leading(14.0, 20.0)))
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(if self.request_effort() == "ultra" {
                             rgba(0xad7bf9ff)
@@ -1029,13 +1033,13 @@ impl ComposerView {
                         .child(
                             div()
                                 .truncate()
-                                .text_size(px(13.0))
+                                .text_size(px(crate::typography::ui_size(13.0)))
                                 .line_height(px(ROW_LINE_HEIGHT))
                                 .child(title),
                         )
                         .children(detail.map(|detail| {
                             div()
-                                .text_size(px(12.0))
+                                .text_size(px(crate::typography::ui_size(12.0)))
                                 .line_height(px(16.0))
                                 .text_color(theme.text_tertiary)
                                 .child(detail)
@@ -1059,7 +1063,7 @@ impl ComposerView {
                 div()
                     .px(px(8.0))
                     .py(px(5.0))
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .line_height(px(ROW_LINE_HEIGHT))
                     .text_color(theme.text_tertiary)
                     .child(crate::i18n::text("选择模型")),
@@ -1077,7 +1081,7 @@ impl ComposerView {
                     div()
                         .px(px(8.0))
                         .py(px(5.0))
-                        .text_size(px(13.0))
+                        .text_size(px(crate::typography::ui_size(13.0)))
                         .line_height(px(ROW_LINE_HEIGHT))
                         .text_color(theme.text_tertiary)
                         .child(

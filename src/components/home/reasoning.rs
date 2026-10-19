@@ -231,8 +231,11 @@ pub(super) fn reasoning_activity(
                         .min_w(px(0.0))
                         .max_w(px(718.0))
                         .truncate()
-                        .text_size(px(REASONING_TEXT_SIZE))
-                        .line_height(px(REASONING_LINE_HEIGHT))
+                        .text_size(px(crate::typography::ui_size(REASONING_TEXT_SIZE)))
+                        .line_height(px(crate::typography::ui_leading(
+                            REASONING_TEXT_SIZE,
+                            REASONING_LINE_HEIGHT,
+                        )))
                         .font_family(".SystemUIFont")
                         .font_weight(FontWeight::NORMAL)
                         .text_color(theme.text.alpha(0.30))
@@ -282,8 +285,11 @@ pub(super) fn reasoning_activity(
                                         cx.stop_propagation();
                                     }
                                 })
-                                .text_size(px(REASONING_TEXT_SIZE))
-                                .line_height(px(REASONING_LINE_HEIGHT))
+                                .text_size(px(crate::typography::ui_size(REASONING_TEXT_SIZE)))
+                                .line_height(px(crate::typography::ui_leading(
+                                    REASONING_TEXT_SIZE,
+                                    REASONING_LINE_HEIGHT,
+                                )))
                                 .font_family(".SystemUIFont")
                                 .font_weight(FontWeight::NORMAL)
                                 .text_color(theme.text.alpha(0.50))

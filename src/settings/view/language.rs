@@ -48,7 +48,7 @@ impl SettingsView {
             .items_center()
             .justify_between()
             .gap(px(8.0))
-            .text_size(px(14.0))
+            .text_size(px(crate::typography::ui_size(14.0)))
             .line_height(px(18.0))
             .text_color(theme.text)
             .whitespace_nowrap()

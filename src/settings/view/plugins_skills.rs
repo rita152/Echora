@@ -322,7 +322,7 @@ impl SettingsView {
                     .gap(px(12.0))
                     .child(
                         div()
-                            .text_size(px(13.0))
+                            .text_size(px(crate::typography::ui_size(13.0)))
                             .line_height(px(19.0))
                             .text_color(theme.warning)
                             .child(error.user_message()),
@@ -337,7 +337,7 @@ impl SettingsView {
                             .border_1()
                             .border_color(theme.border)
                             .bg(theme.settings_button)
-                            .text_size(px(13.0))
+                            .text_size(px(crate::typography::ui_size(13.0)))
                             .line_height(px(18.0))
                             .flex()
                             .items_center()
@@ -411,8 +411,8 @@ impl SettingsView {
                                 div()
                                     .relative()
                                     .top(px(-0.25))
-                                    .text_size(px(14.0))
-                                    .line_height(px(21.0))
+                                    .text_size(px(crate::typography::ui_size(14.0)))
+                                    .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                                     .font_weight(gpui::FontWeight(500.0))
                                     .text_color(if theme.surface == gpui::rgba(0x181818ff) {
                                         gpui::rgba(0xffffffff)
@@ -426,7 +426,7 @@ impl SettingsView {
                                 div()
                                     .relative()
                                     .top(px(0.25))
-                                    .text_size(px(13.0))
+                                    .text_size(px(crate::typography::ui_size(13.0)))
                                     .line_height(px(21.125))
                                     .text_color(if theme.surface == gpui::rgba(0x181818ff) {
                                         gpui::rgba(0xffffffa6)
@@ -456,8 +456,8 @@ impl SettingsView {
                                 .gap(px(12.0))
                                 .child(
                                     div()
-                                        .text_size(px(12.0))
-                                        .line_height(px(18.0))
+                                        .text_size(px(crate::typography::ui_size(12.0)))
+                                        .line_height(px(crate::typography::ui_leading(12.0, 18.0)))
                                         .text_color(theme.warning)
                                         .child(if outcome_unknown {
                                             crate::i18n::format!("{message}（结果未确认）" => "{message} (result unconfirmed)")
@@ -478,8 +478,8 @@ impl SettingsView {
                                         .border_1()
                                         .border_color(theme.border)
                                         .bg(theme.settings_button)
-                                        .text_size(px(12.0))
-                                        .line_height(px(18.0))
+                                        .text_size(px(crate::typography::ui_size(12.0)))
+                                        .line_height(px(crate::typography::ui_leading(12.0, 18.0)))
                                         .flex()
                                         .items_center()
                                         .cursor_pointer()
@@ -506,7 +506,7 @@ impl SettingsView {
             .border_1()
             .border_color(theme.border)
             .bg(theme.settings_panel)
-            .text_size(px(13.0))
+            .text_size(px(crate::typography::ui_size(13.0)))
             .line_height(px(19.0))
             .text_color(theme.settings_description)
             .child(message.to_owned())
@@ -545,8 +545,8 @@ impl SettingsView {
     fn scope_tag(&self, scope: AgentSkillScope, theme: &Theme) -> impl IntoElement {
         div()
             .flex_none()
-            .text_size(px(13.0))
-            .line_height(px(18.5714))
+            .text_size(px(crate::typography::ui_size(13.0)))
+            .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
             .text_color(if theme.surface == gpui::rgba(0x181818ff) {
                 gpui::rgba(0xffffffa6)
             } else {

@@ -348,7 +348,7 @@ impl BrowserPanel {
                         div()
                             .min_w(px(0.))
                             .truncate()
-                            .text_size(px(13.))
+                            .text_size(px(crate::typography::ui_size(13.)))
                             .line_height(px(18.))
                             .text_color(if empty {
                                 theme.text_tertiary
@@ -579,8 +579,8 @@ impl BrowserPanel {
             .flex()
             .items_center()
             .gap(px(10.))
-            .text_size(px(13.))
-            .line_height(px(19.5))
+            .text_size(px(crate::typography::ui_size(13.)))
+            .line_height(px(crate::typography::ui_leading(13., 19.5)))
             .cursor_pointer()
             .when(highlighted, |row| row.bg(theme.ghost_hover))
             .when(!highlighted && hovered, |row| {

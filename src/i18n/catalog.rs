@@ -101,6 +101,8 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "中" => "Medium",
         "临时聊天连接已结束" => "The temporary chat connection ended",
         "主题" => "Theme",
+        "界面字号" => "UI font size",
+        "代码字体大小" => "Code font size",
         "了解更多" => "Learn more",
         "二进制文件内容已更改" => "Binary file changed",
         "互联网和已连接的应用" => "Internet and connected apps",

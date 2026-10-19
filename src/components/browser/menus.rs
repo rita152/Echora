@@ -116,8 +116,8 @@ impl BrowserPanel {
             .shadow(theme.menu_shadow())
             .flex()
             .flex_col()
-            .text_size(px(13.))
-            .line_height(px(18.5714))
+            .text_size(px(crate::typography::ui_size(13.)))
+            .line_height(px(crate::typography::ui_leading(13., 18.5714)))
             .text_color(theme.text)
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(self.overlay_hole(MENU_RADIUS))
@@ -171,7 +171,7 @@ impl BrowserPanel {
                     .border_1()
                     .border_color(theme.border)
                     .bg(theme.text.alpha(0.05))
-                    .text_size(px(12.))
+                    .text_size(px(crate::typography::ui_size(12.)))
                     .line_height(px(16.))
                     .child(
                         zoom_button(
@@ -463,7 +463,7 @@ impl BrowserPanel {
                     .child(crate::i18n::format!("暂无下载内容" => "No downloads yet"))
                     .child(
                         div()
-                            .text_size(px(12.))
+                            .text_size(px(crate::typography::ui_size(12.)))
                             .line_height(px(16.))
                             .text_color(theme.text_tertiary)
                             .child(crate::i18n::format!(
@@ -523,7 +523,7 @@ impl BrowserPanel {
                             .child(div().truncate().child(download.filename.clone()))
                             .child(
                                 div()
-                                    .text_size(px(12.))
+                                    .text_size(px(crate::typography::ui_size(12.)))
                                     .line_height(px(16.))
                                     .text_color(theme.text_tertiary)
                                     .child(status),
@@ -724,7 +724,7 @@ impl BrowserPanel {
                                 div()
                                     .id("browser-find-count")
                                     .role(Role::Status)
-                                    .text_size(px(14.))
+                                    .text_size(px(crate::typography::ui_size(14.)))
                                     .line_height(px(24.))
                                     .text_color(theme.text.alpha(0.5))
                                     .child(status),

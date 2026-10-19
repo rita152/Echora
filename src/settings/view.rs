@@ -35,6 +35,7 @@ use crate::theme::{Theme, ThemeMode, UI_FONT_FAMILY};
 
 pub struct CloseSettings;
 pub struct ChangeTheme(pub ThemeMode);
+pub struct ChangeFontSizes(pub crate::workspace::FontSizes);
 pub struct ChangeLanguage(pub crate::i18n::Language);
 /// The Follow-up behavior segmented control changed.
 pub struct ChangeEnvironmentSection(pub String, pub bool);
@@ -65,6 +66,9 @@ pub struct SettingsView {
     nav_scroll: ScrollHandle,
     content_scroll: ScrollHandle,
     appearance_theme: usize,
+    font_sizes: crate::workspace::FontSizes,
+    font_inputs: [gpui::Entity<crate::components::prompt_input::PromptInput>; 2],
+    font_focus_subscriptions: Vec<gpui::Subscription>,
     pub(super) environment_hidden_sections: Vec<String>,
     pub(super) environment_open: bool,
     pub(super) follow_up_mode: crate::workspace::FollowUpMode,
@@ -138,6 +142,7 @@ pub struct SettingsView {
 
 impl EventEmitter<CloseSettings> for SettingsView {}
 impl EventEmitter<ChangeTheme> for SettingsView {}
+impl EventEmitter<ChangeFontSizes> for SettingsView {}
 impl EventEmitter<ChangeLanguage> for SettingsView {}
 impl EventEmitter<ChangeEnvironmentSection> for SettingsView {}
 impl EventEmitter<ChangeEnvironmentOpen> for SettingsView {}
@@ -197,6 +202,26 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) -> Self {
         let config_choices = backend.config_choices();
+        let font_sizes = crate::typography::sizes();
+        let font_inputs = [font_sizes.ui(), font_sizes.code()].map(|value| {
+            cx.new(|cx| crate::components::prompt_input::PromptInput::number_field(mode, value, cx))
+        });
+        for (index, input) in font_inputs.iter().enumerate() {
+            input.update(cx, |input, _| {
+                input.set_accessible_name(if index == 0 {
+                    "界面字号"
+                } else {
+                    "代码字体大小"
+                })
+            });
+            cx.subscribe(
+                input,
+                move |this, _, event: &crate::components::prompt_input::PromptSubmitted, cx| {
+                    this.commit_font_size(index, &event.0, cx);
+                },
+            )
+            .detach();
+        }
         let branch_prefix_input = cx.new(|cx| {
             let mut input =
                 crate::components::prompt_input::PromptInput::project_name(mode, "codex/", cx);
@@ -395,6 +420,9 @@ impl SettingsView {
             nav_scroll: ScrollHandle::new(),
             content_scroll: ScrollHandle::new(),
             appearance_theme: if mode == ThemeMode::Dark { 2 } else { 1 },
+            font_sizes,
+            font_inputs,
+            font_focus_subscriptions: Vec::new(),
             environment_hidden_sections: Vec::new(),
             environment_open: true,
             follow_up_mode: Default::default(),
@@ -546,6 +574,7 @@ impl SettingsView {
 
 impl Render for SettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.observe_font_focus(window, cx);
         if self.config_menu_focus_pending {
             if self.config_menu.is_some() {
                 self.config_menu_focus.focus(window, cx);
@@ -661,8 +690,8 @@ impl Render for SettingsView {
                             .flex()
                             .items_center()
                             .gap(px(8.0))
-                            .text_size(px(14.0))
-                            .line_height(px(21.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
+                            .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                             .text_color(theme.settings_description)
                             .cursor_pointer()
                             .hover(move |style| style.bg(theme.sidebar_hover))
@@ -688,7 +717,7 @@ impl Render for SettingsView {
                             .flex()
                             .items_center()
                             .gap(px(8.0))
-                            .text_size(px(14.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
                             .line_height(px(18.0))
                             .text_color(theme.text_tertiary)
                             .child(

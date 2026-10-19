@@ -44,6 +44,7 @@ pub(super) struct RenderCache {
     pub(super) tree: file_tree::TreeCache,
     pub(super) tree_scroll: gpui::UniformListScrollHandle,
     mode: Option<ThemeMode>,
+    pub(super) code_size: f32,
     languages: Vec<Option<&'static str>>,
     words: HashMap<LineKey, Vec<Range<usize>>>,
     syntax: HashMap<LineKey, CachedSyntax>,
@@ -57,7 +58,9 @@ pub(super) struct RenderCache {
 
 impl RenderCache {
     pub(super) fn prepare(&mut self, snapshot: &Arc<Snapshot>, mode: ThemeMode) {
-        if self.snapshot.as_ptr() != Arc::as_ptr(snapshot) {
+        let code_size = crate::typography::code_size();
+        if self.snapshot.as_ptr() != Arc::as_ptr(snapshot) || self.code_size != code_size {
+            self.code_size = code_size;
             self.snapshot = Arc::downgrade(snapshot);
             self.tree.invalidate();
             self.languages.clear();
@@ -69,9 +72,9 @@ impl RenderCache {
                 self.languages.push(diff_syntax::language_for(&file.path));
                 for hunk in &file.hunks {
                     for line in &hunk.lines {
-                        self.max_line_width = self
-                            .max_line_width
-                            .max(line.text.chars().count() as f32 * 7.2246 + 20.);
+                        self.max_line_width = self.max_line_width.max(
+                            line.text.chars().count() as f32 * 7.2246 * code_size / 12.0 + 20.,
+                        );
                         largest_line = largest_line
                             .max(line.old.unwrap_or(0))
                             .max(line.new.unwrap_or(0));
@@ -104,7 +107,8 @@ impl RenderCache {
             // Include padding and the change marker. Five-digit source lines
             // must not wrap and double the virtual list's measured row height.
             let digits = largest_line.ilog10() + 1;
-            self.gutter_width = 52.5625_f32.max((digits as f32 * 7.2246 + 19.).ceil());
+            self.gutter_width = (52.5625 * code_size / 12.0)
+                .max((digits as f32 * 7.2246 * code_size / 12.0 + 19.).ceil());
         }
         if self.mode != Some(mode) {
             self.mode = Some(mode);

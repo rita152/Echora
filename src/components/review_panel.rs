@@ -445,6 +445,16 @@ impl ReviewPanel {
     }
     pub fn set_mode(&mut self, mode: ThemeMode, cx: &mut Context<Self>) {
         self.mode = mode;
+        if self.render_cache.code_size != crate::typography::code_size() {
+            let anchor = self.scroll_anchor();
+            self.render_cache.prepare(&self.snapshot, self.mode);
+            self.max_line_width = self.render_cache.max_line_width;
+            self.scroll.reset_with_uniform_height(
+                self.rows.len(),
+                px(crate::typography::diff_line_height()),
+            );
+            self.restore_scroll(anchor);
+        }
         self.branch_picker
             .update(cx, |picker, cx| picker.set_mode(mode, cx));
         self.input.update(cx, |i, cx| i.set_mode(mode, cx));
@@ -863,7 +873,7 @@ impl ReviewPanel {
             .collect();
         self.rows = Arc::new(rows);
         self.scroll
-            .reset_with_uniform_height(self.rows.len(), px(21.6));
+            .reset_with_uniform_height(self.rows.len(), px(crate::typography::diff_line_height()));
         self.restore_scroll(anchor);
         cx.notify();
     }

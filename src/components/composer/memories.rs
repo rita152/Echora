@@ -251,8 +251,8 @@ impl ComposerView {
                         .flex()
                         .flex_col()
                         .gap(px(4.0))
-                        .text_size(px(13.0))
-                        .line_height(px(18.5714))
+                        .text_size(px(crate::typography::ui_size(13.0)))
+                        .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
                         .child(div().font_weight(gpui::FontWeight(500.0)).child(label))
                         .child(
                             div()
@@ -369,7 +369,7 @@ impl ComposerView {
                     .child(
                         div()
                             .mt(px(12.0))
-                            .text_size(px(20.0))
+                            .text_size(px(crate::typography::ui_size(20.0)))
                             .line_height(px(28.0))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .child(title),
@@ -377,8 +377,8 @@ impl ComposerView {
                     .child(
                         div()
                             .mt(px(4.0))
-                            .text_size(px(14.0))
-                            .line_height(px(21.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
+                            .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                             .text_color(theme.text.alpha(0.5))
                             .child(if started {
                                 crate::i18n::format!("这些开关适用于当前聊天" => "These switches apply to the current chat")
@@ -403,7 +403,7 @@ impl ComposerView {
                                     .id("composer-memories-status")
                                     .debug_selector(|| "MEMORIES_STATUS".to_owned())
                                     .mt(px(12.0))
-                                    .text_size(px(12.0))
+                                    .text_size(px(crate::typography::ui_size(12.0)))
                                     .line_height(px(16.0))
                                     .text_color(theme.settings_description)
                                     .child(crate::i18n::format!(
@@ -425,7 +425,7 @@ impl ComposerView {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_size(px(14.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
                             .cursor_pointer()
                             .hover(move |button| button.bg(theme.text.alpha(0.08)))
                             .on_click(cx.listener(|this, _, _, cx| this.close_memories_dialog(cx)))

@@ -307,8 +307,8 @@ impl SettingsView {
             .h(px(21.0))
             .flex()
             .items_center()
-            .text_size(px(14.0))
-            .line_height(px(21.0))
+            .text_size(px(crate::typography::ui_size(14.0)))
+            .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
             .text_color(theme.settings_description)
             .child(crate::i18n::text(
                 "通过配置和已启用的插件管理生命周期钩子。",
@@ -457,7 +457,7 @@ impl SettingsView {
                         .id("hooks-load-error")
                         .mt(px(12.0))
                         .role(Role::Alert)
-                        .text_size(px(13.0))
+                        .text_size(px(crate::typography::ui_size(13.0)))
                         .line_height(px(18.0))
                         .text_color(dynamic::danger_color(self.mode))
                         .child(error),
@@ -486,8 +486,8 @@ impl SettingsView {
                         .flex()
                         .items_center()
                         .gap(px(12.0))
-                        .text_size(px(13.0))
-                        .line_height(px(18.5714))
+                        .text_size(px(crate::typography::ui_size(13.0)))
+                        .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
                         .text_color(theme.text)
                         .whitespace_nowrap()
                         .child(
@@ -525,7 +525,7 @@ impl SettingsView {
                     .child(div().truncate().child(source_label(&selection)))
                     .child(
                         div()
-                            .text_size(px(12.0))
+                            .text_size(px(crate::typography::ui_size(12.0)))
                             .line_height(px(16.0))
                             .font_weight(gpui::FontWeight::NORMAL)
                             .text_color(theme.settings_description)
@@ -585,7 +585,7 @@ impl SettingsView {
                             )
                             .child(
                                 div()
-                                    .text_size(px(20.0))
+                                    .text_size(px(crate::typography::ui_size(20.0)))
                                     .line_height(px(28.0))
                                     .font_weight(gpui::FontWeight::SEMIBOLD)
                                     .child(source_label(&source.selection)),
@@ -594,8 +594,8 @@ impl SettingsView {
                     .child(
                         div()
                             .mt(px(4.0))
-                            .text_size(px(14.0))
-                            .line_height(px(21.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
+                            .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                             .text_color(theme.text.alpha(0.5))
                             .child(subtitle),
                     ),
@@ -647,7 +647,7 @@ impl SettingsView {
                 .child(
                     div()
                         .flex_1()
-                        .text_size(px(13.0))
+                        .text_size(px(crate::typography::ui_size(13.0)))
                         .line_height(px(21.125))
                         .child(crate::i18n::format!("Hook 在沙盒外运行，可能存在安全风险" => "Hooks run outside of the sandbox and may be unsafe")),
                 )
@@ -680,7 +680,7 @@ impl SettingsView {
                     .id("hooks-write-error")
                     .mt(px(12.0))
                     .role(Role::Alert)
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .line_height(px(18.0))
                     .text_color(dynamic::danger_color(self.mode))
                     .child(text)
@@ -710,7 +710,7 @@ impl SettingsView {
                         .child(
                             div().flex().flex_col().child(event_label(*event)).child(
                                 div()
-                                    .text_size(px(12.0))
+                                    .text_size(px(crate::typography::ui_size(12.0)))
                                     .line_height(px(16.0))
                                     .font_weight(gpui::FontWeight::NORMAL)
                                     .text_color(theme.settings_description)
@@ -830,16 +830,19 @@ impl SettingsView {
                                     .size(px(14.0))
                                     .text_color(warning),
                             )
-                            .child(div().text_size(px(13.0)).line_height(px(18.5714)).child(
-                                if crate::i18n::is_english() {
-                                    format!(
-                                        "{} loading hooks for this source",
-                                        counted(count, "", "issue", "issues")
-                                    )
-                                } else {
-                                    format!("此源有 {count} 个钩子加载问题")
-                                },
-                            )),
+                            .child(
+                                div()
+                                    .text_size(px(crate::typography::ui_size(13.0)))
+                                    .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
+                                    .child(if crate::i18n::is_english() {
+                                        format!(
+                                            "{} loading hooks for this source",
+                                            counted(count, "", "issue", "issues")
+                                        )
+                                    } else {
+                                        format!("此源有 {count} 个钩子加载问题")
+                                    }),
+                            ),
                     )
                     .child(chevron(
                         14.0,
@@ -857,7 +860,7 @@ impl SettingsView {
                         .flex()
                         .flex_col()
                         .gap(px(8.0))
-                        .text_size(px(13.0))
+                        .text_size(px(crate::typography::ui_size(13.0)))
                         .line_height(px(18.0))
                         .text_color(theme.text_secondary)
                         .children(details),
@@ -1001,8 +1004,8 @@ impl SettingsView {
                                 div()
                                     .min_w(px(0.0))
                                     .flex_1()
-                                    .text_size(px(14.0))
-                                    .line_height(px(21.0))
+                                    .text_size(px(crate::typography::ui_size(14.0)))
+                                    .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                                     .child(title),
                             )
                             .children(open_button)
@@ -1044,7 +1047,7 @@ impl SettingsView {
         let code = |text: String| {
             div()
                 .font_family(crate::theme::UI_MONOSPACE_FONT_FAMILY)
-                .text_size(px(12.0))
+                .text_size(px(crate::typography::ui_size(12.0)))
                 .child(text)
                 .into_any_element()
         };
@@ -1059,7 +1062,7 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap(px(8.0))
-            .text_size(px(13.0))
+            .text_size(px(crate::typography::ui_size(13.0)))
             .line_height(px(18.0))
             .child(term(
                 crate::i18n::format!("Hook 类型" => "Hook type"),

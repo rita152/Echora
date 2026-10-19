@@ -113,8 +113,8 @@ impl SettingsView {
         let note = directory.changed_in_generation.is_some().then(|| {
             div()
                 .mb(px(8.0))
-                .text_size(px(14.0))
-                .line_height(px(21.0))
+                .text_size(px(crate::typography::ui_size(14.0)))
+                .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .text_color(danger_color(self.mode))
                 .child(crate::i18n::format!(

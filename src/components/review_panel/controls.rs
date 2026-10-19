@@ -393,7 +393,7 @@ impl ReviewPanel {
             .when(glyph.is_some(), |b| b.w(px(28.)))
             .gap(px(4.))
             .rounded(px(12.5))
-            .text_size(px(13.))
+            .text_size(px(crate::typography::ui_size(13.)))
             .line_height(px(18.))
             .text_color(t.text_secondary)
             .hover(move |s| s.bg(t.sidebar_hover).text_color(t.text))
@@ -456,7 +456,7 @@ impl ReviewPanel {
             .pr(px(6.))
             .gap(px(4.))
             .rounded_full()
-            .text_size(px(13.))
+            .text_size(px(crate::typography::ui_size(13.)))
             .line_height(px(20.))
             .text_color(t.text)
             .when(open, |b| b.bg(t.sidebar_hover))
@@ -813,7 +813,7 @@ impl ReviewPanel {
                 div()
                     .p(px(12.))
                     .text_color(t.text_tertiary)
-                    .text_size(px(13.))
+                    .text_size(px(crate::typography::ui_size(13.)))
                     .child(if m == Menu::Commits {
                         crate::i18n::text("分支上暂无提交记录")
                     } else {
@@ -855,7 +855,7 @@ impl ReviewPanel {
                     .items_center()
                     .gap(px(6.))
                     .rounded(px(15.))
-                    .text_size(px(13.))
+                    .text_size(px(crate::typography::ui_size(13.)))
                     .line_height(px(18.5625))
                     .text_color(t.text)
                     .cursor_pointer()
@@ -950,7 +950,7 @@ impl ReviewPanel {
                         .flex()
                         .items_center()
                         .gap(px(4.))
-                        .text_size(px(14.))
+                        .text_size(px(crate::typography::ui_size(14.)))
                         .line_height(px(14.))
                         .child(
                             div()
@@ -1146,7 +1146,7 @@ impl Render for ReviewTooltip {
             .rounded(px(6.))
             .bg(rgba(0x333333ff))
             .text_color(rgba(0xffffffff))
-            .text_size(px(12.))
+            .text_size(px(crate::typography::ui_size(12.)))
             .child(self.0.clone())
     }
 }

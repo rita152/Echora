@@ -215,8 +215,11 @@ impl ChatSearchView {
                     .pt(px(8.0))
                     .flex()
                     .items_center()
-                    .text_size(px(HEADER_FONT_SIZE))
-                    .line_height(px(HEADER_LINE_HEIGHT))
+                    .text_size(px(crate::typography::ui_size(HEADER_FONT_SIZE)))
+                    .line_height(px(crate::typography::ui_leading(
+                        HEADER_FONT_SIZE,
+                        HEADER_LINE_HEIGHT,
+                    )))
                     .text_color(theme.chat_search_description)
                     .child("Files"),
             );
@@ -253,8 +256,11 @@ impl ChatSearchView {
             .px(px(ROW_PADDING_X))
             .flex()
             .items_center()
-            .text_size(px(HEADER_FONT_SIZE))
-            .line_height(px(HEADER_LINE_HEIGHT))
+            .text_size(px(crate::typography::ui_size(HEADER_FONT_SIZE)))
+            .line_height(px(crate::typography::ui_leading(
+                HEADER_FONT_SIZE,
+                HEADER_LINE_HEIGHT,
+            )))
             .text_color(theme.chat_search_description)
             .child(message)
     }
@@ -291,8 +297,11 @@ impl ChatSearchView {
             .flex()
             .items_center()
             .gap(px(FILE_ICON_GAP))
-            .text_size(px(FILE_LABEL_FONT_SIZE))
-            .line_height(px(FILE_LABEL_LINE_HEIGHT))
+            .text_size(px(crate::typography::ui_size(FILE_LABEL_FONT_SIZE)))
+            .line_height(px(crate::typography::ui_leading(
+                FILE_LABEL_FONT_SIZE,
+                FILE_LABEL_LINE_HEIGHT,
+            )))
             .cursor_pointer()
             .when(selected, |row| row.bg(theme.chat_search_row_hover))
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
@@ -331,8 +340,11 @@ impl ChatSearchView {
                     div()
                         .min_w(px(0.0))
                         .truncate()
-                        .text_size(px(FILE_PATH_FONT_SIZE))
-                        .line_height(px(FILE_PATH_LINE_HEIGHT))
+                        .text_size(px(crate::typography::ui_size(FILE_PATH_FONT_SIZE)))
+                        .line_height(px(crate::typography::ui_leading(
+                            FILE_PATH_FONT_SIZE,
+                            FILE_PATH_LINE_HEIGHT,
+                        )))
                         .text_color(theme.chat_search_description)
                         .child(directory),
                 )
@@ -1065,8 +1077,11 @@ impl Render for ChatSearchView {
                         .flex()
                         .items_center()
                         .gap(px(ROW_GAP))
-                        .text_size(px(HEADER_FONT_SIZE))
-                        .line_height(px(HEADER_LINE_HEIGHT))
+                        .text_size(px(crate::typography::ui_size(HEADER_FONT_SIZE)))
+                        .line_height(px(crate::typography::ui_leading(
+                            HEADER_FONT_SIZE,
+                            HEADER_LINE_HEIGHT,
+                        )))
                         .text_color(theme.chat_search_description)
                         .child("Chats")
                         .when(loading, |header| {
@@ -1113,8 +1128,11 @@ impl Render for ChatSearchView {
                                     .px(px(16.0))
                                     .flex()
                                     .items_center()
-                                    .text_size(px(HEADER_FONT_SIZE))
-                                    .line_height(px(HEADER_LINE_HEIGHT))
+                                    .text_size(px(crate::typography::ui_size(HEADER_FONT_SIZE)))
+                                    .line_height(px(crate::typography::ui_leading(
+                                        HEADER_FONT_SIZE,
+                                        HEADER_LINE_HEIGHT,
+                                    )))
                                     .text_color(theme.chat_search_description)
                                     .child("No matches"),
                             ),
@@ -1132,8 +1150,11 @@ impl Render for ChatSearchView {
                         .pt(px(8.0))
                         .flex()
                         .items_center()
-                        .text_size(px(HEADER_FONT_SIZE))
-                        .line_height(px(HEADER_LINE_HEIGHT))
+                        .text_size(px(crate::typography::ui_size(HEADER_FONT_SIZE)))
+                        .line_height(px(crate::typography::ui_leading(
+                            HEADER_FONT_SIZE,
+                            HEADER_LINE_HEIGHT,
+                        )))
                         .text_color(theme.chat_search_description)
                         .child("Quick actions"),
                 );
@@ -1225,8 +1246,11 @@ impl ChatSearchView {
             .rounded(px(ROW_RADIUS))
             .flex()
             .gap(px(ROW_GAP))
-            .text_size(px(ROW_FONT_SIZE))
-            .line_height(px(ROW_LINE_HEIGHT))
+            .text_size(px(crate::typography::ui_size(ROW_FONT_SIZE)))
+            .line_height(px(crate::typography::ui_leading(
+                ROW_FONT_SIZE,
+                ROW_LINE_HEIGHT,
+            )))
             .cursor_pointer()
             .when(selected, |row| {
                 row.bg(theme.chat_search_row_hover).opacity(1.0)
@@ -1289,8 +1313,11 @@ impl ChatSearchView {
                             .w(px(PROJECT_LABEL_WIDTH))
                             .flex_none()
                             .truncate()
-                            .text_size(px(HEADER_FONT_SIZE))
-                            .line_height(px(HEADER_LINE_HEIGHT))
+                            .text_size(px(crate::typography::ui_size(HEADER_FONT_SIZE)))
+                            .line_height(px(crate::typography::ui_leading(
+                                HEADER_FONT_SIZE,
+                                HEADER_LINE_HEIGHT,
+                            )))
                             .text_right()
                             .text_color(theme.chat_search_description)
                             .child(project),
@@ -1304,8 +1331,11 @@ impl ChatSearchView {
                     .w_full()
                     .pt(px(SNIPPET_TOP_PADDING))
                     .truncate()
-                    .text_size(px(SNIPPET_FONT_SIZE))
-                    .line_height(px(SNIPPET_LINE_HEIGHT))
+                    .text_size(px(crate::typography::ui_size(SNIPPET_FONT_SIZE)))
+                    .line_height(px(crate::typography::ui_leading(
+                        SNIPPET_FONT_SIZE,
+                        SNIPPET_LINE_HEIGHT,
+                    )))
                     .text_color(theme.chat_search_description)
                     .child(snippet),
             );
@@ -1334,8 +1364,11 @@ impl ChatSearchView {
             .flex()
             .items_center()
             .gap(px(ROW_GAP))
-            .text_size(px(ROW_FONT_SIZE))
-            .line_height(px(ROW_LINE_HEIGHT))
+            .text_size(px(crate::typography::ui_size(ROW_FONT_SIZE)))
+            .line_height(px(crate::typography::ui_leading(
+                ROW_FONT_SIZE,
+                ROW_LINE_HEIGHT,
+            )))
             .cursor_pointer()
             .when(selected, |row| {
                 row.bg(theme.chat_search_row_hover).opacity(1.0)
@@ -1433,7 +1466,7 @@ fn shortcut_hint(label: String, theme: Theme) -> impl IntoElement {
             .bg(theme.chat_search_hint_surface)
             .flex()
             .items_center()
-            .text_size(px(HINT_FONT_SIZE))
+            .text_size(px(crate::typography::ui_size(HINT_FONT_SIZE)))
             .line_height(px(HINT_LINE_HEIGHT))
             .text_color(theme.chat_search_text)
             .child(label),

@@ -259,7 +259,7 @@ mod tests {
             fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
                 div()
                     .w(px(300.0))
-                    .text_size(px(20.0))
+                    .text_size(px(crate::typography::ui_size(20.0)))
                     .line_height(px(28.0))
                     .child(selectable(1, StyledText::new("á👩‍🚀中")))
             }

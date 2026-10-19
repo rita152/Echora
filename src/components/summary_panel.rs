@@ -571,8 +571,8 @@ impl SummaryPanel {
                     .items_center()
                     .gap(px(6.0))
                     .cursor_pointer()
-                    .text_size(px(13.0))
-                    .line_height(px(18.5714))
+                    .text_size(px(crate::typography::ui_size(13.0)))
+                    .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
                     .text_color(theme.icon_muted)
                     .on_click(cx.listener(move |this, _, _, cx| this.toggle_section(key, cx)))
                     .child(div().min_w(px(0.0)).truncate().child(title))
@@ -722,8 +722,8 @@ impl SummaryPanel {
                             .flex_1()
                             .overflow_hidden()
                             .whitespace_nowrap()
-                            .text_size(px(13.0))
-                            .line_height(px(18.5714))
+                            .text_size(px(crate::typography::ui_size(13.0)))
+                            .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
                             .text_color(theme.text)
                             .child(label)
                             // The reference fades a long label out over its
@@ -867,8 +867,8 @@ impl SummaryPanel {
             .gap(px(6.0))
             .cursor_pointer()
             .hover(move |style| style.bg(theme.menu_hover))
-            .text_size(px(13.0))
-            .line_height(px(18.5714))
+            .text_size(px(crate::typography::ui_size(13.0)))
+            .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
             .text_color(color)
             .when(!danger, |item| {
                 item.child(icon(glyph, theme.text.into()).size(px(16.0)).flex_none())
@@ -1097,7 +1097,7 @@ impl SummaryPanel {
                 .child(
                     div()
                         .flex_none()
-                        .text_size(px(13.0))
+                        .text_size(px(crate::typography::ui_size(13.0)))
                         .text_color(theme.text_muted)
                         .child(crate::i18n::format!("附加" => "Attach")),
                 );
@@ -1217,7 +1217,7 @@ impl SummaryPanel {
                     .h(px(ROW_HEIGHT))
                     .flex()
                     .items_center()
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .text_color(theme.text_muted)
                     .cursor_pointer()
                     .hover(move |style| style.text_color(theme.icon_muted))

@@ -166,7 +166,7 @@ impl BrowserPanel {
                             .w_full()
                             .truncate()
                             .text_center()
-                            .text_size(px(13.))
+                            .text_size(px(crate::typography::ui_size(13.)))
                             .line_height(px(20.))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(theme.text)
@@ -203,8 +203,8 @@ impl BrowserPanel {
 fn section(title: String, theme: BrowserTheme) -> Div {
     div().flex().flex_col().gap(px(16.)).child(
         div()
-            .text_size(px(13.))
-            .line_height(px(18.5714))
+            .text_size(px(crate::typography::ui_size(13.)))
+            .line_height(px(crate::typography::ui_leading(13., 18.5714)))
             .font_weight(FontWeight::MEDIUM)
             .text_color(theme.text)
             .child(title),
@@ -250,8 +250,8 @@ fn tool_row(
                 .min_w(px(0.))
                 .flex_1()
                 .truncate()
-                .text_size(px(13.))
-                .line_height(px(18.5714))
+                .text_size(px(crate::typography::ui_size(13.)))
+                .line_height(px(crate::typography::ui_leading(13., 18.5714)))
                 .font_weight(FontWeight::NORMAL)
                 .text_color(theme.text)
                 .child(label),
@@ -265,7 +265,7 @@ fn tool_row(
                 .py(px(2.))
                 .rounded(px(10.))
                 .bg(theme.kbd)
-                .text_size(px(12.))
+                .text_size(px(crate::typography::ui_size(12.)))
                 .line_height(px(12.))
                 .text_color(theme.text_secondary)
                 .flex()

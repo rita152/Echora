@@ -189,7 +189,7 @@ impl Render for BranchPicker {
                     .px(px(8.))
                     .flex()
                     .items_center()
-                    .text_size(px(13.))
+                    .text_size(px(crate::typography::ui_size(13.)))
                     .text_color(t.text_tertiary)
                     .child(if self.branches.is_empty() {
                         crate::i18n::format!("暂无分支" => "No branches")
@@ -224,8 +224,8 @@ impl Render for BranchPicker {
                     .gap(px(6.))
                     .rounded(px(15.))
                     .overflow_hidden()
-                    .text_size(px(13.))
-                    .line_height(px(18.5714))
+                    .text_size(px(crate::typography::ui_size(13.)))
+                    .line_height(px(crate::typography::ui_leading(13., 18.5714)))
                     .text_color(t.text)
                     .cursor_pointer()
                     .when(self.keyboard_selection && self.selected == index, |row| {
@@ -335,8 +335,8 @@ impl Render for BranchPicker {
                     .py(px(4.))
                     .flex()
                     .items_center()
-                    .text_size(px(13.))
-                    .line_height(px(18.5714))
+                    .text_size(px(crate::typography::ui_size(13.)))
+                    .line_height(px(crate::typography::ui_leading(13., 18.5714)))
                     .text_color(t.text_tertiary)
                     .child(crate::i18n::format!("分支" => "Branches")),
             )

@@ -49,7 +49,7 @@ impl SettingsView {
                     .px(px(8.0))
                     .py(px(3.0))
                     .rounded_full()
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .cursor_pointer()
                     .text_color(if index == selected {
                         theme.text
@@ -210,7 +210,7 @@ impl SettingsView {
                 div()
                     .relative()
                     .top(px(1.0))
-                    .text_size(px(24.0))
+                    .text_size(px(crate::typography::ui_size(24.0)))
                     .line_height(px(31.0))
                     .font_weight(gpui::FontWeight::NORMAL)
                     .text_color(theme.text)

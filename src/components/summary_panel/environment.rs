@@ -253,7 +253,7 @@ impl SummaryPanel {
             .flex()
             .items_center()
             .gap(px(8.))
-            .text_size(px(13.))
+            .text_size(px(crate::typography::ui_size(13.)))
             .line_height(px(20.))
             .text_color(theme.text)
             .when(!enabled, |row| row.opacity(0.5))
@@ -731,7 +731,12 @@ impl SummaryPanel {
                 div()
                     .flex()
                     .items_center()
-                    .child(div().flex_1().text_size(px(18.)).child("Create Branch"))
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_size(px(crate::typography::ui_size(18.)))
+                            .child("Create Branch"),
+                    )
                     .child(button("environment-branch-close", "×", false)),
             )
             .child(
@@ -774,7 +779,7 @@ impl SummaryPanel {
             .w(w.viewport_size().width)
             .h(w.viewport_size().height)
             .bg(gpui::rgba(0x00000099))
-            .text_size(px(13.))
+            .text_size(px(crate::typography::ui_size(13.)))
             .text_color(theme.text)
             .flex()
             .items_center()
@@ -851,7 +856,7 @@ impl SummaryPanel {
             .shadow(vec![
                 gpui::BoxShadow::new(px(0.), px(0.), theme.border.into()).spread_radius(px(0.5)),
             ])
-            .text_size(px(13.))
+            .text_size(px(crate::typography::ui_size(13.)))
             .text_color(theme.text)
             .occlude()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -1067,7 +1072,7 @@ impl SummaryPanel {
                         .when_some(detail, |s, detail| {
                             s.child(
                                 div()
-                                    .text_size(px(11.))
+                                    .text_size(px(crate::typography::ui_size(11.)))
                                     .text_color(theme.text_secondary)
                                     .child(detail),
                             )
@@ -1076,7 +1081,7 @@ impl SummaryPanel {
                 .when(!badge.is_empty(), |s| {
                     s.child(
                         div()
-                            .text_size(px(11.))
+                            .text_size(px(crate::typography::ui_size(11.)))
                             .text_color(theme.text_tertiary)
                             .child(badge),
                     )
@@ -1173,7 +1178,7 @@ impl SummaryPanel {
                     .pr(px(3.))
                     .flex()
                     .items_center()
-                    .text_size(px(12.))
+                    .text_size(px(crate::typography::ui_size(12.)))
                     .text_color(theme.text.alpha(0.32))
                     .child(div().flex_1().child("Environment"))
                     .child(
@@ -1309,7 +1314,7 @@ impl SummaryPanel {
                 div()
                     .px(px(8.))
                     .py(px(4.))
-                    .text_size(px(12.))
+                    .text_size(px(crate::typography::ui_size(12.)))
                     .text_color(theme.text_tertiary)
                     .child(error),
             );
@@ -1327,7 +1332,7 @@ fn environment_label(label: &'static str, theme: Theme) -> Div {
         .px(px(8.))
         .flex()
         .items_center()
-        .text_size(px(12.))
+        .text_size(px(crate::typography::ui_size(12.)))
         .text_color(theme.text.alpha(0.32))
         .child(label)
 }

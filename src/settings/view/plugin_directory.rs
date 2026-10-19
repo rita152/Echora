@@ -47,7 +47,7 @@ impl SettingsView {
                     State::Failed(error) => error.user_message(),
                 };
                 let text = format!("{label}: {status}");
-                div().id(format!("directory-source-{source:?}")).role(Role::Group).aria_label(text.clone()).text_size(px(12.))
+                div().id(format!("directory-source-{source:?}")).role(Role::Group).aria_label(text.clone()).text_size(px(crate::typography::ui_size(12.)))
                     .text_color(theme.text_secondary).child(text)
                     .when(matches!(state, State::Failed(error) if error.kind != crate::agent::AgentPluginsErrorKind::AuthenticationRequired), |row| {
                         let State::Failed(error) = state else { unreachable!() };
@@ -246,7 +246,7 @@ impl SettingsView {
             .px(px(if compact { 7. } else { 14. }))
             .rounded(px(10.))
             .bg(theme.settings_button)
-            .text_size(px(13.))
+            .text_size(px(crate::typography::ui_size(13.)))
             .flex()
             .items_center()
             .justify_center()
@@ -319,14 +319,14 @@ impl SettingsView {
                     .gap(px(3.))
                     .child(
                         div()
-                            .text_size(px(14.))
+                            .text_size(px(crate::typography::ui_size(14.)))
                             .truncate()
                             .child(plugin.display_name().to_owned()),
                     )
                     .when_some(description, |v, description| {
                         v.child(
                             div()
-                                .text_size(px(12.))
+                                .text_size(px(crate::typography::ui_size(12.)))
                                 .text_color(theme.text_secondary)
                                 .truncate()
                                 .child(description),
@@ -436,7 +436,7 @@ impl SettingsView {
                     .gap(px(12.))
                     .child(
                         div()
-                            .text_size(px(16.))
+                            .text_size(px(crate::typography::ui_size(16.)))
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .child(category),
                     )
@@ -472,7 +472,7 @@ impl SettingsView {
                             .gap(px(5.))
                             .child(
                                 div()
-                                    .text_size(px(24.))
+                                    .text_size(px(crate::typography::ui_size(24.)))
                                     .child(plugin.display_name().to_owned()),
                             )
                             .when_some(
@@ -480,7 +480,7 @@ impl SettingsView {
                                 |v, description| {
                                     v.child(
                                         div()
-                                            .text_size(px(14.))
+                                            .text_size(px(crate::typography::ui_size(14.)))
                                             .text_color(theme.text_secondary)
                                             .child(description),
                                     )
@@ -523,7 +523,7 @@ impl SettingsView {
                     if let Some(value) = value {
                         info = info.child(
                             div()
-                                .text_size(px(13.))
+                                .text_size(px(crate::typography::ui_size(13.)))
                                 .text_color(theme.text_secondary)
                                 .child(format!("{label} · {value}")),
                         );
@@ -559,7 +559,7 @@ impl SettingsView {
                                 .focusable()
                                 .tab_stop(true)
                                 .cursor_pointer()
-                                .text_size(px(13.))
+                                .text_size(px(crate::typography::ui_size(13.)))
                                 .text_color(theme.accent)
                                 .on_click(move |_, _, cx| cx.open_url(&url))
                                 .child(label),
@@ -667,7 +667,7 @@ impl SettingsView {
                         })
                         .flex()
                         .items_center()
-                        .text_size(px(14.))
+                        .text_size(px(crate::typography::ui_size(14.)))
                         .child(label)
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.clear_directory_navigation(cx);
@@ -744,8 +744,8 @@ impl SettingsView {
             .gap(px(24.));
         if !detail {
             content = content.child(div().flex().flex_col().gap(px(8.))
-                .child(div().text_size(px(24.)).child(if skills { crate::i18n::text("技能") } else { crate::i18n::text("插件") }))
-                .child(div().text_size(px(14.)).text_color(theme.text_secondary).child(if skills {
+                .child(div().text_size(px(crate::typography::ui_size(24.))).child(if skills { crate::i18n::text("技能") } else { crate::i18n::text("插件") }))
+                .child(div().text_size(px(crate::typography::ui_size(14.))).text_color(theme.text_secondary).child(if skills {
                     crate::i18n::format!("管理 coding agent 可用的技能" => "Manage the skills available to your coding agent")
                 } else { crate::i18n::format!("连接插件，让 Codex 在你的各类工具中协同工作" => "Connect plugins to work across your tools with Codex") })))
                 .child(div().w_full().h(px(40.)).px(px(12.)).rounded(px(12.)).border_1().border_color(theme.border)
@@ -772,7 +772,7 @@ impl SettingsView {
                                     })
                                     .flex()
                                     .items_center()
-                                    .text_size(px(14.))
+                                    .text_size(px(crate::typography::ui_size(14.)))
                                     .child(scope.label())
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.select_directory_scope(scope, cx)

@@ -146,7 +146,7 @@ pub(super) fn user_message_text_width(message: &str, window: &mut Window) -> f32
                     .text_system()
                     .shape_line(
                         line.to_owned().into(),
-                        px(USER_MESSAGE_TEXT_SIZE),
+                        px(crate::typography::prose_size(USER_MESSAGE_TEXT_SIZE)),
                         &[run],
                         None,
                     )
@@ -175,8 +175,8 @@ pub(super) fn user_message_bubble(
         .px(px(USER_MESSAGE_HORIZONTAL_PADDING))
         .py(px(USER_MESSAGE_VERTICAL_PADDING))
         .relative()
-        .text_size(px(USER_MESSAGE_TEXT_SIZE))
-        .line_height(px(USER_MESSAGE_LINE_HEIGHT))
+        .text_size(px(crate::typography::prose_size(USER_MESSAGE_TEXT_SIZE)))
+        .line_height(px(crate::typography::prose_size(USER_MESSAGE_LINE_HEIGHT)))
         .font_family(".SystemUIFont")
         .font_weight(FontWeight(430.0))
         .text_color(theme.user_message_text)
@@ -232,7 +232,7 @@ pub(super) fn user_message_images(
                     let thumbnail = if let UserMessageAttachment::File(path) = &image {
                         div()
                             .p(px(6.0))
-                            .text_size(px(11.0))
+                            .text_size(px(crate::typography::ui_size(11.0)))
                             .text_color(theme.text)
                             .child(
                                 path.file_name()
@@ -244,7 +244,7 @@ pub(super) fn user_message_images(
                     } else if unavailable {
                         div()
                             .p(px(6.0))
-                            .text_size(px(11.0))
+                            .text_size(px(crate::typography::ui_size(11.0)))
                             .text_color(theme.text_tertiary)
                             .child(crate::i18n::text("图片不可用"))
                             .into_any_element()
@@ -371,7 +371,7 @@ pub(super) fn current_user_message(
     let edit_home = home.clone();
     div()
         .min_h(px(USER_MESSAGE_VERTICAL_PADDING * 2.0
-            + USER_MESSAGE_LINE_HEIGHT
+            + crate::typography::prose_size(USER_MESSAGE_LINE_HEIGHT)
             + if reserve_footer {
                 USER_MESSAGE_FOOTER_OFFSET + USER_MESSAGE_FOOTER_HEIGHT
             } else {
@@ -420,7 +420,7 @@ pub(super) fn current_user_message(
                         .gap(px(USER_MESSAGE_FOOTER_GAP))
                         .child(
                             div()
-                                .text_size(px(USER_MESSAGE_TIME_SIZE))
+                                .text_size(px(crate::typography::ui_size(USER_MESSAGE_TIME_SIZE)))
                                 .line_height(px(USER_MESSAGE_TIME_LINE_HEIGHT))
                                 .text_color(theme.text_tertiary)
                                 .opacity(if actions_visible_for_capture {
@@ -538,7 +538,7 @@ fn review_mode_tag(theme: Theme) -> impl IntoElement {
         .h_full()
         .flex()
         .items_center()
-        .text_size(px(12.0))
+        .text_size(px(crate::typography::ui_size(12.0)))
         .line_height(px(16.0))
         .text_color(theme.text_tertiary)
         .debug_selector(|| "USER_MESSAGE_REVIEW_MODE".to_owned())
@@ -552,7 +552,7 @@ fn footer_mark(glyph: &'static str, icon_size: f32, gap: f32, label: String, the
         .flex()
         .items_center()
         .gap(px(gap))
-        .text_size(px(12.0))
+        .text_size(px(crate::typography::ui_size(12.0)))
         .line_height(px(16.0))
         .text_color(theme.text_tertiary)
         .child(icon(glyph, theme.text_tertiary.into()).size(px(icon_size)))
@@ -636,7 +636,9 @@ pub(super) fn message_edit_form(
                                 .items_center()
                                 .justify_center()
                                 .gap(px(4.0))
-                                .text_size(px(MESSAGE_EDIT_BUTTON_FONT_SIZE))
+                                .text_size(px(crate::typography::ui_size(
+                                    MESSAGE_EDIT_BUTTON_FONT_SIZE,
+                                )))
                                 .line_height(px(MESSAGE_EDIT_BUTTON_LINE_HEIGHT))
                                 .text_color(theme.text)
                                 .cursor_pointer()
@@ -663,7 +665,9 @@ pub(super) fn message_edit_form(
                                 .items_center()
                                 .justify_center()
                                 .gap(px(4.0))
-                                .text_size(px(MESSAGE_EDIT_BUTTON_FONT_SIZE))
+                                .text_size(px(crate::typography::ui_size(
+                                    MESSAGE_EDIT_BUTTON_FONT_SIZE,
+                                )))
                                 .line_height(px(MESSAGE_EDIT_BUTTON_LINE_HEIGHT))
                                 .text_color(theme.chat_search_surface)
                                 .cursor_pointer()
@@ -830,7 +834,7 @@ pub(super) fn current_response_footer(
                     .items_center()
                     .child(
                         div()
-                            .text_size(px(RESPONSE_TIME_SIZE))
+                            .text_size(px(crate::typography::ui_size(RESPONSE_TIME_SIZE)))
                             .line_height(px(RESPONSE_TIME_LINE_HEIGHT))
                             .font_weight(gpui::FontWeight::NORMAL)
                             .text_color(theme.text_tertiary)

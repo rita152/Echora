@@ -284,7 +284,7 @@ pub(super) fn render_activity_stream_unit(
                         .flex()
                         .flex_col()
                         .gap(px(4.0))
-                        .text_size(px(14.0))
+                        .text_size(px(crate::typography::ui_size(14.0)))
                         .line_height(px(22.75))
                         .text_color(theme.user_message_text)
                         .child(

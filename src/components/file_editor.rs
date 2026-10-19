@@ -18,7 +18,6 @@ use unicode_segmentation::UnicodeSegmentation;
 use crate::theme::{Theme, ThemeMode, UI_MONOSPACE_FONT_FAMILY, ui_font};
 
 const FONT_SIZE: f32 = 12.;
-const LINE_HEIGHT: f32 = 22.;
 const GUTTER: f32 = 46.;
 gpui::actions!(
     file_editor,
@@ -207,6 +206,7 @@ pub struct FileEditor {
     marked: Option<Range<usize>>,
     rows: Vec<Row>,
     layout_width: f32,
+    layout_metrics: (f32, f32),
     layout_dirty: bool,
     scroll: f32,
     bounds: Option<Bounds<Pixels>>,
@@ -277,6 +277,7 @@ impl FileEditor {
             marked: None,
             rows: Vec::new(),
             layout_width: 0.,
+            layout_metrics: (0.0, 0.0),
             layout_dirty: true,
             scroll: 0.,
             bounds: None,
@@ -427,38 +428,38 @@ impl FileEditor {
     }
 
     fn line_height(&self) -> f32 {
-        if let Some((_, line_height)) = self.metrics {
-            return line_height;
+        if let Some((font_size, line_height)) = self.metrics {
+            return crate::typography::ui_leading(font_size, line_height);
         }
         if self.read_only {
-            18.0
+            crate::typography::code_size() * 1.5
         } else if self.composer {
             20.0
         } else if self.prose_label.is_some() {
-            22.75
+            crate::typography::ui_leading(13.0, 22.75)
         } else {
-            LINE_HEIGHT
+            crate::typography::diff_line_height().round()
         }
     }
     fn font_size(&self) -> f32 {
         if let Some((font_size, _)) = self.metrics {
-            return font_size;
+            return crate::typography::ui_size(font_size);
         }
         if self.read_only {
-            12.0
+            crate::typography::code_size()
         } else if self.composer {
-            14.0
+            crate::typography::prose_size(14.0)
         } else if self.prose_label.is_some() {
-            13.0
+            crate::typography::ui_size(13.0)
         } else {
-            FONT_SIZE
+            crate::typography::code_size()
         }
     }
     fn gutter(&self) -> f32 {
         if self.prose_label.is_some() {
             0.0
         } else {
-            GUTTER
+            GUTTER * crate::typography::code_size() / FONT_SIZE
         }
     }
     pub fn set_mode(&mut self, mode: ThemeMode, cx: &mut Context<Self>) {
@@ -813,11 +814,16 @@ impl FileEditor {
             - self.gutter()
             - if self.read_only { 0.0 } else { 16.0 })
         .max(24.);
-        if self.layout_dirty || (self.layout_width - width).abs() > 0.5 {
+        let metrics = (self.font_size(), self.line_height());
+        if self.layout_dirty
+            || self.layout_metrics != metrics
+            || (self.layout_width - width).abs() > 0.5
+        {
             let old_height = self.composer_height();
             let old_rows = self.rows.len();
             self.rows.clear();
             self.layout_width = width;
+            self.layout_metrics = metrics;
             self.layout_dirty = false;
             let theme = Theme::for_mode(self.mode);
             let mut font = ui_font();
@@ -1572,6 +1578,45 @@ impl EntityInputHandler for FileEditor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn font_size_change_reflows_existing_unicode_editor_without_changing_selection_or_text() {
+        let original = crate::typography::sizes();
+        let mut app = gpui::TestApp::new();
+        let source = "中文 English 🦀 long_code_identifier ".repeat(100);
+        let mut window = app.open_window_with_options(gpui::WindowOptions::default(), |_, cx| {
+            FileEditor::new(source.clone(), Some("rust".into()), ThemeMode::Dark, cx)
+        });
+        window.draw();
+        let old_rows = window.read(|editor, _| editor.rows.len());
+        window.update(|editor, _, _| {
+            editor.buffer.anchor = 0;
+            editor.buffer.cursor = "中文 English 🦀".len();
+        });
+        crate::typography::set_sizes(original.with_value(true, 24.0).unwrap());
+        window.update(|_, _, cx| cx.notify());
+        window.draw();
+        window.update(|editor, _, cx| {
+            assert!(
+                editor.rows.len() > old_rows,
+                "existing shaped rows must be invalidated"
+            );
+            assert_eq!(editor.buffer.text, source);
+            editor.copy(cx);
+            assert_eq!(
+                cx.read_from_clipboard()
+                    .and_then(|item| item.text())
+                    .as_deref(),
+                Some("中文 English 🦀")
+            );
+            // Every wrapped run still maps to valid UTF-8 source boundaries.
+            for row in &editor.rows {
+                assert!(source.is_char_boundary(row.start()));
+                assert!(source.is_char_boundary(row.end()));
+            }
+        });
+        crate::typography::set_sizes(original);
+    }
 
     #[test]
     fn approval_preview_keeps_unicode_selection_copy_and_never_edits_the_command() {

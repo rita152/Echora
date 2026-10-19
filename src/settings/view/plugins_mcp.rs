@@ -561,7 +561,7 @@ impl SettingsView {
             let unknown = result.outcome.outcome_unknown();
             body = body.child(
                 div()
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .line_height(px(19.0))
                     .text_color(if failed {
                         theme.warning
@@ -590,7 +590,7 @@ impl SettingsView {
                     .gap(px(12.0))
                     .child(
                         div()
-                            .text_size(px(13.0))
+                            .text_size(px(crate::typography::ui_size(13.0)))
                             .line_height(px(19.0))
                             .text_color(theme.warning)
                             .child(error.user_message()),
@@ -605,7 +605,7 @@ impl SettingsView {
                             .border_1()
                             .border_color(theme.border)
                             .bg(theme.settings_button)
-                            .text_size(px(13.0))
+                            .text_size(px(crate::typography::ui_size(13.0)))
                             .line_height(px(18.0))
                             .flex()
                             .items_center()
@@ -667,7 +667,7 @@ impl SettingsView {
                     .flex()
                     .items_center()
                     .gap(px(6.0))
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .line_height(px(18.0))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| {
@@ -691,7 +691,7 @@ impl SettingsView {
                     .bg(theme.settings_button)
                     .flex()
                     .items_center()
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .line_height(px(18.0))
                     .when(self.mcp.directory.reloading, |button| button.opacity(0.5))
                     .cursor_pointer()
@@ -825,8 +825,10 @@ impl SettingsView {
                                 .gap(px(1.0))
                                 .child(
                                     div()
-                                        .text_size(px(13.0))
-                                        .line_height(px(18.5714))
+                                        .text_size(px(crate::typography::ui_size(13.0)))
+                                        .line_height(px(crate::typography::ui_leading(
+                                            13.0, 18.5714,
+                                        )))
                                         .font_weight(gpui::FontWeight(500.0))
                                         .text_color(primary_text)
                                         .child(server.display_name()),
@@ -834,8 +836,10 @@ impl SettingsView {
                                 .when_some(status_line, |block, line| {
                                     block.child(
                                         div()
-                                            .text_size(px(12.0))
-                                            .line_height(px(18.0))
+                                            .text_size(px(crate::typography::ui_size(12.0)))
+                                            .line_height(px(crate::typography::ui_leading(
+                                                12.0, 18.0,
+                                            )))
                                             .text_color(theme.settings_description)
                                             .child(line),
                                     )
@@ -845,8 +849,8 @@ impl SettingsView {
                             row.child(
                                 div()
                                     .max_w(px(240.0))
-                                    .text_size(px(12.0))
-                                    .line_height(px(18.0))
+                                    .text_size(px(crate::typography::ui_size(12.0)))
+                                    .line_height(px(crate::typography::ui_leading(12.0, 18.0)))
                                     .text_color(theme.warning)
                                     .child(error),
                             )
@@ -894,8 +898,8 @@ impl SettingsView {
                     .pb(px(6.0))
                     .flex()
                     .items_center()
-                    .text_size(px(14.0))
-                    .line_height(px(21.0))
+                    .text_size(px(crate::typography::ui_size(14.0)))
+                    .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                     .font_weight(gpui::FontWeight(500.0))
                     .child(title.to_owned()),
             )
@@ -1030,7 +1034,7 @@ impl SettingsView {
                     .gap(px(1.0))
                     .child(
                         div()
-                            .text_size(px(13.0))
+                            .text_size(px(crate::typography::ui_size(13.0)))
                             .line_height(px(19.0))
                             .font_weight(gpui::FontWeight(500.0))
                             .child(tool.title.clone().unwrap_or_else(|| tool.name.clone())),
@@ -1038,8 +1042,8 @@ impl SettingsView {
                     .when_some(tool.description.clone(), |card, description| {
                         card.child(
                             div()
-                                .text_size(px(12.0))
-                                .line_height(px(18.0))
+                                .text_size(px(crate::typography::ui_size(12.0)))
+                                .line_height(px(crate::typography::ui_leading(12.0, 18.0)))
                                 .text_color(theme.settings_description)
                                 .child(description),
                         )
@@ -1074,7 +1078,7 @@ impl SettingsView {
                 .bg(theme.settings_button)
                 .flex()
                 .items_center()
-                .text_size(px(13.0))
+                .text_size(px(crate::typography::ui_size(13.0)))
                 .line_height(px(18.0))
                 .cursor_pointer()
                 .on_click(cx.listener(|this, _, _, cx| this.reload_mcp_servers(cx)))
@@ -1097,8 +1101,8 @@ impl SettingsView {
                         .rounded(px(12.0))
                         .flex()
                         .items_center()
-                        .text_size(px(12.0))
-                        .line_height(px(18.0))
+                        .text_size(px(crate::typography::ui_size(12.0)))
+                        .line_height(px(crate::typography::ui_leading(12.0, 18.0)))
                         .when(selected, |chip| chip.bg(theme.settings_button))
                         .when(!selected, |chip| chip.text_color(theme.text_tertiary))
                         .cursor_pointer()
@@ -1122,7 +1126,7 @@ impl SettingsView {
                     .bg(theme.settings_button)
                     .flex()
                     .items_center()
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .line_height(px(18.0))
                     .cursor_pointer()
                     .on_click(
@@ -1170,15 +1174,15 @@ impl SettingsView {
                             )
                             .child(
                                 div()
-                                    .text_size(px(13.0))
+                                    .text_size(px(crate::typography::ui_size(13.0)))
                                     .line_height(px(18.0))
                                     .child(crate::i18n::text("返回")),
                             ),
                     )
                     .child(
                         div()
-                            .text_size(px(14.0))
-                            .line_height(px(21.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
+                            .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                             .font_weight(gpui::FontWeight(500.0))
                             .child(server.display_name()),
                     ),
@@ -1189,8 +1193,8 @@ impl SettingsView {
                 detail
                     .child(
                         div()
-                            .text_size(px(14.0))
-                            .line_height(px(21.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
+                            .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                             .font_weight(gpui::FontWeight(500.0))
                             .child(crate::i18n::text("工具")),
                     )
@@ -1202,8 +1206,8 @@ impl SettingsView {
                     detail
                         .child(
                             div()
-                                .text_size(px(14.0))
-                                .line_height(px(21.0))
+                                .text_size(px(crate::typography::ui_size(14.0)))
+                                .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                                 .font_weight(gpui::FontWeight(500.0))
                                 .child(crate::i18n::text("资源")),
                         )
@@ -1214,8 +1218,8 @@ impl SettingsView {
                 detail
                     .child(
                         div()
-                            .text_size(px(14.0))
-                            .line_height(px(21.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
+                            .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                             .font_weight(gpui::FontWeight(500.0))
                             .child(crate::i18n::text("服务端扩展字段")),
                     )
@@ -1237,8 +1241,8 @@ impl SettingsView {
                 div()
                     .w(px(120.0))
                     .flex_none()
-                    .text_size(px(12.0))
-                    .line_height(px(18.0))
+                    .text_size(px(crate::typography::ui_size(12.0)))
+                    .line_height(px(crate::typography::ui_leading(12.0, 18.0)))
                     .text_color(theme.text_tertiary)
                     .child(label.to_owned()),
             )
@@ -1246,7 +1250,7 @@ impl SettingsView {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .line_height(px(19.0))
                     .child(value.to_owned()),
             )
@@ -1314,22 +1318,22 @@ impl SettingsView {
                         .gap(px(10.0))
                         .child(
                             div()
-                                .text_size(px(15.0))
+                                .text_size(px(crate::typography::ui_size(15.0)))
                                 .line_height(px(22.0))
                                 .font_weight(gpui::FontWeight(500.0))
                                 .child(title),
                         )
                         .child(
                             div()
-                                .text_size(px(13.0))
+                                .text_size(px(crate::typography::ui_size(13.0)))
                                 .line_height(px(19.0))
                                 .text_color(tone)
                                 .child(detail),
                         )
                         .child(
                             div()
-                                .text_size(px(12.0))
-                                .line_height(px(18.0))
+                                .text_size(px(crate::typography::ui_size(12.0)))
+                                .line_height(px(crate::typography::ui_leading(12.0, 18.0)))
                                 .text_color(theme.text_tertiary)
                                 .child(url.clone()),
                         )
@@ -1349,7 +1353,7 @@ impl SettingsView {
                                         .bg(theme.settings_button)
                                         .flex()
                                         .items_center()
-                                        .text_size(px(13.0))
+                                        .text_size(px(crate::typography::ui_size(13.0)))
                                         .line_height(px(18.0))
                                         .cursor_pointer()
                                         .on_click(cx.listener(move |_, _, _, cx| {
@@ -1365,7 +1369,7 @@ impl SettingsView {
                                         .rounded(px(12.5))
                                         .flex()
                                         .items_center()
-                                        .text_size(px(13.0))
+                                        .text_size(px(crate::typography::ui_size(13.0)))
                                         .line_height(px(18.0))
                                         .cursor_pointer()
                                         .on_click(cx.listener(move |this, _, _, cx| {

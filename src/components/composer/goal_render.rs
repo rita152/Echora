@@ -220,7 +220,7 @@ impl ComposerView {
                         .flex()
                         .items_center()
                         .gap(px(4.0))
-                        .text_size(px(13.0))
+                        .text_size(px(crate::typography::ui_size(13.0)))
                         .line_height(px(18.0))
                         .text_color(muted)
                         .cursor_pointer()

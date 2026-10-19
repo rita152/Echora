@@ -46,7 +46,7 @@ impl ComposerView {
             .flex()
             .flex_col()
             .gap(px(0.0))
-            .text_size(px(14.0))
+            .text_size(px(crate::typography::ui_size(14.0)))
             .text_color(theme.text);
         if let Some(error) = &self.conversation.permission_error
             && !self.thread_owner_warning_visible()
@@ -57,7 +57,7 @@ impl ComposerView {
                     .role(gpui::Role::Alert)
                     .px(px(10.))
                     .min_h(px(32.))
-                    .text_size(px(12.))
+                    .text_size(px(crate::typography::ui_size(12.)))
                     .text_color(theme.warning)
                     .child(error.clone()),
             );
@@ -114,7 +114,7 @@ impl ComposerView {
                             .h(px(24.0))
                             .px(px(8.0))
                             .rounded_full()
-                            .text_size(px(13.0))
+                            .text_size(px(crate::typography::ui_size(13.0)))
                             .line_height(px(18.0))
                             .text_color(theme.text_tertiary)
                             .flex()

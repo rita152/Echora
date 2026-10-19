@@ -641,6 +641,81 @@ const CHATGPT_MARKDOWN_LAYOUT: MarkdownLayout = MarkdownLayout {
     table_cell_max_width: 576.0,
 };
 
+impl MarkdownLayout {
+    fn current() -> Self {
+        use crate::typography::{code_line_height, code_size, prose_size, ui_leading, ui_size};
+        let mut layout = CHATGPT_MARKDOWN_LAYOUT;
+        // These are reference em/--markdown-space metrics; block chrome and
+        // code padding remain fixed pixels. Inline code follows prose, not code.
+        for metric in [
+            &mut layout.base_size,
+            &mut layout.base_line_height,
+            &mut layout.markdown_space,
+            &mut layout.paragraph_space,
+            &mut layout.heading_top,
+            &mut layout.list_padding,
+            &mut layout.list_item_padding,
+            &mut layout.quote_bottom,
+            &mut layout.quote_padding_y,
+            &mut layout.quote_padding_left,
+            &mut layout.quote_line_height,
+            &mut layout.quote_bar_width,
+            &mut layout.rule_margin,
+            &mut layout.inline_code_size,
+            &mut layout.inline_code_line_height,
+            &mut layout.code_margin,
+            &mut layout.table_line_height,
+            &mut layout.table_header_line_height,
+            &mut layout.table_header_padding_y,
+            &mut layout.table_cell_padding_y,
+            &mut layout.table_cell_padding_right,
+            &mut layout.table_header_last_padding_right,
+            &mut layout.table_body_last_padding_bottom,
+        ] {
+            *metric = prose_size(*metric);
+        }
+        layout.inline_code_flow_height = layout.base_line_height + 1.0;
+        layout.code_header_size = ui_size(13.0);
+        layout.code_header_line_height =
+            ui_leading(13.0, CHATGPT_MARKDOWN_LAYOUT.code_header_line_height);
+        layout.code_size = code_size();
+        layout.code_line_height = code_line_height();
+        layout.table_size = prose_size(CHATGPT_MARKDOWN_LAYOUT.table_size).max(code_size());
+        layout
+    }
+}
+
+#[cfg(test)]
+mod font_size_tests {
+    use super::*;
+    #[test]
+    fn font_sizes_keep_inline_code_and_command_output_independent_from_fenced_code() {
+        let original = crate::typography::sizes();
+        let changed = original.with_value(true, 18.0).unwrap();
+        crate::typography::set_sizes(changed);
+        let layout = MarkdownLayout::current();
+        assert_eq!(layout.base_size, 14.0);
+        assert_eq!(layout.inline_code_size, 12.88);
+        assert_eq!((layout.code_size, layout.code_line_height), (18.0, 27.0));
+        assert_eq!(layout.table_size, 18.0);
+        assert_eq!(
+            crate::typography::ui_size(crate::theme::COMMAND_OUTPUT_TEXT_SIZE),
+            13.0
+        );
+        crate::typography::set_sizes(changed.with_value(false, 16.0).unwrap());
+        let layout = MarkdownLayout::current();
+        assert_eq!(layout.base_size, 16.0);
+        assert!((layout.base_line_height - 26.0).abs() < 0.0001);
+        assert!((layout.inline_code_size - 14.72).abs() < 0.001);
+        assert_eq!(layout.code_size, 18.0);
+        assert_eq!(
+            crate::typography::ui_size(crate::theme::COMMAND_OUTPUT_TEXT_SIZE),
+            15.0
+        );
+        crate::typography::set_sizes(original);
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct MarkdownPalette {
     text: Rgba,
@@ -701,7 +776,7 @@ impl MarkdownRenderStyle {
             selectable: false,
             code_weight: CHATGPT_MARKDOWN_BODY_WEIGHT,
             body_weight: CHATGPT_MARKDOWN_BODY_WEIGHT,
-            layout: CHATGPT_MARKDOWN_LAYOUT,
+            layout: MarkdownLayout::current(),
             line_clamp: None,
             paragraph_lines: None,
             centered_measure: true,
@@ -777,12 +852,12 @@ pub fn render_pull_request_markdown(source: &str, theme: Theme, scope: &str) -> 
     let source = strip_html_comments(source);
     let document = parse_markdown(&source);
     let mut style = MarkdownRenderStyle::new(theme);
-    style.layout.base_line_height = PULL_REQUEST_BODY_LINE_HEIGHT;
+    style.layout.base_line_height = crate::typography::prose_size(PULL_REQUEST_BODY_LINE_HEIGHT);
     // `p { margin-bottom: var(--markdown-space) }` before a list or code.
     style.layout.paragraph_space = style.layout.markdown_space;
     style.centered_measure = false;
     style.body_weight = PULL_REQUEST_BODY_WEIGHT;
-    style.layout.quote_line_height = PULL_REQUEST_BODY_LINE_HEIGHT;
+    style.layout.quote_line_height = crate::typography::prose_size(PULL_REQUEST_BODY_LINE_HEIGHT);
     render_block_sequence(
         &document.blocks,
         style,
@@ -795,7 +870,7 @@ pub fn render_pull_request_markdown(source: &str, theme: Theme, scope: &str) -> 
     .w_full()
     .min_w(px(0.0))
     .text_size(px(style.layout.base_size))
-    .line_height(px(PULL_REQUEST_BODY_LINE_HEIGHT))
+    .line_height(px(style.layout.base_line_height))
     .font(pull_request_font())
     .font_weight(PULL_REQUEST_BODY_WEIGHT)
     .text_color(style.palette.text)
@@ -832,24 +907,26 @@ fn small_markdown_style(theme: Theme) -> MarkdownRenderStyle {
     style.centered_measure = false;
     // Every block metric derives from the 13px `--markdown-space` (3.25px)
     // and `--markdown-line-height` (1.625em).
-    let space = PULL_REQUEST_COMMENT_SIZE / 4.0;
-    style.layout.base_size = PULL_REQUEST_COMMENT_SIZE;
-    style.layout.base_line_height = PULL_REQUEST_COMMENT_LINE_HEIGHT;
+    let base = crate::typography::ui_size(PULL_REQUEST_COMMENT_SIZE);
+    let line_height = base * PULL_REQUEST_COMMENT_LINE_HEIGHT / PULL_REQUEST_COMMENT_SIZE;
+    let space = base / 4.0;
+    style.layout.base_size = base;
+    style.layout.base_line_height = line_height;
     style.layout.markdown_space = space;
     style.layout.paragraph_space = space;
     style.layout.heading_top = space * 4.0;
-    style.layout.list_padding = PULL_REQUEST_COMMENT_LINE_HEIGHT;
+    style.layout.list_padding = line_height;
     style.layout.list_item_padding = space * 1.5;
     style.layout.quote_bottom = space * 2.0;
     style.layout.quote_padding_y = space * 2.0;
     style.layout.quote_padding_left = space * 6.0;
     style.layout.quote_bar_width = space;
-    style.layout.quote_line_height = PULL_REQUEST_COMMENT_LINE_HEIGHT;
+    style.layout.quote_line_height = line_height;
     style.layout.rule_margin = space * 7.0;
     style.layout.code_margin = space * 5.0;
-    style.layout.inline_code_size = 11.96;
-    style.layout.inline_code_flow_height = PULL_REQUEST_COMMENT_LINE_HEIGHT + 1.0;
-    style.layout.inline_code_line_height = 14.0;
+    style.layout.inline_code_size = base * 0.92;
+    style.layout.inline_code_flow_height = line_height + 1.0;
+    style.layout.inline_code_line_height = base * 14.0 / 13.0;
     style.body_weight = PULL_REQUEST_BODY_WEIGHT;
     style
 }
@@ -867,8 +944,8 @@ fn render_small_markdown(source: &str, style: MarkdownRenderStyle, scope: &str) 
     )
     .w_full()
     .min_w(px(0.0))
-    .text_size(px(PULL_REQUEST_COMMENT_SIZE))
-    .line_height(px(PULL_REQUEST_COMMENT_LINE_HEIGHT))
+    .text_size(px(style.layout.base_size))
+    .line_height(px(style.layout.base_line_height))
     .font(pull_request_font())
     .font_weight(PULL_REQUEST_BODY_WEIGHT)
     .text_color(style.palette.text)
@@ -2219,8 +2296,11 @@ pub(super) fn render_tool_text(text: &str, theme: Theme, identity: &str) -> Div 
 
 pub(super) fn render_command_tool_text(text: &str, theme: Theme, identity: &str) -> Div {
     let mut style = MarkdownRenderStyle::new(theme);
-    style.layout.code_size = crate::theme::COMMAND_OUTPUT_TEXT_SIZE;
-    style.layout.code_line_height = crate::theme::COMMAND_OUTPUT_LINE_HEIGHT;
+    style.layout.code_size = crate::typography::ui_size(crate::theme::COMMAND_OUTPUT_TEXT_SIZE);
+    style.layout.code_line_height = crate::typography::ui_leading(
+        crate::theme::COMMAND_OUTPUT_TEXT_SIZE,
+        crate::theme::COMMAND_OUTPUT_LINE_HEIGHT,
+    );
     style.code_weight = crate::theme::COMMAND_OUTPUT_FONT_WEIGHT;
     style.palette.text = theme.command_text;
     render_code_block(None, text, style, markdown_hash(&identity))

@@ -194,7 +194,7 @@ pub(super) fn collaboration_activity(
                 .gap(px(6.0))
                 .font_family(".SystemUIFont")
                 .font_weight(FontWeight(430.0))
-                .text_size(px(COLLABORATION_TEXT_SIZE))
+                .text_size(px(crate::typography::ui_size(COLLABORATION_TEXT_SIZE)))
                 .line_height(px(COLLABORATION_ROW_HEIGHT))
                 .text_color(text_color)
                 .child(
@@ -283,7 +283,7 @@ pub(super) fn collaboration_activity(
                 BoxShadow::new(px(0.0), px(0.0), theme.command_border.into())
                     .spread_radius(px(0.5)),
             ])
-            .text_size(px(13.0))
+            .text_size(px(crate::typography::ui_size(13.0)))
             .line_height(px(18.0))
             .text_color(theme.text_secondary);
         if let Some(prompt) = collaboration

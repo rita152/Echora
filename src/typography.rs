@@ -1,5 +1,11 @@
 //! Process-local rendering policy for ChatGPT's `-webkit-font-smoothing: antialiased`.
 
+mod sizes;
+pub use sizes::{
+    code_line_height, code_size, diff_line_height, prose_size, set_sizes, sizes, ui_leading,
+    ui_size,
+};
+
 struct Typography {
     brand_family: gpui::SharedString,
 }

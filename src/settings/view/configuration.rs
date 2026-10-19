@@ -289,7 +289,7 @@ impl SettingsView {
             .items_center()
             .justify_center()
             .gap(px(6.))
-            .text_size(px(14.))
+            .text_size(px(crate::typography::ui_size(14.)))
             .line_height(px(18.))
             .text_color(theme.markdown_text)
             .when(disabled, |button| button.opacity(0.45))
@@ -702,7 +702,7 @@ impl SettingsView {
                     .px(px(10.))
                     .py(px(7.))
                     .rounded(px(12.))
-                    .text_size(px(13.))
+                    .text_size(px(crate::typography::ui_size(13.)))
                     .line_height(px(18.))
                     .when(index == self.config_menu_index, |row| {
                         row.bg(theme.sidebar_hover)
@@ -728,7 +728,7 @@ impl SettingsView {
                     .when_some(detail, |row, detail| {
                         row.child(
                             div()
-                                .text_size(px(12.))
+                                .text_size(px(crate::typography::ui_size(12.)))
                                 .line_height(px(16.))
                                 .text_color(theme.text_tertiary)
                                 .child(detail),
@@ -737,7 +737,7 @@ impl SettingsView {
                     .when_some(reason, |row, reason| {
                         row.child(
                             div()
-                                .text_size(px(11.))
+                                .text_size(px(crate::typography::ui_size(11.)))
                                 .text_color(theme.text_tertiary)
                                 .child(reason),
                         )

@@ -29,8 +29,8 @@ pub(super) fn retrying_error_activity(
         .flex()
         .items_start()
         .gap(px(6.0))
-        .text_size(px(14.0))
-        .line_height(px(21.0))
+        .text_size(px(crate::typography::ui_size(14.0)))
+        .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
         .text_color(theme.text_tertiary)
         .child(
             icon("settings-hooks-refresh", theme.text_tertiary.into())
@@ -43,7 +43,7 @@ pub(super) fn retrying_error_activity(
             |text, details| {
                 text.child(
                     div()
-                        .text_size(px(NOTICE_TEXT_SIZE))
+                        .text_size(px(crate::typography::ui_size(NOTICE_TEXT_SIZE)))
                         .line_height(px(NOTICE_LINE_HEIGHT))
                         .text_color(theme.text_tertiary)
                         .child(details),
@@ -78,7 +78,7 @@ pub(super) fn notice_activity(
         .flex()
         .flex_col()
         .gap(px(content_gap))
-        .text_size(px(NOTICE_TEXT_SIZE))
+        .text_size(px(crate::typography::ui_size(NOTICE_TEXT_SIZE)))
         .line_height(px(if terminal_error {
             21.125
         } else {
@@ -180,8 +180,8 @@ pub(super) fn web_search_activity(
             div()
                 .min_w(px(0.0))
                 .truncate()
-                .text_size(px(14.0))
-                .line_height(px(21.0))
+                .text_size(px(crate::typography::ui_size(14.0)))
+                .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                 .child(label),
         )
 }
@@ -214,8 +214,8 @@ pub(super) fn context_compaction_activity(
         .flex()
         .items_center()
         .gap(px(6.0))
-        .text_size(px(14.0))
-        .line_height(px(21.0))
+        .text_size(px(crate::typography::ui_size(14.0)))
+        .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
         .font_family(".SystemUIFont")
         .text_color(color)
         .child(icon("context-compaction", color.into()).size(px(20.0)))

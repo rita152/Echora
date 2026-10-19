@@ -24,7 +24,7 @@ impl ComposerView {
                     div()
                         .px(px(8.))
                         .py(px(4.))
-                        .text_size(px(13.))
+                        .text_size(px(crate::typography::ui_size(13.)))
                         .line_height(px(18.57))
                         .text_color(theme.text_tertiary)
                         .child(row.group)
@@ -56,7 +56,7 @@ impl ComposerView {
                     .flex()
                     .items_center()
                     .gap(px(6.))
-                    .text_size(px(13.))
+                    .text_size(px(crate::typography::ui_size(13.)))
                     .line_height(px(18.57))
                     .text_color(theme.text)
                     .opacity(if selected { 1. } else { 0.75 })
@@ -112,7 +112,7 @@ impl ComposerView {
                 div()
                     .px(px(8.))
                     .py(px(5.))
-                    .text_size(px(13.))
+                    .text_size(px(crate::typography::ui_size(13.)))
                     .text_color(theme.text_tertiary)
                     .child(crate::i18n::text("正在加载…"))
                     .into_any_element(),
@@ -122,7 +122,7 @@ impl ComposerView {
             children.push(
                 div()
                     .p(px(8.))
-                    .text_size(px(13.))
+                    .text_size(px(crate::typography::ui_size(13.)))
                     .text_color(theme.text_tertiary)
                     .child(crate::i18n::text("无结果"))
                     .into_any_element(),
@@ -134,7 +134,7 @@ impl ComposerView {
                     .px(px(8.))
                     .pt(px(8.))
                     .pb(px(4.))
-                    .text_size(px(13.))
+                    .text_size(px(crate::typography::ui_size(13.)))
                     .text_color(theme.text_tertiary)
                     .child(crate::i18n::text("文件和聊天"))
                     .into_any_element(),
@@ -143,7 +143,7 @@ impl ComposerView {
                 div()
                     .px(px(8.))
                     .py(px(5.))
-                    .text_size(px(13.))
+                    .text_size(px(crate::typography::ui_size(13.)))
                     .text_color(theme.text_tertiary)
                     .child(crate::i18n::text("输入内容以搜索文件或聊天"))
                     .into_any_element(),
@@ -153,7 +153,7 @@ impl ComposerView {
                 div()
                     .px(px(8.))
                     .py(px(5.))
-                    .text_size(px(13.))
+                    .text_size(px(crate::typography::ui_size(13.)))
                     .text_color(theme.text_tertiary)
                     .child(crate::i18n::text("正在搜索…"))
                     .into_any_element(),

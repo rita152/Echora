@@ -22,8 +22,8 @@ impl SettingsView {
             .pb(px(80.0))
             .child(
                 div()
-                    .text_size(px(24.0))
-                    .line_height(px(28.8))
+                    .text_size(px(crate::typography::ui_size(24.0)))
+                    .line_height(px(crate::typography::ui_leading(24.0, 28.8)))
                     .font_weight(gpui::FontWeight::NORMAL)
                     .child(crate::i18n::text(page.label)),
             )
@@ -34,8 +34,8 @@ impl SettingsView {
                     .flex_col()
                     .child(
                         div()
-                            .text_size(px(14.0))
-                            .line_height(px(21.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
+                            .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                             .font_weight(gpui::FontWeight(500.0))
                             .child(crate::i18n::format!("Codex 记忆" => "Codex memory")),
                     )
@@ -45,7 +45,7 @@ impl SettingsView {
                             .flex()
                             .items_center()
                             .gap(px(4.0))
-                            .text_size(px(13.0))
+                            .text_size(px(crate::typography::ui_size(13.0)))
                             .line_height(px(18.0))
                             .text_color(theme.settings_description)
                             .child(crate::i18n::format!(

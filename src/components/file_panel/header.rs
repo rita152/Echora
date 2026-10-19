@@ -63,8 +63,8 @@ impl FilePanel {
             .items_center()
             .justify_end()
             .overflow_hidden()
-            .text_size(px(13.))
-            .line_height(px(18.5714))
+            .text_size(px(crate::typography::ui_size(13.)))
+            .line_height(px(crate::typography::ui_leading(13., 18.5714)))
             .text_color(theme.text_secondary)
             .when(crumbs.is_empty(), |nav| nav.child("/"))
             .children(crumbs.into_iter().enumerate().map(|(index, crumb)| {
@@ -92,7 +92,7 @@ impl FilePanel {
         let status = self.current().filter(|d| d.editor.is_some()).map(|d| {
             div()
                 .flex_none()
-                .text_size(px(11.))
+                .text_size(px(crate::typography::ui_size(11.)))
                 .text_color(if d.error.is_some() {
                     theme.warning
                 } else {
@@ -301,7 +301,7 @@ impl FilePanel {
                 .flex()
                 .items_center()
                 .gap(px(6.))
-                .text_size(px(13.))
+                .text_size(px(crate::typography::ui_size(13.)))
                 .text_color(theme.text)
                 .cursor_pointer()
                 .hover(move |s| s.bg(theme.sidebar_hover))

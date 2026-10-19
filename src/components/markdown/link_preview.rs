@@ -285,7 +285,7 @@ pub(super) fn card(
                 .min_w(px(0.0))
                 .flex_1()
                 .truncate()
-                .text_size(px(12.0))
+                .text_size(px(crate::typography::ui_size(12.0)))
                 .line_height(px(16.0))
                 .text_color(palette.secondary)
                 .child(host),
@@ -299,7 +299,7 @@ pub(super) fn card(
                 .gap(px(4.0))
                 .cursor_default()
                 .debug_selector(|| "MARKDOWN_LINK_PREVIEW_OPEN".to_owned())
-                .text_size(px(12.0))
+                .text_size(px(crate::typography::ui_size(12.0)))
                 .line_height(px(16.0))
                 .text_color(palette.text)
                 .child(crate::i18n::text("打开"))
@@ -350,7 +350,7 @@ pub(super) fn card(
             if let Some(title) = metadata.title {
                 text = text.child(
                     div()
-                        .text_size(px(13.0))
+                        .text_size(px(crate::typography::ui_size(13.0)))
                         .line_height(px(17.875))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(palette.text)
@@ -362,7 +362,7 @@ pub(super) fn card(
             if let Some(description) = metadata.description {
                 text = text.child(
                     div()
-                        .text_size(px(13.0))
+                        .text_size(px(crate::typography::ui_size(13.0)))
                         .line_height(px(17.875))
                         .text_color(palette.secondary)
                         .line_clamp(2)

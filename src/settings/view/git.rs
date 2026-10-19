@@ -51,7 +51,7 @@ impl SettingsView {
                         .rounded_full()
                         .flex()
                         .items_center()
-                        .text_size(px(13.0))
+                        .text_size(px(crate::typography::ui_size(13.0)))
                         .cursor_pointer()
                         .text_color(if selected {
                             theme.text
@@ -111,8 +111,8 @@ impl SettingsView {
             .pb(px(80.0))
             .child(
                 div()
-                    .text_size(px(24.0))
-                    .line_height(px(28.8))
+                    .text_size(px(crate::typography::ui_size(24.0)))
+                    .line_height(px(crate::typography::ui_leading(24.0, 28.8)))
                     .font_weight(gpui::FontWeight::NORMAL)
                     .text_color(theme.text)
                     .child(crate::i18n::text(page.label)),

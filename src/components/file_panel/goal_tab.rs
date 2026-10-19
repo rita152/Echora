@@ -249,7 +249,7 @@ impl FilePanel {
                         .flex_1()
                         .min_w(px(0.))
                         .truncate()
-                        .text_size(px(13.))
+                        .text_size(px(crate::typography::ui_size(13.)))
                         .line_height(px(18.))
                         .text_color(if tab.error.is_some() {
                             theme.warning
@@ -289,7 +289,7 @@ impl FilePanel {
                         .border_color(theme.border)
                         .flex()
                         .items_center()
-                        .text_size(px(13.))
+                        .text_size(px(crate::typography::ui_size(13.)))
                         .line_height(px(18.))
                         .bg(theme.text)
                         .text_color(theme.surface)

@@ -255,8 +255,8 @@ impl PullRequestsView {
                     .child(
                         div()
                             .max_w(px(576.0))
-                            .text_size(px(14.0))
-                            .line_height(px(20.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
+                            .line_height(px(crate::typography::ui_leading(14.0, 20.0)))
                             .text_color(theme.text_muted)
                             .text_center()
                             .child(error),
@@ -327,8 +327,8 @@ impl PullRequestsView {
                     .when(faded, |content| content.opacity(0.6))
                     .child(
                         div()
-                            .text_size(px(16.0))
-                            .line_height(px(24.0))
+                            .text_size(px(crate::typography::ui_size(16.0)))
+                            .line_height(px(crate::typography::ui_leading(16.0, 24.0)))
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(theme.text)
                             .child(title),
@@ -443,7 +443,7 @@ impl PullRequestsView {
                         .items_center()
                         .gap(px(4.0))
                         .rounded(px(7.5))
-                        .text_size(px(12.0))
+                        .text_size(px(crate::typography::ui_size(12.0)))
                         .line_height(px(16.0))
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(theme.text_muted)
@@ -501,7 +501,7 @@ impl PullRequestsView {
             .flex()
             .items_center()
             .gap(px(8.0))
-            .text_size(px(14.0))
+            .text_size(px(crate::typography::ui_size(14.0)))
             .role(gpui::Role::Button)
             .aria_label(SharedString::from(item.title.clone()))
             .aria_selected(selected)
@@ -552,7 +552,7 @@ impl PullRequestsView {
                                     .min_h(px(20.0))
                                     .flex()
                                     .items_center()
-                                    .text_size(px(12.0))
+                                    .text_size(px(crate::typography::ui_size(12.0)))
                                     .line_height(px(16.0))
                                     .text_color(theme.text_muted)
                                     .child(item.age.clone()),
@@ -565,7 +565,7 @@ impl PullRequestsView {
                             .items_center()
                             .justify_between()
                             .gap(px(8.0))
-                            .text_size(px(12.0))
+                            .text_size(px(crate::typography::ui_size(12.0)))
                             .line_height(px(16.0))
                             .text_color(theme.text_muted)
                             .child(

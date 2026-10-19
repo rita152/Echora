@@ -6,6 +6,14 @@
 
 #![allow(dead_code)]
 
+#[path = "../src/workspace/preferences/font_sizes.rs"]
+mod font_sizes;
+mod workspace {
+    pub use crate::font_sizes::FontSizes;
+}
+#[path = "../src/typography/sizes.rs"]
+mod typography;
+
 #[path = "../src/i18n.rs"]
 mod i18n;
 #[path = "../src/components/icons.rs"]

@@ -251,6 +251,7 @@ impl ChatApp {
             codex_app_server.clone(),
         ));
         let workspace_store = WorkspaceStore::new(agent_backend.clone());
+        crate::typography::set_sizes(workspace_store.snapshot().preferences.font_sizes);
         let sidebar = cx.new(|cx| {
             SidebarView::new(mode, scroll_sidebar_to_bottom, workspace_store.clone(), cx)
         });
@@ -566,6 +567,17 @@ impl ChatApp {
             this.refresh_child_views(cx);
             cx.notify();
         })
+        .detach();
+        cx.subscribe(
+            &settings,
+            |this, _, event: &crate::settings::ChangeFontSizes, cx| {
+                crate::typography::set_sizes(event.0);
+                this.workspace_store.set_font_sizes(event.0);
+                this.refresh_child_views(cx);
+                cx.refresh_windows();
+                cx.notify();
+            },
+        )
         .detach();
         cx.subscribe(&home, |this, _, _: &RequestFullAccessConfirmation, cx| {
             this.open_permission_confirmation(this.home.read(cx).composer_entity(), cx);

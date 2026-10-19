@@ -123,8 +123,8 @@ pub(super) fn body(tab: &BackgroundTerminalTab, theme: Theme) -> Div {
             div()
                 .p(px(16.))
                 .font_family(UI_MONOSPACE_FONT_FAMILY)
-                .text_size(px(12.))
-                .line_height(px(18.))
+                .text_size(px(crate::typography::ui_size(12.)))
+                .line_height(px(crate::typography::ui_leading(12., 18.)))
                 .text_color(theme.text_tertiary)
                 .child(crate::i18n::format!("暂无输出" => "No output yet"))
         } else {
@@ -136,8 +136,8 @@ pub(super) fn body(tab: &BackgroundTerminalTab, theme: Theme) -> Div {
                     .track_scroll(&tab.scroll)
                     .p(px(16.))
                     .font_family(UI_MONOSPACE_FONT_FAMILY)
-                    .text_size(px(12.))
-                    .line_height(px(18.))
+                    .text_size(px(crate::typography::ui_size(12.)))
+                    .line_height(px(crate::typography::ui_leading(12., 18.)))
                     .text_color(theme.text)
                     .whitespace_normal()
                     .children(

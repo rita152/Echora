@@ -411,13 +411,13 @@ impl Render for Preview {
                     .child(
                         div()
                             .truncate()
-                            .text_size(px(13.))
+                            .text_size(px(crate::typography::ui_size(13.)))
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .child(label),
                     )
                     .child(
                         div()
-                            .text_size(px(11.))
+                            .text_size(px(crate::typography::ui_size(11.)))
                             .text_color(theme.text_secondary)
                             .child(status),
                     ),
@@ -450,7 +450,7 @@ impl Render for Preview {
                     v.child(
                         div()
                             .px(px(16.))
-                            .text_size(px(12.))
+                            .text_size(px(crate::typography::ui_size(12.)))
                             .text_center()
                             .text_color(theme.text_secondary)
                             .child(unavailable.clone()),
@@ -465,28 +465,28 @@ impl Render for Preview {
             .gap(px(4.))
             .child(
                 div()
-                    .text_size(px(11.))
+                    .text_size(px(crate::typography::ui_size(11.)))
                     .text_color(theme.text_secondary)
                     .child(source),
             )
             .when(!self.window_title.is_empty(), |v| {
                 v.child(
                     div()
-                        .text_size(px(12.))
+                        .text_size(px(crate::typography::ui_size(12.)))
                         .truncate()
                         .child(self.window_title.clone()),
                 )
             })
             .child(
                 div()
-                    .text_size(px(13.))
+                    .text_size(px(crate::typography::ui_size(13.)))
                     .line_height(px(18.))
                     .child(snapshot.title.clone()),
             )
             .when_some(snapshot.progress.clone(), |v, p| {
                 v.child(
                     div()
-                        .text_size(px(12.))
+                        .text_size(px(crate::typography::ui_size(12.)))
                         .text_color(theme.text_secondary)
                         .child(p),
                 )
@@ -494,7 +494,7 @@ impl Render for Preview {
             .when(frame.is_some() && self.capture_error.is_some(), |v| {
                 v.child(
                     div()
-                        .text_size(px(11.))
+                        .text_size(px(crate::typography::ui_size(11.)))
                         .text_color(theme.text_secondary)
                         .child(unavailable),
                 )
@@ -502,7 +502,7 @@ impl Render for Preview {
             .when_some(error, |v, error| {
                 v.child(
                     div()
-                        .text_size(px(12.))
+                        .text_size(px(crate::typography::ui_size(12.)))
                         .text_color(theme.warning)
                         .child(error),
                 )
@@ -526,7 +526,7 @@ impl Render for Preview {
                     .py(px(6.))
                     .rounded(px(8.))
                     .hover(|s| s.bg(theme.sidebar_hover))
-                    .text_size(px(12.))
+                    .text_size(px(crate::typography::ui_size(12.)))
                     .child(crate::i18n::format!("操作过程" => "Operations"))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.show_operations = !this.show_operations;
@@ -555,7 +555,7 @@ impl Render for Preview {
                     .py(px(6.))
                     .rounded(px(8.))
                     .bg(theme.sidebar_hover)
-                    .text_size(px(12.))
+                    .text_size(px(crate::typography::ui_size(12.)))
                     .opacity(if target_available { 1. } else { 0.4 })
                     .child(if running(self.phase) {
                         crate::i18n::format!("接管" => "Take over")
@@ -580,7 +580,7 @@ impl Render for Preview {
                     AgentMcpToolCallStatus::InProgress => "…",
                 };
                 div()
-                    .text_size(px(12.))
+                    .text_size(px(crate::typography::ui_size(12.)))
                     .text_color(if *status == AgentMcpToolCallStatus::Failed {
                         theme.warning
                     } else {
@@ -597,7 +597,7 @@ impl Render for Preview {
             .cursor_pointer()
             .mx(px(12.))
             .mb(px(8.))
-            .text_size(px(12.))
+            .text_size(px(crate::typography::ui_size(12.)))
             .child(crate::i18n::format!("重试窗口预览" => "Retry window preview"))
             .on_click(cx.listener(|this, _, _, cx| {
                 if running(this.phase)

@@ -454,8 +454,8 @@ impl ComposerView {
             ])
             .font(crate::theme::ui_font())
             .font_weight(crate::theme::UI_BODY_FONT_WEIGHT)
-            .text_size(px(13.))
-            .line_height(px(18.5714))
+            .text_size(px(crate::typography::ui_size(13.)))
+            .line_height(px(crate::typography::ui_leading(13., 18.5714)))
             .text_color(theme.text)
             .capture_key_down(cx.listener(Self::project_picker_key))
             .on_action(cx.listener(|this, _: &DismissProjectPicker, window, cx| {

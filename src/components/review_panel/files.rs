@@ -38,7 +38,7 @@ impl ReviewPanel {
             div()
                 .px(px(16.))
                 .py(px(8.))
-                .text_size(px(13.))
+                .text_size(px(crate::typography::ui_size(13.)))
                 .text_color(t.text_tertiary)
                 .child(crate::i18n::text("没有匹配的文件"))
                 .into_any_element()
@@ -155,7 +155,7 @@ impl ReviewPanel {
                 .items_center()
                 .gap(px(5.))
                 .rounded(px(6.))
-                .text_size(px(13.))
+                .text_size(px(crate::typography::ui_size(13.)))
                 .cursor_pointer()
                 .hover(move |b| b.bg(pr.row_hover).text_color(t.text))
                 .children(lines)
@@ -236,7 +236,7 @@ impl ReviewPanel {
                             .flex()
                             .items_center()
                             .gap(px(4.))
-                            .text_size(px(12.))
+                            .text_size(px(crate::typography::ui_size(12.)))
                             .font_features(crate::components::pull_requests::stats_font_features())
                             .when(file.additions > 0, |d| {
                                 d.child(
@@ -322,8 +322,8 @@ impl ReviewPanel {
                     .flex()
                     .items_center()
                     .gap(px(8.))
-                    .text_size(px(14.))
-                    .line_height(px(21.))
+                    .text_size(px(crate::typography::ui_size(14.)))
+                    .line_height(px(crate::typography::ui_leading(14., 21.)))
                     .cursor_pointer()
                     .on_click(cx.listener(move |s, _, w, cx| s.action(Action::Toggle(i), w, cx)))
                     .on_mouse_down(
@@ -526,7 +526,7 @@ impl ReviewPanel {
             div()
                 .absolute()
                 .right(px(4.))
-                .top(px((21.6 - 32.) / 2.))
+                .top(px((crate::typography::diff_line_height() - 32.) / 2.))
                 .when(diff.status != 'M', |d| d.hidden())
                 .child(capsule),
         )
@@ -605,8 +605,8 @@ impl ReviewPanel {
                     .px(px(7.6242))
                     .rounded_r(px(8.))
                     .bg(pr.diff_expander_surface)
-                    .text_size(px(12.))
-                    .line_height(px(21.6))
+                    .text_size(px(crate::typography::code_size()))
+                    .line_height(px(crate::typography::diff_line_height()))
                     .text_color(pr.diff_gutter_text)
                     .child(
                         div()
@@ -633,7 +633,7 @@ impl ReviewPanel {
                 .on_scroll_wheel(cx.listener(Self::scroll_diff_wheel))
                 .flex_1()
                 .min_w(px(0.))
-                .h(px(21.6))
+                .h(px(crate::typography::diff_line_height()))
                 .bg(t.text.alpha(0.025));
         };
         let added = line.kind == LineKind::Added;
@@ -702,13 +702,13 @@ impl ReviewPanel {
             .on_scroll_wheel(cx.listener(Self::scroll_diff_wheel))
             .min_w(px(0.))
             .flex_1()
-            .min_h(px(21.6))
+            .min_h(px(crate::typography::diff_line_height()))
             .flex()
             .items_stretch()
             .bg(bg)
             .font_family(UI_MONOSPACE_FONT_FAMILY)
-            .text_size(px(12.))
-            .line_height(px(21.6))
+            .text_size(px(crate::typography::code_size()))
+            .line_height(px(crate::typography::diff_line_height()))
             .text_color(pr.diff_context_text)
             .child(
                 div()
@@ -725,8 +725,8 @@ impl ReviewPanel {
                     .relative()
                     .w(px(self.render_cache.gutter_width))
                     .flex_none()
-                    .min_h(px(21.6))
-                    .pr(px(7.22461))
+                    .min_h(px(crate::typography::diff_line_height()))
+                    .pr(px(7.22461 * crate::typography::code_size() / 12.0))
                     .border_r(px(2.))
                     .border_color(t.surface)
                     .bg(gutter)
@@ -782,7 +782,7 @@ impl ReviewPanel {
                     .min_w(px(0.))
                     .flex_1()
                     .overflow_hidden()
-                    .px(px(7.2246))
+                    .px(px(7.2246 * crate::typography::code_size() / 12.0))
                     .cursor_text()
                     .on_mouse_down(
                         MouseButton::Left,
@@ -870,7 +870,7 @@ impl ReviewPanel {
                     .absolute()
                     .left(px(28.96875))
                     .top_0()
-                    .size(px(21.6))
+                    .size(px(crate::typography::diff_line_height()))
                     .flex()
                     .items_center()
                     .justify_center()
@@ -900,7 +900,7 @@ impl ReviewPanel {
                     .id(("review-code-row", index))
                     .relative()
                     .w_full()
-                    .min_h(px(21.6))
+                    .min_h(px(crate::typography::diff_line_height()))
                     .flex()
                     .items_stretch();
                 if self.split {
@@ -954,7 +954,7 @@ impl ReviewPanel {
             }
             Row::Binary(i) => div()
                 .p(px(28.))
-                .text_size(px(13.))
+                .text_size(px(crate::typography::ui_size(13.)))
                 .text_color(t.text_tertiary)
                 .child(crate::i18n::text("二进制文件内容已更改"))
                 .child(self.button(
@@ -967,7 +967,7 @@ impl ReviewPanel {
                 .into_any_element(),
             Row::Empty(i) => div()
                 .p(px(20.))
-                .text_size(px(13.))
+                .text_size(px(crate::typography::ui_size(13.)))
                 .text_color(t.text_tertiary)
                 .child(if self.snapshot.files[i].old_path.is_some() {
                     crate::i18n::text("文件已重命名，内容未更改")

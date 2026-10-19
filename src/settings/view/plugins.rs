@@ -51,7 +51,7 @@ impl SettingsView {
                                 div()
                                     .relative()
                                     .top(px(-1.0))
-                                    .text_size(px(24.0))
+                                    .text_size(px(crate::typography::ui_size(24.0)))
                                     .line_height(px(31.0))
                                     .font_weight(gpui::FontWeight::NORMAL)
                                     .child(crate::i18n::text(page.label)),
@@ -59,8 +59,8 @@ impl SettingsView {
                             .child(
                                 div()
                                     .relative()
-                                    .text_size(px(14.0))
-                                    .line_height(px(21.0))
+                                    .text_size(px(crate::typography::ui_size(14.0)))
+                                    .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                                     .text_color(theme.text_tertiary)
                                     .child(crate::i18n::text("管理插件、技能和 MCP")),
                             ),
@@ -86,7 +86,7 @@ impl SettingsView {
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .text_size(px(14.0))
+                                    .text_size(px(crate::typography::ui_size(14.0)))
                                     .line_height(px(18.0))
                                     .child(crate::i18n::text("浏览目录")),
                             )
@@ -108,7 +108,7 @@ impl SettingsView {
                                     .items_center()
                                     .justify_center()
                                     .gap(px(4.0))
-                                    .text_size(px(14.0))
+                                    .text_size(px(crate::typography::ui_size(14.0)))
                                     .line_height(px(18.0))
                                     .text_color(theme.surface)
                                     .child(crate::i18n::text("添加"))
@@ -134,7 +134,7 @@ impl SettingsView {
                             .flex()
                             .items_center()
                             .gap(px(2.0))
-                            .text_size(px(14.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
                             .line_height(px(18.0))
                             .text_color(theme.text_tertiary)
                             .children((0..4).map(|index| {
@@ -172,7 +172,7 @@ impl SettingsView {
                             .flex()
                             .items_center()
                             .gap(px(8.0))
-                            .text_size(px(14.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
                             .line_height(px(18.0))
                             .text_color(theme.text_tertiary)
                             .child(

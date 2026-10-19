@@ -57,7 +57,7 @@ impl Render for ProjectActionTooltip {
             .rounded(px(6.))
             .bg(gpui::rgba(0x333333ff))
             .text_color(gpui::rgba(0xffffffff))
-            .text_size(px(12.))
+            .text_size(px(crate::typography::ui_size(12.)))
             .line_height(px(16.))
             .child(self.0.clone())
     }
@@ -125,8 +125,12 @@ fn sidebar_label(text: impl Into<SharedString>, line_height: f32) -> Div {
         .whitespace_nowrap()
         .text_overflow(gpui::TextOverflow::Truncate("…".into()))
         .font(crate::theme::ui_font())
-        .text_size(px(ROW_LABEL_FONT_SIZE))
-        .line_height(px(line_height))
+        .text_size(px(crate::typography::ui_size(ROW_LABEL_FONT_SIZE)))
+        .line_height(px(if line_height == ROW_LABEL_LINE_HEIGHT {
+            crate::typography::ui_leading(14.0, line_height)
+        } else {
+            line_height
+        }))
         .child(text.into())
 }
 
@@ -428,7 +432,7 @@ fn account_menu_row(
                 div()
                     .flex_none()
                     .ml(px(ACCOUNT_MENU_SHORTCUT_GAP))
-                    .text_size(px(ACCOUNT_MENU_SHORTCUT_SIZE))
+                    .text_size(px(crate::typography::ui_size(ACCOUNT_MENU_SHORTCUT_SIZE)))
                     .line_height(px(ACCOUNT_MENU_SHORTCUT_LINE))
                     .text_color(theme.account_menu_shortcut)
                     .child(trailing),
@@ -441,7 +445,7 @@ fn account_menu_row(
         .px(px(ACCOUNT_MENU_ITEM_PADDING_X))
         .pt(px(ACCOUNT_MENU_ITEM_PADDING_Y))
         .rounded(px(ACCOUNT_MENU_ITEM_RADIUS))
-        .text_size(px(13.0))
+        .text_size(px(crate::typography::ui_size(13.0)))
         .line_height(px(ACCOUNT_MENU_ITEM_LINE))
         .text_color(theme.text)
         .group(ACCOUNT_MENU_ROW_GROUP)
@@ -671,7 +675,7 @@ fn account_menu_notice(message: String, theme: Theme) -> gpui::Stateful<Div> {
         .w_full()
         .px(px(8.0))
         .py(px(4.0))
-        .text_size(px(12.0))
+        .text_size(px(crate::typography::ui_size(12.0)))
         .line_height(px(16.0))
         .text_color(theme.sidebar_text_muted)
         .child(message)
@@ -709,7 +713,7 @@ fn thread_title_canvas(
             let shape = |alpha: f32| {
                 window.text_system().shape_line(
                     title.clone(),
-                    px(14.0),
+                    px(crate::typography::ui_size(14.0)),
                     &[TextRun {
                         len: title.len(),
                         font: font.clone(),
@@ -1858,7 +1862,7 @@ impl SidebarView {
             .items_center()
             .gap(px(8.0))
             .rounded(px(ROW_RADIUS))
-            .text_size(px(NAV_ROW_FONT_SIZE))
+            .text_size(px(crate::typography::ui_size(NAV_ROW_FONT_SIZE)))
             .text_color(theme.sidebar_text)
             .hover(move |style| style.bg(theme.sidebar_hover))
             .child(icon(glyph, theme.sidebar_text.into()).size(px(16.0)))
@@ -1884,7 +1888,7 @@ impl SidebarView {
             .items_center()
             .gap(px(8.0))
             .rounded(px(ROW_RADIUS))
-            .text_size(px(NAV_ROW_FONT_SIZE))
+            .text_size(px(crate::typography::ui_size(NAV_ROW_FONT_SIZE)))
             .text_color(theme.sidebar_text)
             .cursor_pointer()
             .role(gpui::Role::Button)
@@ -1916,8 +1920,11 @@ impl SidebarView {
             .flex()
             .items_center()
             .gap(px(8.0))
-            .text_size(px(ROW_LABEL_FONT_SIZE))
-            .line_height(px(SECTION_HEADER_LINE_HEIGHT))
+            .text_size(px(crate::typography::ui_size(ROW_LABEL_FONT_SIZE)))
+            .line_height(px(crate::typography::ui_leading(
+                14.0,
+                SECTION_HEADER_LINE_HEIGHT,
+            )))
             .font_weight(gpui::FontWeight::MEDIUM)
             .text_color(theme.sidebar_text_muted)
             .child(
@@ -1980,7 +1987,7 @@ impl SidebarView {
             .px(px(ROW_HORIZONTAL_PADDING))
             .flex()
             .items_center()
-            .text_size(px(14.0))
+            .text_size(px(crate::typography::ui_size(14.0)))
             .text_color(theme.sidebar_text_muted)
             .overflow_hidden()
             .whitespace_nowrap()
@@ -2002,7 +2009,7 @@ impl SidebarView {
             .flex()
             .items_center()
             .gap(px(8.0))
-            .text_size(px(13.0))
+            .text_size(px(crate::typography::ui_size(13.0)))
             .text_color(theme.warning)
             .child(
                 div()
@@ -2048,7 +2055,12 @@ impl SidebarView {
         f32::from(
             window
                 .text_system()
-                .shape_line(text.to_owned().into(), px(14.0), &[run], None)
+                .shape_line(
+                    text.to_owned().into(),
+                    px(crate::typography::ui_size(14.0)),
+                    &[run],
+                    None,
+                )
                 .width(),
         )
     }
@@ -2325,7 +2337,7 @@ impl SidebarView {
             .flex()
             .items_center()
             .rounded(px(ROW_RADIUS))
-            .text_size(px(NAV_ROW_FONT_SIZE))
+            .text_size(px(crate::typography::ui_size(NAV_ROW_FONT_SIZE)))
             .font_weight(gpui::FontWeight::NORMAL)
             .text_color(theme.sidebar_text)
             .overflow_hidden()
@@ -2624,7 +2636,7 @@ impl SidebarView {
                 .flex()
                 .items_center()
                 .rounded(px(ROW_RADIUS))
-                .text_size(px(NAV_ROW_FONT_SIZE))
+                .text_size(px(crate::typography::ui_size(NAV_ROW_FONT_SIZE)))
                 .text_color(theme.sidebar_text)
                 .when(active, |row| row.bg(theme.sidebar_hover))
                 .when(pending, |row| row.opacity(0.4).cursor_default())
@@ -2722,8 +2734,11 @@ impl SidebarView {
                         .items_center()
                         .font(crate::theme::ui_font())
                         .font_weight(gpui::FontWeight::NORMAL)
-                        .text_size(px(ROW_LABEL_FONT_SIZE))
-                        .line_height(px(SHOW_MORE_LINE_HEIGHT))
+                        .text_size(px(crate::typography::ui_size(ROW_LABEL_FONT_SIZE)))
+                        .line_height(px(crate::typography::ui_leading(
+                            14.0,
+                            SHOW_MORE_LINE_HEIGHT,
+                        )))
                         .text_color(theme.sidebar_text_muted)
                         .cursor_pointer()
                         .hover(move |style| style.text_color(theme.sidebar_text))
@@ -2813,7 +2828,7 @@ impl SidebarView {
                             .overflow_hidden()
                             .whitespace_nowrap()
                             .rounded(px(PROJECT_HOVER_ROW_RADIUS))
-                            .text_size(px(14.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
                             .line_height(px(24.0))
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(theme.text)
@@ -2890,7 +2905,7 @@ impl SidebarView {
                     .spread_radius(px(-4.0)),
             ])
             .font_family(".SystemUIFont")
-            .text_size(px(13.0))
+            .text_size(px(crate::typography::ui_size(13.0)))
             .line_height(px(PROJECT_HOVER_ROW_HEIGHT))
             .text_color(theme.text)
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -3034,7 +3049,7 @@ impl SidebarView {
             .flex_1()
             .overflow_hidden()
             .whitespace_nowrap()
-            .text_size(px(13.0))
+            .text_size(px(crate::typography::ui_size(13.0)))
             .line_height(px(PROJECT_HOVER_ROW_HEIGHT))
             .text_color(theme.text)
             .child(text)
@@ -3081,7 +3096,7 @@ impl SidebarView {
                             .min_w(px(0.0))
                             .px(px(THREAD_HOVER_TITLE_PADDING_X))
                             .rounded(px(THREAD_HOVER_TITLE_RADIUS))
-                            .text_size(px(14.0))
+                            .text_size(px(crate::typography::ui_size(14.0)))
                             .line_height(px(THREAD_HOVER_TITLE_LINE_HEIGHT))
                             .font(hover_card_font(gpui::FontWeight::MEDIUM))
                             .text_color(theme.text)
@@ -3113,7 +3128,7 @@ impl SidebarView {
                     .flex()
                     .items_center()
                     .font(hover_card_font(crate::theme::UI_BODY_FONT_WEIGHT))
-                    .text_size(px(12.0))
+                    .text_size(px(crate::typography::ui_size(12.0)))
                     .line_height(px(THREAD_HOVER_ROW_HEIGHT))
                     .text_color(theme.text_tertiary)
                     .child(duration),
@@ -3139,8 +3154,8 @@ impl SidebarView {
                     .spread_radius(px(-4.0)),
             ])
             .font_family(".SystemUIFont")
-            .text_size(px(13.0))
-            .line_height(px(18.5714))
+            .text_size(px(crate::typography::ui_size(13.0)))
+            .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
             .text_color(theme.text)
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
@@ -3189,7 +3204,7 @@ impl SidebarView {
                                 .whitespace_nowrap()
                                 .text_overflow(gpui::TextOverflow::Truncate("…".into()))
                                 .font(hover_card_font(crate::theme::UI_BODY_FONT_WEIGHT))
-                                .text_size(px(13.0))
+                                .text_size(px(crate::typography::ui_size(13.0)))
                                 .line_height(px(THREAD_HOVER_ROW_HEIGHT))
                                 .text_color(theme.text)
                                 .child(project.name.clone()),
@@ -3263,7 +3278,7 @@ impl SidebarView {
                         .whitespace_nowrap()
                         .text_overflow(gpui::TextOverflow::Truncate("…".into()))
                         .font(hover_card_font(crate::theme::UI_BODY_FONT_WEIGHT))
-                        .text_size(px(13.0))
+                        .text_size(px(crate::typography::ui_size(13.0)))
                         .line_height(px(THREAD_HOVER_ROW_HEIGHT))
                         .text_color(theme.text)
                         .child(text),
@@ -3438,8 +3453,11 @@ impl SidebarView {
                 .flex()
                 .items_center()
                 .gap(px(8.0))
-                .text_size(px(ROW_LABEL_FONT_SIZE))
-                .line_height(px(SECTION_HEADER_LINE_HEIGHT))
+                .text_size(px(crate::typography::ui_size(ROW_LABEL_FONT_SIZE)))
+                .line_height(px(crate::typography::ui_leading(
+                    14.0,
+                    SECTION_HEADER_LINE_HEIGHT,
+                )))
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .text_color(theme.sidebar_text_muted)
                 .child(
@@ -3627,7 +3645,7 @@ impl SidebarView {
                     .px(px(8.0))
                     .flex()
                     .items_center()
-                    .text_size(px(14.0))
+                    .text_size(px(crate::typography::ui_size(14.0)))
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.sidebar_text_muted)
                     .child(crate::i18n::text("已归档")),
@@ -3806,7 +3824,7 @@ impl SidebarView {
                     .flex()
                     .flex_col()
                     .gap(px(5.0))
-                    .text_size(px(13.0))
+                    .text_size(px(crate::typography::ui_size(13.0)))
                     .text_color(theme.warning)
                     .child(error.clone())
                     .child(
@@ -3897,7 +3915,7 @@ impl SidebarView {
                     .spread_radius(px(-3.0)),
             ])
             .font_family(".SystemUIFont")
-            .text_size(px(13.0))
+            .text_size(px(crate::typography::ui_size(13.0)))
             .text_color(theme.sidebar_text)
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
     }
@@ -4133,7 +4151,7 @@ impl SidebarView {
             .items_center()
             .gap(px(8.0))
             .cursor_pointer()
-            .text_size(px(NAV_ROW_FONT_SIZE))
+            .text_size(px(crate::typography::ui_size(NAV_ROW_FONT_SIZE)))
             .text_color(theme.sidebar_text)
             .hover(move |style| style.bg(theme.sidebar_hover))
             .child(icon("sidebar-new-chat", theme.sidebar_text.into()).size(px(16.0)))
@@ -4258,7 +4276,7 @@ impl SidebarView {
             .gap(px(ACCOUNT_ROW_GAP))
             .cursor_pointer()
             .group(FOOTER_BUTTON_GROUP)
-            .text_size(px(14.0))
+            .text_size(px(crate::typography::ui_size(14.0)))
             .line_height(px(ACCOUNT_ROW_LINE_HEIGHT))
             .text_color(foreground)
             .when(open, |button| button.bg(theme.sidebar_hover))
@@ -4363,7 +4381,7 @@ impl SidebarView {
                     .flex_col()
                     .child(
                         div()
-                            .text_size(px(13.0))
+                            .text_size(px(crate::typography::ui_size(13.0)))
                             .line_height(px(ACCOUNT_HEADER_LINE))
                             .overflow_hidden()
                             .whitespace_nowrap()
@@ -4371,7 +4389,7 @@ impl SidebarView {
                     )
                     .child(
                         div()
-                            .text_size(px(12.0))
+                            .text_size(px(crate::typography::ui_size(12.0)))
                             .line_height(px(16.0))
                             .text_color(theme.sidebar_text_muted)
                             .overflow_hidden()
@@ -4407,7 +4425,7 @@ impl SidebarView {
             .bg(account_menu_surface(theme))
             .shadow(shadows)
             .font(hover_card_font(crate::theme::UI_BODY_FONT_WEIGHT))
-            .text_size(px(13.0))
+            .text_size(px(crate::typography::ui_size(13.0)))
             .text_color(theme.text)
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
         for entry in self.account.menu_entries() {

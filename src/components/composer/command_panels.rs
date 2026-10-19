@@ -166,7 +166,7 @@ impl ComposerView {
                 .rounded(px(12.))
                 .bg(theme.control_soft)
                 .text_color(theme.text)
-                .text_size(px(13.))
+                .text_size(px(crate::typography::ui_size(13.)))
                 .line_height(px(20.))
                 .flex()
                 .flex_col()
@@ -431,8 +431,8 @@ impl ComposerView {
             .flex()
             .items_center()
             .gap(px(8.))
-            .text_size(px(14.))
-            .line_height(px(21.))
+            .text_size(px(crate::typography::ui_size(14.)))
+            .line_height(px(crate::typography::ui_leading(14., 21.)))
             .text_color(theme.text_tertiary)
             .cursor_pointer()
             .on_click(cx.listener(move |this, _, _, cx| {
@@ -464,7 +464,7 @@ impl ComposerView {
                         theme.control
                     })
                     .text_color(theme.text)
-                    .text_size(px(11.))
+                    .text_size(px(crate::typography::ui_size(11.)))
                     .flex()
                     .items_center()
                     .justify_center()
@@ -543,19 +543,19 @@ impl ComposerView {
             .capture_key_down(cx.listener(Self::feedback_key));
         if let Some((success, id)) = result {
             body = body.gap(px(12.))
-                .child(div().text_size(px(20.)).line_height(px(28.)).font_weight(gpui::FontWeight::SEMIBOLD)
+                .child(div().text_size(px(crate::typography::ui_size(20.))).line_height(px(28.)).font_weight(gpui::FontWeight::SEMIBOLD)
                     .child(if success {crate::i18n::format!("感谢你的反馈"=>"Thanks for your feedback")} else {crate::i18n::format!("反馈上传未确认"=>"Feedback upload unconfirmed")}))
-                .when(!success, |d| d.child(div().text_size(px(14.)).line_height(px(21.)).child(crate::i18n::format!("我们无法确认是否已收到你的反馈。反馈可能已送达，重新发送可能会导致重复提交"=>"We couldn't confirm whether your feedback was received. It may have arrived; sending it again may create a duplicate."))))
+                .when(!success, |d| d.child(div().text_size(px(crate::typography::ui_size(14.))).line_height(px(crate::typography::ui_leading(14., 21.))).child(crate::i18n::format!("我们无法确认是否已收到你的反馈。反馈可能已送达，重新发送可能会导致重复提交"=>"We couldn't confirm whether your feedback was received. It may have arrived; sending it again may create a duplicate."))))
                 .when(!id.is_empty(), |d| d.child(div().p(px(10.)).rounded(px(8.)).border_1().border_color(theme.border).flex().items_center().justify_between()
-                    .child(div().flex().flex_col().child(div().text_size(px(12.)).text_color(theme.text_tertiary).child(crate::i18n::format!("反馈 ID"=>"Feedback ID"))).child(id.clone()))
+                    .child(div().flex().flex_col().child(div().text_size(px(crate::typography::ui_size(12.))).text_color(theme.text_tertiary).child(crate::i18n::format!("反馈 ID"=>"Feedback ID"))).child(id.clone()))
                     .child(div().id("feedback-copy-id").track_focus(&self.command_panels.controls[14]).tab_stop(true).focus_visible(|s| s.bg(theme.sidebar_hover)).role(Role::Button).aria_label(crate::i18n::text("复制")).cursor_pointer().on_click(move |_,_,cx| cx.write_to_clipboard(gpui::ClipboardItem::new_string(id.clone()))).child(super::super::icons::icon("message-copy",theme.text_tertiary.into()).size(px(16.))))))
                 .child(div().id("feedback-result-close").track_focus(&self.command_panels.controls[10]).tab_stop(true).focus_visible(|s| s.bg(theme.sidebar_hover)).role(Role::Button).aria_label(crate::i18n::text("关闭")).w_full().h(px(32.)).rounded(px(12.5)).bg(theme.button).text_color(theme.button_text).cursor_pointer().flex().items_center().justify_center().on_click(close).child(crate::i18n::text("关闭")));
         } else {
-            body = body.child(div().text_size(px(20.)).line_height(px(28.)).font_weight(gpui::FontWeight::SEMIBOLD).mb(px(20.)).child(crate::i18n::text("提交反馈")))
+            body = body.child(div().text_size(px(crate::typography::ui_size(20.))).line_height(px(28.)).font_weight(gpui::FontWeight::SEMIBOLD).mb(px(20.)).child(crate::i18n::text("提交反馈")))
                 .child(div().flex().flex_wrap().gap(px(8.)).mb(px(12.)).children(CLASSIFICATIONS.iter().enumerate().map(|(i,(_,zh,en))| {
                     let selected=self.command_panels.classification==Some(i);
                     div().id(("feedback-category",i)).track_focus(&self.command_panels.controls[i]).tab_stop(true).focus_visible(|s| s.bg(theme.sidebar_hover)).role(Role::RadioButton).aria_label(if crate::i18n::is_english() {*en} else {*zh})
-                        .px(px(12.)).py(px(4.)).text_size(px(14.)).line_height(px(21.)).border_1().border_color(theme.border).rounded_full()
+                        .px(px(12.)).py(px(4.)).text_size(px(crate::typography::ui_size(14.))).line_height(px(crate::typography::ui_leading(14., 21.))).border_1().border_color(theme.border).rounded_full()
                         .bg(if selected {theme.sidebar_hover} else {theme.elevated}).cursor_pointer().flex().items_center().gap(px(4.))
                         .on_click(cx.listener(move |this,_,_,cx| {if !this.command_panels.sending {this.command_panels.classification=Some(i);cx.notify();}}))
                         .child(div().size(px(14.)).rounded_full().border_1().border_color(theme.text_tertiary).flex().items_center().justify_center().when(selected, |d| d.child(div().size(px(8.)).rounded_full().bg(theme.text))))
@@ -566,7 +566,7 @@ impl ComposerView {
                     .when(self.thread_id().is_some(), |d| d.child(self.feedback_checkbox(0,self.command_panels.include_documents,crate::i18n::format!("附上此聊天中的所有文档（如有）"=>"Attach all documents in this chat (if any)"),theme,cx)))
                     .child(self.feedback_checkbox(1,self.command_panels.include_logs,crate::i18n::format!("包含 ChatGPT 诊断日志"=>"Include ChatGPT diagnostic logs"),theme,cx))
                     .child(self.feedback_checkbox(2,self.command_panels.include_browser_logs,crate::i18n::format!("包括所有浏览器标签页和浏览器日志"=>"Include all browser tabs and browser logs"),theme,cx)))
-                .child(div().mt(px(12.)).text_size(px(13.)).line_height(px(18.5714)).text_color(theme.text_tertiary).flex()
+                .child(div().mt(px(12.)).text_size(px(crate::typography::ui_size(13.))).line_height(px(crate::typography::ui_leading(13., 18.5714))).text_color(theme.text_tertiary).flex()
                     .child(crate::i18n::format!("你的反馈可用于改进 ChatGPT。"=>"Your feedback may be used to improve ChatGPT. "))
                     .child(div().id("feedback-privacy").track_focus(&self.command_panels.controls[12]).tab_stop(true).focus_visible(|s| s.bg(theme.sidebar_hover)).role(Role::Link).cursor_pointer().underline().on_click(|_,_,cx| cx.open_url("https://help.openai.com/en/articles/5722486-how-your-data-is-used-to-improve-model-performance")).child(crate::i18n::format!("了解更多。"=>"Learn more."))))
                 .when_some(self.command_panels.error.clone(), |d,error| d.child(div().text_color(gpui::rgb(0xe55b58)).child(error)))

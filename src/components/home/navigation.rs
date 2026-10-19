@@ -599,7 +599,7 @@ pub(super) fn user_message_card(
         .items_center()
         .gap(px(CARD_HEADER_GAP))
         .font(hover_card_font(CARD_PROMPT_WEIGHT))
-        .text_size(px(CARD_PROMPT_SIZE))
+        .text_size(px(crate::typography::ui_size(CARD_PROMPT_SIZE)))
         .line_height(px(CARD_HEADER_HEIGHT))
         .text_color(theme.text)
         .child(

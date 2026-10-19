@@ -77,7 +77,7 @@ fn a_large_hunk_only_highlights_the_viewport_and_reuses_warm_runs(cx: &mut TestA
         // straight to the end, rather than approximately three thousand rows.
         view.diff_viewport
             .scroll
-            .scroll_by(px(LINE_HEIGHT * 3000.0));
+            .scroll_by(px(line_height() * 3000.0));
         let top = view.diff_viewport.scroll.logical_scroll_top().item_ix;
         assert!(
             (2900..3100).contains(&top),

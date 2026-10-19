@@ -26,7 +26,9 @@ const CLAMP_LINES: usize = 6;
 const CARD_RADIUS: f32 = 12.5;
 /// The diff viewer inside a review thread: 12px code on 21.6px rows with a
 /// 78px line-number gutter.
-const PREVIEW_LINE_HEIGHT: f32 = 21.6;
+fn preview_line_height() -> f32 {
+    crate::typography::diff_line_height()
+}
 const PREVIEW_GUTTER_WIDTH: f32 = 78.12;
 const PREVIEW_CELL_PADDING: f32 = 7.22461;
 
@@ -72,8 +74,8 @@ impl PullRequestsView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .text_size(px(14.0))
-                .line_height(px(20.0))
+                .text_size(px(crate::typography::ui_size(14.0)))
+                .line_height(px(crate::typography::ui_leading(14.0, 20.0)))
                 .text_color(theme.text_muted)
                 .child("No activity");
         }
@@ -161,8 +163,8 @@ impl PullRequestsView {
                 div()
                     .flex_1()
                     .min_w(px(0.0))
-                    .text_size(px(14.0))
-                    .line_height(px(20.0))
+                    .text_size(px(crate::typography::ui_size(14.0)))
+                    .line_height(px(crate::typography::ui_leading(14.0, 20.0)))
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.text)
                     .child(label),
@@ -173,8 +175,8 @@ impl PullRequestsView {
     fn age_label(age: &str, theme: PrTheme) -> Div {
         div()
             .flex_none()
-            .text_size(px(13.0))
-            .line_height(px(18.5714))
+            .text_size(px(crate::typography::ui_size(13.0)))
+            .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
             .text_color(theme.text_muted)
             .child(age.to_string())
     }
@@ -225,8 +227,8 @@ impl PullRequestsView {
                         .flex()
                         .items_center()
                         .gap(px(6.0))
-                        .text_size(px(14.0))
-                        .line_height(px(20.0))
+                        .text_size(px(crate::typography::ui_size(14.0)))
+                        .line_height(px(crate::typography::ui_leading(14.0, 20.0)))
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(theme.text)
                         .child(label)
@@ -284,8 +286,8 @@ impl PullRequestsView {
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .text_ellipsis()
-                    .text_size(px(14.0))
-                    .line_height(px(20.0))
+                    .text_size(px(crate::typography::ui_size(14.0)))
+                    .line_height(px(crate::typography::ui_leading(14.0, 20.0)))
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.text)
                     .child(commit.subject.clone()),
@@ -295,8 +297,8 @@ impl PullRequestsView {
                     .id(SharedString::from(format!("pr-commit-{}", commit.sha)))
                     .flex_none()
                     .font_family(UI_MONOSPACE_FONT_FAMILY)
-                    .text_size(px(13.0))
-                    .line_height(px(18.5714))
+                    .text_size(px(crate::typography::ui_size(13.0)))
+                    .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
                     .text_color(theme.icon_muted)
                     .role(gpui::Role::Link)
                     .aria_label(SharedString::from(format!("Commit {short}")))
@@ -315,7 +317,7 @@ impl PullRequestsView {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .text_size(px(12.0))
+                        .text_size(px(crate::typography::ui_size(12.0)))
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(theme.text)
                         .map(|well| match avatar.as_deref() {
@@ -337,8 +339,8 @@ impl PullRequestsView {
                     .w(px(36.0))
                     .flex()
                     .justify_end()
-                    .text_size(px(13.0))
-                    .line_height(px(18.5714))
+                    .text_size(px(crate::typography::ui_size(13.0)))
+                    .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
                     .font_features(super::list::stats_font_features())
                     .text_color(theme.text_muted)
                     .child(commit.age.clone()),
@@ -459,7 +461,7 @@ impl PullRequestsView {
                             .gap(px(6.0))
                             .overflow_hidden()
                             .whitespace_nowrap()
-                            .text_size(px(12.0))
+                            .text_size(px(crate::typography::ui_size(12.0)))
                             .line_height(px(16.0))
                             .text_color(theme.text_muted)
                             .role(gpui::Role::Button)
@@ -639,8 +641,8 @@ impl PullRequestsView {
                         .flex()
                         .items_center()
                         .gap(px(4.0))
-                        .text_size(px(14.0))
-                        .line_height(px(21.0))
+                        .text_size(px(crate::typography::ui_size(14.0)))
+                        .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                         .text_color(theme.text_muted)
                         .role(gpui::Role::Button)
                         .aria_label(if expanded { "Show less" } else { "Show more" })
@@ -708,7 +710,7 @@ impl PullRequestsView {
             };
             lines = lines.child(
                 div()
-                    .h(px(PREVIEW_LINE_HEIGHT))
+                    .h(px(preview_line_height()))
                     .flex()
                     .child(
                         div()
@@ -781,7 +783,7 @@ impl PullRequestsView {
                             .overflow_hidden()
                             .whitespace_nowrap()
                             .text_ellipsis()
-                            .text_size(px(13.0))
+                            .text_size(px(crate::typography::ui_size(13.0)))
                             .line_height(px(20.0))
                             .role(gpui::Role::Button)
                             .aria_label(SharedString::from(format!("Open {name} in Code")))
@@ -801,8 +803,8 @@ impl PullRequestsView {
                     .id(SharedString::from(format!("pr-thread-hunk-{}", thread.id)))
                     .overflow_x_scroll()
                     .font_family(UI_MONOSPACE_FONT_FAMILY)
-                    .text_size(px(12.0))
-                    .line_height(px(PREVIEW_LINE_HEIGHT))
+                    .text_size(px(crate::typography::code_size()))
+                    .line_height(px(preview_line_height()))
                     .child(lines),
             )
     }

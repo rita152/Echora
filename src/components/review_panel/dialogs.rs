@@ -34,7 +34,7 @@ impl ReviewPanel {
                             .flex()
                             .flex_wrap()
                             .items_center()
-                            .text_size(px(12.))
+                            .text_size(px(crate::typography::ui_size(12.)))
                             .text_color(t.text_tertiary)
                             .gap(px(8.))
                             .child(
@@ -65,7 +65,7 @@ impl ReviewPanel {
                     .when(!draft, |d| {
                         d.child(
                             div()
-                                .text_size(px(13.))
+                                .text_size(px(crate::typography::ui_size(13.)))
                                 .line_height(px(21.))
                                 .text_color(t.text)
                                 .child(c.text),
@@ -212,14 +212,14 @@ impl ReviewPanel {
                         .child(div().flex_1())
                         .child(
                             div()
-                                .text_size(px(13.))
+                                .text_size(px(crate::typography::ui_size(13.)))
                                 .text_color(addition_color(self.mode))
                                 .child(format!("+{adds}")),
                         )
                         .child(
                             div()
                                 .pr(px(8.))
-                                .text_size(px(13.))
+                                .text_size(px(crate::typography::ui_size(13.)))
                                 .text_color(deletion_color(self.mode))
                                 .child(format!(" -{dels}")),
                         ),
@@ -270,10 +270,10 @@ impl ReviewPanel {
                 );
         } else {
             card = card
-                .child(div().text_size(px(18.)).text_color(t.text).child(title))
+                .child(div().text_size(px(crate::typography::ui_size(18.))).text_color(t.text).child(title))
                 .child(
                     div()
-                        .text_size(px(13.))
+                        .text_size(px(crate::typography::ui_size(13.)))
                         .line_height(px(20.))
                         .text_color(t.text_secondary)
                         .child(match &confirm {
@@ -315,7 +315,7 @@ impl ReviewPanel {
                     .aria_label(error.clone())
                     .px(px(12.))
                     .py(px(8.))
-                    .text_size(px(12.))
+                    .text_size(px(crate::typography::ui_size(12.)))
                     .text_color(deletion_color(self.mode))
                     .child(error),
             )
@@ -451,14 +451,14 @@ impl ReviewPanel {
                         .child(div().flex_1())
                         .child(
                             div()
-                                .text_size(px(13.))
+                                .text_size(px(crate::typography::ui_size(13.)))
                                 .text_color(addition_color(self.mode))
                                 .child(format!("+{adds}")),
                         )
                         .child(
                             div()
                                 .pr(px(8.))
-                                .text_size(px(13.))
+                                .text_size(px(crate::typography::ui_size(13.)))
                                 .text_color(deletion_color(self.mode))
                                 .child(format!(" -{dels}")),
                         ),
@@ -499,7 +499,7 @@ impl ReviewPanel {
                 div()
                     .p(px(12.))
                     .min_h(px(100.))
-                    .text_size(px(13.))
+                    .text_size(px(crate::typography::ui_size(13.)))
                     .text_color(t.text_tertiary)
                     .child(crate::i18n::text("此分支已存在 Pull Request")),
             );
@@ -526,7 +526,7 @@ impl ReviewPanel {
                         .role(Role::Alert)
                         .aria_label(error.clone())
                         .p(px(12.))
-                        .text_size(px(12.))
+                        .text_size(px(crate::typography::ui_size(12.)))
                         .text_color(deletion_color(self.mode))
                         .child(error),
                 )

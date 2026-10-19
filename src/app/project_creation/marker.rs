@@ -164,7 +164,7 @@ impl ChatApp {
                     .h(px(24.))
                     .px(px(8.))
                     .rounded_full()
-                    .text_size(px(12.))
+                    .text_size(px(crate::typography::ui_size(12.)))
                     .line_height(px(16.))
                     .cursor_pointer()
                     .when(emoji == value, |d| d.bg(theme.text.alpha(0.05)))

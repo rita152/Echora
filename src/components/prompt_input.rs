@@ -86,6 +86,7 @@ pub struct PromptInput {
     horizontal_scroll: f32,
     is_selecting: bool,
     submit_empty: bool,
+    numeric: bool,
 }
 
 impl gpui::EventEmitter<PromptSubmitted> for PromptInput {}
@@ -121,6 +122,7 @@ impl PromptInput {
             horizontal_scroll: 0.0,
             is_selecting: false,
             submit_empty: false,
+            numeric: false,
         }
     }
 
@@ -134,6 +136,15 @@ impl PromptInput {
         input.kind = PromptInputKind::InlineOther;
         input.placeholder = placeholder.into();
         input.secret = secret;
+        input
+    }
+
+    pub fn number_field(mode: ThemeMode, value: f32, cx: &mut Context<Self>) -> Self {
+        let mut input = Self::project_name(mode, "", cx);
+        input.numeric = true;
+        input.submit_empty = true;
+        input.focus_handle = cx.focus_handle().tab_stop(true);
+        input.set_text_silently(value.to_string(), cx);
         input
     }
 
@@ -661,6 +672,16 @@ impl EntityInputHandler for PromptInput {
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
         let range = self.normalized_range(range);
+        let numeric_text;
+        let new_text = if self.numeric {
+            numeric_text = new_text
+                .chars()
+                .filter(|ch| ch.is_ascii_digit() || matches!(ch, '.' | '-' | '+' | 'e' | 'E'))
+                .collect::<String>();
+            numeric_text.as_str()
+        } else {
+            new_text
+        };
         self.content = format!(
             "{}{}{}",
             &self.content[..range.start],
@@ -1024,7 +1045,7 @@ impl PromptInput {
             PromptInputKind::RenameChat => 36.0,
             PromptInputKind::PullRequestSearch => 18.0,
             PromptInputKind::BrowserAddress => 28.0,
-            PromptInputKind::ProjectName => 18.5714,
+            PromptInputKind::ProjectName => crate::typography::ui_leading(13.0, 18.5714),
         };
         let horizontal_padding = match self.kind {
             PromptInputKind::InlineOther => 0.0,
@@ -1064,20 +1085,28 @@ impl PromptInput {
         } else {
             PROMPT_FONT_SIZE
         };
+        let font_size = if matches!(
+            self.kind,
+            PromptInputKind::Composer | PromptInputKind::MessageEdit
+        ) {
+            crate::typography::prose_size(font_size)
+        } else {
+            crate::typography::ui_size(font_size)
+        };
         let font_weight = if inline || pull_request_search {
             FontWeight::NORMAL
         } else {
             crate::theme::UI_BODY_FONT_WEIGHT
         };
         let line_height = if chat_search {
-            CHAT_SEARCH_LINE_HEIGHT
+            crate::typography::ui_leading(14.0, CHAT_SEARCH_LINE_HEIGHT)
         } else if pull_request_search || browser_address {
             18.0
         } else if matches!(
             self.kind,
             PromptInputKind::RenameChat | PromptInputKind::ProjectName
         ) {
-            RENAME_CHAT_LINE_HEIGHT
+            crate::typography::ui_leading(13.0, RENAME_CHAT_LINE_HEIGHT)
         } else {
             PROMPT_LINE_HEIGHT
         };

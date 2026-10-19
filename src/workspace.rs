@@ -26,8 +26,9 @@ use loaders::{
     load_all_turns, receive,
 };
 pub use preferences::{
-    ActivityPreferences, FollowUpMode, PanelRatio, ProjectMarker, RecentModelConfiguration,
-    ReviewDelivery, ReviewPreferences, SidebarPreferences, UiPreferences, preferred_language,
+    ActivityPreferences, FollowUpMode, FontSizes, PanelRatio, ProjectMarker,
+    RecentModelConfiguration, ReviewDelivery, ReviewPreferences, SidebarPreferences, UiPreferences,
+    preferred_language,
 };
 use preferences::{PreferenceStore, default_preferences_path};
 pub use pull_requests::{
@@ -1463,6 +1464,11 @@ impl WorkspaceStore {
 
     pub fn set_activity_preferences(&self, activity: ActivityPreferences) {
         self.update(|snapshot| snapshot.preferences.activity = activity);
+        self.save_preferences();
+    }
+
+    pub fn set_font_sizes(&self, sizes: FontSizes) {
+        self.update(|snapshot| snapshot.preferences.font_sizes = sizes);
         self.save_preferences();
     }
 

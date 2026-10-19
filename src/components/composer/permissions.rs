@@ -795,14 +795,14 @@ impl ComposerView {
                     .whitespace_nowrap()
                     .child(
                         div()
-                            .text_size(px(13.0))
+                            .text_size(px(crate::typography::ui_size(13.0)))
                             .line_height(px(PERMISSION_TITLE_LINE_HEIGHT))
                             .text_color(color)
                             .child(title),
                     )
                     .child(
                         div()
-                            .text_size(px(12.0))
+                            .text_size(px(crate::typography::ui_size(12.0)))
                             .line_height(px(14.0))
                             .text_color(if warning {
                                 theme.warning
@@ -868,7 +868,7 @@ impl ComposerView {
                     .spread_radius(px(-4.0)),
             ])
             .font(ui_font())
-            .text_size(px(13.0))
+            .text_size(px(crate::typography::ui_size(13.0)))
             .font_weight(crate::theme::UI_BODY_FONT_WEIGHT)
             .text_color(theme.text)
             .track_focus(&self.permission_menu_focus)

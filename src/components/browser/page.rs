@@ -116,7 +116,7 @@ impl BrowserPanel {
                         .shadow(theme.menu_shadow())
                         .flex()
                         .items_center()
-                        .text_size(px(13.))
+                        .text_size(px(crate::typography::ui_size(13.)))
                         .text_color(theme.text)
                         .on_hover(cx.listener(|panel, hovered: &bool, _, cx| {
                             panel.zoom_banner_hovered = *hovered;
@@ -240,7 +240,7 @@ impl BrowserPanel {
                 .border_color(gpui::transparent_black())
                 .bg(button_fill)
                 .text_color(button_text)
-                .text_size(px(13.))
+                .text_size(px(crate::typography::ui_size(13.)))
                 .line_height(px(18.))
                 .font_weight(FontWeight::MEDIUM)
                 .flex()
@@ -305,7 +305,7 @@ impl BrowserPanel {
             .overflow_y_scroll()
             .bg(background)
             .text_color(text)
-            .text_size(px(14.))
+            .text_size(px(crate::typography::ui_size(14.)))
             .line_height(px(22.4))
             .child(
                 div()
@@ -337,7 +337,7 @@ impl BrowserPanel {
                     .children(page.error_code.clone().map(|code| {
                         div()
                             .mt(px(24.))
-                            .text_size(px(11.2))
+                            .text_size(px(crate::typography::ui_size(11.2)))
                             .line_height(px(17.92))
                             .child(code.to_uppercase())
                     }))

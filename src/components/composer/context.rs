@@ -196,7 +196,7 @@ impl ComposerView {
                                 div()
                                     .min_w(px(0.0))
                                     .truncate()
-                                    .text_size(px(12.0))
+                                    .text_size(px(crate::typography::ui_size(12.0)))
                                     .text_color(theme.text)
                                     .child(label.clone()),
                             )
