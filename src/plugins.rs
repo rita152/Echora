@@ -2,11 +2,50 @@
 //! request cycles that discard superseded reads, and the install lifecycle the
 //! settings page renders.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::agent::{
-    AgentPluginCatalog, AgentPluginDetail, AgentPluginSearchPage, AgentPluginsError,
+    AgentPluginCatalog, AgentPluginDetail, AgentPluginMarketplaceKind, AgentPluginSearchPage,
+    AgentPluginsError,
 };
+
+/// Request provenance, never inferred from a marketplace's name or path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum PluginCatalogSource {
+    Local,
+    Vertical,
+    WorkspaceDirectory,
+    SharedWithMe,
+    CreatedByMeRemote,
+}
+
+impl PluginCatalogSource {
+    pub const ALL: [Self; 5] = [
+        Self::Local,
+        Self::Vertical,
+        Self::WorkspaceDirectory,
+        Self::SharedWithMe,
+        Self::CreatedByMeRemote,
+    ];
+
+    pub fn marketplace_kinds(self) -> Option<Vec<AgentPluginMarketplaceKind>> {
+        use AgentPluginMarketplaceKind as Kind;
+        match self {
+            Self::Local => Some(vec![Kind::Local]),
+            Self::Vertical => Some(vec![Kind::Vertical]),
+            Self::WorkspaceDirectory => Some(vec![Kind::WorkspaceDirectory]),
+            Self::SharedWithMe => Some(vec![Kind::SharedWithMe]),
+            Self::CreatedByMeRemote => Some(vec![Kind::CreatedByMeRemote]),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum PluginCatalogState {
+    Loading,
+    Loaded(AgentPluginCatalog),
+    Failed(AgentPluginsError),
+}
 
 /// What the user asked the server to do. The intent is kept verbatim so a
 /// failed attempt can be retried without re-deriving it from the view.
@@ -109,6 +148,7 @@ pub struct PluginsDirectory {
     pub cycle: u64,
     pub generation: u64,
     pub catalog: Option<AgentPluginCatalog>,
+    pub sources: BTreeMap<PluginCatalogSource, PluginCatalogState>,
     /// The installed subset from `plugin/installed`, kept apart from the full
     /// catalog because the two are different reads with different freshness.
     pub installed: Option<AgentPluginCatalog>,
@@ -154,23 +194,111 @@ impl PluginsDirectory {
         self.installed_loading = true;
         self.error = None;
         self.installed_error = None;
+        self.sources.clear();
         self.cycle
     }
 
-    pub fn apply_catalog(&mut self, cycle: u64, catalog: AgentPluginCatalog) -> bool {
-        if cycle != self.cycle {
+    pub fn begin_sources(&mut self, generation: u64, sources: &[PluginCatalogSource]) -> u64 {
+        let cycle = self.begin_load(generation);
+        self.catalog = None;
+        self.loading = !sources.is_empty();
+        self.sources = sources
+            .iter()
+            .map(|source| (*source, PluginCatalogState::Loading))
+            .collect();
+        cycle
+    }
+
+    /// Publish each result as it arrives. Failed or pending sources never
+    /// erase successful ones; merging uses server plugin IDs and retains the
+    /// original marketplace selector for reads and installs.
+    pub fn apply_source(
+        &mut self,
+        cycle: u64,
+        source: PluginCatalogSource,
+        result: Result<AgentPluginCatalog, AgentPluginsError>,
+    ) -> bool {
+        if cycle != self.cycle || !self.sources.contains_key(&source) {
             return false;
         }
-        self.loading = false;
-        self.error = None;
+        if let Ok(catalog) = &result {
+            if catalog.generation < self.generation {
+                return false;
+            }
+            self.generation = catalog.generation;
+        }
+        self.sources.insert(
+            source,
+            match result {
+                Ok(catalog) => PluginCatalogState::Loaded(catalog),
+                Err(error) => PluginCatalogState::Failed(error),
+            },
+        );
+        self.loading = self
+            .sources
+            .values()
+            .any(|state| matches!(state, PluginCatalogState::Loading));
+        let mut merged: Option<AgentPluginCatalog> = None;
+        let mut ids = BTreeSet::new();
+        for state in self.sources.values() {
+            let PluginCatalogState::Loaded(catalog) = state else {
+                continue;
+            };
+            if catalog.generation != self.generation {
+                continue;
+            }
+            let merged = merged.get_or_insert_with(|| AgentPluginCatalog {
+                generation: catalog.generation,
+                marketplaces: Vec::new(),
+                featured_plugin_ids: Vec::new(),
+                marketplace_load_errors: Vec::new(),
+                extra: Default::default(),
+            });
+            merged
+                .marketplace_load_errors
+                .extend(catalog.marketplace_load_errors.iter().cloned());
+            for id in &catalog.featured_plugin_ids {
+                if !merged.featured_plugin_ids.contains(id) {
+                    merged.featured_plugin_ids.push(id.clone());
+                }
+            }
+            for marketplace in &catalog.marketplaces {
+                let mut entry = marketplace.clone();
+                entry.plugins.retain(|plugin| ids.insert(plugin.id.clone()));
+                if let Some(existing) = merged
+                    .marketplaces
+                    .iter_mut()
+                    .find(|m| m.name == entry.name && m.path == entry.path)
+                {
+                    existing.plugins.extend(entry.plugins);
+                } else {
+                    merged.marketplaces.push(entry);
+                }
+            }
+        }
+        self.catalog = merged;
+        self.error = if self.sources.len() == 1 {
+            self.sources.values().find_map(|state| match state {
+                PluginCatalogState::Failed(error) => Some(error.clone()),
+                _ => None,
+            })
+        } else {
+            None
+        };
         self.stale = false;
-        self.generation = catalog.generation;
-        self.catalog = Some(catalog);
         true
     }
 
+    pub fn source_failed(&self) -> bool {
+        self.sources.values().any(|state| match state {
+            PluginCatalogState::Failed(_) => true,
+            PluginCatalogState::Loaded(catalog) => !catalog.marketplace_load_errors.is_empty(),
+            PluginCatalogState::Loading => false,
+        })
+    }
+
     pub fn apply_installed(&mut self, cycle: u64, catalog: AgentPluginCatalog) -> bool {
-        if cycle != self.cycle {
+        if cycle != self.cycle || catalog.generation < self.generation {
             return false;
         }
         self.generation = catalog.generation;
@@ -214,15 +342,6 @@ impl PluginsDirectory {
                 .plugins()
                 .any(|(_, installed)| installed.id == plugin.id && installed.installed)
         })
-    }
-
-    pub fn apply_error(&mut self, cycle: u64, error: AgentPluginsError) -> bool {
-        if cycle != self.cycle {
-            return false;
-        }
-        self.loading = false;
-        self.error = Some(error);
-        true
     }
 
     pub fn start_operation(&mut self, intent: PluginIntent) -> u64 {
@@ -390,6 +509,10 @@ impl PluginsDirectory {
                 })
                 .unwrap_or_default();
         }
+        self.catalog_rows()
+    }
+
+    pub fn catalog_rows(&self) -> Vec<PluginRow<'_>> {
         self.catalog
             .as_ref()
             .map(|catalog| {
@@ -463,28 +586,30 @@ mod tests {
     #[test]
     fn a_superseded_read_never_overwrites_a_newer_one() {
         let mut directory = PluginsDirectory::default();
-        let stale = directory.begin_load(1);
-        let current = directory.begin_load(1);
+        let stale = directory.begin_sources(1, &[PluginCatalogSource::Local]);
+        let current = directory.begin_sources(1, &[PluginCatalogSource::Local]);
         assert!(
-            !directory.apply_error(
+            !directory.apply_source(
                 stale,
-                AgentPluginsError {
+                PluginCatalogSource::Local,
+                Err(AgentPluginsError {
                     kind: AgentPluginsErrorKind::Connection,
                     message: "old".into(),
                     data: None,
                     outcome_unknown: false,
-                }
+                })
             ),
             "a response for a superseded cycle is discarded"
         );
-        assert!(directory.apply_error(
+        assert!(directory.apply_source(
             current,
-            AgentPluginsError {
+            PluginCatalogSource::Local,
+            Err(AgentPluginsError {
                 kind: AgentPluginsErrorKind::Protocol,
                 message: "new".into(),
                 data: None,
                 outcome_unknown: false,
-            }
+            })
         ));
         assert_eq!(directory.error.unwrap().message, "new");
     }

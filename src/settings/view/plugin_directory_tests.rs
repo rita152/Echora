@@ -1,4 +1,5 @@
 use super::*;
+use crate::agent::AgentPluginMarketplaceKind as Kind;
 use crate::agent::*;
 use gpui::TestApp;
 use std::sync::{Arc, Mutex};
@@ -142,6 +143,7 @@ impl Fixture {
         let settings = app
             .new_entity(|cx| SettingsView::new(crate::theme::ThemeMode::Dark, backend.clone(), cx));
         app.update_entity(&settings, |s, cx| {
+            s.plugins_generation = 7;
             s.open_plugin_directory("/verification".into(), cx)
         });
         Self {
@@ -161,10 +163,13 @@ impl Fixture {
     ) {
         {
             let script = self.backend.0.lock().unwrap();
-            script.catalogs[index]
+            script.catalogs[index * 5]
                 .1
                 .send_blocking(Ok(catalog(available)))
                 .unwrap();
+            for (_, reply) in script.catalogs.iter().skip(index * 5 + 1).take(4) {
+                reply.send_blocking(Ok(catalog(vec![]))).unwrap();
+            }
             script.installed[index]
                 .send_blocking(Ok(catalog(installed)))
                 .unwrap();
@@ -174,42 +179,47 @@ impl Fixture {
 }
 
 #[test]
-fn public_personal_and_installed_reads_have_real_scopes_and_discard_late_responses() {
+fn all_sources_are_isolated_and_switching_to_installed_discards_late_catalogs() {
     let mut f = Fixture::new();
     {
         let s = f.backend.0.lock().unwrap();
-        assert_eq!(
-            s.catalogs[0].0.marketplace_kinds,
-            Some(vec![Kind::Vertical])
-        );
+        assert_eq!(s.catalogs.len(), 5);
+        assert_eq!(s.catalogs[0].0.marketplace_kinds, Some(vec![Kind::Local]));
         assert_eq!(
             s.catalogs[0].0.cwds,
             Some(vec![PathBuf::from("/verification")])
         );
+        for (index, kind) in [
+            Kind::Vertical,
+            Kind::WorkspaceDirectory,
+            Kind::SharedWithMe,
+            Kind::CreatedByMeRemote,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(s.catalogs[index + 1].0.marketplace_kinds, Some(vec![kind]));
+        }
     }
-    f.with(|s, cx| s.select_directory_scope(Scope::Personal, cx));
-    f.reply(0, vec![plugin("public-old", false)], vec![]);
-    f.with(|s, _| assert!(s.plugins_catalog.directory.catalog.is_none()));
-    f.reply(
-        1,
-        vec![plugin("personal", false)],
-        vec![plugin("installed-only", true)],
-    );
+    f.with(|s, cx| s.select_directory_scope(Scope::Installed, cx));
+    f.reply(0, vec![plugin("stale", false)], vec![]);
+    {
+        let script = f.backend.0.lock().unwrap();
+        assert_eq!(
+            script.catalogs.len(),
+            5,
+            "installed does not query unrelated catalogs"
+        );
+        script.installed[1]
+            .send_blocking(Ok(catalog(vec![plugin("installed-only", true)])))
+            .unwrap();
+    }
+    f.app.run_until_parked();
     f.with(|s, _| {
-        assert_eq!(s.plugins_generation, 7);
-        assert_eq!(s.directory_rows()[0].plugin.name, "personal");
-        s.directory_scope = Scope::Installed;
+        assert!(s.plugins_catalog.directory.catalog.is_none());
         assert_eq!(s.directory_rows()[0].plugin.name, "installed-only");
+        assert!(!s.plugins_catalog.directory.loading);
     });
-    let s = f.backend.0.lock().unwrap();
-    assert!(
-        !s.catalogs[1]
-            .0
-            .marketplace_kinds
-            .as_ref()
-            .unwrap()
-            .contains(&Kind::Vertical)
-    );
 }
 
 #[test]
@@ -284,6 +294,7 @@ fn same_term_search_replies_from_an_older_request_are_ignored() {
     let mut f = Fixture::new();
     f.reply(0, vec![plugin("current", false)], vec![]);
     f.with(|s, cx| {
+        s.directory_presentation = false;
         s.plugins_catalog.directory.set_search_term("same".into());
         s.submit_plugin_search(cx);
         s.submit_plugin_search(cx);
@@ -310,7 +321,12 @@ fn same_term_search_replies_from_an_older_request_are_ignored() {
         .send_blocking(Ok(page("stale")))
         .unwrap();
     f.app.run_until_parked();
-    f.with(|s, _| assert_eq!(s.directory_rows()[0].plugin.name, "current"));
+    f.with(|s, _| {
+        assert_eq!(
+            s.plugins_catalog.directory.visible_plugins()[0].plugin.name,
+            "current"
+        )
+    });
 }
 
 #[test]
@@ -387,44 +403,25 @@ fn successful_install_waits_for_the_installed_readback_before_showing_installed(
 }
 
 #[test]
-fn refresh_reissues_the_query_for_the_new_catalog_cycle() {
+fn directory_refresh_preserves_the_query_and_filters_new_sources_without_remote_search() {
     let mut f = Fixture::new();
     f.reply(0, vec![plugin("current", false)], vec![]);
     f.with(|s, cx| {
-        s.plugins_catalog.directory.set_search_term("same".into());
+        s.plugins_catalog.directory.set_search_term("cur".into());
         s.submit_plugin_search(cx);
         s.refresh_plugins(true, cx);
     });
-    f.reply(1, vec![plugin("current", false)], vec![]);
-    let page = |name| AgentPluginSearchPage {
-        generation: 7,
-        cursor: None,
-        search_term: "same".into(),
-        results: vec![AgentPluginSearchResult {
-            marketplace_name: "test-market".into(),
-            marketplace_path: None,
-            plugin: plugin(name, false),
-        }],
-        next_cursor: None,
-        extra: Default::default(),
-    };
-    {
-        let script = f.backend.0.lock().unwrap();
-        assert_eq!(script.searches.len(), 2);
-        script.searches[0]
-            .1
-            .send_blocking(Ok(page("stale")))
-            .unwrap();
-        script.searches[1]
-            .1
-            .send_blocking(Ok(page("current")))
-            .unwrap();
-    }
-    f.app.run_until_parked();
+    f.reply(
+        1,
+        vec![plugin("current-new", false), plugin("other", false)],
+        vec![],
+    );
     f.with(|s, _| {
         assert!(!s.plugins_catalog.directory.searching);
-        assert_eq!(s.directory_rows()[0].plugin.name, "current");
+        assert_eq!(s.directory_rows().len(), 1);
+        assert_eq!(s.directory_rows()[0].plugin.name, "current-new");
     });
+    assert!(f.backend.0.lock().unwrap().searches.is_empty());
 }
 
 #[test]
@@ -444,4 +441,133 @@ fn installed_search_uses_the_inventory_without_a_global_search_request() {
         assert_eq!(s.directory_rows()[0].plugin.name, "installed-only");
     });
     assert!(f.backend.0.lock().unwrap().searches.is_empty());
+}
+
+#[test]
+fn local_and_installed_results_publish_while_remote_sources_are_pending_or_rejected() {
+    let mut f = Fixture::new();
+    {
+        let script = f.backend.0.lock().unwrap();
+        script.catalogs[0]
+            .1
+            .send_blocking(Ok(catalog(vec![plugin("local", false)])))
+            .unwrap();
+        script.installed[0]
+            .send_blocking(Ok(catalog(vec![plugin("installed", true)])))
+            .unwrap();
+    }
+    f.app.run_until_parked();
+    f.with(|s, _| {
+        assert_eq!(s.directory_rows()[0].plugin.name, "local");
+        assert_eq!(s.plugins_catalog.directory.installed_rows().len(), 1);
+        assert!(!s.plugins_catalog.directory.installed_loading);
+        assert!(s.plugins_catalog.directory.loading);
+    });
+    {
+        let script = f.backend.0.lock().unwrap();
+        script.catalogs[1]
+            .1
+            .send_blocking(Ok(catalog(vec![])))
+            .unwrap();
+        for (_, reply) in &script.catalogs[2..] {
+            let mut e = error();
+            e.kind = AgentPluginsErrorKind::AuthenticationRequired;
+            reply.send_blocking(Err(e)).unwrap();
+        }
+    }
+    f.app.run_until_parked();
+    f.with(|s, _| {
+        assert_eq!(s.directory_rows()[0].plugin.name, "local");
+        assert_eq!(s.plugins_catalog.directory.installed_rows().len(), 1);
+        assert!(s.plugins_catalog.directory.source_failed());
+        assert!(!s.plugins_catalog.directory.loading);
+    });
+}
+
+#[test]
+fn reconnect_discards_old_source_and_installed_replies() {
+    let mut f = Fixture::new();
+    f.with(|s, cx| s.plugin_generation_started(8, cx));
+    f.reply(0, vec![plugin("stale", false)], vec![plugin("stale", true)]);
+    f.with(|s, _| {
+        assert!(s.directory_rows().is_empty());
+        assert!(s.plugins_catalog.directory.installed.is_none());
+        assert_eq!(s.plugins_generation, 8);
+    });
+    {
+        let script = f.backend.0.lock().unwrap();
+        for (_, reply) in &script.catalogs[5..] {
+            let mut c = catalog(vec![plugin("new", false)]);
+            c.generation = 8;
+            reply.send_blocking(Ok(c)).unwrap();
+        }
+        let mut c = catalog(vec![plugin("new", true)]);
+        c.generation = 8;
+        script.installed[1].send_blocking(Ok(c)).unwrap();
+    }
+    f.app.run_until_parked();
+    f.with(|s, _| assert_eq!(s.directory_rows()[0].plugin.name, "new"));
+}
+
+#[test]
+fn an_empty_catalog_is_distinct_from_all_sources_failing() {
+    for failed in [false, true] {
+        let mut f = Fixture::new();
+        {
+            let script = f.backend.0.lock().unwrap();
+            for (_, reply) in &script.catalogs {
+                reply
+                    .send_blocking(if failed {
+                        Err(error())
+                    } else {
+                        Ok(catalog(vec![]))
+                    })
+                    .unwrap();
+            }
+            script.installed[0]
+                .send_blocking(Ok(catalog(vec![])))
+                .unwrap();
+        }
+        f.app.run_until_parked();
+        f.with(|s, _| {
+            assert_eq!(s.plugins_catalog.directory.catalog.is_some(), !failed);
+            assert_eq!(s.plugins_catalog.directory.source_failed(), failed);
+            assert!(!s.plugins_catalog.directory.loading);
+            assert!(s.directory_rows().is_empty());
+            assert!(!s.plugins_catalog.directory.installed_loading);
+        });
+    }
+}
+
+#[test]
+fn merged_sources_deduplicate_server_ids_and_keep_the_original_marketplace_selector() {
+    let mut f = Fixture::new();
+    {
+        let script = f.backend.0.lock().unwrap();
+        let mut local = catalog(vec![plugin("local", false)]);
+        local.marketplaces[0].path = Some("/actual/local/catalog.json".into());
+        script.catalogs[0]
+            .1
+            .send_blocking(Ok(local.clone()))
+            .unwrap();
+        local.marketplaces[0].plugins.push(plugin("remote", false));
+        script.catalogs[1].1.send_blocking(Ok(local)).unwrap();
+        for (_, reply) in &script.catalogs[2..] {
+            reply.send_blocking(Err(error())).unwrap();
+        }
+        script.installed[0]
+            .send_blocking(Ok(catalog(vec![])))
+            .unwrap();
+    }
+    f.app.run_until_parked();
+    f.with(|s, cx| {
+        assert_eq!(s.directory_rows().len(), 2);
+        s.open_plugin_detail("local@test-market".into(), cx);
+    });
+    let script = f.backend.0.lock().unwrap();
+    assert_eq!(
+        script.details[0].0.marketplace_path.as_deref(),
+        Some("/actual/local/catalog.json")
+    );
+    assert!(script.details[0].0.remote_marketplace_name.is_none());
 }

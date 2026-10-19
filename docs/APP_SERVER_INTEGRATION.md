@@ -356,10 +356,10 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `permissionProfile/list` | 默认 | 已接入 | cwd、limit=100、遍历 nextCursor，拒绝循环游标及重复 id；消费 id/allowed/description，兼容可选 extends；设置展示 profile，Composer 菜单仅列三种权限模式并据目录判定禁用原因，提交前复核 allowed。 | `manager/catalog`、`catalog` |
 | `plugin/install` | 默认 | 已接入 | pluginName + marketplacePath/remoteMarketplaceName（未用一侧显式 null），可选 installAttemptId；120s 操作窗口，成功回执保留 authPolicy 与 appsNeedingAuth；超时与不可读结果分别建模为 TimedOut/Unknown，不自动重试。 | `manager/plugins`、`plugins_catalog` |
 | `plugin/installed` | 默认 | 已接入 | cwds 与 installSuggestionPluginNames；与 `plugin/list` 分别缓存，侧栏已安装列表与安装状态以该响应为准；读取失败独立展示，写操作采用返回的连接代次并等待回读确认；输入框添加选择器按 cwd/generation 读取并展示已安装启用条目。 | `manager/plugins`、`plugins` |
-| `plugin/list` | 默认 | 已接入 | cwds、forceRefetch、marketplaceKinds；侧栏独立插件目录按公开 vertical、个人 local/workspace-directory/shared-with-me/created-by-me-remote、已安装全部类型读取；保留 marketplaceLoadErrors、featuredPluginIds、interface、source 四种变体与未知字段；行内容与分段徽标计数均来自该响应。 | `manager/plugins`、`plugins` |
+| `plugin/list` | 默认 | 已接入 | cwds、forceRefetch、marketplaceKinds；侧栏全部视图将 local、vertical、workspace-directory、shared-with-me、created-by-me-remote 分为独立请求，逐个发布成功结果、按服务端插件 id 去重并保留原始 marketplace 选择器，来源分别显示加载/空/鉴权/不支持/失败；已安装视图仅调用 plugin/installed，刷新、范围切换与连接代次变化废弃旧响应；保留 marketplaceLoadErrors、featuredPluginIds、interface、source 四种变体与未知字段；行内容与分段徽标计数均来自该响应。 | `manager/plugins`、`plugins` |
 | `plugin/reconcile` | 默认 | 已接入 | reason；每个连接 generation 首次加载插件目录时执行一次，回执中的 changedPlugins 与失败 id 列表按服务端上报展示。 | `manager/plugins`、`plugins_catalog` |
 | `plugin/read` | 默认 | 已接入 | pluginName + marketplacePath/remoteMarketplaceName；保留 description、apps、appTemplates、hooks、mcpServers、scheduledTasks、skills 与未知字段；侧栏详情显示 interface 的介绍、开发者、类别、版本、链接与截图；远程 marketplace 身份传递至读取与安装。 | `manager/plugins`、`plugins` |
-| `plugin/search` | 实验 | 已接入 | searchTerm + cursor/limit/scope/cwds；scope=global 表示跨全部可见 marketplace；遍历 nextCursor 并拒绝重复游标；结果行保留其自身的 marketplace 身份；侧栏即时搜索隔离读取周期及查询版本，全局结果再按当前目录范围筛选，已安装清单本地过滤；plugin/* 保留结构化服务端错误，-32601 显示不支持，其他拒绝不误报连接断开。 | `manager/plugins`、`plugins` |
+| `plugin/search` | 实验 | 已接入 | searchTerm + cursor/limit/scope/cwds；scope=global 表示跨全部可见 marketplace；遍历 nextCursor 并拒绝重复游标；结果行保留其自身的 marketplace 身份；设置页全局搜索隔离读取周期及查询版本；侧栏全部/已安装搜索在 plugin/list 无游标的完整成功合集/独立已安装清单中本地过滤，不依赖远程搜索鉴权；plugin/* 保留结构化服务端错误，-32601 显示不支持，远程目录明确的 ChatGPT 鉴权拒绝单独分类，其他拒绝不误报连接断开。 | `manager/plugins`、`plugins` |
 | `plugin/share/checkout` | 默认 | 未接入 | — | — |
 | `plugin/share/delete` | 默认 | 已接入 | remotePluginId；经确认卡发送，结果未知不自动重试。 | `manager/plugins`、`plugins_catalog` |
 | `plugin/share/list` | 默认 | 已接入 | 无参数；未登录 ChatGPT 时服务端返回 -32600，错误原文按服务端语义展示，不伪造空列表。 | `manager/plugins`、`plugins_catalog` |
@@ -477,7 +477,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `item/tool/requestUserInput` | 默认 | 已接入 | 保留 question id/header/question/options/isOther/isSecret、isBlocking、nullable autoResolutionMs；返回 question id → 字符串数组的 answers，Debug 隐去答案；兼容 tool/requestUserInput 别名。 | `requests`、`registry` |
 | `mcpServer/elicitation/request` | 默认 | 已接入 | 只支持标准 MCP `mode=form` 与 `mode=url`；请求由 connection generation + 原始 request id 拥有，不绑定 turn，缺省／null／活动／已完成 turn 与 side conversation 都可展示与回复；`openai/form`、`openaiForm`、`openai/userVerification` 按协议错误回 `-32602` 并终止连接。 | `elicitation`、`manager/dispatch`、`manager/connection`、`conversation/elicitation`、`mcp_elicitation` |
 
-### 服务端通知（84，含运行时兼容扩展）
+### 服务端通知（83）
 
 | 方法 | API | 状态 | 已实现行为与限制 | 入口 |
 |---|---|---|---|---|
@@ -550,7 +550,6 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/realtime/started` | 默认 | 未接入 | — | — |
 | `thread/realtime/transcript/delta` | 默认 | 未接入 | — | — |
 | `thread/realtime/transcript/done` | 默认 | 未接入 | — | — |
-| `thread/readState/changed` | 运行时兼容 | 已接入 | 校验 threadId、readState.revision 与 nullable firstUnread（type=turn、turnId）；连接级快照按线程重放，更新本地未读集；当前正在查看的线程保持已读。尚无已验证的服务端标记已读 RPC，本地打开及「全部标记已读」不写服务端。 | `manager/dispatch`、`notifications`、`workspace` |
 | `thread/reverted` | 默认 | 已接入 | 仅 threadId；可先于 thread/revert 响应到达，按“通知先于 RPC 响应”暂存为该请求的确认。非本客户端发起的回退作为连接事件发布，令所属会话把已归约历史标记为过期并按分页路径重载，不改变侧栏条目身份。 | `manager/dispatch`、`manager/revert`、`manager/connection` |
 | `thread/settings/updated` | 默认 | 已接入 | 按原 threadId／generation 同步 model/effort/serviceTier/cwd 与有效权限；匹配本次期望值才满足 waiter，处理响应前通知、重复／已知迟到回执及关闭临时线程。 | `manager/dispatch`、`manager/settings`、`notifications` |
 | `thread/started` | 默认 | 已接入 | 校验 params.thread.id，关联当前 start/resume/fork；RPC 响应是最终 id 来源。已加载线程的迟到通知不得绑定到下一次生命周期请求。 | `manager/dispatch` |
@@ -565,6 +564,14 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `warning` | 默认 | 兼容退订 | 与参考一致按完整方法名退订：0.158 在每次 thread/start、thread/resume 时把连接级 `configWarning` 的同一文本再发成线程级 `warning`，参考会话页不显示任何 `warning`。解码与按 threadId 路由仍保留，服务端未遵守退订时只进入目标 Composer。 | `runtime::OPT_OUT_NOTIFICATION_METHODS`、`manager/dispatch` |
 | `windows/worldWritableWarning` | 默认 | 未接入 | — | — |
 | `windowsSandbox/setupCompleted` | 默认 | 未接入 | — | — |
+
+## 运行时兼容扩展
+
+以下方法来自实际服务端，不属于上述基线 schema，也不计入基线方法与状态总数。
+
+| 方法 | API | 状态 | 已实现行为与限制 | 入口 |
+|---|---|---|---|---|
+| `thread/readState/changed` | 运行时兼容 | 已接入 | 校验 threadId、readState.revision 与 nullable firstUnread（type=turn、turnId）；连接级快照按线程重放，更新本地未读集；当前正在查看的线程保持已读。尚无已验证的服务端标记已读 RPC，本地打开及「全部标记已读」不写服务端。 | `manager/dispatch`、`notifications`、`workspace` |
 
 ## 维护与验证
 

@@ -69,7 +69,7 @@ The Environment panel provides quick access to the working location, branches, G
 
 Echora supports light and dark themes, plus English, Simplified Chinese, and automatic language detection. Change the interface language in **Settings → General → Language**.
 
-The sidebar **Plugins** entry opens a dedicated directory with Public, Personal, and Installed views, live search, categorized entries, plugin details, and confirmed install/uninstall actions. The Skills tab reads the agent’s available skills. Catalogs, artwork, permissions, loading states, and errors come from Codex app-server; ChatGPT-only catalogs and private services are not substituted. Returning to a chat restores its draft and panels.
+The sidebar **Plugins** entry opens a dedicated directory with All and Installed views, live search, entries grouped by their actual marketplace, plugin details, and confirmed install/uninstall actions. All independently reads local and remote catalog types, retains successful sources when another requires ChatGPT sign-in or fails, and shows each source’s state. Installed reads its own inventory without waiting for catalogs. Directory search filters the complete loaded catalog union or installed inventory locally. The Skills tab reads the agent’s available skills. Catalogs, artwork, permissions, loading states, and errors come from Codex app-server; ChatGPT-only catalogs and private services are not substituted. Returning to a chat restores its draft and panels.
 
 Settings also provides access to supported Codex preferences, skills, plugins, MCP server status and OAuth login, hooks, experimental features, and memory controls. Available features depend on the connected account, Codex version, and configuration.
 

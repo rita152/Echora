@@ -816,6 +816,7 @@ pub struct AgentPluginInstalledRequest {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AgentPluginsErrorKind {
+    AuthenticationRequired,
     Unsupported,
     Protocol,
     Connection,
@@ -832,6 +833,10 @@ pub struct AgentPluginsError {
 impl AgentPluginsError {
     pub fn user_message(&self) -> String {
         match self.kind {
+            AgentPluginsErrorKind::AuthenticationRequired => crate::i18n::format!(
+                "此远程目录需要 coding agent 使用 ChatGPT 身份登录" =>
+                "This remote catalog requires ChatGPT sign-in in your coding agent"
+            ),
             AgentPluginsErrorKind::Unsupported => {
                 crate::i18n::text("当前 coding agent 不支持插件管理").to_owned()
             }

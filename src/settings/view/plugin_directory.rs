@@ -1,12 +1,11 @@
 //! Sidebar directory presentation, sharing the settings controller and real
 //! plugin lifecycle. No separate catalog, private service, or sample entries.
-use std::{collections::BTreeMap, path::PathBuf, time::Duration};
+use std::{collections::BTreeMap, path::PathBuf};
 
 use gpui::{Context, IntoElement, Role, div, point, prelude::*, px};
 
 use super::{CloseSettings, PluginSegment, SettingsView, plugins_catalog::PluginConfirmation};
 use crate::{
-    agent::AgentPluginMarketplaceKind as Kind,
     components::{icons::icon, markdown::render_pull_request_markdown},
     plugins::{PluginOperationPhase, PluginRow},
     theme::{Theme, UI_FONT_FAMILY},
@@ -14,40 +13,50 @@ use crate::{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Scope {
-    Public,
-    Personal,
+    All,
     Installed,
 }
 
 impl Scope {
-    pub(super) fn marketplace_kinds(self) -> Vec<Kind> {
-        match self {
-            Self::Public => vec![Kind::Vertical],
-            Self::Personal => vec![
-                Kind::Local,
-                Kind::WorkspaceDirectory,
-                Kind::SharedWithMe,
-                Kind::CreatedByMeRemote,
-            ],
-            Self::Installed => vec![
-                Kind::Local,
-                Kind::Vertical,
-                Kind::WorkspaceDirectory,
-                Kind::SharedWithMe,
-                Kind::CreatedByMeRemote,
-            ],
-        }
-    }
     fn label(self) -> String {
         match self {
-            Self::Public => crate::i18n::format!("公开" => "Public"),
-            Self::Personal => crate::i18n::format!("个人" => "Personal"),
+            Self::All => crate::i18n::format!("全部" => "All"),
             Self::Installed => crate::i18n::format!("已安装" => "Installed"),
         }
     }
 }
 
 impl SettingsView {
+    fn directory_source_status(&self, theme: Theme) -> gpui::AnyElement {
+        use crate::plugins::{PluginCatalogSource as Source, PluginCatalogState as State};
+        div().flex().flex_col().gap(px(4.)).children(
+            self.plugins_catalog.directory.sources.iter().map(|(source, state)| {
+                let label = match source {
+                    Source::Local => crate::i18n::format!("本地目录" => "Local catalogs"),
+                    Source::Vertical => crate::i18n::format!("Vertical 目录" => "Vertical catalog"),
+                    Source::WorkspaceDirectory => crate::i18n::format!("工作区目录" => "Workspace directory"),
+                    Source::SharedWithMe => crate::i18n::format!("与我共享" => "Shared with me"),
+                    Source::CreatedByMeRemote => crate::i18n::format!("我创建的远程插件" => "Remote plugins created by me"),
+                };
+                let status = match state {
+                    State::Loading => crate::i18n::format!("正在加载…" => "Loading…"),
+                    State::Loaded(catalog) if !catalog.marketplace_load_errors.is_empty() => crate::i18n::format!("目录部分加载失败" => "Some marketplaces failed to load"),
+                    State::Loaded(catalog) if catalog.plugins().next().is_none() => crate::i18n::format!("目录为空" => "Catalog is empty"),
+                    State::Loaded(catalog) => crate::i18n::format!("{} 个插件" => "{} plugins", catalog.plugins().count()),
+                    State::Failed(error) if error.kind == crate::agent::AgentPluginsErrorKind::Unsupported => crate::i18n::format!("此目录类型不受支持" => "This catalog type is not supported"),
+                    State::Failed(error) => error.user_message(),
+                };
+                let text = format!("{label}: {status}");
+                div().id(format!("directory-source-{source:?}")).role(Role::Group).aria_label(text.clone()).text_size(px(12.))
+                    .text_color(theme.text_secondary).child(text)
+                    .when(matches!(state, State::Failed(error) if error.kind != crate::agent::AgentPluginsErrorKind::AuthenticationRequired), |row| {
+                        let State::Failed(error) = state else { unreachable!() };
+                        row.child(div().child(error.message.clone()))
+                    })
+            })
+        ).into_any_element()
+    }
+
     pub fn open_plugin_directory(&mut self, cwd: PathBuf, cx: &mut Context<Self>) {
         if self.plugins_cwd.as_ref() != Some(&cwd) {
             self.plugins_catalog.directory.installed = None;
@@ -98,8 +107,7 @@ impl SettingsView {
         }
         self.directory_scope = scope;
         self.clear_directory_navigation(cx);
-        // A public list must not be painted under the personal tab while the
-        // scoped read is pending (or if it fails).
+        // Do not display another scope while its independent read is pending.
         self.plugins_catalog.directory.catalog = None;
         self.refresh_plugins(false, cx);
         cx.notify();
@@ -127,24 +135,8 @@ impl SettingsView {
             return;
         }
         self.plugins_catalog.directory.set_search_term(text);
-        let revision = self.plugins_catalog.directory.search_revision;
-        self.plugins_catalog.directory.searching =
-            !self.plugins_catalog.directory.search_term.trim().is_empty();
+        self.plugins_catalog.directory.searching = false;
         cx.notify();
-        cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(180))
-                .await;
-            let _ = this.update(cx, |this, cx| {
-                if this.directory_presentation
-                    && this.plugins_segment == PluginSegment::Plugins
-                    && this.plugins_catalog.directory.search_revision == revision
-                {
-                    this.submit_plugin_search(cx);
-                }
-            });
-        })
-        .detach();
     }
 
     fn directory_rows(&self) -> Vec<PluginRow<'_>> {
@@ -165,19 +157,29 @@ impl SettingsView {
                 })
                 .collect();
         }
-        let rows = directory.visible_plugins();
-        if directory.search_term.trim().is_empty() {
-            return rows;
-        }
-        // plugin/search is global. Keep each tab within the marketplace set
-        // its scoped plugin/list actually returned; never guess a source kind.
-        rows.into_iter()
-            .filter(|row| {
-                directory.catalog.as_ref().is_some_and(|catalog| {
-                    catalog
-                        .plugins()
-                        .any(|(_, plugin)| plugin.id == row.plugin.id)
-                })
+        let query = directory.search_term.trim().to_lowercase();
+        directory
+            .catalog
+            .as_ref()
+            .into_iter()
+            .flat_map(|catalog| catalog.plugins())
+            .filter(|(_, plugin)| {
+                query.is_empty()
+                    || plugin.display_name().to_lowercase().contains(&query)
+                    || plugin.name.to_lowercase().contains(&query)
+                    || plugin
+                        .description()
+                        .is_some_and(|s| s.to_lowercase().contains(&query))
+                    || plugin.keywords.as_ref().is_some_and(|words| {
+                        words
+                            .iter()
+                            .any(|word| word.to_lowercase().contains(&query))
+                    })
+            })
+            .map(|(marketplace, plugin)| PluginRow {
+                plugin,
+                marketplace_name: &marketplace.name,
+                marketplace_path: marketplace.path.as_deref(),
             })
             .collect()
     }
@@ -367,6 +369,9 @@ impl SettingsView {
                 &theme,
             ));
         }
+        if self.directory_scope == Scope::All {
+            feedback = feedback.child(self.directory_source_status(theme));
+        }
         if let Some(catalog) = &directory.catalog {
             for error in &catalog.marketplace_load_errors {
                 feedback = feedback.child(self.catalog_state_card(
@@ -382,9 +387,10 @@ impl SettingsView {
     fn directory_catalog(&self, theme: Theme, cx: &mut Context<Self>) -> gpui::AnyElement {
         let directory = &self.plugins_catalog.directory;
         let mut body = div().w_full().flex().flex_col().gap(px(24.));
-        let pending = directory.loading
-            || (self.directory_scope == Scope::Installed && directory.installed_loading)
-            || (directory.searching && self.directory_scope != Scope::Installed);
+        let pending = match self.directory_scope {
+            Scope::All => directory.loading,
+            Scope::Installed => directory.installed_loading,
+        };
         if pending {
             body = body.child(self.catalog_state_card(
                 crate::i18n::text("正在读取插件目录…"),
@@ -395,26 +401,24 @@ impl SettingsView {
         let rows = self.directory_rows();
         if rows.is_empty()
             && !pending
+            && (self.directory_scope == Scope::Installed
+                || !directory.source_failed()
+                || !directory.search_term.trim().is_empty())
             && directory.error.is_none()
             && directory.search_error.is_none()
             && !(self.directory_scope == Scope::Installed && directory.installed_error.is_some())
         {
             body = body.child(self.catalog_state_card(
-                &crate::i18n::format!("未找到插件" => "No plugins found"),
+                &if !directory.search_term.trim().is_empty() {
+                    crate::i18n::format!("已加载的插件中没有匹配结果" => "No matches in the loaded plugins")
+                } else { crate::i18n::format!("未找到插件" => "No plugins found") },
                 None,
                 &theme,
             ));
         }
         let mut groups: BTreeMap<String, Vec<(usize, PluginRow<'_>)>> = BTreeMap::new();
         for (index, row) in rows.into_iter().enumerate() {
-            let category = row
-                .plugin
-                .interface
-                .as_ref()
-                .and_then(|i| i.category.as_deref())
-                .filter(|s| !s.trim().is_empty())
-                .unwrap_or(row.marketplace_name)
-                .to_owned();
+            let category = row.marketplace_name.to_owned();
             groups.entry(category).or_default().push((index, row));
         }
         for (category, rows) in groups {
@@ -748,12 +752,10 @@ impl SettingsView {
                     .flex().items_center().gap(px(8.)).child(icon("search", theme.text_secondary.into()).size(px(16.)))
                     .child(self.plugin_search_input.clone()));
             if !skills {
-                content = content.child(
-                    div().flex().gap(px(4.)).children(
-                        [Scope::Public, Scope::Personal, Scope::Installed]
-                            .into_iter()
-                            .enumerate()
-                            .map(|(index, scope)| {
+                content =
+                    content.child(div().flex().gap(px(4.)).children(
+                        [Scope::All, Scope::Installed].into_iter().enumerate().map(
+                            |(index, scope)| {
                                 div()
                                     .id(("directory-scope", index))
                                     .role(Role::Tab)
@@ -775,9 +777,21 @@ impl SettingsView {
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.select_directory_scope(scope, cx)
                                     }))
-                            }),
-                    ),
-                );
+                                    .on_key_down(cx.listener(
+                                        move |this, event: &gpui::KeyDownEvent, _, cx| {
+                                            let target = match event.keystroke.key.as_str() {
+                                                "enter" | "space" => Some(scope),
+                                                _ => None,
+                                            };
+                                            if let Some(target) = target {
+                                                this.select_directory_scope(target, cx);
+                                                cx.stop_propagation();
+                                            }
+                                        },
+                                    ))
+                            },
+                        ),
+                    ));
             }
         }
         content = content.child(self.directory_feedback(theme, cx));

@@ -302,6 +302,13 @@ impl SettingsView {
             while let Ok(event) = connection_events.recv().await {
                 let keep_going = this
                     .update(cx, |this, cx| match &event {
+                        crate::agent::AgentConnectionEvent::Runtime(event)
+                            if event.observation
+                                == crate::agent::AgentRuntimeObservation::GenerationStarted =>
+                        {
+                            this.plugin_generation_started(event.generation, cx);
+                            true
+                        }
                         crate::agent::AgentConnectionEvent::SkillsChanged { generation } => {
                             this.apply_skills_changed(*generation, cx);
                             true
@@ -339,7 +346,7 @@ impl SettingsView {
         .detach();
         Self {
             directory_presentation: false,
-            directory_scope: plugin_directory::Scope::Public,
+            directory_scope: plugin_directory::Scope::All,
             directory_titlebar_inset: 0.,
             language_menu_open: false,
             language_menu_index: 0,
@@ -480,8 +487,18 @@ impl SettingsView {
                         || self.skills.directory.error.is_some())
             }
             PluginSegment::Plugins => {
-                self.plugins_catalog.directory.catalog.is_some()
-                    || self.plugins_catalog.directory.error.is_some()
+                let directory = &self.plugins_catalog.directory;
+                if self.directory_presentation
+                    && self.directory_scope == plugin_directory::Scope::Installed
+                {
+                    !directory.installed_loading
+                        && (directory.installed.is_some() || directory.installed_error.is_some())
+                } else {
+                    !directory.loading
+                        && (directory.catalog.is_some()
+                            || directory.error.is_some()
+                            || directory.source_failed())
+                }
             }
             PluginSegment::Apps => self.apps.directory.resolved(),
         }

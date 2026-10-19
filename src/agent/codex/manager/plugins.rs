@@ -68,6 +68,14 @@ fn decode_result<T>(
         return Err(AgentPluginsError {
             kind: if error.get("code").and_then(Value::as_i64) == Some(-32601) {
                 AgentPluginsErrorKind::Unsupported
+            } else if error
+                .get("message")
+                .and_then(Value::as_str)
+                .is_some_and(|message| {
+                    message.contains("chatgpt authentication required for remote plugin catalog")
+                })
+            {
+                AgentPluginsErrorKind::AuthenticationRequired
             } else {
                 AgentPluginsErrorKind::Protocol
             },

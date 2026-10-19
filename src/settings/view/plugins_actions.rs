@@ -22,26 +22,56 @@ impl SettingsView {
     /// the same cycle, so a superseded read cannot overwrite a newer one.
     pub(super) fn refresh_plugins(&mut self, force_refetch: bool, cx: &mut Context<Self>) {
         let generation = self.plugins_generation;
-        let cycle = self.plugins_catalog.directory.begin_load(generation);
-        let reader = self.backend.load_plugin_catalog(AgentPluginCatalogRequest {
-            cwds: self.plugins_cwd.clone().map(|cwd| vec![cwd]),
-            force_refetch,
-            // Browsing the directory asks for every marketplace kind the account
-            // can see; an ordinary load keeps the server's own default set.
-            marketplace_kinds: if self.directory_presentation {
-                Some(self.directory_scope.marketplace_kinds())
-            } else {
-                force_refetch.then(|| {
-                    vec![
-                        crate::agent::AgentPluginMarketplaceKind::Local,
-                        crate::agent::AgentPluginMarketplaceKind::Vertical,
-                        crate::agent::AgentPluginMarketplaceKind::WorkspaceDirectory,
-                        crate::agent::AgentPluginMarketplaceKind::SharedWithMe,
-                        crate::agent::AgentPluginMarketplaceKind::CreatedByMeRemote,
-                    ]
-                })
-            },
-        });
+        use crate::plugins::PluginCatalogSource as Source;
+        let sources: &[Source] = if self.directory_presentation {
+            match self.directory_scope {
+                super::plugin_directory::Scope::All => &Source::ALL,
+                super::plugin_directory::Scope::Installed => &[],
+            }
+        } else {
+            &[Source::Local]
+        };
+        let cycle = self
+            .plugins_catalog
+            .directory
+            .begin_sources(generation, sources);
+        // Catalog sources and installed inventory are independent. A slow or
+        // rejected remote read cannot block publication of either local data
+        // or the installed inventory.
+        for &source in sources {
+            let reader = self.backend.load_plugin_catalog(AgentPluginCatalogRequest {
+                cwds: self.plugins_cwd.clone().map(|cwd| vec![cwd]),
+                force_refetch,
+                marketplace_kinds: source.marketplace_kinds(),
+            });
+            cx.spawn(async move |this, cx| {
+                let result = reader
+                    .recv()
+                    .await
+                    .unwrap_or_else(|_| Err(disconnected_plugins_error()));
+                let _ = this.update(cx, |this, cx| {
+                    if let Ok(catalog) = &result
+                        && catalog.generation > this.plugins_generation
+                    {
+                        this.plugin_generation_started(catalog.generation, cx);
+                    }
+                    if !this
+                        .plugins_catalog
+                        .directory
+                        .apply_source(cycle, source, result)
+                    {
+                        return;
+                    }
+                    this.plugins_generation = this.plugins_catalog.directory.generation;
+                    if !this.plugins_catalog.directory.loading {
+                        this.plugins_catalog.directory.clear_settled_operations();
+                        this.plugin_catalog_read_finished(cycle, cx);
+                    }
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
         let installed_reader = self
             .backend
             .load_installed_plugins(AgentPluginInstalledRequest {
@@ -49,66 +79,32 @@ impl SettingsView {
                 install_suggestion_plugin_names: None,
             });
         cx.spawn(async move |this, cx| {
-            let catalog = reader.recv().await;
-            let installed = installed_reader.recv().await;
+            let result = installed_reader
+                .recv()
+                .await
+                .unwrap_or_else(|_| Err(disconnected_plugins_error()));
             let _ = this.update(cx, |this, cx| {
-                match catalog {
-                    Ok(Ok(catalog)) => {
-                        if this.plugins_catalog.directory.apply_catalog(cycle, catalog) {
-                            this.plugins_generation = this.plugins_catalog.directory.generation;
-                            this.plugins_catalog.directory.clear_settled_operations();
-                        }
-                    }
-                    Ok(Err(error)) => {
-                        this.plugins_catalog.directory.apply_error(cycle, error);
-                    }
-                    Err(_) => {
-                        this.plugins_catalog
-                            .directory
-                            .apply_error(cycle, disconnected_plugins_error());
-                    }
-                }
-                match installed {
-                    Ok(Ok(installed)) => {
-                        if this
-                            .plugins_catalog
-                            .directory
-                            .apply_installed(cycle, installed)
-                        {
-                            this.plugins_generation = this.plugins_catalog.directory.generation;
-                        }
-                    }
-                    Ok(Err(error)) => {
-                        this.plugins_catalog
-                            .directory
-                            .apply_installed_error(cycle, error);
-                    }
-                    Err(_) => {
-                        this.plugins_catalog
-                            .directory
-                            .apply_installed_error(cycle, disconnected_plugins_error());
-                    }
-                }
-                // Detail actions and installed badges follow the confirmed
-                // readback after a mutation, including the new connection id.
-                if this.directory_presentation
-                    && this.plugins_catalog.directory.cycle == cycle
-                    && let Some(id) = this.plugins_catalog.open_plugin.clone()
+                if let Ok(catalog) = &result
+                    && catalog.generation > this.plugins_generation
                 {
-                    this.open_plugin_detail(id, cx);
+                    this.plugin_generation_started(catalog.generation, cx);
                 }
-                if this.plugins_catalog.directory.cycle == cycle
-                    && let Some(id) = this.plugins_catalog.pending_reference.take()
-                {
-                    this.open_plugin_detail(id, cx);
+                let applied = match result {
+                    Ok(installed) => this
+                        .plugins_catalog
+                        .directory
+                        .apply_installed(cycle, installed),
+                    Err(error) => this
+                        .plugins_catalog
+                        .directory
+                        .apply_installed_error(cycle, error),
+                };
+                if !applied {
+                    return;
                 }
-                // Refresh invalidates searches from the previous catalog cycle.
-                // Reissue the active query so it cannot remain pending forever.
-                if this.directory_presentation
-                    && this.plugins_catalog.directory.cycle == cycle
-                    && !this.plugins_catalog.directory.search_term.trim().is_empty()
-                {
-                    this.submit_plugin_search(cx);
+                this.plugins_generation = this.plugins_catalog.directory.generation;
+                if !this.plugins_catalog.directory.loading {
+                    this.plugin_catalog_read_finished(cycle, cx);
                 }
                 cx.notify();
             });
@@ -135,6 +131,51 @@ impl SettingsView {
             })
             .detach();
         }
+    }
+
+    fn plugin_catalog_read_finished(&mut self, cycle: u64, cx: &mut Context<Self>) {
+        if self.plugins_catalog.directory.cycle != cycle {
+            return;
+        }
+        if self.directory_presentation
+            && let Some(id) = self.plugins_catalog.open_plugin.clone()
+        {
+            self.open_plugin_detail(id, cx);
+        }
+        if let Some(id) = self.plugins_catalog.pending_reference.take() {
+            self.open_plugin_detail(id, cx);
+        }
+        if !self.plugins_catalog.directory.search_term.trim().is_empty() {
+            self.submit_plugin_search(cx);
+        }
+    }
+
+    pub(super) fn plugin_generation_started(&mut self, generation: u64, cx: &mut Context<Self>) {
+        if generation <= self.plugins_generation {
+            return;
+        }
+        self.plugins_generation = generation;
+        self.plugins_catalog
+            .directory
+            .begin_sources(generation, &[]);
+        self.plugins_catalog.directory.installed = None;
+        self.plugins_catalog.directory.installed_loading = false;
+        self.plugins_catalog.directory.clear_detail();
+        self.plugins_catalog.directory.search = None;
+        self.plugins_catalog.directory.search_error = None;
+        self.plugins_catalog.directory.searching = false;
+        self.plugins_catalog.directory.search_revision = self
+            .plugins_catalog
+            .directory
+            .search_revision
+            .wrapping_add(1);
+        if self.directory_presentation
+            || (self.selected == "plugins-settings"
+                && self.plugins_segment == PluginSegment::Plugins)
+        {
+            self.refresh_plugins(false, cx);
+        }
+        cx.notify();
     }
 
     /// Reads the app directory and the installed connector snapshot.
@@ -195,10 +236,12 @@ impl SettingsView {
 
     /// Loads one plugin's detail through `plugin/read`.
     pub(super) fn open_plugin_detail(&mut self, plugin_id: String, cx: &mut Context<Self>) {
-        let Some(row) = self
-            .plugins_catalog
-            .directory
-            .visible_plugins()
+        let rows = if self.directory_presentation {
+            self.plugins_catalog.directory.catalog_rows()
+        } else {
+            self.plugins_catalog.directory.visible_plugins()
+        };
+        let Some(row) = rows
             .into_iter()
             .chain(self.plugins_catalog.directory.installed_rows())
             .find(|row| row.plugin.id == plugin_id)
@@ -685,11 +728,10 @@ impl SettingsView {
     /// Runs a search with the current term. An empty term returns to the full
     /// catalog instead of querying for nothing.
     pub(super) fn submit_plugin_search(&mut self, cx: &mut Context<Self>) {
-        if self.directory_presentation
-            && self.directory_scope == super::plugin_directory::Scope::Installed
-        {
-            // Installed inventory is authoritative and searched locally. Global
-            // search may be unavailable even when installed plugins can be read.
+        if self.directory_presentation {
+            // plugin/list returns complete catalogs (no cursor). Filter their
+            // union locally, so search has exactly the displayed source scope
+            // and stays usable when global remote search requires login.
             self.plugins_catalog.directory.searching = false;
             self.plugins_catalog.directory.search_error = None;
             cx.notify();

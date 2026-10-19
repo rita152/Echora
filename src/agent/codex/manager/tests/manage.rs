@@ -291,3 +291,18 @@ fn plugin_server_refusals_preserve_the_error_without_claiming_disconnection() {
     endpoint.respond(&request, catalog_payload(true));
     assert_eq!(wait_value(&loaded).unwrap().installed_plugin_count(), 1);
 }
+
+#[test]
+fn remote_plugin_catalog_authentication_is_classified_without_losing_the_server_error() {
+    let (manager, spawner) = manager_with_fake();
+    let loaded = manager.load_plugin_catalog(AgentPluginCatalogRequest::default());
+    let mut endpoint = spawner.next_endpoint();
+    handshake(&mut endpoint);
+    let request = endpoint.recv();
+    endpoint.send(json!({"id":request["id"],"error":{"code":-32600,
+        "message":"list remote plugin catalog: chatgpt authentication required for remote plugin catalog"}}));
+    let error = wait_value(&loaded).unwrap_err();
+    assert_eq!(error.kind, AgentPluginsErrorKind::AuthenticationRequired);
+    assert_eq!(error.data.unwrap()["code"], -32600);
+    assert!(!error.outcome_unknown);
+}
