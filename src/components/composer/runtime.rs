@@ -531,6 +531,9 @@ impl ComposerView {
             self.clean_background_terminals(None, false, cx);
         }
     }
+    pub(crate) fn stop_for_computer_use(&mut self, cx: &mut Context<Self>) {
+        self.stop_generation(cx);
+    }
     pub fn retry_image_generation(&mut self, cx: &mut Context<Self>) {
         self.submit_prompt(
             crate::i18n::text("请重新生成上一张图像，保持相同要求。").to_owned(),

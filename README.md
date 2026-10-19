@@ -29,6 +29,7 @@ Start a conversation in a local project, attach context, and follow the agent's 
 - Return to an unsent draft with **New chat** in the same project or section. Its prompt and attachments stay in memory while switching chats; titlebar Back/Forward also restores the original conversation.
 - Use plan mode, set a goal, or start a code review from the slash menu when supported by the backend.
 - Stop a turn, resume an interrupted conversation, search its messages, and jump between prompts.
+- Follow Computer Use in the upper-right window preview, with the current action, progress, and recent operations. macOS live previews use Screen Recording access; without it, the card shows the latest tool capture and its source. **Take over** stops the agent, waits for confirmation, then focuses the selected app. Collapsing the card or leaving the chat stops live capture.
 - Open a temporary side chat to explore a separate question alongside the main conversation.
 
 ## Keep projects and conversations organized

@@ -4,6 +4,7 @@ mod apps;
 mod assets;
 mod browser;
 mod components;
+mod computer_use;
 mod configuration;
 mod conversation;
 mod features;

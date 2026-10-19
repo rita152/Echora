@@ -78,7 +78,7 @@ fn surface_metadata_and_missing_metadata_do_not_erase_computer_calls() {
     );
     assert_eq!(
         computer_use_surface_label(&app).as_deref(),
-        Some("Com.openai.gpui Chat Clone.capture")
+        Some("com.openai.gpui-chat-clone.capture")
     );
     let mut reset = computer_call("reset", "", serde_json::Value::Null);
     reset.tool = "js_reset".into();
@@ -94,7 +94,7 @@ fn surface_metadata_and_missing_metadata_do_not_erase_computer_calls() {
     assert_eq!(group.activities.len(), 2);
     assert_eq!(
         completed_tool_group_summary(group).text,
-        "已使用 Com.openai.gpui Chat Clone.capture 集成"
+        "已使用 com.openai.gpui-chat-clone.capture 集成"
     );
 }
 

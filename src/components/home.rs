@@ -6,6 +6,7 @@ mod animation;
 #[cfg(test)]
 mod auto_approval_tests;
 mod collaboration;
+mod computer_use;
 mod context;
 mod conversation;
 mod dynamic_tool;
@@ -81,6 +82,7 @@ use timeline::{
 use tools::ToolGroupDisclosureTransition;
 
 pub struct HomeView {
+    computer_preview: Entity<computer_use::Preview>,
     /// Capture fixtures show review blocks expanded.
     #[cfg(feature = "screenshot")]
     expand_reviews_for_capture: bool,
@@ -293,6 +295,10 @@ impl HomeView {
             )
         };
         self.has_visible_request(cx)
+            || self.conversation_activity.iter().any(|activity| {
+                matches!(activity,
+                ConversationActivity::McpToolCall(call) if mcp::is_computer_use_call(call))
+            })
             || self.conversation_activity.iter().any(interactive)
             || self.conversation_rows.iter().any(|row| match row {
                 ConversationListRow::Activity {
@@ -403,6 +409,7 @@ impl HomeView {
         cx: &mut Context<Self>,
     ) -> Self {
         let mut view = Self {
+            computer_preview: cx.new(|_| computer_use::Preview::new(mode)),
             mode,
             presentation,
             composer: composer.clone(),
@@ -524,6 +531,15 @@ impl HomeView {
             }
         }
         self.conversation_activity = Rc::new(conversation_activity);
+        self.computer_preview.update(cx, |preview, cx| {
+            preview.sync(
+                self.composer.clone(),
+                &self.conversation_activity,
+                phase,
+                self.mode,
+                cx,
+            );
+        });
         self.conversation_cache_dirty = true;
         sync_list_item_count(&self.conversation_list, self.conversation_rows.len());
         self.flush_pending_navigation_capture(cx);
@@ -915,6 +931,8 @@ impl HomeView {
 
     pub fn set_mode(&mut self, mode: ThemeMode, cx: &mut Context<Self>) {
         self.mode = mode;
+        self.computer_preview
+            .update(cx, |preview, _| preview.mode = mode);
         self.composer
             .update(cx, |composer, cx| composer.set_mode(mode, cx));
         cx.notify();
@@ -2030,6 +2048,7 @@ impl Render for HomeView {
         let measured_home = cx.entity();
         let find_bar = self.render_find_bar(theme, cx);
         content
+            .child(self.computer_preview.clone())
             .on_drop(cx.listener(|home, paths: &gpui::ExternalPaths, _, cx| {
                 home.composer.update(cx, |composer, cx| {
                     composer.attach_paths(paths.paths().to_vec(), cx)

@@ -19,7 +19,17 @@ use crate::{
 };
 
 pub(super) fn is_computer_use_call(call: &AgentMcpToolCall) -> bool {
-    call.server == "cua_repl" && matches!(call.tool.as_str(), "js" | "js_reset")
+    (call.server == "cua_repl" && matches!(call.tool.as_str(), "js" | "js_reset"))
+        || call.server == "computer-use"
+        || matches!(
+            call.result
+                .as_ref()
+                .and_then(|r| r.get("_meta"))
+                .and_then(|m| m.get("codex/toolSurface"))
+                .and_then(|s| s.get("kind"))
+                .and_then(serde_json::Value::as_str),
+            Some("computerUse" | "browserUse")
+        )
 }
 
 pub(super) fn computer_use_surface_label(call: &AgentMcpToolCall) -> Option<String> {
@@ -43,20 +53,13 @@ pub(super) fn computer_use_surface_label(call: &AgentMcpToolCall) -> Option<Stri
     Some(
         surface
             .get("app")
-            .and_then(|a| a.get("appId").or_else(|| a.get("name")))
-            .and_then(serde_json::Value::as_str)
-            .map(|name| {
-                name.split('-')
-                    .map(|part| {
-                        let mut chars = part.chars();
-                        chars
-                            .next()
-                            .map(|c| c.to_uppercase().chain(chars).collect::<String>())
-                            .unwrap_or_default()
-                    })
-                    .collect::<Vec<_>>()
-                    .join(" ")
+            .and_then(|a| {
+                a.get("displayName")
+                    .or_else(|| a.get("name"))
+                    .or_else(|| a.get("appId"))
             })
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
             .unwrap_or_else(|| "Computer Use".into()),
     )
 }
@@ -161,12 +164,6 @@ pub(super) fn computer_use_activity(
                 .cursor_pointer()
                 .on_click(move |_, _, cx| {
                     toggle_command_activity(&click_home, &click_id, &ScrollHandle::new(), cx)
-                })
-                .on_key_down(move |e, _, cx| {
-                    if matches!(e.keystroke.key.as_str(), "enter" | "space") {
-                        toggle_command_activity(&home, &id, &ScrollHandle::new(), cx);
-                        cx.stop_propagation();
-                    }
                 })
                 .child(
                     div()

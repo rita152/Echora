@@ -253,7 +253,7 @@ Composer 的按钮呈现与激活共用状态判定：运行中有草稿时发�
 | `imageGeneration` | 当前 status 为 in_progress/completed/failed，result 必需；读取 nullable revisedPrompt/savedPath/transparentBackground/failure。唯一 typed failure 为 usageLimitExceeded{limitId,resetsAt}；旧命名仅在历史路径兼容 | 优先 savedPath，文件不可用时物化 base64；中断移除未完成 loader，不伪造 failed item |
 | `contextCompaction` | 按 item.id 更新；历史恢复为已完成活动 | 独立压缩上下文活动 |
 | `collabAgentToolCall`、`collabToolCall`、`subAgentActivity` | 当前、相邻版本与旧历史映射为 AgentCollaboration。按载荷中的工具／接收者状态更新；稳定 item.id 原位更新，旧离散事件按 agentThreadId 合并 | 每个接收者独立状态；子任务失败不结束父轮次，支持只读嵌套子会话面板 |
-| `mcpToolCall` | 保留 server/tool/status/arguments/appContext/pluginId/result/error；兼容旧 metadata、mcpAppResourceUri 与字符串 error，连接器自定义 JSON 不丢字段 | 按稳定 item.id 更新；完成快照保留已收到的 progress，错误可见 |
+| `mcpToolCall` | 保留 server/tool/status/arguments/appContext/pluginId/result/error；兼容旧 metadata、mcpAppResourceUri 与字符串 error，连接器自定义 JSON 不丢字段 | 按稳定 item.id 更新；完成快照保留已收到的 progress，错误可见。Computer Use 根据 `_meta["codex/toolSurface"]` 中的应用标识驱动右上角预览与操作记录；macOS 本机 ScreenCaptureKit 在已授权时采集对应窗口，未授权或不支持时诚实显示工具截图来源与不可用原因，不把历史截图标成实时画面。接管复用 `turn/interrupt`，收到停止确认后才聚焦目标应用；切换会话或收起预览会取消采集，过期回调不能恢复旧画面。协议本身不提供原生窗口视频流。 |
 | `plan` | `item/plan/delta` 按所属 turn 内的 item.id 累加；completed item.text 权威覆盖增量，迟到 started/delta 不撤销终态 | Markdown 计划卡；整卡及键盘打开只读文件标签，支持复制和显式导出，沿用本地评价 UI |
 | `webSearch` | 共享实时／历史解析，保留 query、action、results 和额外 JSON 字段；校验 search/openPage/findInPage/other 及 nullable 字段，results 为数组或 null | 单条显示查询／页面／查找目标及状态，多项沿用活动分组 |
 | `sleep` | durationMs 为 uint64；实时按 started/completed 更新，中断／失败只结束仍在运行的活动 | 等待时长及状态；中断明确标记“原定”时长，不把请求时长称为实际耗时 |
