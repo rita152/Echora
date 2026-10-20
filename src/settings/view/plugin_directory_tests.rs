@@ -571,3 +571,55 @@ fn merged_sources_deduplicate_server_ids_and_keep_the_original_marketplace_selec
     );
     assert!(script.details[0].0.remote_marketplace_name.is_none());
 }
+
+#[test]
+fn unavailable_sources_do_not_hide_available_plugins_and_late_sources_publish_automatically() {
+    let mut f = Fixture::new();
+    {
+        let script = f.backend.0.lock().unwrap();
+        script.catalogs[0]
+            .1
+            .send_blocking(Ok(catalog(vec![plugin("local", false)])))
+            .unwrap();
+        script.catalogs[1]
+            .1
+            .send_blocking(Ok(catalog(vec![])))
+            .unwrap();
+        for index in [2, 3] {
+            let mut denied = error();
+            denied.kind = AgentPluginsErrorKind::AuthenticationRequired;
+            script.catalogs[index].1.send_blocking(Err(denied)).unwrap();
+        }
+        script.installed[0]
+            .send_blocking(Ok(catalog(vec![])))
+            .unwrap();
+    }
+    f.app.run_until_parked();
+    f.with(|s, _| {
+        assert_eq!(s.directory_rows().len(), 1);
+        assert_eq!(s.directory_rows()[0].plugin.name, "local");
+        assert!(s.plugins_catalog.directory.loading);
+        assert!(s.plugins_catalog.directory.error.is_none());
+    });
+    f.backend.0.lock().unwrap().catalogs[4]
+        .1
+        .send_blocking(Ok(catalog(vec![plugin("remote-later", false)])))
+        .unwrap();
+    f.app.run_until_parked();
+    f.with(|s, _| {
+        let names = s
+            .directory_rows()
+            .iter()
+            .map(|row| row.plugin.name.as_str())
+            .collect::<Vec<_>>();
+        assert!(names.contains(&"local"));
+        assert!(names.contains(&"remote-later"));
+        assert!(!s.plugins_catalog.directory.loading);
+    });
+    f.with(|s, cx| {
+        assert!(
+            s.directory_feedback(crate::theme::Theme::for_mode(s.mode), cx)
+                .is_none()
+        )
+    });
+}

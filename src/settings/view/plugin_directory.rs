@@ -27,36 +27,6 @@ impl Scope {
 }
 
 impl SettingsView {
-    fn directory_source_status(&self, theme: Theme) -> gpui::AnyElement {
-        use crate::plugins::{PluginCatalogSource as Source, PluginCatalogState as State};
-        div().flex().flex_col().gap(px(4.)).children(
-            self.plugins_catalog.directory.sources.iter().map(|(source, state)| {
-                let label = match source {
-                    Source::Local => crate::i18n::format!("本地目录" => "Local catalogs"),
-                    Source::Vertical => crate::i18n::format!("Vertical 目录" => "Vertical catalog"),
-                    Source::WorkspaceDirectory => crate::i18n::format!("工作区目录" => "Workspace directory"),
-                    Source::SharedWithMe => crate::i18n::format!("与我共享" => "Shared with me"),
-                    Source::CreatedByMeRemote => crate::i18n::format!("我创建的远程插件" => "Remote plugins created by me"),
-                };
-                let status = match state {
-                    State::Loading => crate::i18n::format!("正在加载…" => "Loading…"),
-                    State::Loaded(catalog) if !catalog.marketplace_load_errors.is_empty() => crate::i18n::format!("目录部分加载失败" => "Some marketplaces failed to load"),
-                    State::Loaded(catalog) if catalog.plugins().next().is_none() => crate::i18n::format!("目录为空" => "Catalog is empty"),
-                    State::Loaded(catalog) => crate::i18n::format!("{} 个插件" => "{} plugins", catalog.plugins().count()),
-                    State::Failed(error) if error.kind == crate::agent::AgentPluginsErrorKind::Unsupported => crate::i18n::format!("此目录类型不受支持" => "This catalog type is not supported"),
-                    State::Failed(error) => error.user_message(),
-                };
-                let text = format!("{label}: {status}");
-                div().id(format!("directory-source-{source:?}")).role(Role::Group).aria_label(text.clone()).text_size(px(crate::typography::ui_size(12.)))
-                    .text_color(theme.text_secondary).child(text)
-                    .when(matches!(state, State::Failed(error) if error.kind != crate::agent::AgentPluginsErrorKind::AuthenticationRequired), |row| {
-                        let State::Failed(error) = state else { unreachable!() };
-                        row.child(div().child(error.message.clone()))
-                    })
-            })
-        ).into_any_element()
-    }
-
     pub fn open_plugin_directory(&mut self, cwd: PathBuf, cx: &mut Context<Self>) {
         if self.plugins_cwd.as_ref() != Some(&cwd) {
             self.plugins_catalog.directory.installed = None;
@@ -337,8 +307,19 @@ impl SettingsView {
             .into_any_element()
     }
 
-    fn directory_feedback(&self, theme: Theme, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn directory_feedback(&self, theme: Theme, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let directory = &self.plugins_catalog.directory;
+        if self.plugins_catalog.confirmation.is_none()
+            && !directory.busy()
+            && !directory
+                .operations()
+                .any(|operation| operation.phase.message().is_some())
+            && directory.error.is_none()
+            && directory.installed_error.is_none()
+            && directory.search_error.is_none()
+        {
+            return None;
+        }
         let mut feedback = div().w_full().flex().flex_col().gap(px(10.));
         if let Some(confirmation) = &self.plugins_catalog.confirmation {
             feedback = feedback.child(self.confirmation_card(confirmation, &theme, cx));
@@ -369,19 +350,7 @@ impl SettingsView {
                 &theme,
             ));
         }
-        if self.directory_scope == Scope::All {
-            feedback = feedback.child(self.directory_source_status(theme));
-        }
-        if let Some(catalog) = &directory.catalog {
-            for error in &catalog.marketplace_load_errors {
-                feedback = feedback.child(self.catalog_state_card(
-                    &error.message,
-                    Some(&error.marketplace_path.display().to_string()),
-                    &theme,
-                ));
-            }
-        }
-        feedback.into_any_element()
+        Some(feedback.into_any_element())
     }
 
     fn directory_catalog(&self, theme: Theme, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -794,7 +763,7 @@ impl SettingsView {
                     ));
             }
         }
-        content = content.child(self.directory_feedback(theme, cx));
+        content = content.children(self.directory_feedback(theme, cx));
         content = content.child(if skills {
             self.skills_segment_content(&theme, cx)
         } else if detail {
