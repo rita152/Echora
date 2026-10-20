@@ -95,7 +95,7 @@ The current development and interactive verification platform is **macOS**. To b
 - The Rust toolchain specified in [rust-toolchain.toml](rust-toolchain.toml), currently **1.97.1**.
 - Xcode and its **Metal Toolchain** component, with Xcode selected as the active developer directory.
 - Codex CLI, configured and ready to use. The current integration baseline is **codex-cli 0.158.0**. On macOS/Linux, Echora first searches its inherited `PATH`, then the user's interactive login shell (up to five seconds), then common installation directories (including NVM versions, preferring its numeric default). Finder launches can therefore discover NVM-managed installations without a wrapper script. Only the child tool `PATH` is supplemented; shell credentials and other environment changes are not imported. Windows uses the inherited `PATH`.
-- Git for repository features, and an authenticated GitHub CLI (`gh`) for pull request features.
+- Git for repository features, and an authenticated GitHub CLI (`gh`) for pull request features. GitHub CLI uses the same desktop executable discovery as Codex, including login-shell PATH and Homebrew directories, for listing, reviewing, and creating pull requests. If it cannot be found, install it, run `gh --version` and `gh auth login` in a terminal, then click **Try again**.
 
 ```bash
 git clone https://github.com/rita152/Echora.git

@@ -7,7 +7,6 @@
 
 use std::{
     path::Path,
-    process::Command,
     time::{Duration, SystemTime},
 };
 
@@ -43,7 +42,7 @@ const SEARCH_FIELDS: &str = r#"
 "#;
 
 fn gh(args: &[&str], input: Option<&[u8]>, cwd: Option<&Path>) -> Result<String> {
-    let mut command = Command::new("gh");
+    let mut command = crate::github_cli::command()?;
     command.args(args);
     if let Some(cwd) = cwd {
         command.current_dir(cwd);

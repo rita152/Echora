@@ -213,6 +213,9 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "切换文件差异对比" => "Toggle file diff",
         "切换文件树" => "Toggle file tree",
         "列出文件失败" => "Failed to list files",
+        "找不到 GitHub CLI（gh）。请安装 gh，在终端运行 gh --version 和 gh auth login，然后点击重试；已检查应用 PATH、用户登录 shell 及常用安装目录" => {
+            "GitHub CLI (gh) could not be found. Install gh, run gh --version and gh auth login in a terminal, then try again. Checked the app PATH, login shell, and common installation directories."
+        }
         "创建 PR" => "Create PR",
         "创建 PR 需要已登录的 GitHub CLI（gh）" => {
             "Creating a PR requires an authenticated GitHub CLI (gh)"

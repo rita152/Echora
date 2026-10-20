@@ -9,6 +9,7 @@ mod configuration;
 mod conversation;
 mod features;
 mod git_review;
+mod github_cli;
 mod hooks;
 mod i18n;
 mod link_preview;
@@ -23,6 +24,7 @@ mod skills;
 #[cfg(feature = "screenshot")]
 mod stream_capture;
 mod theme;
+mod tool_executable;
 mod typography;
 mod workspace;
 

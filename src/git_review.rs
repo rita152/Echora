@@ -173,7 +173,8 @@ pub struct PullRequestOptions {
 
 pub fn existing_pull_request(root: &Path) -> Option<String> {
     let out = process::run(
-        Command::new("gh")
+        crate::github_cli::command()
+            .ok()?
             .current_dir(root)
             .args(["pr", "view", "--json", "url", "--jq", ".url"])
             .stdin(Stdio::null()),
@@ -376,8 +377,8 @@ fn git_output(root: &Path, args: &[&str]) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
 
-fn pull_request_command(root: &Path, options: &PullRequestOptions, head: &str) -> Command {
-    let mut cmd = Command::new("gh");
+fn pull_request_command(root: &Path, options: &PullRequestOptions, head: &str) -> Result<Command> {
+    let mut cmd = crate::github_cli::command()?;
     cmd.current_dir(root)
         .args([
             "pr",
@@ -395,7 +396,7 @@ fn pull_request_command(root: &Path, options: &PullRequestOptions, head: &str) -
     if options.draft {
         cmd.arg("--draft");
     }
-    cmd
+    Ok(cmd)
 }
 
 fn create_pull_request(
@@ -407,7 +408,7 @@ fn create_pull_request(
     // Check availability/authentication before changing the local branch or index.
     checked(
         process::run(
-            Command::new("gh")
+            crate::github_cli::command()?
                 .current_dir(root)
                 .args(["auth", "status"])
                 .stdin(Stdio::null()),
@@ -454,7 +455,7 @@ fn create_pull_request(
         )?;
     }
     let output = checked(process::run(
-        &mut pull_request_command(root, &options, &fresh.branch),
+        &mut pull_request_command(root, &options, &fresh.branch)?,
         None,
         Duration::from_secs(120),
     )?)
