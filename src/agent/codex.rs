@@ -14,6 +14,7 @@ mod collaboration;
 mod config;
 mod dispatch;
 mod elicitation;
+mod executable;
 mod features;
 mod file_search;
 mod goal;
@@ -56,6 +57,7 @@ mod tests;
 pub use backend::CodexAppServerBackend;
 use catalog::{MODEL_LIST_PAGE_SIZE, ModelListResponse};
 use dispatch::process_turn_message;
+pub use executable::codex_executable_diagnostics;
 use items::{
     materialize_image_generation_result, parse_collaboration, parse_command_execution,
     parse_dynamic_tool_call, parse_function_call_output, parse_image_generation,

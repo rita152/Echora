@@ -2,7 +2,7 @@
 
 ## 基线与口径
 
-核对基线：`codex-cli 0.158.0`（2026-09-28 本机复核）。方法与字段来自该 CLI 生成的 default/experimental schema，接入状态来自仓库实现；应用运行时启动的 `PATH` 上的 `codex app-server --stdio` 即该版本。schema 随 CLI 版本生成，见[官方协议说明](https://learn.chatgpt.com/docs/app-server#message-schema)；升级时重新导出并核对：
+核对基线：`codex-cli 0.158.0`（2026-09-28 本机复核）。方法与字段来自该 CLI 生成的 default/experimental schema，接入状态来自仓库实现；运行时 CLI 由下文的可执行文件发现流程确定，实际版本取决于用户安装，不由 Echora 固定。schema 随 CLI 版本生成，见[官方协议说明](https://learn.chatgpt.com/docs/app-server#message-schema)；升级时重新导出并核对：
 
 ```bash
 codex --version
@@ -38,6 +38,7 @@ node scripts/scan_reference_rpc_methods.mjs /Applications/ChatGPT.app/Contents/R
 
 ## 连接与状态
 
+- **可执行文件发现**：macOS/Linux 优先使用继承的绝对 `PATH` 目录中的可执行 `codex`；未找到时运行用户 shell 的 `-ilc` 读取带分隔符的 `PATH`，最多等待五秒、最多读取 64 KiB，失败时终止并回收探测进程组，再查找用户常用 bin、NVM 版本目录（优先数字默认版本，其余按版本号从新到旧）、Homebrew 与 `/usr/local/bin`。跳过断链、非可执行文件及相对目录；保留 npm/NVM 的入口符号链接，将其 bin 放在子进程 `PATH` 最前以支持 `env node`。不修改应用全局环境、shell 文件、认证或 `CODEX_HOME`。Windows 保持原生 `PATH` 查找。`--print-diagnostics` 显示实际路径及来源；启动失败向 stderr 输出完整原因。
 - **连接**：`ChatApp` 持有一个共享 manager。每个 generation 启动一个 `codex app-server --stdio`，只握手一次；单 reader 读取 stdout，stdin 串行写入完整 JSONL。所有 RPC 共用递增 request id，响应可乱序；已消费的追加、配置写入和线程设置 RPC id 保留到 generation 结束，重复响应不再次更新结果。初始化按下文能力协商退订两项通知。
 - **线程与轮次**：首次提示词执行 `thread/start → turn/start`；既有线程在当前 generation 未加载时先 resume，之后直接 start turn。同一线程最多一个活动 turn，不同线程可并行；start/resume/fork 共用串行生命周期注册表。服务端自行发起的轮次（活动目标在线程空闲时继续推进、轮次结束后推进服务端队列、`thread/queue/start`）以没有本地 owner 的 `turn/started` 到达：manager 接管为普通受管轮次（同样的路由、审批与清理），再经连接事件 `TurnStarted` 把事件流交给显示该线程的会话；只有 `turn/started` 能引入这样的轮次，其他未知轮次消息仍是协议错误。观察方丢弃句柄不会中断服务端工作，显式停止才发送 `turn/interrupt`。
 - **归属与提前事件**：轮次事件按 `threadId + turnId` 路由；server request 按原始字符串／数字 id 记录所属轮次。`turn/start` 响应前的事件按 wire 顺序缓存，取得响应后验证并回放；错配 id、字段或枚举报错。

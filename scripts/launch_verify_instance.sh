@@ -14,11 +14,11 @@
 #     the external volume and that policy cannot apply to it in the first
 #     place. The packaged bundle carries its own assets, so the copy is
 #     self-contained.
-#   * The session's `PATH` and the real `HOME`, because the app spawns
-#     `codex app-server --stdio` from `PATH`; without it the sidebar reports
-#     "Load projects failed" and shows no projects or chats. With it, the
-#     instance reads the same `~/.codex` projects, threads and auth as the
-#     ChatGPT app.
+#   * The session's `PATH` and the real `HOME`, so ordinary verification uses
+#     the same tool selection and `~/.codex` data as the invoking session.
+#     Desktop discovery must also be checked with a minimal Finder-like PATH:
+#     env PATH=/usr/bin:/bin:/usr/sbin:/sbin GPUI_CAPTURE_SKIP_BUILD=1 \
+#       scripts/launch_verify_instance.sh
 #
 # Usage:
 #   scripts/launch_verify_instance.sh [extra app arguments…]

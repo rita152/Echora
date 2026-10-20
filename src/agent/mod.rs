@@ -89,7 +89,7 @@ pub use catalog::{
     AgentThreadPermissionUpdate, AgentThreadSettings, AgentThreadSettingsSnapshot,
     AgentTurnSettingsStatus,
 };
-pub use codex::{CodexAppServerBackend, CodexAppServerManager};
+pub use codex::{CodexAppServerBackend, CodexAppServerManager, codex_executable_diagnostics};
 pub use collaboration::{
     AgentCollaborationModeKind, AgentCollaborationModePreset, AgentCollaborationModes,
 };

@@ -156,6 +156,7 @@ impl ManagerInner {
                 state.last_start_error = None;
             }
             Err(error) => {
+                eprintln!("Codex app-server startup failed: {error:#}");
                 state.last_start_error = Some((attempt, format!("{error:#}")));
                 if state
                     .current

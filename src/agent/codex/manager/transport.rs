@@ -2,7 +2,7 @@
 
 use std::{
     io::{BufRead, BufReader, Error as IoError, ErrorKind, Write},
-    process::{Command, Stdio},
+    process::Stdio,
     sync::{Arc, Mutex, Weak, atomic::Ordering},
 };
 
@@ -35,13 +35,21 @@ pub(super) struct RealAppServerSpawner;
 
 impl AppServerSpawner for RealAppServerSpawner {
     fn spawn(&self) -> Result<SpawnedAppServer> {
-        let mut child = Command::new("codex")
+        let cli = super::super::executable::CodexExecutable::resolve()?;
+        let mut child = cli
+            .command()
             .args(["app-server", "--stdio"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
-            .context("无法启动 `codex app-server --stdio`；请确认 Codex CLI 已安装并完成登录")?;
+            .with_context(|| {
+                format!(
+                    "无法启动 {} app-server --stdio（{}）",
+                    cli.program.display(),
+                    cli.source
+                )
+            })?;
         let Some(stdout) = child.stdout.take() else {
             let _ = child.kill();
             let _ = child.wait();

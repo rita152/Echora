@@ -94,7 +94,7 @@ The current development and interactive verification platform is **macOS**. To b
 
 - The Rust toolchain specified in [rust-toolchain.toml](rust-toolchain.toml), currently **1.97.1**.
 - Xcode and its **Metal Toolchain** component, with Xcode selected as the active developer directory.
-- Codex CLI on `PATH`, configured and ready to use. The current integration baseline is **codex-cli 0.158.0**.
+- Codex CLI, configured and ready to use. The current integration baseline is **codex-cli 0.158.0**. On macOS/Linux, Echora first searches its inherited `PATH`, then the user's interactive login shell (up to five seconds), then common installation directories (including NVM versions, preferring its numeric default). Finder launches can therefore discover NVM-managed installations without a wrapper script. Only the child tool `PATH` is supplemented; shell credentials and other environment changes are not imported. Windows uses the inherited `PATH`.
 - Git for repository features, and an authenticated GitHub CLI (`gh`) for pull request features.
 
 ```bash
@@ -111,6 +111,8 @@ xcrun --sdk macosx metal --version
 ```
 
 Use `--theme=light` for the light theme. Add `--language=en`, `--language=zh-CN`, or `--language=auto` to choose the interface language for one launch. Settings saves your language preference for future launches.
+
+`--print-diagnostics` reports the resolved Codex executable and discovery source, or an actionable discovery error. To check desktop launch discovery from a terminal on macOS, run `env PATH=/usr/bin:/bin:/usr/sbin:/sbin /Applications/Echora.app/Contents/MacOS/gpui-chat-clone --print-diagnostics`.
 
 Download development previews from [GitHub Releases](https://github.com/rita152/Echora/releases):
 

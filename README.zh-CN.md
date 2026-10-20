@@ -94,7 +94,7 @@ Echora 支持浅色和深色主题，以及英文、简体中文和自动语言�
 
 - [rust-toolchain.toml](rust-toolchain.toml) 指定的 Rust 工具链，当前为 **1.97.1**。
 - Xcode 及其 **Metal Toolchain** 组件，并将 Xcode 设为当前开发者目录。
-- 位于 `PATH` 中、已完成配置且可正常使用的 Codex CLI。当前接入基线为 **codex-cli 0.158.0**。
+- 已完成配置且可正常使用的 Codex CLI。当前接入基线为 **codex-cli 0.158.0**。在 macOS/Linux 上，Echora 依次查找继承的 `PATH`、用户交互式登录 shell（最多五秒）及常用安装目录（含 NVM 版本目录，优先其数字默认版本），因此从 Finder 启动也能发现 NVM 管理的安装，无需启动脚本。仅补充工具子进程的 `PATH`，不导入 shell 中的凭据或其他环境改动。Windows 使用继承的 `PATH`。
 - 仓库功能需要 Git；拉取请求功能还需要已登录的 GitHub CLI（`gh`）。
 
 ```bash
@@ -111,6 +111,8 @@ xcrun --sdk macosx metal --version
 ```
 
 使用 `--theme=light` 启动浅色主题。添加 `--language=en`、`--language=zh-CN` 或 `--language=auto` 可指定本次启动的界面语言；在设置中选择的语言会保留到后续启动。
+
+`--print-diagnostics` 显示解析出的 Codex 可执行路径与发现来源，或可用于排查的发现错误。macOS 可从终端用最小桌面环境检查：`env PATH=/usr/bin:/bin:/usr/sbin:/sbin /Applications/Echora.app/Contents/MacOS/gpui-chat-clone --print-diagnostics`。
 
 从 [GitHub Releases](https://github.com/rita152/Echora/releases) 下载开发预览版：
 
