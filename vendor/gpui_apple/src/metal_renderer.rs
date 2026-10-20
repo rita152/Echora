@@ -15,8 +15,9 @@ use image::RgbaImage;
 
 use core_foundation::base::TCFType;
 use core_video::{
-    metal_texture::CVMetalTextureGetTexture, metal_texture_cache::CVMetalTextureCache,
-    pixel_buffer::kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+    metal_texture::CVMetalTextureGetTexture,
+    metal_texture_cache::CVMetalTextureCache,
+    pixel_buffer::{kCVPixelFormatType_32BGRA, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange},
 };
 use foreign_types::{ForeignType, ForeignTypeRef};
 use metal::{
@@ -1177,39 +1178,65 @@ impl MetalRenderer {
             &viewport_size as *const Size<DevicePixels> as *const _,
         );
 
+        command_encoder.set_fragment_buffer(
+            SurfaceInputIndex::Surfaces as u64,
+            Some(&instance_bindings.surfaces.buffer),
+            instance_bindings.surfaces.offset as u64,
+        );
+
         for (index, surface) in surfaces.iter().enumerate() {
             let texture_size = size(
                 DevicePixels::from(surface.image_buffer.get_width() as i32),
                 DevicePixels::from(surface.image_buffer.get_height() as i32),
             );
 
-            assert_eq!(
-                surface.image_buffer.get_pixel_format(),
-                kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
-            );
+            let bgra = surface.image_buffer.get_pixel_format() == kCVPixelFormatType_32BGRA;
+            if !bgra {
+                assert_eq!(
+                    surface.image_buffer.get_pixel_format(),
+                    kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+                );
+            }
 
             let y_texture = self
                 .core_video_texture_cache
                 .create_texture_from_image(
                     surface.image_buffer.as_concrete_TypeRef(),
                     None,
-                    MTLPixelFormat::R8Unorm,
-                    surface.image_buffer.get_width_of_plane(0),
-                    surface.image_buffer.get_height_of_plane(0),
+                    if bgra {
+                        MTLPixelFormat::BGRA8Unorm
+                    } else {
+                        MTLPixelFormat::R8Unorm
+                    },
+                    if bgra {
+                        surface.image_buffer.get_width()
+                    } else {
+                        surface.image_buffer.get_width_of_plane(0)
+                    },
+                    if bgra {
+                        surface.image_buffer.get_height()
+                    } else {
+                        surface.image_buffer.get_height_of_plane(0)
+                    },
                     0,
                 )
                 .unwrap();
-            let cb_cr_texture = self
-                .core_video_texture_cache
-                .create_texture_from_image(
-                    surface.image_buffer.as_concrete_TypeRef(),
-                    None,
-                    MTLPixelFormat::RG8Unorm,
-                    surface.image_buffer.get_width_of_plane(1),
-                    surface.image_buffer.get_height_of_plane(1),
-                    1,
+            let cb_cr_texture = if bgra {
+                None
+            } else {
+                Some(
+                    self.core_video_texture_cache
+                        .create_texture_from_image(
+                            surface.image_buffer.as_concrete_TypeRef(),
+                            None,
+                            MTLPixelFormat::RG8Unorm,
+                            surface.image_buffer.get_width_of_plane(1),
+                            surface.image_buffer.get_height_of_plane(1),
+                            1,
+                        )
+                        .unwrap(),
                 )
-                .unwrap();
+            };
 
             command_encoder.set_vertex_bytes(
                 SurfaceInputIndex::TextureSize as u64,
@@ -1221,10 +1248,13 @@ impl MetalRenderer {
                 let texture = CVMetalTextureGetTexture(y_texture.as_concrete_TypeRef());
                 Some(metal::TextureRef::from_ptr(texture as *mut _))
             });
-            command_encoder.set_fragment_texture(SurfaceInputIndex::CbCrTexture as u64, unsafe {
-                let texture = CVMetalTextureGetTexture(cb_cr_texture.as_concrete_TypeRef());
-                Some(metal::TextureRef::from_ptr(texture as *mut _))
-            });
+            command_encoder.set_fragment_texture(
+                SurfaceInputIndex::CbCrTexture as u64,
+                cb_cr_texture.as_ref().map(|texture| unsafe {
+                    let texture = CVMetalTextureGetTexture(texture.as_concrete_TypeRef());
+                    metal::TextureRef::from_ptr(texture as *mut _)
+                }),
+            );
 
             command_encoder.draw_primitives_instanced_base_instance(
                 metal::MTLPrimitiveType::Triangle,
@@ -1435,6 +1465,8 @@ fn write_instances(scene: &Scene, writer: &mut InstanceBufferWriter) -> Result<I
         surfaces: writer.write_iter(scene.surfaces.iter().map(|surface| SurfaceBounds {
             bounds: surface.bounds,
             content_mask: surface.content_mask,
+            corner_radii: surface.corner_radii,
+            bgra: u32::from(surface.image_buffer.get_pixel_format() == kCVPixelFormatType_32BGRA),
         }))?,
     })
 }
@@ -1627,6 +1659,8 @@ pub struct PathSprite {
 pub struct SurfaceBounds {
     pub bounds: Bounds<ScaledPixels>,
     pub content_mask: ContentMask<ScaledPixels>,
+    pub corner_radii: gpui::Corners<ScaledPixels>,
+    pub bgra: u32,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -1669,6 +1703,55 @@ mod compositing_tests {
         MonochromeSprite, PlatformAtlas, Quad, RenderSvgParams, TransformationMatrix, rgba,
     };
     use std::borrow::Cow;
+
+    #[test]
+    fn bgra_video_surface_preserves_channels_and_clips_rounded_corners() {
+        use core_foundation::{base::CFType, dictionary::CFDictionary, string::CFString};
+        use core_video::pixel_buffer::CVPixelBuffer;
+        objc::rc::autoreleasepool(|| {
+            let empty = CFDictionary::<CFString, CFType>::from_CFType_pairs(&[]);
+            let options = CFDictionary::from_CFType_pairs(&[(
+                CFString::from_static_string("IOSurfaceProperties"),
+                empty.as_CFType(),
+            )]);
+            let buffer =
+                CVPixelBuffer::new(kCVPixelFormatType_32BGRA, 16, 16, Some(&options)).unwrap();
+            assert_eq!(buffer.lock_base_address(0), 0);
+            unsafe {
+                let data = buffer.get_base_address() as *mut u8;
+                for y in 0..16 {
+                    for x in 0..16 {
+                        std::ptr::copy_nonoverlapping(
+                            [31u8, 99, 211, 255].as_ptr(),
+                            data.add(y * buffer.get_bytes_per_row() + x * 4),
+                            4,
+                        );
+                    }
+                }
+            }
+            assert_eq!(buffer.unlock_base_address(0), 0);
+            let mut renderer = MetalRenderer::new_headless(Arc::default());
+            renderer.opaque = false;
+            let bounds = Bounds::new(
+                point(ScaledPixels(0.), ScaledPixels(0.)),
+                size(ScaledPixels(16.), ScaledPixels(16.)),
+            );
+            let mut scene = Scene::default();
+            scene.insert_primitive(PaintSurface {
+                order: 0,
+                bounds,
+                content_mask: ContentMask { bounds },
+                corner_radii: gpui::Corners::all(ScaledPixels(6.)),
+                image_buffer: buffer,
+            });
+            scene.finish();
+            let image = renderer
+                .render_scene_to_image(&scene, size(DevicePixels(16), DevicePixels(16)))
+                .unwrap();
+            assert_eq!(image.get_pixel(8, 8).0, [211, 99, 31, 255]);
+            assert_eq!(image.get_pixel(0, 0).0, [0, 0, 0, 0]);
+        });
+    }
 
     // Exercise the actual GPU pipelines and read their premultiplied pixels.
     // Opaque-only screenshots cannot detect additive destination alpha.

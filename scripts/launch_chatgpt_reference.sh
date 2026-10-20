@@ -56,6 +56,9 @@
 #                                 log below.
 #   CHATGPT_REFERENCE_WIRE_ORIGIN label recorded in every wire log line
 #                                 (default reference)
+#   CHATGPT_REFERENCE_COMPUTER_USE_PIPE optional dedicated native service socket;
+#                                 keeps the clone's live preview service separate
+#                                 from the user's Computer Use service.
 #   CHATGPT_REFERENCE_WIRE_FAULTS optional JSON file (under $HOME) the shim reads
 #                                 before forwarding each request, to delay or
 #                                 fail one method during a capture; see
@@ -69,6 +72,7 @@ source_data="${CHATGPT_REFERENCE_SOURCE_DATA:-$HOME/Library/Application Support/
 log_dir="${CHATGPT_REFERENCE_LOG_DIR:-$HOME/Library/Logs/gpui-capture}"
 codex_home="${CHATGPT_REFERENCE_CODEX_HOME:-}"
 wire_log_dir="${CHATGPT_REFERENCE_WIRE_LOG_DIR:-}"
+computer_use_pipe="${CHATGPT_REFERENCE_COMPUTER_USE_PIPE:-}"
 binary="/Applications/ChatGPT.app/Contents/MacOS/ChatGPT"
 extra_args="${CHATGPT_REFERENCE_EXTRA_ARGS:---disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling}"
 
@@ -142,9 +146,52 @@ fi
 
 mkdir -p "$log_dir"
 log="$log_dir/reference-instance-$port.log"
+computer_use_export=""
+if [ -n "$computer_use_pipe" ]; then
+  case "$computer_use_pipe" in
+    /*) ;;
+    *) echo "Computer Use socket must be an absolute path" >&2; exit 2 ;;
+  esac
+  computer_use_directory="$(dirname "$computer_use_pipe")"
+  [ ! -L "$computer_use_directory" ] && [ -d "$computer_use_directory" ] || {
+    echo "Computer Use socket needs a real, private directory (not /tmp)" >&2; exit 2;
+  }
+  python3 - "$computer_use_directory" <<'PY'
+import os, stat, sys
+info = os.stat(sys.argv[1])
+if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077:
+    sys.exit("Computer Use socket directory must be owned by the current user with mode 0700")
+PY
+  case "$computer_use_pipe" in
+    *"'"*) echo "Computer Use socket cannot contain a single quote" >&2; exit 2 ;;
+  esac
+  [ ! -e "$computer_use_pipe" ] || { echo "Computer Use socket already exists; refusing to reuse it" >&2; exit 2; }
+  computer_use_export="export SKY_CUA_SERVICE_NATIVE_PIPE_PATH='$computer_use_pipe';"
+fi
+if [ -n "$computer_use_pipe" ]; then
+  [ -n "$codex_home" ] || { echo "Dedicated Computer Use needs an isolated CODEX_HOME" >&2; exit 2; }
+  python3 - "$codex_home" <<'PYCODEX'
+from pathlib import Path
+import sys
+if Path(sys.argv[1]).resolve() == (Path.home() / ".codex").resolve():
+    sys.exit("Dedicated Computer Use must not use the user's CODEX_HOME")
+PYCODEX
+  router_dir="$(dirname "$user_data")/cua-router-$port"
+  mkdir -p "$router_dir"
+  cp "$script_dir/chatgpt_reference_cua_router.py" "$router_dir/router.py"
+  cat >"$router_dir/codex" <<'ROUTER'
+#!/bin/sh
+exec python3 "$(dirname "$0")/router.py" "$@"
+ROUTER
+  chmod +x "$router_dir/codex"
+  # Preserve the optional wire shim below the env router.
+  real_cli="/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"
+  [ -z "$wire_log_dir" ] || real_cli="$shim_dir/codex"
+  wire_export="$wire_export export CHATGPT_REFERENCE_REAL_CLI='$real_cli'; export CODEX_CLI_PATH='$router_dir/codex';"
+fi
 
 launchctl submit -l "$label" -- /bin/sh -c \
-  "export HOME='$HOME'; export PATH='$PATH'; export CODEX_ELECTRON_USER_DATA_PATH='$user_data'; $developer_export $codex_home_export $wire_export exec '$binary' --user-data-dir='$user_data' --remote-debugging-port=$port $extra_args >>'$log' 2>&1"
+  "export HOME='$HOME'; export PATH='$PATH'; export CODEX_ELECTRON_USER_DATA_PATH='$user_data'; $developer_export $codex_home_export $wire_export $computer_use_export exec '$binary' --user-data-dir='$user_data' --remote-debugging-port=$port $extra_args >>'$log' 2>&1"
 
 endpoint_ready=""
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do

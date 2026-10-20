@@ -2095,6 +2095,8 @@ dependencies = [
  "block",
  "chrono",
  "cocoa 0.25.0",
+ "core-foundation 0.10.1",
+ "core-video",
  "gpui",
  "gpui_platform",
  "html5gum",

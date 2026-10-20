@@ -1,28 +1,38 @@
 use super::*;
 use gpui::{AppContext, Bounds, MouseButton, TestApp, WindowBounds, WindowOptions, point, size};
-
 fn snapshot() -> Snapshot {
     Snapshot {
         target: None,
+        targets: vec![],
         label: "Verification target".into(),
         title: "Observe window".into(),
         status: AgentMcpToolCallStatus::InProgress,
         progress: None,
         error: None,
         frame: None,
-        operations: vec![("Observe window".into(), AgentMcpToolCallStatus::InProgress)],
     }
 }
-
+fn info(id: u32) -> WindowInfo {
+    WindowInfo {
+        id: WindowId {
+            process: 123,
+            window: id,
+        },
+        target: computer_use::Target::AppId("com.test".into()),
+        title: format!("Window {id}"),
+        application: "Test".into(),
+        width: 420.,
+        height: 312.,
+    }
+}
 struct PreviewHost(Entity<Preview>);
 impl Render for PreviewHost {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         div().relative().size_full().child(self.0.clone())
     }
 }
-
 #[test]
-fn preview_full_header_and_key_release_activate_once() {
+fn collapse_and_keyboard_release_activate_once() {
     let mut app = TestApp::new();
     let mut window = app.open_window_with_options(
         WindowOptions {
@@ -33,17 +43,22 @@ fn preview_full_header_and_key_release_activate_once() {
             ..Default::default()
         },
         |_, cx| {
-            let mut preview = Preview::new(ThemeMode::Dark);
-            preview.snapshot = Some(snapshot());
-            preview.phase = ConversationPhase::Streaming;
-            preview.seen_running = true;
-            PreviewHost(cx.new(|_| preview))
+            let mut p = Preview::new(ThemeMode::Dark);
+            p.snapshot = Some(snapshot());
+            p.phase = ConversationPhase::Streaming;
+            p.seen_running = true;
+            p.owner = Some((cx.new(|cx| ComposerView::new(ThemeMode::Dark, cx)), 0));
+            p.windows = vec![WindowPreview::new(info(1)), WindowPreview::new(info(2))];
+            PreviewHost(cx.new(|_| p))
         },
     );
     window.draw();
-    window.simulate_click(point(px(760.), px(82.)), MouseButton::Left);
+    window.simulate_click(point(px(614.), px(84.)), MouseButton::Left);
     window.draw();
-    window.read(|host, cx| assert!(!host.0.read(cx).expanded));
+    window.read(|h, cx| {
+        assert!(!h.0.read(cx).expanded);
+        assert!(h.0.read(cx).takeover_pending.is_none());
+    });
     for (key, expected) in [("enter", true), ("space", false)] {
         window.simulate_keystroke(key);
         window.update(|_, window, cx| {
@@ -52,98 +67,143 @@ fn preview_full_header_and_key_release_activate_once() {
                     keystroke: gpui::Keystroke::parse(key).unwrap(),
                 }),
                 cx,
-            );
+            )
         });
         window.draw();
-        window.read(|host, cx| assert_eq!(host.0.read(cx).expanded, expected));
+        window.read(|h, cx| assert_eq!(h.0.read(cx).expanded, expected));
     }
 }
-
 #[test]
-fn stale_native_callback_cannot_restore_a_previous_conversations_window() {
+fn stale_inventory_cannot_restore_another_conversations_windows() {
     let mut app = TestApp::new();
     app.update(|cx| {
-        let preview = cx.new(|_| Preview::new(ThemeMode::Dark));
-        preview.update(cx, |preview, cx| {
-            let old = preview.generation;
-            preview.cancel_capture();
-            let frame = || computer_use::Frame {
-                png: vec![],
-                title: "Previous window".into(),
-                application: "Previous app".into(),
-            };
-            assert!(preview.accept_capture(old, Ok(frame()), cx).is_none());
-            assert!(preview.native_frame.is_none());
-            assert!(preview.window_title.is_empty());
-            assert!(
-                preview
-                    .accept_capture(preview.generation, Ok(frame()), cx)
-                    .is_some()
-            );
-            assert_eq!(preview.window_title, "Previous window");
-            preview.accept_capture(
-                preview.generation,
-                Err(CaptureError::PermissionRequired),
-                cx,
-            );
-            assert_eq!(
-                preview.capture_error,
-                Some(CaptureError::PermissionRequired)
-            );
-            assert!(preview.capture_task.is_none());
+        let p = cx.new(|_| Preview::new(ThemeMode::Dark));
+        p.update(cx, |p, cx| {
+            let old = p.generation;
+            p.cancel_capture();
+            p.accept_windows(old, Ok(vec![info(1)]), cx);
+            assert!(p.windows.is_empty());
+            p.accept_windows(p.generation, Ok(vec![info(1), info(2)]), cx);
+            assert_eq!(p.windows.len(), 2);
+            p.accept_windows(p.generation, Ok(vec![info(2)]), cx);
+            assert_eq!(p.windows.len(), 1);
+            assert_eq!(p.windows[0].info.id.window, 2);
+            p.accept_windows(p.generation, Ok(vec![]), cx);
+            assert!(p.windows.is_empty());
+            assert_eq!(p.capture_error, Some(CaptureError::WindowUnavailable));
+        });
+    });
+}
+#[test]
+fn reordering_windows_preserves_their_own_state_and_closed_windows_are_removed() {
+    let mut app = TestApp::new();
+    app.update(|cx| {
+        let p = cx.new(|_| Preview::new(ThemeMode::Dark));
+        p.update(cx, |p, cx| {
+            p.accept_windows(p.generation, Ok(vec![info(1), info(2)]), cx);
+            p.windows[0].error = Some(CaptureError::PermissionRequired);
+            p.accept_windows(p.generation, Ok(vec![info(2), info(1)]), cx);
+            assert_eq!(p.windows[0].info.id.window, 2);
+            assert_eq!(p.windows[0].error, None);
+            assert_eq!(p.windows[1].error, Some(CaptureError::PermissionRequired));
+            p.accept_windows(p.generation, Ok(vec![info(2)]), cx);
+            assert_eq!(p.windows.len(), 1);
+        });
+    });
+}
+#[test]
+fn selecting_a_rear_preview_preserves_the_running_task_and_survives_inventory_refresh() {
+    let mut app = TestApp::new();
+    app.update(|cx| {
+        let p = cx.new(|_| Preview::new(ThemeMode::Dark));
+        p.update(cx, |p, cx| {
+            p.phase = ConversationPhase::Streaming;
+            p.accept_windows(p.generation, Ok(vec![info(1), info(2)]), cx);
+            p.interact(info(2).id, cx);
+            assert_eq!(p.phase, ConversationPhase::Streaming);
+            assert!(p.takeover_pending.is_none());
+            assert_eq!(p.windows[0].info.id, info(2).id);
+            p.accept_windows(p.generation, Ok(vec![info(1), info(2)]), cx);
+            assert_eq!(p.windows[0].info.id, info(2).id);
+            p.accept_windows(p.generation, Ok(vec![info(1)]), cx);
+            assert_eq!(p.selected_window, None);
+            assert_eq!(p.windows[0].info.id, info(1).id);
         });
     });
 }
 
 #[test]
-fn rebinding_another_composer_clears_pending_takeover_and_frames() {
+fn rebinding_another_composer_clears_pending_takeover_and_windows() {
     let mut app = TestApp::new();
     app.update(|cx| {
         let first = cx.new(|cx| ComposerView::new(ThemeMode::Dark, cx));
         let second = cx.new(|cx| ComposerView::new(ThemeMode::Dark, cx));
-        let preview = cx.new(|_| Preview::new(ThemeMode::Dark));
-        preview.update(cx, |preview, cx| {
-            preview.sync(
+        let p = cx.new(|_| Preview::new(ThemeMode::Dark));
+        p.update(cx, |p, cx| {
+            p.sync(
                 first,
                 &[],
                 ConversationPhase::Streaming,
                 ThemeMode::Dark,
                 cx,
             );
-            preview.takeover_pending = true;
-            preview.native_frame = Some(Arc::new(Image::from_bytes(ImageFormat::Png, vec![])));
-            preview.sync(
+            p.takeover_pending = Some(info(1));
+            p.windows.push(WindowPreview::new(info(1)));
+            p.sync(
                 second,
                 &[],
                 ConversationPhase::Complete,
                 ThemeMode::Dark,
                 cx,
             );
-            assert!(!preview.takeover_pending);
-            assert!(preview.native_frame.is_none());
-            assert!(!preview.seen_running);
+            assert!(p.takeover_pending.is_none());
+            assert!(p.windows.is_empty());
+            assert!(!p.seen_running);
         });
     });
 }
-
 #[test]
 fn failed_interrupt_never_confirms_a_takeover() {
     let mut app = TestApp::new();
     app.update(|cx| {
         let owner = cx.new(|cx| ComposerView::new(ThemeMode::Dark, cx));
-        let preview = cx.new(|_| Preview::new(ThemeMode::Dark));
-        preview.update(cx, |preview, cx| {
-            preview.sync(
+        let p = cx.new(|_| Preview::new(ThemeMode::Dark));
+        p.update(cx, |p, cx| {
+            p.sync(
                 owner.clone(),
                 &[],
                 ConversationPhase::Streaming,
                 ThemeMode::Dark,
                 cx,
             );
-            preview.takeover_pending = true;
-            preview.sync(owner, &[], ConversationPhase::Failed, ThemeMode::Dark, cx);
-            assert!(!preview.takeover_pending);
-            assert!(preview.intervention_error.is_some());
+            p.takeover_pending = Some(info(2));
+            p.sync(owner, &[], ConversationPhase::Failed, ThemeMode::Dark, cx);
+            assert!(p.takeover_pending.is_none());
+            assert!(p.intervention_error.is_some());
+            assert!(p.windows.is_empty());
+        });
+    });
+}
+
+#[test]
+fn resized_window_discards_the_old_video_frame() {
+    let mut app = TestApp::new();
+    app.update(|cx| {
+        let p = cx.new(|_| Preview::new(ThemeMode::Dark));
+        p.update(cx, |p, cx| {
+            p.accept_windows(p.generation, Ok(vec![info(1)]), cx);
+            #[cfg(target_os = "macos")]
+            {
+                use core_video::pixel_buffer::{CVPixelBuffer, kCVPixelFormatType_32BGRA};
+                p.windows[0].frame =
+                    Some(CVPixelBuffer::new(kCVPixelFormatType_32BGRA, 2, 2, None).unwrap());
+            }
+            let mut resized = info(1);
+            resized.width = 600.;
+            p.accept_windows(p.generation, Ok(vec![resized]), cx);
+            assert_eq!(p.windows[0].info.width, 600.);
+            #[cfg(target_os = "macos")]
+            assert!(p.windows[0].frame.is_none());
         });
     });
 }

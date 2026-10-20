@@ -368,6 +368,33 @@ impl ComposerView {
     }
 
     pub fn set_mcp_tool_call_for_capture(&mut self, state: &str, cx: &mut Context<Self>) {
+        if state == "computer-preview" {
+            self.conversation.user_message = Some("Computer Use live window verification".into());
+            self.conversation.assistant_message.clear();
+            self.conversation.phase = ConversationPhase::Streaming;
+            self.conversation.activities = vec![ConversationActivity::McpToolCall(Box::new(
+                AgentMcpToolCall {
+                    id: "computer-preview-verification".into(),
+                    server: "cua_repl".into(),
+                    tool: "js".into(),
+                    status: AgentMcpToolCallStatus::Completed,
+                    arguments: serde_json::json!({"title":"Observe Echora Preview Fixture"}),
+                    app_context: None,
+                    plugin_id: None,
+                    result: Some(
+                        serde_json::json!({"content":[],"_meta":{"codex/toolSurface":{"kind":"computerUse","app":{"kind":"appId","appId":"com.echora.issue71.fixture"}}}}),
+                    ),
+                    error: None,
+                    legacy_resource_uri: None,
+                    read_only_hint: Some(true),
+                    duration_ms: Some(100),
+                    progress: vec![],
+                },
+            ))];
+            cx.emit(ConversationChanged);
+            cx.notify();
+            return;
+        }
         if state == "computer-text" {
             let output = "Computer Use / Terminal: identical output\nconst chooser = await tab.waitForEvent(\"filechooser\");\n中文输出与 English output 0123456789";
             self.conversation.user_message = Some("Compare command output typography".into());

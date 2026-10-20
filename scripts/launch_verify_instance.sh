@@ -25,6 +25,9 @@
 #   scripts/launch_verify_instance.sh --stop
 #
 # Environment:
+#   GPUI_VERIFY_LAUNCH_MODE=child  run as the authorized invoking app's child
+#                               when native capture needs its existing grant;
+#                               keep the command session alive (default launchd)
 #   GPUI_CAPTURE_SKIP_BUILD=1   use the existing package instead of rebuilding
 #   GPUI_VERIFY_BUNDLE          bundle to copy (default: this worktree's package)
 #   GPUI_VERIFY_LABEL           launchd label (default gpui-verify)
@@ -129,6 +132,15 @@ for name in GPUI_UI_PREFERENCES_PATH GPUI_ASSETS_DIR GPUI_CAPTURE_OUTPUT CODEX_H
   forwarded="$forwarded
 export $name='$value'"
 done
+
+if [ "${GPUI_VERIFY_LAUNCH_MODE:-launchd}" = child ]; then
+  echo "launching child of the authorized invoking app from $destination"
+  echo "pid: $$"
+  echo "log: $log"
+  echo "capture: $GPUI_CAPTURE_OUTPUT"
+  cd "$destination/Contents/MacOS"
+  exec "$binary" "$@" >>"$log" 2>&1
+fi
 
 # `launchctl submit` keeps the process alive after this shell exits, which
 # Computer Use needs, and it never routes the launch through LaunchServices.

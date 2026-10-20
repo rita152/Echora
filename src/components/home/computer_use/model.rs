@@ -43,13 +43,13 @@ pub(super) struct ToolFrame {
 
 pub(super) struct Snapshot {
     pub target: Option<Target>,
+    pub targets: Vec<Target>,
     pub label: String,
     pub title: String,
     pub status: AgentMcpToolCallStatus,
     pub progress: Option<String>,
     pub error: Option<String>,
     pub frame: Option<ToolFrame>,
-    pub operations: Vec<(String, AgentMcpToolCallStatus)>,
 }
 
 impl Snapshot {
@@ -105,21 +105,31 @@ impl Snapshot {
                     })
                 })
         });
+        let mut targets = Vec::new();
+        for call in &calls {
+            if let Some(surface) = call
+                .result
+                .as_ref()
+                .and_then(|r| r.get("_meta"))
+                .and_then(|m| m.get("codex/toolSurface"))
+                && surface.get("kind").and_then(serde_json::Value::as_str) == Some("computerUse")
+            {
+                match target(call) {
+                    Some(target) if !targets.contains(&target) => targets.push(target),
+                    None => targets.clear(),
+                    _ => {}
+                }
+            }
+        }
         Some(Self {
             target: active_target,
+            targets,
             label,
             title: mcp_tool_call_label(latest),
             status: latest.status,
             progress: latest.progress.last().cloned(),
             error: latest.error.clone(),
             frame,
-            operations: calls
-                .iter()
-                .rev()
-                .take(8)
-                .rev()
-                .map(|call| (mcp_tool_call_label(call), call.status))
-                .collect(),
         })
     }
 }
@@ -201,5 +211,28 @@ mod tests {
                 .unwrap()
                 .key
         );
+    }
+    #[test]
+    fn applications_accumulate_within_a_turn_and_explicit_null_clears_them() {
+        let model = Snapshot::from_activities(&[
+            call("a", Some("First"), false),
+            call("b", Some("Second"), false),
+            call("c", Some("First"), false),
+        ])
+        .unwrap();
+        assert_eq!(
+            model.targets,
+            vec![
+                Target::DisplayName("First".into()),
+                Target::DisplayName("Second".into())
+            ]
+        );
+        let model = Snapshot::from_activities(&[
+            call("a", Some("First"), false),
+            call("clear", None, false),
+            call("b", Some("Second"), false),
+        ])
+        .unwrap();
+        assert_eq!(model.targets, vec![Target::DisplayName("Second".into())]);
     }
 }

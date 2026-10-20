@@ -4640,6 +4640,17 @@ impl Window {
     /// This method should only be called as part of the paint phase of element drawing.
     #[cfg(target_os = "macos")]
     pub fn paint_surface(&mut self, bounds: Bounds<Pixels>, image_buffer: CVPixelBuffer) {
+        self.paint_surface_with_corner_radii(bounds, Corners::default(), image_buffer);
+    }
+
+    /// Paint a CoreVideo surface with rounded corners, without copying its pixels.
+    #[cfg(target_os = "macos")]
+    pub fn paint_surface_with_corner_radii(
+        &mut self,
+        bounds: Bounds<Pixels>,
+        corner_radii: Corners<Pixels>,
+        image_buffer: CVPixelBuffer,
+    ) {
         use crate::PaintSurface;
 
         self.invalidator.debug_assert_paint();
@@ -4649,6 +4660,7 @@ impl Window {
         self.next_frame.scene.insert_primitive(PaintSurface {
             order: 0,
             bounds,
+            corner_radii: corner_radii.scale(self.scale_factor()),
             content_mask,
             image_buffer,
         });

@@ -97,8 +97,13 @@ impl Element for Surface {
             SurfaceSource::Surface(surface) => {
                 let size = crate::size(surface.get_width().into(), surface.get_height().into());
                 let new_bounds = self.object_fit.get_bounds(bounds, size);
-                // TODO: Add support for corner_radii
-                window.paint_surface(new_bounds, surface.clone());
+                let mut style = Style::default();
+                style.refine(&self.style);
+                window.paint_surface_with_corner_radii(
+                    new_bounds,
+                    style.corner_radii.to_pixels(window.rem_size()),
+                    surface.clone(),
+                );
             }
             #[allow(unreachable_patterns)]
             _ => {}
