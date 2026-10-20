@@ -11,7 +11,6 @@ use crate::components::{
 
 /// Index of the Files and Review items in `RIGHT_PANEL_ITEMS`.
 const FILES_ITEM: usize = 3;
-const REVIEW_ITEM: usize = 4;
 
 impl ChatApp {
     pub(super) fn wire_summary_panel(panel: &Entity<SummaryPanel>, cx: &mut Context<Self>) {
@@ -59,11 +58,7 @@ impl ChatApp {
                         panel.update(cx, |panel, cx| panel.open_environment_git(*action, cx));
                     }
                 }
-                SummaryPanelEvent::OpenReview => {
-                    this.right_panel.open = true;
-                    this.select_right_panel_item(REVIEW_ITEM, cx);
-                    cx.notify();
-                }
+                SummaryPanelEvent::OpenReview => this.open_review(cx),
             },
         )
         .detach();

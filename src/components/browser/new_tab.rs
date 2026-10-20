@@ -25,7 +25,7 @@ impl BrowserPanel {
         let content_width = (self.panel_width.get() - 2. * PAGE_PADDING_X).min(PAGE_MAX_WIDTH);
         // Changes opens once per chat: its tile leaves while the tab is open.
         let mut tools = Vec::new();
-        if !self.changes_open {
+        if self.offers_changes() {
             tools.push((
                 BrowserTool::Review,
                 crate::i18n::format!("变更" => "Changes"),

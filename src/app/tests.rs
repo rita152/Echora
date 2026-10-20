@@ -789,7 +789,13 @@ fn right_panel_card_chrome_lets_the_pointer_reach_the_new_tab_tools() {
         },
         |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
     );
-    window.update(|chat, _, cx| chat.open_right_panel(cx));
+    window.update(|chat, _, cx| {
+        let composer = chat.home.read(cx).composer_entity();
+        composer.update(cx, |composer, cx| {
+            composer.set_checkout(crate::git_review::Checkout::Branch("main".into()), cx);
+        });
+        chat.open_right_panel(cx);
+    });
     window.draw();
 
     // The default card spans x 1080..1432 from y=8. Under its 46 px tab strip
@@ -2292,6 +2298,12 @@ fn panel_tabs_add_replace_and_close_like_the_reference() {
     assert_eq!(browser_tabs, 1, "the replaced New tab closed");
 
     // Changes opens once, after the others, and leaves the New tab's tools.
+    window.update(|chat, _, cx| {
+        let composer = chat.home.read(cx).composer_entity();
+        composer.update(cx, |composer, cx| {
+            composer.set_checkout(crate::git_review::Checkout::Branch("main".into()), cx);
+        });
+    });
     window.update(|chat, _, cx| chat.open_review(cx));
     window.update(|chat, _, cx| chat.open_review(cx));
     window.draw();
@@ -2347,6 +2359,10 @@ fn panel_tabs_reorder_and_keep_the_selected_tab() {
         |_, cx| ChatApp::new(ThemeMode::Dark, false, cx),
     );
     window.update(|chat, _, cx| {
+        let composer = chat.home.read(cx).composer_entity();
+        composer.update(cx, |composer, cx| {
+            composer.set_checkout(crate::git_review::Checkout::Branch("main".into()), cx);
+        });
         chat.open_right_panel(cx);
         chat.open_review(cx);
         chat.open_new_panel_tab(cx);
@@ -2798,4 +2814,82 @@ fn image_markup_requires_the_preview_owner_and_an_unsent_attachment() {
         assert!(chat.image_preview.previous_focus.is_none());
     });
     std::fs::remove_file(source).unwrap();
+}
+
+#[test]
+fn changes_tools_follow_checkout_and_close_when_repository_disappears() {
+    use super::panel_tabs::{PanelTab, TabPlacement};
+    use crate::git_review::Checkout;
+    let mut app = TestApp::new();
+    let mut window = app.open_window(|_, cx| ChatApp::new(ThemeMode::Dark, false, cx));
+    window.update(|chat, _, cx| {
+        assert!(!chat.changes_available(cx));
+        chat.open_review(cx);
+        assert!(!chat.right_panel.open);
+        assert!(chat.review_panels.is_empty());
+        chat.open_right_panel(cx);
+    });
+    window.draw();
+    assert!(!window.read(|chat, cx| {
+        chat.browser_panels[&chat.active_conversation]
+            .read(cx)
+            .offers_changes()
+    }));
+    for checkout in [Checkout::Branch("main".into()), Checkout::Detached] {
+        window.update(|chat, _, cx| {
+            let composer = chat.home.read(cx).composer_entity();
+            composer.update(cx, |composer, cx| composer.set_checkout(checkout, cx));
+        });
+        app.run_until_parked();
+        window.draw();
+        assert!(window.read(|chat, cx| {
+            chat.browser_panels[&chat.active_conversation]
+                .read(cx)
+                .offers_changes()
+        }));
+        window.update(|chat, _, cx| chat.open_review(cx));
+        window.draw();
+        assert_eq!(
+            window.read(|chat, _| chat.active_panel_tab()),
+            Some(PanelTab::Changes)
+        );
+        window.update(|chat, _, cx| {
+            let composer = chat.home.read(cx).composer_entity();
+            composer.update(cx, |composer, cx| {
+                composer.set_checkout(Checkout::NotRepository, cx)
+            });
+        });
+        app.run_until_parked();
+        window.draw();
+        assert!(window.read(|chat, _| chat.right_panel.open));
+        assert!(
+            window.read(|chat, _| matches!(chat.active_panel_tab(), Some(PanelTab::Browser(_))))
+        );
+        assert!(!window.read(|chat, cx| {
+            chat.browser_panels[&chat.active_conversation]
+                .read(cx)
+                .offers_changes()
+        }));
+        window.update(|chat, _, cx| {
+            let before = chat.panel_tabs[&chat.active_conversation].tabs.clone();
+            chat.open_panel_tool(super::RightPanelMode::Review, TabPlacement::Replace(0), cx);
+            assert_eq!(chat.panel_tabs[&chat.active_conversation].tabs, before);
+        });
+    }
+    window.update(|chat, _, cx| {
+        let composer = chat.home.read(cx).composer_entity();
+        composer.update(cx, |composer, cx| {
+            composer.set_checkout(Checkout::Branch("main".into()), cx)
+        });
+        chat.open_review(cx);
+        chat.close_panel_tab(0, cx);
+    });
+    window.update(|chat, _, cx| {
+        let composer = chat.home.read(cx).composer_entity();
+        composer.update(cx, |composer, cx| {
+            composer.set_checkout(Checkout::NotRepository, cx)
+        });
+    });
+    app.run_until_parked();
+    assert!(!window.read(|chat, _| chat.right_panel.open));
 }

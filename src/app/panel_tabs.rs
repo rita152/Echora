@@ -234,7 +234,11 @@ impl ChatApp {
     ) {
         let key = self.active_conversation.clone();
         let (items, shown) = self.tool_items(&key, cx);
-        let review = self.review_panels.contains_key(&key);
+        let changes_available = self.changes_available(cx);
+        let review = changes_available && self.review_panels.contains_key(&key);
+        if !changes_available {
+            self.deactivate_review(cx);
+        }
         let files = self.file_panels.contains_key(&key);
         let state = self.panel_tabs.entry(key.clone()).or_default();
         let before = state.active_tab();
@@ -330,7 +334,10 @@ impl ChatApp {
             self.panel_tab_scroll.scroll_to_item(self.panel_tab_index());
         }
         if let Some(browser) = self.browser_panels.get(&key) {
-            browser.update(cx, |panel, cx| panel.set_changes_open(has_changes, cx));
+            browser.update(cx, |panel, cx| {
+                panel.set_changes_available(changes_available, cx);
+                panel.set_changes_open(has_changes, cx);
+            });
         }
         if empty && removed {
             // The reference hides the panel with its last tab.
@@ -491,6 +498,10 @@ impl ChatApp {
 
     /// Shows `tab`'s item in its tool and hides the other tools.
     pub(super) fn show_panel_tab(&mut self, tab: PanelTab, cx: &mut Context<Self>) {
+        if tab == PanelTab::Changes && !self.changes_available(cx) {
+            self.reconcile_panel_tabs(None, cx);
+            return;
+        }
         let key = self.active_conversation.clone();
         let mode = tab.mode();
         if mode != RightPanelMode::SideChat {
@@ -573,6 +584,9 @@ impl ChatApp {
         placement: TabPlacement,
         cx: &mut Context<Self>,
     ) {
+        if mode == RightPanelMode::Review && !self.changes_available(cx) {
+            return;
+        }
         let key = self.active_conversation.clone();
         let replaced = match placement {
             TabPlacement::Replace(index) => self
@@ -620,6 +634,9 @@ impl ChatApp {
 
     /// Selects the chat's first tab of `mode`, or opens one after the others.
     pub(super) fn show_or_open_panel_tool(&mut self, mode: RightPanelMode, cx: &mut Context<Self>) {
+        if mode == RightPanelMode::Review && !self.changes_available(cx) {
+            return;
+        }
         self.right_panel.open = true;
         let existing = self
             .panel_tabs

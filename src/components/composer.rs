@@ -52,6 +52,7 @@ mod workspace_controls_render;
 mod workspace_controls_tests;
 pub(crate) use project_picker::projectless_cwd;
 pub use project_picker::{DraftProjectSelected, OpenProjectCreation};
+pub use workspace::CheckoutChanged;
 pub use workspace_controls::{DraftWorkspaceChanged, OpenWorkspaceGitSettings};
 
 #[cfg(feature = "screenshot")]

@@ -1195,14 +1195,26 @@ impl SummaryPanel {
                         .h(px(24.)),
                     ),
             )
-            .child(self.environment_row(
-                0,
-                "environment-changes",
-                ("Changes".into(), stats),
-                (available && !busy, None),
-                theme,
-                cx,
-            ))
+            .when(
+                self.composer.as_ref().is_some_and(|composer| {
+                    composer
+                        .read(cx)
+                        .workspace_presentation()
+                        .checkout
+                        .as_ref()
+                        .is_some_and(crate::git_review::Checkout::is_repository)
+                }),
+                |card| {
+                    card.child(self.environment_row(
+                        0,
+                        "environment-changes",
+                        ("Changes".into(), stats),
+                        (available && !busy, None),
+                        theme,
+                        cx,
+                    ))
+                },
+            )
             .child(self.environment_row(
                 1,
                 if worktree {

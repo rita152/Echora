@@ -47,7 +47,7 @@ The right panel holds multiple tabs, so you can keep a file, terminal, browser p
 | **Files** | Browse and search local files, edit text with autosave, preview Markdown and images, and follow file links to a specific line. Markdown previews render HTML headings, aligned paragraphs, emphasis, links, and expandable details; relative links and images resolve beside the document. Scripts and embedded applications do not run. |
 | **Terminal** | Run a local shell in the conversation's working directory, with multiple tabs, scrollback, selection, and clipboard support. |
 | **Browser** | Browse pages in the embedded WebKit browser, use address and history suggestions, search within a page, manage downloads, and attach page content to a chat. |
-| **Changes** | Review Git diffs in unified or split view, add line comments, stage or unstage changes, revert files or hunks, commit, create branches, push, and create pull requests. |
+| **Changes** | Available in Git working directories; switching to a non-Git directory removes the Changes tab. Review Git diffs in unified or split view, add line comments, stage or unstage changes, revert files or hunks, commit, create branches, push, and create pull requests. |
 | **Side chat** | Explore a question in a temporary conversation with its own input, permissions, and stop control. |
 
 The Environment panel provides quick access to the working location, branches, Git actions, attached pull requests, local servers, and background terminals. A separate Pull requests page lets you browse and filter GitHub pull requests, read activity and checks, inspect commits and diffs, and comment on code.

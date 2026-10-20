@@ -172,6 +172,9 @@ impl ChatApp {
             return;
         };
         let mode = *mode;
+        if mode == RightPanelMode::Review && !self.changes_available(cx) {
+            return;
+        }
         self.right_panel.open = true;
         match mode {
             RightPanelMode::SideChat | RightPanelMode::Browser => {

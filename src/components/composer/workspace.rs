@@ -15,6 +15,9 @@ pub struct WorkspacePresentation {
     pub checkout: Option<Checkout>,
 }
 
+pub struct CheckoutChanged;
+impl gpui::EventEmitter<CheckoutChanged> for ComposerView {}
+
 impl ComposerView {
     pub fn environment_context(&self) -> (std::path::PathBuf, bool, bool) {
         (
@@ -45,11 +48,8 @@ impl ComposerView {
     /// until the new answer arrives, unless the directory itself changed.
     pub(super) fn refresh_checkout(&mut self, cwd_changed: bool, cx: &mut Context<Self>) {
         self.checkout_cycle = self.checkout_cycle.wrapping_add(1);
-        if cwd_changed || self.conversation.project_id.is_none() {
-            self.workspace.checkout = None;
-        }
-        if self.conversation.project_id.is_none() {
-            return;
+        if cwd_changed && self.workspace.checkout.take().is_some() {
+            cx.emit(CheckoutChanged);
         }
         #[cfg(not(test))]
         {
@@ -76,6 +76,7 @@ impl ComposerView {
     pub(crate) fn set_checkout(&mut self, checkout: Checkout, cx: &mut Context<Self>) {
         if self.workspace.checkout.as_ref() != Some(&checkout) {
             self.workspace.checkout = Some(checkout);
+            cx.emit(CheckoutChanged);
             cx.notify();
         }
     }

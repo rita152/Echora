@@ -76,6 +76,19 @@ impl ChatApp {
     pub(super) fn wire_project_selection(composer: &Entity<ComposerView>, cx: &mut Context<Self>) {
         cx.subscribe(
             composer,
+            |this, composer, _: &crate::components::composer::CheckoutChanged, cx| {
+                if this
+                    .conversation_hosts
+                    .get(&this.active_conversation)
+                    .is_some_and(|host| host.composer == composer)
+                {
+                    this.reconcile_panel_tabs(None, cx);
+                }
+            },
+        )
+        .detach();
+        cx.subscribe(
+            composer,
             |this, _, _: &crate::components::composer::OpenWorkspaceGitSettings, cx| {
                 this.open_settings_page("git-settings", cx);
             },

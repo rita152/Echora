@@ -41,9 +41,11 @@ impl ChatApp {
             .conversation_hosts
             .get(&key)
             .is_some_and(|host| host.composer.read(cx).side_chat_configuration().is_some());
+        let changes_available = self.changes_available(cx);
         let panel = self.browser_panels[&key].clone();
         panel.update(cx, |panel, cx| {
-            panel.set_side_chat_available(side_chat_available, cx)
+            panel.set_side_chat_available(side_chat_available, cx);
+            panel.set_changes_available(changes_available, cx);
         });
         panel
     }

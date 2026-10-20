@@ -281,6 +281,7 @@ pub struct BrowserPanel {
     side_chat_available: bool,
     /// The chat has a Changes tab, so the New tab page leaves it out.
     changes_open: bool,
+    changes_available: bool,
     /// Overlays over the page this frame, in window coordinates.
     holes: Rc<RefCell<Vec<WebViewHole>>>,
     /// The panel's width last frame, for the toolbar's container queries.
@@ -367,6 +368,7 @@ impl BrowserPanel {
             occluded: false,
             side_chat_available: false,
             changes_open: false,
+            changes_available: false,
             holes: Rc::new(RefCell::new(Vec::new())),
             panel_width: Rc::new(Cell::new(0.)),
             page_frame: Rc::new(Cell::new(None)),
@@ -669,6 +671,17 @@ impl BrowserPanel {
     pub fn close_tab_id(&mut self, id: u64, cx: &mut Context<Self>) {
         if let Some(index) = self.tab_index(id) {
             self.close_tab(index, cx);
+        }
+    }
+
+    pub(crate) fn offers_changes(&self) -> bool {
+        self.changes_available && !self.changes_open
+    }
+
+    pub fn set_changes_available(&mut self, available: bool, cx: &mut Context<Self>) {
+        if self.changes_available != available {
+            self.changes_available = available;
+            cx.notify();
         }
     }
 

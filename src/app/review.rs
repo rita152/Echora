@@ -8,6 +8,19 @@ use crate::components::file_change::{
 };
 
 impl ChatApp {
+    pub(super) fn changes_available(&self, cx: &gpui::App) -> bool {
+        self.conversation_hosts
+            .get(&self.active_conversation)
+            .is_some_and(|host| {
+                host.composer
+                    .read(cx)
+                    .workspace_presentation()
+                    .checkout
+                    .as_ref()
+                    .is_some_and(crate::git_review::Checkout::is_repository)
+            })
+    }
+
     /// ⌃⇧G and the summary's changes: the chat's Changes tab, opened after
     /// the others when it has none.
     pub(super) fn open_review(&mut self, cx: &mut Context<Self>) {
