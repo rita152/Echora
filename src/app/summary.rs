@@ -100,12 +100,8 @@ impl ChatApp {
     }
 
     /// Whether Environment is enabled in the workspace preferences.
-    pub(super) fn summary_panel_visible(&self) -> bool {
-        !self
-            .workspace_store
-            .snapshot()
-            .preferences
-            .summary_panel_unpinned
+    pub(super) fn summary_panel_visible(&self, cx: &gpui::App) -> bool {
+        self.sidebar.read(cx).summary_panel_pinned()
     }
 
     /// Output of background terminals follows into their open tabs.

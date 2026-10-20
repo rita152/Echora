@@ -400,10 +400,7 @@ impl Render for ChatApp {
                     && !self.showing_pull_requests
                     && !self.showing_plugins =>
             {
-                self.workspace_store
-                    .snapshot()
-                    .thread(id)
-                    .map(|thread| thread.title.clone())
+                self.sidebar.read(cx).thread_title(id)
             }
             _ => None,
         };
@@ -446,7 +443,7 @@ impl Render for ChatApp {
         // The same in both states: the open button and the hide button that
         // replaces it sit at one spot, so toggling the panel never moves it.
         let summary_shown = summary_available
-            && self.summary_panel_visible()
+            && self.summary_panel_visible(cx)
             && self.summary_panel.read(cx).has_content(cx);
         // Reserve the card's column before HomeView measures its transcript
         // and composer, so wrapping and virtual row heights follow the space
@@ -1097,12 +1094,12 @@ impl Render for ChatApp {
                                     titlebar_icon_button(
                                         "environment-panel",
                                         false,
-                                        self.summary_panel_visible(),
+                                        self.summary_panel_visible(cx),
                                         theme,
                                     )
                                     .role(Role::Button)
                                     .aria_label(label)
-                                    .aria_toggled(if self.summary_panel_visible() { gpui::Toggled::True } else { gpui::Toggled::False })
+                                    .aria_toggled(if self.summary_panel_visible(cx) { gpui::Toggled::True } else { gpui::Toggled::False })
                                     .track_focus(&self.environment_toggle_focus)
                                     .key_context("EnvironmentToggle")
                                     .tab_stop(true)
@@ -1112,7 +1109,7 @@ impl Render for ChatApp {
                                         cx.stop_propagation();
                                     }))
                                     .on_key_down(cx.listener(move |this, event: &KeyDownEvent, window, cx| {
-                                        if event.keystroke.key == "tab" && !event.keystroke.modifiers.shift && this.summary_panel_visible() {
+                                        if event.keystroke.key == "tab" && !event.keystroke.modifiers.shift && this.summary_panel_visible(cx) {
                                             this.summary_panel.update(cx, |panel, cx| panel.focus_environment(window, cx)); cx.stop_propagation();
                                         }
                                     }))

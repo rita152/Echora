@@ -1878,12 +1878,12 @@ impl Render for HomeView {
                             .or_default();
                     }
                     ActivityStreamUnit::ToolGroup(group) => {
-                        for activity in &group.activities {
+                        for activity in group.activities.iter() {
                             if let ConversationActivity::AutoApprovalReview(review) = activity {
                                 self.sync_auto_review_view(review, cx);
                             }
                         }
-                        for command in &group.commands {
+                        for command in group.commands.iter() {
                             self.command_scroll_handles
                                 .entry(command.id.clone())
                                 .or_default();

@@ -144,7 +144,7 @@ pub(super) fn tool_activity_group(
         scroll_handle,
         background_commands,
     } = disclosure;
-    if let [ConversationActivity::Command(command)] = group.activities.as_slice()
+    if let [ConversationActivity::Command(command)] = group.activities.as_ref()
         && command_activity_row_count(command) == 1
     {
         return command_execution_activity(
@@ -224,56 +224,60 @@ pub(super) fn tool_activity_group(
     let show_bottom_fade = has_overflow && (max_scroll <= 0.5 || scroll_top + 0.5 < max_scroll);
 
     // Render the transport order, including interleaved edits and computer use.
-    let activity_rows = group.activities.into_iter().fold(
-        div()
-            .w_full()
-            .flex_none()
-            .flex()
-            .flex_col()
-            .gap(px(TOOL_GROUP_ITEM_GAP)),
-        |rows, activity| match activity {
-            ConversationActivity::AutoApprovalReview(review) => {
-                rows.children(review_views.get(&review.review.key).cloned())
-            }
-            ConversationActivity::Command(command) => rows.child(command_execution_activity(
-                home_entity.clone(),
-                command,
-                expanded_commands,
-                command_scroll_handles,
-                &background_commands,
-                theme,
-            )),
-            ConversationActivity::FileChange(file_change) => {
-                let target = home_entity.clone();
-                let callback = FileChangeActivityCallback::new(move |event, _, cx| {
-                    target.update(cx, move |home, cx| {
-                        home.handle_file_change_activity_event(event, cx)
-                    });
-                });
-                rows.child(div().w_full().flex_none().child(
-                    crate::components::file_change::render_grouped_file_change(
-                        &file_change,
-                        expanded_commands,
-                        theme,
-                        callback,
-                    ),
-                ))
-            }
-            ConversationActivity::WebSearch(search) => {
-                rows.child(web_search_activity(search, theme))
-            }
-            ConversationActivity::McpToolCall(call) => {
-                let expanded = expanded_commands.contains(&call.id);
-                rows.child(computer_use_activity(
+    // A collapsed group only paints its summary. Defer all command cards,
+    // output copies and file-change controls until the body is visible.
+    let activity_rows = (visibility > f32::EPSILON).then(|| {
+        group.activities.iter().cloned().fold(
+            div()
+                .w_full()
+                .flex_none()
+                .flex()
+                .flex_col()
+                .gap(px(TOOL_GROUP_ITEM_GAP)),
+            |rows, activity| match activity {
+                ConversationActivity::AutoApprovalReview(review) => {
+                    rows.children(review_views.get(&review.review.key).cloned())
+                }
+                ConversationActivity::Command(command) => rows.child(command_execution_activity(
                     home_entity.clone(),
-                    *call,
-                    expanded,
+                    command,
+                    expanded_commands,
+                    command_scroll_handles,
+                    &background_commands,
                     theme,
-                ))
-            }
-            _ => rows,
-        },
-    );
+                )),
+                ConversationActivity::FileChange(file_change) => {
+                    let target = home_entity.clone();
+                    let callback = FileChangeActivityCallback::new(move |event, _, cx| {
+                        target.update(cx, move |home, cx| {
+                            home.handle_file_change_activity_event(event, cx)
+                        });
+                    });
+                    rows.child(div().w_full().flex_none().child(
+                        crate::components::file_change::render_grouped_file_change(
+                            &file_change,
+                            expanded_commands,
+                            theme,
+                            callback,
+                        ),
+                    ))
+                }
+                ConversationActivity::WebSearch(search) => {
+                    rows.child(web_search_activity(search, theme))
+                }
+                ConversationActivity::McpToolCall(call) => {
+                    let expanded = expanded_commands.contains(&call.id);
+                    rows.child(computer_use_activity(
+                        home_entity.clone(),
+                        *call,
+                        expanded,
+                        theme,
+                    ))
+                }
+                _ => rows,
+            },
+        )
+    });
 
     div()
         .w_full()
@@ -418,7 +422,7 @@ pub(super) fn tool_activity_group(
                                             home.update(cx, |_, cx| cx.notify());
                                         });
                                     })
-                                    .child(activity_rows),
+                                    .children(activity_rows),
                             )
                             .when(show_top_fade, |body| {
                                 body.child(

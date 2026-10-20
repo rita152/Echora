@@ -163,6 +163,55 @@ fn collaboration(kind: LegacySubAgentActivityKind) -> AgentCollaboration {
 }
 
 #[test]
+fn tool_group_row_clones_share_large_completed_output() {
+    for lines in [1_000, 100_000] {
+        let mut execution = command(
+            "large-output",
+            CommandExecutionAction::Unknown {
+                command: "fixture".into(),
+            },
+            CommandExecutionStatus::Completed,
+        );
+        execution.output = "historical output\n".repeat(lines);
+        let units = activity_stream_units(&[ConversationActivity::Command(execution)]);
+        let row = super::timeline::ConversationListRow::Activity {
+            unit: units[0].clone(),
+            show_thinking_tail: false,
+        };
+        let copy = row.clone();
+        let super::timeline::ConversationListRow::Activity {
+            unit: ActivityStreamUnit::ToolGroup(original),
+            ..
+        } = &row
+        else {
+            panic!("expected group")
+        };
+        let super::timeline::ConversationListRow::Activity {
+            unit: ActivityStreamUnit::ToolGroup(cloned),
+            ..
+        } = &copy
+        else {
+            panic!("expected cloned group")
+        };
+        assert!(std::rc::Rc::ptr_eq(
+            &original.activities,
+            &cloned.activities
+        ));
+        assert!(std::rc::Rc::ptr_eq(&original.commands, &cloned.commands));
+        assert!(std::rc::Rc::ptr_eq(&original.reasoning, &cloned.reasoning));
+        assert!(std::rc::Rc::ptr_eq(
+            &original.file_changes,
+            &cloned.file_changes
+        ));
+        assert_eq!(original.commands[0].output.lines().count(), lines);
+        assert_eq!(
+            original.commands[0].output.as_ptr(),
+            cloned.commands[0].output.as_ptr()
+        );
+    }
+}
+
+#[test]
 fn consecutive_reasoning_and_commands_form_one_tool_activity_group() {
     let activities = vec![
         ConversationActivity::Reasoning(reasoning("reasoning_1", "Inspecting runtime", false)),

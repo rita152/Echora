@@ -887,6 +887,7 @@ pub struct SidebarView {
     marquee_started_at: Option<Instant>,
     marquee_animation_ends_at: Option<Instant>,
     marquee_animation_running: bool,
+    activity_inputs_cache: RefCell<Option<Rc<crate::workspace::activity::ActivityInputs>>>,
     show_all_projects: BTreeSet<ProjectId>,
     rename_input: Entity<PromptInput>,
     /// Project whose inline rename field is active; tasks use the modal panel.
@@ -1072,6 +1073,7 @@ impl SidebarView {
             marquee_started_at: None,
             marquee_animation_ends_at: None,
             marquee_animation_running: false,
+            activity_inputs_cache: RefCell::new(None),
             show_all_projects: BTreeSet::new(),
             rename_input,
             rename_target: None,
@@ -2040,6 +2042,17 @@ impl SidebarView {
             )
     }
 
+    /// Render-time reads use the delivered snapshot, never the backend lock.
+    pub fn thread_title(&self, thread_id: &str) -> Option<String> {
+        self.snapshot
+            .thread(thread_id)
+            .map(|thread| thread.title.clone())
+    }
+
+    pub fn summary_panel_pinned(&self) -> bool {
+        !self.snapshot.preferences.summary_panel_unpinned
+    }
+
     fn thread_title_width(text: &str, window: &mut Window) -> f32 {
         let mut font = window.text_style().font();
         font.family = ".SystemUIFont".into();
@@ -2087,7 +2100,9 @@ impl SidebarView {
     fn stop_marquee(&mut self) {
         self.marquee_started_at = None;
         self.marquee_animation_ends_at = None;
-        self.marquee_animation_running = false;
+        // Leave the pending callback marked until it drains. A different row
+        // may start a marquee before then; reusing that callback prevents one
+        // additional animation loop from accumulating on every hover change.
     }
 
     fn advance_marquee_animation(&mut self, window: &mut Window, cx: &mut Context<Self>) {

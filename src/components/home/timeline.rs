@@ -3,7 +3,7 @@
 #[cfg(feature = "screenshot")]
 use super::mcp::mcp_tool_call_label;
 
-use std::collections::HashSet;
+use std::{collections::HashSet, rc::Rc};
 
 use super::{
     context::CurrentTurnRows,
@@ -24,10 +24,10 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct ToolActivityGroupPresentation {
     pub(super) id: String,
-    pub(super) reasoning: Vec<ReasoningActivityPresentation>,
-    pub(super) activities: Vec<ConversationActivity>,
-    pub(super) commands: Vec<CommandExecution>,
-    pub(super) file_changes: Vec<crate::components::file_change::FileChangeActivityPresentation>,
+    pub(super) reasoning: Rc<[ReasoningActivityPresentation]>,
+    pub(super) activities: Rc<[ConversationActivity]>,
+    pub(super) commands: Rc<[CommandExecution]>,
+    pub(super) file_changes: Rc<[crate::components::file_change::FileChangeActivityPresentation]>,
 }
 
 impl ToolActivityGroupPresentation {
@@ -54,6 +54,8 @@ impl ToolActivityGroupPresentation {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum ActivityStreamUnit {
     Standalone(ConversationActivity),
+    // Completed groups may carry megabytes of command output. Cloning a list
+    // row or a disclosure snapshot must retain the immutable group, not copy it.
     ToolGroup(ToolActivityGroupPresentation),
 }
 
@@ -142,10 +144,10 @@ pub(super) fn flush_pending_tool_activity_group(
     units.push(ActivityStreamUnit::ToolGroup(
         ToolActivityGroupPresentation {
             id,
-            reasoning: std::mem::take(&mut pending.reasoning),
-            activities: std::mem::take(&mut pending.activities),
-            commands: std::mem::take(&mut pending.commands),
-            file_changes: std::mem::take(&mut pending.file_changes),
+            reasoning: std::mem::take(&mut pending.reasoning).into(),
+            activities: std::mem::take(&mut pending.activities).into(),
+            commands: std::mem::take(&mut pending.commands).into(),
+            file_changes: std::mem::take(&mut pending.file_changes).into(),
         },
     ));
 }
@@ -494,13 +496,22 @@ pub(super) fn generic_command_activity_summary(
 pub(super) fn completed_tool_group_summary(
     group: &ToolActivityGroupPresentation,
 ) -> CommandActivitySummary {
-    let command_summaries = group
-        .commands
-        .iter()
-        .flat_map(command_activity_summaries)
-        .collect::<Vec<_>>();
-    let reads_files = command_summaries.iter().any(|summary| summary.reads_files);
-    let runs_command = command_summaries.iter().any(|summary| summary.runs_command);
+    // The group label only needs action categories. Formatting every command
+    // first normalizes and allocates entire heredocs on every scroll frame,
+    // even though none of that text appears in this collapsed summary.
+    let reads_files = group.commands.iter().any(|command| {
+        command
+            .actions
+            .iter()
+            .any(|action| !matches!(action, CommandExecutionAction::Unknown { .. }))
+    });
+    let runs_command = group.commands.iter().any(|command| {
+        command.actions.is_empty()
+            || command
+                .actions
+                .iter()
+                .any(|action| matches!(action, CommandExecutionAction::Unknown { .. }))
+    });
     let edits_files = !group.file_changes.is_empty();
     let text = match (edits_files, reads_files, runs_command) {
         (true, true, true) => crate::i18n::text("编辑了文件读取文件运行了命令"),

@@ -62,7 +62,7 @@ fn computer_use_keeps_its_title_and_chronological_place_inside_command_groups() 
     let [ActivityStreamUnit::ToolGroup(group)] = units.as_slice() else {
         panic!("computer use must not split the group")
     };
-    assert_eq!(group.activities, activities);
+    assert_eq!(group.activities.as_ref(), activities.as_slice());
     assert_eq!(
         completed_tool_group_summary(group).text,
         "已使用 浏览器运行了命令"

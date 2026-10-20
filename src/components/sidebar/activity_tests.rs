@@ -293,6 +293,39 @@ impl Drop for Fixture {
     }
 }
 
+#[test]
+fn activity_input_cache_refreshes_attention_viewed_chat_and_day() {
+    let mut fixture = Fixture::new();
+    fixture.window.update(|sidebar, _, _| {
+        let original = sidebar.activity_inputs();
+        assert!(std::rc::Rc::ptr_eq(&original, &sidebar.activity_inputs()));
+        sidebar
+            .snapshot
+            .preferences
+            .unread_thread_ids
+            .insert("running".into());
+        sidebar.viewed_thread = Some("running".into());
+        sidebar.refresh_activity();
+        let refreshed = sidebar.activity_inputs();
+        assert!(!std::rc::Rc::ptr_eq(&original, &refreshed));
+        assert_eq!(refreshed.viewed_thread.as_deref(), Some("running"));
+        assert!(
+            refreshed
+                .candidates
+                .iter()
+                .any(|candidate| candidate.thread_id == "running"
+                    && candidate.attention == Attention::Unread)
+        );
+        let mut yesterday = (*refreshed).clone();
+        yesterday.today_start_ms -= 86_400_000;
+        *sidebar.activity_inputs_cache.borrow_mut() = Some(std::rc::Rc::new(yesterday));
+        assert_eq!(
+            sidebar.activity_inputs().today_start_ms,
+            refreshed.today_start_ms
+        );
+    });
+}
+
 // Geometry at a 240 px sidebar, measured from the reference: the bell is the
 // 24 px button at x 204..228, y 50.9..74.9. The fixture's list is too short to
 // overflow, so it reserves no scrollbar gutter and the Priority heading's last

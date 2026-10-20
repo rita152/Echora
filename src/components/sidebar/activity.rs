@@ -272,8 +272,21 @@ fn now_ms() -> i64 {
 }
 
 impl SidebarView {
-    pub(super) fn activity_inputs(&self) -> ActivityInputs {
-        ActivityInputs::from_snapshot(&self.snapshot, self.viewed_thread.clone(), now_ms())
+    pub(super) fn activity_inputs(&self) -> std::rc::Rc<ActivityInputs> {
+        let today = crate::workspace::activity::local_day_start_ms(now_ms());
+        let mut cache = self.activity_inputs_cache.borrow_mut();
+        if let Some(inputs) = cache.as_ref()
+            && inputs.today_start_ms == today
+        {
+            return inputs.clone();
+        }
+        let inputs = std::rc::Rc::new(ActivityInputs::from_snapshot(
+            &self.snapshot,
+            self.viewed_thread.clone(),
+            now_ms(),
+        ));
+        *cache = Some(inputs.clone());
+        inputs
     }
 
     #[cfg(test)]
@@ -370,6 +383,7 @@ impl SidebarView {
 
     /// Folds a workspace update into the open view.
     pub(super) fn refresh_activity(&mut self) {
+        self.activity_inputs_cache.get_mut().take();
         let inputs = self.activity_inputs();
         if let Some(session) = self.activity.as_mut() {
             session.refresh(&inputs);
