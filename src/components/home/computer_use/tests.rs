@@ -2,6 +2,7 @@ use super::*;
 use gpui::{AppContext, Bounds, MouseButton, TestApp, WindowBounds, WindowOptions, point, size};
 fn snapshot() -> Snapshot {
     Snapshot {
+        browser: false,
         target: None,
         targets: vec![],
         label: "Verification target".into(),
@@ -206,4 +207,80 @@ fn resized_window_discards_the_old_video_frame() {
             assert!(p.windows[0].frame.is_none());
         });
     });
+}
+
+#[gpui::test]
+fn browser_capture_fits_reference_bounds_without_native_capture_and_clears_after_turn(
+    cx: &mut gpui::TestAppContext,
+) {
+    use crate::agent::AgentMcpToolCall;
+    use gpui::VisualTestContext;
+    use serde_json::json;
+    let mut png = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::new_rgb8(1200, 1245)
+        .write_to(&mut png, image::ImageFormat::Png)
+        .unwrap();
+    let url = format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(png.into_inner())
+    );
+    let activity = ConversationActivity::McpToolCall(Box::new(AgentMcpToolCall {
+        id: "chrome-tab".into(),
+        server: "cua_repl".into(),
+        tool: "js".into(),
+        status: AgentMcpToolCallStatus::Completed,
+        arguments: json!({}),
+        app_context: None,
+        plugin_id: None,
+        result: Some(json!({"_meta":{"codex/toolSurface":{
+            "kind":"browserUse", "backend":"chrome", "browserId":"1",
+            "screenshot":{"url":url,"tabId":"123"}
+        }}})),
+        error: None,
+        legacy_resource_uri: None,
+        read_only_hint: None,
+        duration_ms: None,
+        progress: vec![],
+    }));
+    let handle = cx.add_window(|_, cx| {
+        let owner = cx.new(|cx| ComposerView::new(ThemeMode::Dark, cx));
+        let preview = cx.new(|cx| {
+            let mut p = Preview::new(ThemeMode::Dark);
+            p.sync(
+                owner,
+                &[activity],
+                ConversationPhase::Streaming,
+                ThemeMode::Dark,
+                cx,
+            );
+            p
+        });
+        PreviewHost(preview)
+    });
+    let preview = handle.read_with(cx, |host, _| host.0.clone()).unwrap();
+    let mut visual = VisualTestContext::from_window(handle.into(), cx);
+    visual.simulate_resize(size(px(1440.), px(900.)));
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    let bounds = visual.debug_bounds("browser-use-preview").unwrap();
+    assert!((f32::from(bounds.size.width) - 385.542).abs() < 0.1);
+    assert_eq!(bounds.size.height, px(400.));
+    assert_eq!(bounds.top(), px(70.));
+    visual.update(|_, cx| {
+        let p = preview.read(cx);
+        assert!(p.windows.is_empty());
+        assert!(p.capture_task.is_none());
+        assert!(p.inventory.is_none());
+    });
+    visual.simulate_click(
+        bounds.origin + point(px(14.), px(14.)),
+        gpui::Modifiers::none(),
+    );
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(visual.debug_bounds("browser-use-preview").is_none());
+    visual.simulate_click(point(px(1424.), px(86.)), gpui::Modifiers::none());
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(visual.debug_bounds("browser-use-preview").is_some());
+    visual.update(|_, cx| preview.update(cx, |p, _| p.phase = ConversationPhase::Complete));
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(visual.debug_bounds("computer-use-preview").is_none());
 }

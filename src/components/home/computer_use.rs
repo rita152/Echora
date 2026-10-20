@@ -1,4 +1,4 @@
-//! Continuous native window previews, stacked inside the conversation's top right.
+//! Native window streams and controlled browser tab snapshots above the conversation.
 mod model;
 #[cfg(test)]
 mod tests;
@@ -67,6 +67,7 @@ pub(super) struct Preview {
     selected_window: Option<WindowId>,
     tool_frame: Option<Arc<Image>>,
     tool_frame_key: Option<String>,
+    tool_frame_size: Option<(u32, u32)>,
     capture_error: Option<CaptureError>,
     takeover_pending: Option<WindowInfo>,
     intervention_error: Option<String>,
@@ -99,6 +100,7 @@ impl Preview {
             selected_window: None,
             tool_frame: None,
             tool_frame_key: None,
+            tool_frame_size: None,
             capture_error: None,
             takeover_pending: None,
             intervention_error: None,
@@ -144,11 +146,12 @@ impl Preview {
             .and_then(|s| s.frame.as_ref())
             .map(|f| f.key.clone());
         if self.tool_frame_key != key {
+            self.tool_frame_size = None;
             self.tool_frame = next.as_ref().and_then(|s| s.frame.as_ref()).and_then(|f| {
                 let bytes = base64::engine::general_purpose::STANDARD
                     .decode(&f.data)
                     .ok()?;
-                crate::media::encoded_image_dimensions(&bytes)?;
+                self.tool_frame_size = Some(crate::media::encoded_image_dimensions(&bytes)?);
                 Some(Arc::new(Image::from_bytes(
                     super::media::tool_image_format(&bytes, f.mime.as_deref()),
                     bytes,
@@ -191,6 +194,7 @@ impl Preview {
         self.selected_window = None;
         self.tool_frame = None;
         self.tool_frame_key = None;
+        self.tool_frame_size = None;
         self.capture_error = None;
     }
     fn start_capture(&mut self, cx: &mut Context<Self>) {
@@ -488,6 +492,9 @@ impl Render for Preview {
         else {
             return div().into_any_element();
         };
+        if snapshot.browser && self.tool_frame.is_none() {
+            return div().into_any_element();
+        }
         let toggle_focus = self
             .toggle_focus
             .get_or_insert_with(|| cx.focus_handle())
@@ -571,27 +578,75 @@ impl Render for Preview {
                     .bg(theme.control)
                     .child(icon("close-dialog", theme.text_secondary.into()).size(px(14.))),
             )
-            .when(count == 0 || self.capture_error.is_some(), |view| {
-                view.child(
+            .when(
+                !snapshot.browser && (count == 0 || self.capture_error.is_some()),
+                |view| {
+                    view.child(
+                        div()
+                            .id("computer-use-preview-retry")
+                            .role(Role::Button)
+                            .aria_label(
+                                crate::i18n::format!("重试窗口预览" => "Retry window preview"),
+                            )
+                            .focusable()
+                            .tab_stop(true)
+                            .cursor_pointer()
+                            .text_size(px(11.))
+                            .child(crate::i18n::text("重试"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.capture_error = None;
+                                this.inventory_started = Instant::now() - Duration::from_secs(10);
+                                for window in &mut this.windows {
+                                    window.error = None;
+                                }
+                                cx.notify();
+                            })),
+                    )
+                },
+            );
+        if snapshot.browser {
+            // Chrome supplies the exact controlled tab capture in toolSurface.
+            // Native application capture would include unrelated user windows.
+            let Some(image) = self.tool_frame.clone() else {
+                return div().into_any_element();
+            };
+            let (image_width, image_height) = self.tool_frame_size.unwrap_or((200, 150));
+            // The macOS reference fits browser captures inside a 400 pt square,
+            // retaining their aspect ratio and the 24 pt conversation gutter.
+            let aspect = image_width.max(1) as f32 / image_height.max(1) as f32;
+            let width = 400f32
+                .min(available)
+                .min(available_height.min(400.) * aspect);
+            let height = width / aspect;
+            return root
+                .group("computer-use-stack")
+                .w(px(width))
+                .child(
                     div()
-                        .id("computer-use-preview-retry")
-                        .role(Role::Button)
-                        .aria_label(crate::i18n::format!("重试窗口预览" => "Retry window preview"))
-                        .focusable()
-                        .tab_stop(true)
-                        .cursor_pointer()
-                        .text_size(px(11.))
-                        .child(crate::i18n::text("重试"))
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.capture_error = None;
-                            this.inventory_started = Instant::now() - Duration::from_secs(10);
-                            for window in &mut this.windows {
-                                window.error = None;
-                            }
-                            cx.notify();
-                        })),
+                        .id("browser-use-preview")
+                        .debug_selector(|| "browser-use-preview".into())
+                        .role(Role::Image)
+                        .aria_label(crate::i18n::format!("浏览器预览" => "Browser Use preview"))
+                        .w(px(width))
+                        .h(px(height))
+                        .rounded(px(8.))
+                        .shadow_md()
+                        .overflow_hidden()
+                        .bg(theme.control)
+                        .child(
+                            gpui::img(image)
+                                .size_full()
+                                .rounded(px(8.))
+                                .object_fit(ObjectFit::Contain),
+                        ),
                 )
-            });
+                .child(
+                    header
+                        .opacity(0.)
+                        .group_hover("computer-use-stack", |s| s.opacity(1.)),
+                )
+                .into_any_element();
+        }
         root = root
             .group("computer-use-stack")
             .w(px(width + offset * count.saturating_sub(1) as f32));
