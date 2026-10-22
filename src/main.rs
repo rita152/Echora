@@ -55,6 +55,8 @@ use components::prompt_input::{
 };
 use theme::ThemeMode;
 
+gpui::actions!(echora, [Quit]);
+
 #[cfg(target_os = "macos")]
 #[allow(unexpected_cfgs)] // objc 0.2 macros probe the legacy cargo-clippy cfg.
 fn configure_native_blur_sampling(window: &mut gpui::Window) {
@@ -1567,10 +1569,23 @@ fn main() {
     if asset_status.is_missing() {
         eprintln!("{}", assets::missing_warning(asset_status));
     }
-    application()
+    let application = application();
+    application.on_reopen(|cx| {
+        cx.activate(true);
+        for window in cx.windows() {
+            let _ = window.update(cx, |_, window, _| window.activate_window());
+        }
+    });
+    application
         .with_assets(assets::Assets::load_from(asset_status))
         .run(move |cx: &mut App| {
             typography::initialize_fonts(cx);
+            cx.bind_keys([gpui::KeyBinding::new("cmd-q", Quit, None)]);
+            cx.set_menus(vec![gpui::Menu {
+                name: "Echora".into(),
+                disabled: false,
+                items: vec![gpui::MenuItem::action("Quit Echora", Quit)],
+            }]);
             // Mirror the system "reduce motion" preference for captures, so
             // paced reveals, fades, and shimmers render in their static form.
             if args.iter().any(|arg| arg == "--reduce-motion") {
@@ -2041,6 +2056,13 @@ fn main() {
                         closing_app
                             .update(cx, |app, cx| app.request_window_close(window, cx))
                             .unwrap_or(true)
+                    });
+                    let quit_app = app.downgrade();
+                    let main_window = window.window_handle();
+                    cx.on_action(move |_: &Quit, cx| {
+                        let _ = main_window.update(cx, |_, window, cx| {
+                            let _ = quit_app.update(cx, |app, cx| app.request_quit(window, cx));
+                        });
                     });
                     #[cfg(feature = "screenshot")]
                     if let Some(path) = screenshot_path.clone() {

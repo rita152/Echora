@@ -2529,7 +2529,9 @@ fn environment_toggle_edges_keyboard_and_dock_are_independent() {
     assert_eq!(visible(&window), before);
     window.update(|chat, _, _| chat.workspace_store.set_summary_panel_pinned(true));
     window.draw();
-    window.simulate_click(point(px(700.), px(136.)), MouseButton::Left);
+    // Local is the first row below the Environment heading. The next row
+    // is the disabled branch selector when this chat has no repository.
+    window.simulate_click(point(px(700.), px(105.)), MouseButton::Left);
     assert!(window.read(|chat, cx| chat.summary_panel.read(cx).has_environment_menu()));
     window.draw();
     window.simulate_keystroke("escape");

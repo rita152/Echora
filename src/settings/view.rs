@@ -37,6 +37,7 @@ pub struct CloseSettings;
 pub struct ChangeTheme(pub ThemeMode);
 pub struct ChangeFontSizes(pub crate::workspace::FontSizes);
 pub struct ChangeLanguage(pub crate::i18n::Language);
+pub struct ChangeKeepRunningOnClose(pub bool);
 /// The Follow-up behavior segmented control changed.
 pub struct ChangeEnvironmentSection(pub String, pub bool);
 pub struct ChangeEnvironmentOpen(pub bool);
@@ -72,6 +73,7 @@ pub struct SettingsView {
     pub(super) environment_hidden_sections: Vec<String>,
     pub(super) environment_open: bool,
     pub(super) follow_up_mode: crate::workspace::FollowUpMode,
+    pub(super) keep_running_on_close: bool,
     pub(super) review_delivery: crate::workspace::ReviewDelivery,
     branch_prefix_input: gpui::Entity<crate::components::prompt_input::PromptInput>,
     /// What the configured model provider supports, read with the config.
@@ -144,6 +146,7 @@ impl EventEmitter<CloseSettings> for SettingsView {}
 impl EventEmitter<ChangeTheme> for SettingsView {}
 impl EventEmitter<ChangeFontSizes> for SettingsView {}
 impl EventEmitter<ChangeLanguage> for SettingsView {}
+impl EventEmitter<ChangeKeepRunningOnClose> for SettingsView {}
 impl EventEmitter<ChangeEnvironmentSection> for SettingsView {}
 impl EventEmitter<ChangeEnvironmentOpen> for SettingsView {}
 impl EventEmitter<ChangeFollowUpMode> for SettingsView {}
@@ -152,6 +155,11 @@ impl EventEmitter<ChangeBranchPrefix> for SettingsView {}
 impl EventEmitter<OpenSettingsFile> for SettingsView {}
 
 impl SettingsView {
+    pub fn set_keep_running_on_close(&mut self, keep_running: bool, cx: &mut Context<Self>) {
+        self.keep_running_on_close = keep_running;
+        cx.notify();
+    }
+
     pub fn set_environment_preferences(
         &mut self,
         open: bool,
@@ -426,6 +434,7 @@ impl SettingsView {
             environment_hidden_sections: Vec::new(),
             environment_open: true,
             follow_up_mode: Default::default(),
+            keep_running_on_close: false,
             review_delivery: Default::default(),
             branch_prefix_input,
             provider_capabilities: None,

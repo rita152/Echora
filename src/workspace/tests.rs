@@ -452,6 +452,25 @@ fn test_preferences_path(label: &str) -> PathBuf {
 }
 
 #[test]
+fn close_behavior_defaults_to_quit_and_survives_restarts_in_both_modes() {
+    let backend = FakeWorkspaceBackend::new();
+    let path = test_preferences_path("close-behavior");
+    let store = WorkspaceStore::with_preferences_path(backend.clone(), path.clone());
+    assert!(!store.snapshot().preferences.keep_running_on_close);
+    store.set_section_collapsed("recent", true);
+    for enabled in [true, false] {
+        store.set_keep_running_on_close(enabled);
+        let reopened = WorkspaceStore::with_preferences_path(backend.clone(), path.clone());
+        assert_eq!(
+            reopened.snapshot().preferences.keep_running_on_close,
+            enabled
+        );
+        assert!(reopened.snapshot().preferences.recent_collapsed);
+    }
+    fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+#[test]
 fn language_choice_survives_restart_without_changing_other_preferences_or_backend() {
     let backend = FakeWorkspaceBackend::new();
     let path = test_preferences_path("language");

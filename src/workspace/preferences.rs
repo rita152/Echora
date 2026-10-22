@@ -19,6 +19,9 @@ const PREFERENCES_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiPreferences {
+    /// macOS red close button: false quits; true keeps the live window hidden.
+    #[serde(default)]
+    pub keep_running_on_close: bool,
     /// App-local typography; never written to the agent or reference config.
     #[serde(default)]
     pub font_sizes: FontSizes,

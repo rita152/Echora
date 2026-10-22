@@ -25,15 +25,33 @@ impl ChatApp {
         self.terminal_panels[&key].clone()
     }
     pub fn request_window_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if cfg!(target_os = "macos")
+            && self
+                .workspace_store
+                .snapshot()
+                .preferences
+                .keep_running_on_close
+        {
+            // Keep the original window and all its entities alive. AppKit
+            // unhides it on a Dock click without recreating a conversation.
+            cx.hide();
+        } else {
+            self.request_quit(window, cx);
+        }
+        false
+    }
+
+    pub fn request_quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self
             .file_panels
             .values()
             .any(|p| p.read(cx).has_unsaved(cx))
         {
-            return true;
+            cx.quit();
+            return;
         }
         if self.file_close_prompt_open {
-            return false;
+            return;
         }
         self.file_close_prompt_open = true;
         for panel in self.file_panels.values() {
@@ -52,7 +70,7 @@ impl ChatApp {
                     })
                     .unwrap_or(false);
                 if !pending {
-                    let _ = window_cx.update(|w, _| w.remove_window());
+                    let _ = window_cx.update(|_, cx| cx.quit());
                     return;
                 }
             }
@@ -73,13 +91,12 @@ impl ChatApp {
             if let Ok(answer) = answer
                 && answer.await.ok() == Some(1)
             {
-                let _ = window_cx.update(|w, _| w.remove_window());
+                let _ = window_cx.update(|_, cx| cx.quit());
             } else {
                 let _ = this.update(cx, |s, _| s.file_close_prompt_open = false);
             }
         })
         .detach();
-        false
     }
     /// The active chat's files, created on first use without a document.
     pub(super) fn file_panel(&mut self, cx: &mut Context<Self>) -> Entity<FilePanel> {

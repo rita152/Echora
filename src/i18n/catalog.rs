@@ -2,6 +2,10 @@
 
 pub(super) fn english(source: &str) -> Option<&'static str> {
     Some(match source {
+        "关闭窗口后在后台保留 Echora" => "Keep Echora running after closing the window",
+        "默认关闭：关窗即退出。开启后保留会话与任务，点击 Dock 图标继续；⌘Q 始终退出。" => {
+            "Off by default: closing quits. Turn on to keep chats and tasks running, then click the Dock icon to continue. ⌘Q always quits."
+        }
         "、" => ", ",
         "？" => "?",
         " · 写入结果未知，请重新读取并核对。" => {

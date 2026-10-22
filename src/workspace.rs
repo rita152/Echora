@@ -1551,6 +1551,11 @@ impl WorkspaceStore {
         self.save_preferences();
     }
 
+    pub fn set_keep_running_on_close(&self, keep_running: bool) {
+        self.update(|snapshot| snapshot.preferences.keep_running_on_close = keep_running);
+        self.save_preferences();
+    }
+
     pub fn set_project_marker(&self, project_id: ProjectId, marker: Option<ProjectMarker>) {
         self.update(|snapshot| {
             let preferences = &mut snapshot.preferences;

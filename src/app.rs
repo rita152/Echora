@@ -247,6 +247,12 @@ impl ChatApp {
             Some("ProjectCreation"),
         )]);
         let codex_app_server = Arc::new(CodexAppServerManager::new());
+        let shutdown_manager = codex_app_server.clone();
+        cx.on_app_quit(move |_, _| {
+            shutdown_manager.shutdown();
+            async {}
+        })
+        .detach();
         let agent_backend: Arc<dyn AgentBackend> = Arc::new(CodexAppServerBackend::with_manager(
             codex_app_server.clone(),
         ));
@@ -524,8 +530,19 @@ impl ChatApp {
         )
         .detach();
         settings.update(cx, |settings, cx| {
+            settings.set_keep_running_on_close(
+                workspace_store.snapshot().preferences.keep_running_on_close,
+                cx,
+            );
             settings.set_follow_up_mode(workspace_store.snapshot().preferences.follow_up_mode, cx)
         });
+        cx.subscribe(
+            &settings,
+            |this, _, event: &crate::settings::ChangeKeepRunningOnClose, _| {
+                this.workspace_store.set_keep_running_on_close(event.0);
+            },
+        )
+        .detach();
         cx.subscribe(
             &settings,
             |this, _, event: &crate::settings::ChangeFollowUpMode, cx| {

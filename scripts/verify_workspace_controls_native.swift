@@ -121,6 +121,112 @@ func record(_ label: String) {
     report.append(["name":label,"controls":controls])
     try! JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: output.appendingPathComponent("report.json"))
 }
+func restoreFromDock() {
+    let query = Process(), pipe = Pipe()
+    query.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+    query.arguments = ["-x", "Dock"]; query.standardOutput = pipe
+    try! query.run(); query.waitUntilExit()
+    let dockPid = Int32(String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)!.trimmingCharacters(in: .whitespacesAndNewlines))!
+    let dockRoot = AXUIElementCreateApplication(dockPid)
+    func descendants(_ e: AXUIElement) -> [AXUIElement] {
+        (value(e, kAXChildrenAttribute) as? [AXUIElement] ?? []).flatMap { [$0] + descendants($0) }
+    }
+    guard let item = descendants(dockRoot).first(where: { title($0) == name }) else {
+        fatalError("Missing Dock item for the dedicated app: \(name)")
+    }
+    // Dock items can sit outside the screen when auto-hide is enabled.
+    precondition(AXUIElementPerformAction(item, kAXPressAction as CFString) == .success,
+                 "The dedicated Dock icon must expose its Open action")
+    RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+}
+func mainWindow() -> AXUIElement {
+    (value(root, kAXWindowsAttribute) as! [AXUIElement]).max { rect($0).width * rect($0).height < rect($1).width * rect($1).height }!
+}
+if option("scenario") == "quit-relaunch" {
+    let oldPid = app.processIdentifier
+    let window = mainWindow()
+    // A synchronous process exit may invalidate the AX reply itself.
+    _ = AXUIElementPerformAction(value(window, kAXCloseButtonAttribute) as! AXUIElement, kAXPressAction as CFString)
+    for _ in 0..<100 {
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        if app.isTerminated { break }
+    }
+    precondition(app.isTerminated, "Red close must end the process in quit mode")
+    restoreFromDock()
+    for _ in 0..<100 {
+        if NSWorkspace.shared.runningApplications.contains(where: { $0.localizedName == name && $0.processIdentifier != oldPid }) { break }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+    }
+    guard let relaunched = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name && $0.processIdentifier != oldPid }) else { fatalError("Dock must launch a new instance after a full quit") }
+    try! JSONSerialization.data(withJSONObject: ["oldPid":oldPid,"newPid":relaunched.processIdentifier,"dockRelaunched":true], options: [.prettyPrinted]).write(to:output.appendingPathComponent("quit-relaunch.json"))
+    print("Verified full quit and actual Dock relaunch with a new process")
+    exit(0)
+}
+if option("scenario") == "reference-close" {
+    let window = mainWindow()
+    precondition(AXUIElementPerformAction(value(window, kAXCloseButtonAttribute) as! AXUIElement, kAXPressAction as CFString) == .success)
+    RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+    precondition(!app.isTerminated, "Reference should retain its process")
+    restoreFromDock()
+    precondition(!app.isTerminated && !app.isHidden && !elements().isEmpty, "Reference Dock reopen failed")
+    try! JSONSerialization.data(withJSONObject: ["pid":app.processIdentifier,"retainedProcess":true,"dockRestored":true], options: [.prettyPrinted]).write(to:output.appendingPathComponent("reference-lifecycle.json"))
+    print("Verified the isolated reference red-close and actual Dock restore")
+    exit(0)
+}
+if ["running-close", "running-close-started"].contains(option("scenario")) {
+    if option("scenario") == "running-close" {
+        click(find("聊天输入框")); text("STREAM"); key(36)
+    }
+    _ = find("停止")
+    record("00-task-running")
+    let window = mainWindow()
+    precondition(AXUIElementPerformAction(value(window, kAXCloseButtonAttribute) as! AXUIElement, kAXPressAction as CFString) == .success)
+    let hiddenAt = Date()
+    RunLoop.current.run(until: hiddenAt.addingTimeInterval(35))
+    precondition(app.isHidden && !app.isTerminated, "Task must stay alive while hidden")
+    let restoredAt = Date()
+    restoreFromDock()
+    precondition(!app.isHidden && !app.isTerminated)
+    precondition(!elements().contains { title($0) == "停止" }, "Fixture task must finish in the background")
+    record("01-task-complete-after-dock")
+    try! JSONSerialization.data(withJSONObject: ["pid":app.processIdentifier,"hiddenAt":hiddenAt.timeIntervalSince1970,"restoredAt":restoredAt.timeIntervalSince1970], options: [.prettyPrinted]).write(to:output.appendingPathComponent("hidden-interval.json"))
+    print("Verified a running turn completes while the window is hidden and displays its result after Dock restore")
+    exit(0)
+}
+if ["close-background", "close-preserve"].contains(option("scenario")) {
+    if option("scenario") == "close-background" {
+        let setting = find(option("close-label", "关闭窗口后在后台保留 Echora"))
+        if (value(setting, kAXValueAttribute) as? NSNumber)?.boolValue != true { click(setting) }
+    }
+    record("00-background-enabled")
+    let window = mainWindow()
+    let initialRect = rect(window)
+    for cycle in 1...3 {
+        let close = value(window, kAXCloseButtonAttribute) as! AXUIElement
+        // macOS can place its purple sharing indicator over the traffic
+        // lights while Computer Use is connected. Press the native close
+        // control itself so the indicator cannot intercept the click.
+        precondition(AXUIElementPerformAction(close, kAXPressAction as CFString) == .success)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+        precondition(!app.isTerminated && app.isHidden, "Closing must hide the live process")
+        restoreFromDock()
+        for _ in 0..<40 {
+            if !app.isHidden { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        precondition(!app.isHidden && !app.isTerminated, "Dock must restore the same process")
+        let windows = value(root, kAXWindowsAttribute) as! [AXUIElement]
+        precondition(windows.filter { title($0) == title(window) }.count == 1 && CFEqual(mainWindow(), window), "Dock must restore the original window once")
+        precondition(rect(mainWindow()) == initialRect, "Window geometry must survive closing")
+        let expected = option("expected-text")
+        if !expected.isEmpty {
+            precondition(elements().contains { (value($0, kAXValueAttribute) as? String)?.contains(expected) == true }, "Unsent draft must survive Dock reopen")
+        }
+        record("0\(cycle)-dock-restored")
+    }
+    print("Verified three red-close/Dock cycles preserve the original process, window, geometry and settings")
+    exit(0)
+}
 if option("scenario") == "hover" {
     guard let x = Double(option("x")), let y = Double(option("y")),
           let window = (value(root, kAXWindowsAttribute) as? [AXUIElement])?.first else {

@@ -13,6 +13,39 @@ use crate::{settings::PageSpec, theme::Theme};
 const FOLLOW_UP_LABELS: [&str; 2] = ["排队", "引导"];
 
 impl SettingsView {
+    fn close_behavior(&self, theme: Theme, cx: &mut Context<Self>) -> gpui::Div {
+        let checked = self.keep_running_on_close;
+        let control = super::dynamic::switch("keep-running-on-close", checked, false, theme)
+            .aria_label(crate::i18n::text("关闭窗口后在后台保留 Echora"))
+            .focusable()
+            .tab_stop(true)
+            .on_click(cx.listener(move |this, _, _, cx| this.choose_keep_running(!checked, cx)))
+            .on_key_down(cx.listener(move |this, event: &gpui::KeyDownEvent, _, cx| {
+                if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                    this.choose_keep_running(!checked, cx);
+                    cx.stop_propagation();
+                }
+            }));
+        row(
+            crate::i18n::text("关闭窗口后在后台保留 Echora"),
+            Some(
+                crate::i18n::text(
+                    "默认关闭：关窗即退出。开启后保留会话与任务，点击 Dock 图标继续；⌘Q 始终退出。",
+                )
+                .to_owned(),
+            ),
+            Some(control.into_any_element()),
+            true,
+            theme,
+        )
+    }
+
+    fn choose_keep_running(&mut self, checked: bool, cx: &mut Context<Self>) {
+        self.keep_running_on_close = checked;
+        cx.emit(super::ChangeKeepRunningOnClose(checked));
+        cx.notify();
+    }
+
     /// Follow-up behavior: a real two-option control backed by the local UI
     /// preference, pressed state exposed like the reference's toggle buttons.
     fn follow_up_control(&self, theme: Theme, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -216,7 +249,20 @@ impl SettingsView {
                     .text_color(theme.text)
                     .child(crate::i18n::text(page.label)),
             )
-            .child(section("常规", language))
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_col()
+                    .child(heading(crate::i18n::text("常规").to_owned(), None, theme))
+                    .child(
+                        card(theme)
+                            .child(language)
+                            .when(cfg!(target_os = "macos"), |card| {
+                                card.child(self.close_behavior(theme, cx))
+                            }),
+                    ),
+            )
             .child(section("编辑器", follow_up))
             .child(self.environment_settings(theme, cx))
             .into_any_element()
