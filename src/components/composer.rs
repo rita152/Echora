@@ -44,7 +44,9 @@ mod sketch_image;
 mod slash_menu;
 mod slash_menu_render;
 mod submissions;
+mod task;
 mod toast;
+pub(crate) use task::SubmitTaskEditor;
 mod workspace;
 mod workspace_controls;
 mod workspace_controls_render;
@@ -174,6 +176,8 @@ const MODEL_PICKER_TRIGGER_GAP: f32 = 4.0;
 const MODEL_PICKER_RIGHT_INSET: f32 = 72.0;
 const PARTICLE_TIMELINE_MS: f32 = 120_000.0;
 pub struct ComposerView {
+    task_editor: bool,
+    task_options_open: bool,
     conversation: ConversationState,
     backend: Arc<dyn AgentBackend>,
     mode: ThemeMode,
@@ -205,7 +209,6 @@ pub struct ComposerView {
     slider_dragging: bool,
     model_ultra_warning_until: Option<std::time::Instant>,
     dictation_state: DictationState,
-    dictation_cycle: u64,
     /// The permission selector is part of the normal Composer UI. Capture
     /// helpers still use this flag to make fixture setup explicit, but product
     /// launches enable it by default; visual similarity is no longer a
@@ -457,6 +460,8 @@ impl ComposerView {
         )
         .detach();
         let mut view = Self {
+            task_editor: false,
+            task_options_open: false,
             conversation: ConversationState::default(),
             backend,
             mode,
@@ -486,7 +491,6 @@ impl ComposerView {
             slider_dragging: false,
             model_ultra_warning_until: None,
             dictation_state: DictationState::Idle,
-            dictation_cycle: 0,
             permission_ui_enabled: true,
             connection_event_task: None,
             permission_mode: PermissionMode::Request,

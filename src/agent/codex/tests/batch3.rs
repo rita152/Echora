@@ -86,7 +86,10 @@ mod capabilities {
         for field in ["namespaceTools", "imageGeneration", "webSearch"] {
             let mut missing = base.clone();
             missing.as_object_mut().unwrap().remove(field);
-            assert!(parse_capabilities(1, &json!({"id": 1, "result": missing})).is_err());
+            assert_eq!(
+                parse_capabilities(1, &json!({"id": 1, "result": missing})).is_err(),
+                field != "namespaceTools"
+            );
             let mut null = base.clone();
             null[field] = Value::Null;
             assert!(parse_capabilities(1, &json!({"id": 1, "result": null})).is_err());

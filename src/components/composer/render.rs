@@ -144,7 +144,7 @@ impl ComposerView {
             .flex_col()
             .gap(px(0.0))
             .children(self.render_command_status(theme,cx))
-            .when(!conversation_started && !self.side_chat, |composer| {
+            .when(!conversation_started && !self.side_chat && !self.task_editor, |composer| {
                 composer.child(context_toolbar(self, theme, cx))
             })
             .child(self.submission_feedback(theme, cx))
@@ -189,6 +189,7 @@ impl ComposerView {
                         BoxShadow::new(px(0.0), px(0.0), theme.surface.into())
                             .spread_radius(px(0.5)),
                     ])
+                    .when(self.task_editor, |s| s.bg(theme.surface).rounded(px(0.)).shadow(Vec::<BoxShadow>::new()))
                     .flex()
                     .flex_col()
                     // Composer labels are uniformly system-ui 400 in the
@@ -235,7 +236,7 @@ impl ComposerView {
                                 ),
                         )
                     })
-                    .child(div().h(px(self.prompt_editor.read(cx).composer_height())).flex_none().mx(px(4.0)).child(self.prompt_editor.clone()))
+                    .child(div().h(px(self.prompt_editor.read(cx).composer_height().max(if self.task_editor {96.0} else {0.0}))).flex_none().mx(px(4.0)).child(self.prompt_editor.clone()))
                     .when(self.dictation_state == DictationState::Idle, |composer| {
                         composer.child(
                             div()
@@ -276,6 +277,7 @@ impl ComposerView {
                                                 )
                                                 .child(canvas(move |bounds,_,_| context_trigger_bounds.set(Some(bounds)),|_,(),_,_|{}).absolute().inset_0().size_full()),
                                         )
+                                        .children(self.task_editor.then(|| self.render_task_utilities(cx)))
                                         .when(self.permission_ui_enabled, |controls| {
                                             controls.child(
                                                 div()
@@ -424,6 +426,9 @@ impl ComposerView {
                                                 .child(
                                                     div()
                                                         .id("composer-dictation")
+                                                        .role(gpui::Role::Button)
+                                                        .aria_label("Voice input unavailable")
+                                                        .aria_description("Use system dictation to enter text")
                                                         .flex_none()
                                                         .size(px(28.0))
                                                         .rounded_full()
@@ -442,7 +447,7 @@ impl ComposerView {
                                                                 .size(px(16.0)),
                                                         ),
                                                 )
-                                                .child(
+                                                .when(!self.task_editor, |row| row.child(
                                                     div()
                                                         .id("composer-send")
                                                         .role(gpui::Role::Button)
@@ -498,7 +503,7 @@ impl ComposerView {
                                                                     spinner.with_transformation(gpui::Transformation::rotate(gpui::radians(progress * std::f32::consts::TAU)))
                                                                 })
                                                         )),
-                                                ),
+                                                )),
                                         ),
                                 ),
                         )
@@ -816,10 +821,13 @@ impl Render for ComposerView {
             self.prompt_focus_handle(cx).focus(window, cx);
             self.focus_prompt_pending = false;
         }
-        self.render_composer(
-            f32::from(window.viewport_size().width),
-            Theme::for_mode(self.mode),
-            cx,
-        )
+        let mut theme = Theme::for_mode(self.mode);
+        if self.task_editor {
+            theme.surface = match self.mode {
+                ThemeMode::Light => rgba(0xf9f9f9ff),
+                ThemeMode::Dark => rgba(0x171717ff),
+            };
+        }
+        self.render_composer(f32::from(window.viewport_size().width), theme, cx)
     }
 }

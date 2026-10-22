@@ -66,6 +66,55 @@ fn state_with(pull_requests: Vec<ThreadPullRequest>) -> ThreadPullRequestsState 
     state
 }
 
+#[test]
+fn task_review_filter_tracks_the_attached_open_pr_and_excludes_closed_prs() {
+    let backend = AttachmentBackend::new(Ok(vec![]));
+    let path = preferences_path("task-review");
+    let store = WorkspaceStore::with_preferences_path(backend, path.clone());
+    let mut snapshot = store.snapshot();
+    snapshot.projects = vec![crate::agent::Project {
+        project_id: "project".into(),
+        name: "Project".into(),
+        roots: vec!["/repo".into()],
+        created_at: 1,
+        updated_at: 1,
+        recency_at: None,
+        position: 0,
+    }];
+    snapshot.recent_threads = vec![ThreadSummary {
+        thread_id: "t".into(),
+        title: "review".into(),
+        preview: String::new(),
+        cwd: "/repo".into(),
+        project_id: Some("project".into()),
+        section: None,
+        created_at: 1,
+        updated_at: 1,
+        recency_at: None,
+        activity: ThreadActivity::Idle,
+        git: crate::agent::ThreadGitInfo::default(),
+    }];
+    snapshot.preferences.tasks.needs_review = true;
+    let pr = attached(1, 1000);
+    let mut state = state_with(vec![pr.clone()]);
+    ready(
+        &mut state,
+        &pr,
+        Some(live(PullRequestStatus::Open, "main", "openai/codex")),
+    );
+    snapshot.pull_requests = state;
+    let cards = crate::tasks::boards(&snapshot, 2).remove(0).cards;
+    assert_eq!(cards.len(), 1);
+    assert!(cards[0].needs_review);
+    ready(
+        &mut snapshot.pull_requests,
+        &pr,
+        Some(live(PullRequestStatus::Closed, "main", "openai/codex")),
+    );
+    assert!(crate::tasks::boards(&snapshot, 2)[0].cards.is_empty());
+    std::fs::remove_file(path).ok();
+}
+
 fn ready(
     state: &mut ThreadPullRequestsState,
     pull_request: &ThreadPullRequest,

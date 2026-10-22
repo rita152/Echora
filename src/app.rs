@@ -15,6 +15,7 @@ mod sidebar;
 mod slash_commands;
 mod state;
 mod summary;
+mod tasks;
 mod workspace_panels;
 
 use std::{
@@ -110,6 +111,12 @@ pub struct ChatApp {
     pull_requests: Entity<PullRequestsView>,
     /// True while the main content area shows the Pull Requests page.
     showing_pull_requests: bool,
+    tasks: Entity<crate::components::tasks::TasksView>,
+    showing_tasks: bool,
+    task_draft_composers: HashMap<String, Entity<ComposerView>>,
+    task_back: Vec<tasks::PageRoute>,
+    task_forward: Vec<tasks::PageRoute>,
+    task_navigation: bool,
     /// Capture-only: keep the Pull Requests page open even if the startup
     /// sequence later selects a conversation.
     capture_pull_requests_locked: bool,
@@ -339,6 +346,9 @@ impl ChatApp {
         )
         .detach();
         let active_conversation = ConversationKey::Draft(DraftId(1));
+        let tasks = cx
+            .new(|cx| crate::components::tasks::TasksView::new(mode, workspace_store.clone(), cx));
+        Self::wire_tasks(&tasks, &sidebar, cx);
         let mut conversation_hosts = HashMap::new();
         conversation_hosts.insert(
             active_conversation.clone(),
@@ -716,6 +726,12 @@ impl ChatApp {
             showing_plugins: false,
             pull_requests,
             showing_pull_requests: false,
+            tasks,
+            showing_tasks: false,
+            task_draft_composers: HashMap::new(),
+            task_back: Vec::new(),
+            task_forward: Vec::new(),
+            task_navigation: false,
             capture_pull_requests_locked: false,
             sidebar_layout: SidebarLayoutState::default(),
             terminal_panels: HashMap::new(),
@@ -923,6 +939,14 @@ impl ChatApp {
         cx.subscribe(
             &composer,
             |this, composer, _: &crate::components::composer::ConversationChanged, cx| {
+                if composer.read(cx).has_messages()
+                    && let Some(thread) = composer.read(cx).thread_id()
+                {
+                    this.workspace_store.observe_task_reply(
+                        thread.to_owned(),
+                        composer.read(cx).conversation_render_snapshot().3,
+                    );
+                }
                 this.sync_goal_tabs(&composer, cx);
                 this.sync_background_terminal_tabs(&composer, cx);
             },
@@ -932,6 +956,7 @@ impl ChatApp {
     }
 
     fn refresh_child_views(&mut self, cx: &mut Context<Self>) {
+        self.tasks.update(cx, |v, cx| v.set_mode(self.mode, cx));
         for panel in self.file_panels.values() {
             panel.update(cx, |panel, cx| panel.set_mode(self.mode, cx));
         }
@@ -1179,6 +1204,10 @@ impl ChatApp {
     }
 
     pub fn open_settings(&mut self, cx: &mut Context<Self>) {
+        if self.showing_tasks || !self.task_back.is_empty() || !self.task_forward.is_empty() {
+            self.remember_task_route(self.current_page(cx), tasks::PageRoute::Settings);
+        }
+        self.close_tasks(cx);
         self.close_plugins(cx);
         self.settings
             .update(cx, |settings, cx| settings.show_settings_shell(cx));
@@ -1237,6 +1266,10 @@ impl ChatApp {
     /// Opens the Pull Requests page in the main content area; the sidebar stays
     /// visible and highlights its own `Pull requests` row.
     pub fn open_pull_requests(&mut self, cx: &mut Context<Self>) {
+        if self.showing_tasks || !self.task_back.is_empty() || !self.task_forward.is_empty() {
+            self.remember_task_route(self.current_page(cx), tasks::PageRoute::PullRequests);
+        }
+        self.close_tasks(cx);
         self.close_plugins(cx);
         self.showing_settings = false;
         self.showing_pull_requests = true;
@@ -1430,6 +1463,10 @@ impl ChatApp {
     }
 
     pub fn open_plugins(&mut self, cx: &mut Context<Self>) {
+        if self.showing_tasks || !self.task_back.is_empty() || !self.task_forward.is_empty() {
+            self.remember_task_route(self.current_page(cx), tasks::PageRoute::Plugins);
+        }
+        self.close_tasks(cx);
         let cwd = self
             .conversation_hosts
             .get(&self.active_conversation)

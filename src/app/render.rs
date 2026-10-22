@@ -229,26 +229,29 @@ impl Render for ChatApp {
         if self.right_panel_parked && self.right_panel.open {
             self.close_right_panel(cx);
         }
-        let review_overlay =
-            if !self.showing_settings && !self.showing_pull_requests && !self.showing_plugins {
-                self.review_panels
-                    .get(&self.active_conversation)
-                    .and_then(|p| {
-                        p.update(cx, |p, cx| {
-                            if p.has_environment_dialog() {
-                                p.prepare_environment_overlay(window, cx)
-                            } else if self.right_panel.open
-                                && self.right_panel.mode == Some(RightPanelMode::Review)
-                            {
-                                p.render_overlay(cx)
-                            } else {
-                                None
-                            }
-                        })
+        let review_overlay = if !self.showing_settings
+            && !self.showing_pull_requests
+            && !self.showing_plugins
+            && !self.showing_tasks
+        {
+            self.review_panels
+                .get(&self.active_conversation)
+                .and_then(|p| {
+                    p.update(cx, |p, cx| {
+                        if p.has_environment_dialog() {
+                            p.prepare_environment_overlay(window, cx)
+                        } else if self.right_panel.open
+                            && self.right_panel.mode == Some(RightPanelMode::Review)
+                        {
+                            p.render_overlay(cx)
+                        } else {
+                            None
+                        }
                     })
-            } else {
-                None
-            };
+                })
+        } else {
+            None
+        };
         let side_chat_overlay = if self.right_panel.open
             && self.right_panel.mode == Some(RightPanelMode::SideChat)
         {
@@ -385,6 +388,17 @@ impl Render for ChatApp {
                 view.set_titlebar_inset(titlebar_inset);
             });
         }
+        if self.showing_tasks {
+            let page_left = revealed_sidebar_width + if main_left_border { hairline } else { 0.0 };
+            let inset = (titlebar_leading_edge(sidebar_reveal) - page_left).max(0.0);
+            self.tasks.update(cx, |v, _| v.set_titlebar_inset(inset));
+        }
+        let task_modal = if self.showing_tasks {
+            self.tasks
+                .update(cx, |v, cx| v.render_modal_overlay(window, cx))
+        } else {
+            None
+        };
         if self.showing_plugins {
             let page_left = revealed_sidebar_width + if main_left_border { hairline } else { 0.0 };
             let leading = (titlebar_leading_edge(sidebar_reveal) - page_left).max(0.0);
@@ -398,7 +412,8 @@ impl Render for ChatApp {
             ConversationKey::Thread(id)
                 if !self.showing_settings
                     && !self.showing_pull_requests
-                    && !self.showing_plugins =>
+                    && !self.showing_plugins
+                    && !self.showing_tasks =>
             {
                 self.sidebar.read(cx).thread_title(id)
             }
@@ -531,7 +546,7 @@ impl Render for ChatApp {
                 cx.stop_propagation();
             }))
             .on_action(cx.listener(|this, _: &PreviousUserMessage, window, cx| {
-                let stepped = !this.showing_pull_requests && !this.showing_plugins
+                let stepped = !this.showing_pull_requests && !this.showing_plugins && !this.showing_tasks
                     && this.home.update(cx, |home, cx| {
                         home.step_user_message_from_keyboard(false, window, cx)
                     });
@@ -540,7 +555,7 @@ impl Render for ChatApp {
                 }
             }))
             .on_action(cx.listener(|this, _: &NextUserMessage, window, cx| {
-                let stepped = !this.showing_pull_requests && !this.showing_plugins
+                let stepped = !this.showing_pull_requests && !this.showing_plugins && !this.showing_tasks
                     && this.home.update(cx, |home, cx| {
                         home.step_user_message_from_keyboard(true, window, cx)
                     });
@@ -704,6 +719,7 @@ impl Render for ChatApp {
                                     .min_h(px(0.0))
                                     .flex_1()
                                     .flex()
+                                    .when(self.showing_tasks, |row| { row.child(div().flex_1().min_w(px(0.)).h_full().child(self.tasks.clone())) })
                                     .when(self.showing_plugins, |row| {
                                         row.child(div().flex_1().min_w(px(0.)).h_full().child(self.settings.clone()))
                                     })
@@ -720,7 +736,7 @@ impl Render for ChatApp {
                                                 .child(self.pull_requests.clone()),
                                         )
                                     })
-                                    .when(!review_fullscreen && !self.showing_pull_requests && !self.showing_plugins,|row|row.child(
+                                    .when(!review_fullscreen && !self.showing_pull_requests && !self.showing_plugins && !self.showing_tasks,|row|row.child(
                                         div()
                                             .flex_1()
                                             .min_w(px(0.0))
@@ -770,10 +786,11 @@ impl Render for ChatApp {
             // laid out inside the chat column.
             .when_some(
                 toasts.filter(|_| {
-                    !self.showing_settings && !self.showing_pull_requests && !self.showing_plugins && !review_fullscreen
+                    !self.showing_settings && !self.showing_pull_requests && !self.showing_plugins && !self.showing_tasks && !review_fullscreen
                 }),
                 |shell, toasts| shell.child(toasts),
             )
+            .when_some(task_modal, |shell, modal| shell.child(modal))
             .when(self.permission_confirmation_open, |shell| {
                 shell.child(
                     div()
@@ -1011,15 +1028,15 @@ impl Render for ChatApp {
                                 .when(sidebar_reveal < 1.0, |controls| {
                                     controls.opacity(sidebar_reveal)
                                 })
-                                .child(titlebar_icon_button("back", self.conversation_back.is_empty() && !self.showing_plugins, false, theme)
+                                .child(titlebar_icon_button("back", self.conversation_back.is_empty() && self.task_back.is_empty() && !self.showing_plugins && !self.showing_tasks, false, theme)
                                     .role(gpui::Role::Button)
                                     .aria_label(crate::i18n::text("返回").to_owned())
-                                    .aria_disabled(self.conversation_back.is_empty() && !self.showing_plugins)
+                                    .aria_disabled(self.conversation_back.is_empty() && self.task_back.is_empty() && !self.showing_plugins && !self.showing_tasks)
                                     .on_click(cx.listener(|this, _, _, cx| this.navigate_conversation(false, cx))))
-                                .child(titlebar_icon_button("forward", self.conversation_forward.is_empty(), false, theme)
+                                .child(titlebar_icon_button("forward", self.conversation_forward.is_empty() && self.task_forward.is_empty(), false, theme)
                                     .role(gpui::Role::Button)
                                     .aria_label(crate::i18n::format!("前进" => "Forward"))
-                                    .aria_disabled(self.conversation_forward.is_empty())
+                                    .aria_disabled(self.conversation_forward.is_empty() && self.task_forward.is_empty())
                                     .on_click(cx.listener(|this, _, _, cx| this.navigate_conversation(true, cx)))),
                         )
                     })
@@ -1083,7 +1100,7 @@ impl Render for ChatApp {
                             .gap(px(8.0))
                             // The reference Pull Requests page owns the whole
                             // content area and shows no panel controls there.
-                            .when(!self.showing_pull_requests && !self.showing_plugins, |controls| {
+                            .when(!self.showing_pull_requests && !self.showing_plugins && !self.showing_tasks, |controls| {
                                 controls
                             .when(summary_available, |controls| {
                                 // Echora's own top bar; the reference's pinned
@@ -1833,7 +1850,8 @@ impl ChatApp {
             ConversationKey::Thread(thread_id)
                 if !self.showing_settings
                     && !self.showing_pull_requests
-                    && !self.showing_plugins =>
+                    && !self.showing_plugins
+                    && !self.showing_tasks =>
             {
                 Some(thread_id.clone())
             }

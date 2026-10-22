@@ -3,6 +3,7 @@ mod loaders;
 mod preferences;
 mod pull_requests;
 mod sections;
+mod tasks;
 
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
@@ -127,6 +128,7 @@ pub struct WorkspaceSnapshot {
     pub preferences: UiPreferences,
     /// Pull requests attached to threads and what GitHub says about them.
     pub pull_requests: ThreadPullRequestsState,
+    pub task_runs: std::collections::BTreeMap<String, crate::tasks::TaskRun>,
 }
 
 impl WorkspaceSnapshot {
@@ -146,6 +148,7 @@ impl WorkspaceSnapshot {
             pending: BTreeSet::new(),
             preferences,
             pull_requests: ThreadPullRequestsState::default(),
+            task_runs: Default::default(),
         }
     }
 
@@ -271,6 +274,7 @@ pub struct WorkspaceStore {
     sections_generation: AtomicU64,
     pin_section_lock: Mutex<()>,
     preference_save_lock: Mutex<()>,
+    task_run_inflight: Mutex<HashSet<ThreadId>>,
     thread_notification_overlays: Mutex<HashMap<ThreadId, ThreadNotificationOverlay>>,
     deleted_project_ids: Mutex<HashSet<ProjectId>>,
     /// The chat the main area shows. A turn that finishes there is read.
@@ -306,6 +310,7 @@ impl WorkspaceStore {
             sections_generation: AtomicU64::new(0),
             pin_section_lock: Mutex::new(()),
             preference_save_lock: Mutex::new(()),
+            task_run_inflight: Mutex::new(HashSet::new()),
             thread_notification_overlays: Mutex::new(HashMap::new()),
             deleted_project_ids: Mutex::new(HashSet::new()),
             viewed_thread: Mutex::new(None),
@@ -400,6 +405,7 @@ impl WorkspaceStore {
     }
 
     fn apply_backend_event(self: &Arc<Self>, event: AgentConnectionEvent) {
+        self.observe_task_event(&event);
         match event {
             AgentConnectionEvent::ProjectChanged { project_id, change } => match change {
                 ProjectChange::Deleted => {

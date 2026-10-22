@@ -2895,3 +2895,45 @@ fn changes_tools_follow_checkout_and_close_when_repository_disappears() {
     app.run_until_parked();
     assert!(!window.read(|chat, _| chat.right_panel.open));
 }
+
+#[test]
+fn tasks_routes_remember_page_exits_and_preserve_conversation_hosts() {
+    let mut app = TestApp::new();
+    let mut window = app.open_window(|_, cx| ChatApp::new(ThemeMode::Light, false, cx));
+    window.update(|chat, _, cx| {
+        let original = chat.active_conversation.clone();
+        let host = chat.home.read(cx).composer_entity();
+        chat.open_tasks(None, cx);
+        assert!(chat.showing_tasks);
+        assert!(chat.right_panel_parked);
+        chat.open_plugins(cx);
+        assert!(!chat.showing_tasks);
+        assert!(chat.showing_plugins);
+        chat.navigate_conversation(false, cx);
+        assert!(chat.showing_tasks);
+        assert!(!chat.showing_plugins);
+        chat.navigate_conversation(false, cx);
+        assert!(!chat.showing_tasks);
+        assert_eq!(chat.active_conversation, original);
+        assert_eq!(chat.home.read(cx).composer_entity(), host);
+        chat.navigate_conversation(true, cx);
+        assert!(chat.showing_tasks);
+        chat.navigate_conversation(true, cx);
+        assert!(chat.showing_plugins);
+        chat.open_tasks(
+            Some(crate::components::tasks::TaskRoute {
+                project: Some("project".into()),
+                list: false,
+            }),
+            cx,
+        );
+        chat.switch_home_to(original, cx);
+        assert!(!chat.showing_tasks);
+        chat.navigate_conversation(false, cx);
+        assert!(chat.showing_tasks);
+        assert_eq!(
+            chat.tasks.read(cx).route().project.as_deref(),
+            Some("project")
+        );
+    });
+}

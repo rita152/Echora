@@ -31,6 +31,12 @@ pub(super) fn parse_capabilities(
         generation,
         image_generation: required_bool(result, "imageGeneration", CONTEXT)?,
         web_search: required_bool(result, "webSearch", CONTEXT)?,
-        namespace_tools: required_bool(result, "namespaceTools", CONTEXT)?,
+        // Newer servers removed this unused flag; retain strict decoding when
+        // an older server includes it.
+        namespace_tools: if result.contains_key("namespaceTools") {
+            required_bool(result, "namespaceTools", CONTEXT)?
+        } else {
+            false
+        },
     })
 }

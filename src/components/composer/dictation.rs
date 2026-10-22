@@ -20,40 +20,20 @@ impl ComposerView {
         }
     }
     pub(super) fn start_dictation(&mut self, cx: &mut Context<Self>) {
-        self.dictation_cycle = self.dictation_cycle.wrapping_add(1);
-        self.dictation_state = DictationState::Recording;
-        self.menu_open = false;
-        self.model_list_open = false;
-        cx.notify();
+        self.show_toast(
+            super::toast::ToastKind::Danger,
+            crate::i18n::format!("当前 agent 未提供语音转写。可使用系统听写输入文字。" => "Voice transcription is unavailable for this agent. You can use system dictation to enter text."),
+            cx,
+        );
     }
     pub(super) fn cancel_dictation(&mut self, cx: &mut Context<Self>) {
-        self.dictation_cycle = self.dictation_cycle.wrapping_add(1);
         self.dictation_state = DictationState::Idle;
         cx.notify();
     }
     pub(super) fn stop_dictation(&mut self, cx: &mut Context<Self>) {
-        if self.dictation_state != DictationState::Recording {
-            return;
-        }
-        self.dictation_state = DictationState::Transcribing;
-        self.dictation_cycle = self.dictation_cycle.wrapping_add(1);
-        let cycle = self.dictation_cycle;
-        let executor = cx.background_executor().clone();
-        cx.spawn(async move |this, cx| {
-            // CDP sampling showed the processing controls for roughly one second
-            // before the ordinary composer footer returned.
-            executor.timer(Duration::from_millis(1_050)).await;
-            let _ = this.update(cx, |this, cx| {
-                if this.dictation_state == DictationState::Transcribing
-                    && this.dictation_cycle == cycle
-                {
-                    this.dictation_state = DictationState::Idle;
-                    cx.notify();
-                }
-            });
-        })
-        .detach();
-        cx.notify();
+        // Recording/processing states exist only in capture fixtures until a
+        // backend with transcription is connected. Never pretend to record.
+        self.cancel_dictation(cx);
     }
     pub(super) fn dictation_waveform(&self, theme: Theme) -> impl IntoElement {
         div()

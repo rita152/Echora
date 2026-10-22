@@ -23,6 +23,7 @@ mod settings;
 mod skills;
 #[cfg(feature = "screenshot")]
 mod stream_capture;
+mod tasks;
 mod theme;
 mod tool_executable;
 mod typography;

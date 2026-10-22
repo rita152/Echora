@@ -86,7 +86,7 @@ pub enum AgentThreadMemoryMode {
 
 /// The two switches of a chat. A new chat sends them as `thread/start`
 /// config overrides; a started chat can only change generation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AgentMemoryPreferences {
     pub use_memories: bool,
     pub generate_memories: bool,

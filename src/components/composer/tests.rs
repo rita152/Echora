@@ -5,7 +5,6 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
-    time::Duration,
 };
 
 use gpui::{Bounds, Focusable, MouseButton, TestApp, WindowBounds, WindowOptions, point, px, size};
@@ -3276,81 +3275,20 @@ fn ultra_fast_uses_only_the_fast_particle_layer_observed_over_cdp() {
 }
 
 #[test]
-fn dictation_can_start_and_cancel_without_leaving_transcribed_content() {
+fn unavailable_dictation_reports_capability_without_recording_or_losing_input() {
     let mut app = TestApp::new();
     let composer = app.new_entity(|cx| ComposerView::new(ThemeMode::Dark, cx));
-
-    app.update_entity(&composer, |composer, cx| composer.start_dictation(cx));
-    assert_eq!(
-        app.read_entity(&composer, |composer, _| composer.dictation_state_name()),
-        "recording"
-    );
-
-    app.update_entity(&composer, |composer, cx| composer.cancel_dictation(cx));
-    assert_eq!(
-        app.read_entity(&composer, |composer, _| composer.dictation_state_name()),
-        "idle"
-    );
-}
-
-#[test]
-fn stopping_dictation_shows_processing_then_returns_to_idle() {
-    let mut app = TestApp::new();
-    let composer = app.new_entity(|cx| ComposerView::new(ThemeMode::Dark, cx));
-
-    app.update_entity(&composer, |composer, cx| composer.start_dictation(cx));
-    app.update_entity(&composer, |composer, cx| composer.stop_dictation(cx));
-    assert_eq!(
-        app.read_entity(&composer, |composer, _| composer.dictation_state_name()),
-        "transcribing"
-    );
-
-    app.advance_clock(Duration::from_millis(1_050));
-    app.run_until_parked();
-    assert_eq!(
-        app.read_entity(&composer, |composer, _| composer.dictation_state_name()),
-        "idle"
-    );
-}
-
-#[test]
-fn rendered_microphone_cancel_and_stop_hit_targets_drive_the_state_machine() {
-    let mut app = TestApp::new();
-    let mut window = app.open_window_with_options(
-        WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(Bounds {
-                origin: point(px(0.0), px(0.0)),
-                size: size(px(786.0), px(138.0)),
-            })),
-            ..Default::default()
-        },
-        |_, cx| ComposerView::new(ThemeMode::Dark, cx),
-    );
-
-    window.draw();
-    window.simulate_mouse_move(point(px(716.0), px(110.0)));
-    window.simulate_mouse_down(point(px(716.0), px(110.0)), MouseButton::Left);
-    window.simulate_mouse_up(point(px(716.0), px(110.0)), MouseButton::Left);
-    assert_eq!(
-        window.read(|composer, _| composer.dictation_state_name()),
-        "recording"
-    );
-
-    window.draw();
-    window.simulate_click(point(px(22.0), px(110.0)), MouseButton::Left);
-    assert_eq!(
-        window.read(|composer, _| composer.dictation_state_name()),
-        "idle"
-    );
-
-    window.draw();
-    window.simulate_click(point(px(716.0), px(110.0)), MouseButton::Left);
-    window.draw();
-    window.simulate_click(point(px(716.0), px(110.0)), MouseButton::Left);
-    assert_eq!(
-        window.read(|composer, _| composer.dictation_state_name()),
-        "transcribing"
-    );
+    app.update_entity(&composer, |c, cx| {
+        c.set_draft_text("Keep this task", cx);
+        c.start_dictation(cx);
+        assert_eq!(c.dictation_state_name(), "idle");
+        assert_eq!(c.prompt_text(cx), "Keep this task");
+        assert!(c.submission_error.is_none());
+        assert_eq!(c.toasts().len(), 1);
+        assert!(
+            c.toasts()[0].text.contains("语音转写") || c.toasts()[0].text.contains("transcription")
+        );
+    });
 }
 
 #[test]
@@ -4451,4 +4389,44 @@ fn permissions_refresh_after_reconnect_and_retry_an_inflight_stale_read() {
             assert!(composer.conversation.permission_error.is_none());
         });
     }
+}
+
+#[test]
+fn task_editor_cannot_bypass_draft_footer_and_acceptance_is_per_attempt() {
+    let mut app = TestApp::new();
+    let backend = RecordingBackend::new();
+    let source: Arc<dyn AgentBackend> = backend.clone();
+    let composer =
+        app.new_entity(|cx| ComposerView::new_with_backend(ThemeMode::Light, source, cx));
+    app.update_entity(&composer, |c, cx| {
+        c.apply_model_catalog(test_model_catalog());
+        c.set_task_editor(true, cx);
+        c.set_draft_text("saved task", cx);
+        c.submit_current_prompt(cx);
+        assert!(backend.requests.lock().unwrap().is_empty());
+        assert_eq!(c.prompt_text(cx), "saved task");
+        let saved = c.task_input(cx);
+        c.set_task_editor(false, cx);
+        c.clear_prompt(cx);
+        c.restore_task_input(&saved, cx);
+        let marker = c.task_marker();
+        assert!(c.launch_task(false, cx));
+        assert!(!c.launch_task(false, cx));
+        assert!(c.task_pending(marker));
+        assert!(!c.task_accepted(marker));
+        c.apply_agent_event_batch(vec![
+            AgentEvent::ThreadCreated {
+                thread_id: "thread-task".into(),
+            },
+            AgentEvent::TurnReady(crate::agent::AgentTurnIdentity {
+                generation: 1,
+                thread_id: "thread-task".into(),
+                turn_id: "turn-task".into(),
+            }),
+        ]);
+        assert!(c.task_accepted(marker));
+        assert!(!c.task_pending(marker));
+        assert!(!c.task_accepted(c.task_marker()));
+    });
+    assert_eq!(backend.requests.lock().unwrap().len(), 1);
 }

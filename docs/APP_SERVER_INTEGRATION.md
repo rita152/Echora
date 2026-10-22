@@ -353,7 +353,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `memory/status` | 实验 | 已接入 | `{minConsolidatedThreads:20}`；个性化设置（记忆开启时）的「记忆整合」行与 `/memories` 对话框底部显示「已就绪 · 已整合 N 个聊天」或「尚未就绪 · 已整合 N/20 个聊天」；按 generation 丢弃迟到回执，失败不显示该行。参考只在 Statsig 放行时作为 thread/start 前的探测，不展示，此处为 Echora 新增展示。 | `manager/features`、`conversation/memory` |
 | `mock/experimentalMethod` | 实验 | 未接入 | — | — |
 | `model/list` | 默认 | 已接入 | limit=50、includeHidden=false；遍历 nextCursor，拒绝循环游标；返回模型、默认值、推理强度及服务档位；Composer 按模型实际档位显示滑块，目录外的已配置／恢复模型保留并提供六档后备值，零／单档显示模型列表。 | `manager/catalog` |
-| `modelProvider/capabilities/read` | 默认 | 已接入 | params `{}`，随配置读取与权限目录按 generation 读取；webSearch=false 时「网页搜索」只可选关闭并说明「当前模型提供方不支持网页搜索」，imageGeneration=false 时隐藏图片生成失败后的重试；namespaceTools 只保存。读取失败视为未知、不做门控。参考不读取响应字段，此处为 Echora 新增门控。 | `manager/catalog`、`settings/view/configuration` |
+| `modelProvider/capabilities/read` | 默认 | 已接入 | params `{}`，随配置读取与权限目录按 generation 读取；webSearch=false 时「网页搜索」只可选关闭并说明「当前模型提供方不支持网页搜索」，imageGeneration=false 时隐藏图片生成失败后的重试；namespaceTools 只保存，新版 schema 已移除此字段，缺省兼容 false、存在时严格校验 bool。读取失败视为未知、不做门控。参考不读取响应字段，此处为 Echora 新增门控。 | `manager/catalog`、`settings/view/configuration` |
 | `permissionProfile/list` | 默认 | 已接入 | cwd、limit=100、遍历 nextCursor，拒绝循环游标及重复 id；消费 id/allowed/description，兼容可选 extends；设置展示 profile，Composer 菜单仅列三种权限模式并据目录判定禁用原因，提交前复核 allowed。 | `manager/catalog`、`catalog` |
 | `plugin/install` | 默认 | 已接入 | pluginName + marketplacePath/remoteMarketplaceName（未用一侧显式 null），可选 installAttemptId；120s 操作窗口，成功回执保留 authPolicy 与 appsNeedingAuth；超时与不可读结果分别建模为 TimedOut/Unknown，不自动重试。 | `manager/plugins`、`plugins_catalog` |
 | `plugin/installed` | 默认 | 已接入 | cwds 与 installSuggestionPluginNames；与 `plugin/list` 分别缓存，侧栏已安装列表与安装状态以该响应为准；读取失败独立展示，写操作采用返回的连接代次并等待回读确认；输入框添加选择器按 cwd/generation 读取并展示已安装启用条目。 | `manager/plugins`、`plugins` |
@@ -406,7 +406,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/fork` | 默认 | 已接入 | 临时侧边聊天使用 ephemeral=true、excludeTurns=true、threadSource=user，携带 cwd、说明及可选 model/effort/serviceTier；斜杠分支使用 ephemeral=false、excludeTurns=true（省略响应中的轮次，不丢弃分支历史），可先创建隔离工作树。两者验证新 id、ephemeral 与先到的 thread/started；持久分支成功后刷新工作区。 | `manager/side_conversation`、`manager/fork` |
 | `thread/goal/clear` | 默认 | 已接入 | 按 threadId 清除；用户点击清除或服务端报告新的 complete 后自动调用；返回 cleared 布尔值，缺失即报错。 | `manager/goal`、`goal` |
 | `thread/goal/get` | 默认 | 已接入 | 打开线程时回填目标快照；goal 为 null 或缺省表示无目标；返回的 threadId 必须一致；失败只记录日志。 | `manager/goal`、`goal` |
-| `thread/goal/set` | 默认 | 已接入 | 新目标与「编辑目标」保存都发送 objective + status=active（超过 4000 个字符时 objective 为指向附件文件的一句话）；暂停／恢复只发 status；按 generation 绑定，线程未加载时先 resume；返回的 goal 按 updatedAt 与通知合并。 | `manager/goal`、`goal` |
+| `thread/goal/set` | 默认 | 已接入 | 新目标与「编辑目标」保存都发送 objective + status=active（超过 4000 个字符时 objective 为指向附件文件的一句话）；暂停／恢复只发 status；Tasks 卡片 Set as goal 使用 paused 并明确提示在会话恢复：当前 schema 没有 Synara 的 startBehavior=defer，不用 active 冒充延迟启动。按 generation 绑定，线程未加载时先 resume；返回的 goal 按 updatedAt 与通知合并。 | `manager/goal`、`goal`、`app/tasks` |
 | `thread/increment_elicitation` | 实验 | 未接入 | — | — |
 | `thread/inject_items` | 默认 | 已接入 | 向新侧边线程注入 user message，标记父历史仅供参考；不开始 turn。失败时释放临时 fork，不交付可发送的线程。 | `manager/side_conversation`、`manager/fork` |
 | `thread/items/list` | 默认 | 已接入 | 按 threadId、nullable turnId 升序分页；补全非 full 的历史轮次。 | `manager/workspace` |
@@ -437,7 +437,7 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `thread/shellCommand` | 默认 | 已接入 | 输入框以 `!` 开头时为 Shell 模式（警告色「Shell · 在沙盒外运行」）；发送 `{threadId,command}`，新聊天先 `thread/start{threadSource:user}`；回执须为 `{}`，服务端随后发起的轮次按 userShell 命令卡片显示运行中、完成、失败、超时与中断。失败恢复输入并提示。参考没有此入口，为 Echora 新增。 | `manager/review`、`composer/shell` |
 | `thread/start` | 默认 | 已接入 | 首条提示词才新建；发送 cwd、projectId、historyMode=paginated、ephemeral=false、serviceName、model、serviceTier；采用 result.thread.id。 | `manager/turn` |
 | `thread/timeline/list` | 实验 | 未接入 | — | — |
-| `thread/turns/list` | 默认 | 已接入 | 按 threadId 升序分页，itemsView=full；保留实际 itemsView 和双向游标，按需补取 item。 | `manager/workspace` |
+| `thread/turns/list` | 默认 | 已接入 | 按 threadId 升序分页，聊天 itemsView=full；Tasks 使用 summary 分页读取最新真实 turn 状态与回复，不加载完整会话媒体；按线程更新时间和运行状态拒绝过期结果，失败保留已有观察并显示不可用。恢复中用 clientUserMessageId 的服务端 echo 确认已发送草稿，避免重启重复执行。保留实际 itemsView 和双向游标，聊天按需补取 item。 | `manager/workspace`、`workspace/tasks` |
 | `thread/unarchive` | 默认 | 已接入 | 按 threadId 取消归档；读取 result.thread 并刷新列表。 | `manager/workspace` |
 | `thread/unsubscribe` | 默认 | 已接入 | 只关闭本应用创建的临时线程；先请求中断自身轮次，接受 unsubscribed/notSubscribed/notLoaded；不影响父线程。 | `manager/side_conversation`、`manager/fork` |
 | `threadSection/create` | 默认 | 已接入 | name、可选 appearance{icon,color}；返回 section，用于建立 Pinned 分区与「新建分区」（空名保存为「新分区」）。 | `manager/workspace` |

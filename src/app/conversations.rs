@@ -13,6 +13,16 @@ use crate::{
 
 impl ChatApp {
     pub(super) fn switch_home_to(&mut self, key: ConversationKey, cx: &mut Context<Self>) {
+        if !self.conversation_hosts.contains_key(&key) {
+            return;
+        }
+        if self.showing_tasks || !self.task_back.is_empty() || !self.task_forward.is_empty() {
+            self.remember_task_route(
+                self.current_page(cx),
+                super::tasks::PageRoute::Conversation(key.clone()),
+            );
+        }
+        self.close_tasks(cx);
         self.cancel_permission_confirmation(cx);
         let Some(host) = self.conversation_hosts.get(&key) else {
             return;
@@ -261,6 +271,9 @@ impl ChatApp {
     }
 
     pub(super) fn navigate_conversation(&mut self, forward: bool, cx: &mut Context<Self>) {
+        if self.navigate_task_page(forward, cx) {
+            return;
+        }
         if self.showing_plugins && !forward {
             self.close_plugins(cx);
             self.draft_focus_pending = true;
@@ -496,6 +509,11 @@ impl ChatApp {
         {
             if key == &draft_key {
                 *key = real_key.clone();
+            }
+        }
+        for route in self.task_back.iter_mut().chain(&mut self.task_forward) {
+            if *route == super::tasks::PageRoute::Conversation(draft_key.clone()) {
+                *route = super::tasks::PageRoute::Conversation(real_key.clone());
             }
         }
         if self.active_conversation == draft_key {

@@ -46,6 +46,7 @@ pub use activity::{ActivityArchiveConfirmation, ActivityCaptureRequest};
 
 pub struct OpenSettings;
 pub struct OpenPlugins;
+pub struct OpenTasks;
 pub struct OpenProjectCreation;
 
 struct ProjectActionTooltip(String);
@@ -98,6 +99,7 @@ pub struct NewConversation {
 
 impl gpui::EventEmitter<OpenSettings> for SidebarView {}
 impl gpui::EventEmitter<OpenPlugins> for SidebarView {}
+impl gpui::EventEmitter<OpenTasks> for SidebarView {}
 impl gpui::EventEmitter<OpenPullRequests> for SidebarView {}
 impl gpui::EventEmitter<AccountAction> for SidebarView {}
 impl gpui::EventEmitter<OpenProjectCreation> for SidebarView {}
@@ -948,6 +950,7 @@ pub struct SidebarView {
     /// True while the main content area shows the Pull Requests page.
     pull_requests_open: bool,
     plugins_open: bool,
+    tasks_open: bool,
     local_error: Option<String>,
     /// Threads whose rows this frame drew; their pull requests are loaded.
     rendered_threads: RefCell<Vec<ThreadSummary>>,
@@ -1123,6 +1126,7 @@ impl SidebarView {
             archived_open: false,
             pull_requests_open: false,
             plugins_open: false,
+            tasks_open: false,
             local_error: None,
             rendered_threads: RefCell::new(Vec::new()),
             thread_lists: RefCell::new(HashMap::new()),
@@ -1133,6 +1137,10 @@ impl SidebarView {
     /// Highlights the `Pull requests` row while that page owns the main area.
     pub fn set_plugins_open(&mut self, open: bool, cx: &mut Context<Self>) {
         self.plugins_open = open;
+        cx.notify();
+    }
+    pub fn set_tasks_open(&mut self, open: bool, cx: &mut Context<Self>) {
+        self.tasks_open = open;
         cx.notify();
     }
 
@@ -3864,12 +3872,30 @@ impl SidebarView {
                     .flex_col()
                     .gap(px(ROW_GAP))
                     .child(self.pull_requests_nav_row(theme, self.pull_requests_open, cx))
-                    .child(Self::static_nav_row(
-                        "sidebar-scheduled",
-                        "Automations",
-                        "scheduled",
-                        theme,
-                    ))
+                    .child(
+                        Self::static_nav_row(
+                            "sidebar-scheduled",
+                            "Automations",
+                            "scheduled",
+                            theme,
+                        )
+                        .role(gpui::Role::Button)
+                        .aria_label("Automations")
+                        .aria_selected(self.tasks_open)
+                        .focusable()
+                        .tab_stop(true)
+                        .cursor_pointer()
+                        .when(self.tasks_open, |row| row.bg(theme.sidebar_hover))
+                        .on_click(cx.listener(|_, _, _, cx| cx.emit(OpenTasks)))
+                        .on_key_down(cx.listener(
+                            |_, e: &gpui::KeyDownEvent, _, cx| {
+                                if matches!(e.keystroke.key.as_str(), "enter" | "space") {
+                                    cx.emit(OpenTasks);
+                                    cx.stop_propagation();
+                                }
+                            },
+                        )),
+                    )
                     .child(
                         Self::static_nav_row(
                             "sidebar-plugins",

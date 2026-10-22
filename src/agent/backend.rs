@@ -145,7 +145,7 @@ pub struct AgentRequest {
     pub context: AgentPromptContext,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AgentPromptContext {
     pub files: Vec<AgentInputFile>,
     /// Typed references occupying UTF-8 byte ranges in the visible prompt.
@@ -180,7 +180,7 @@ pub enum AgentInputReferenceKind {
     Mention,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AgentInputFile {
     pub path: PathBuf,
     pub image: bool,

@@ -98,6 +98,10 @@ impl ComposerView {
         inverted: bool,
         cx: &mut Context<Self>,
     ) {
+        if self.task_editor {
+            cx.emit(super::SubmitTaskEditor);
+            return;
+        }
         if (!raw_prompt.trim().is_empty() || !self.prompt_context.files.is_empty())
             && self.prepare_worktree_send(&raw_prompt, inverted, cx)
         {
