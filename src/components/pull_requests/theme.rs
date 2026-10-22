@@ -17,8 +17,14 @@ pub const PANE_PADDING: f32 = 20.0;
 /// ends 11px before the pane edge (592.84 → 581.84). Overlay scrollers reserve
 /// nothing (the list's content spans its full 606.77px).
 pub const SCROLLBAR_GUTTER: f32 = 11.0;
-/// The preserved Echora detail content column.
-pub const DETAIL_CONTENT_MAX_WIDTH: f32 = 768.0;
+/// Synara's summary frame: 76rem overall, a 22rem details column and a
+/// 3rem gap. The details column stacks below the body under 52rem.
+pub const SUMMARY_MAX_WIDTH: f32 = 1216.0;
+pub const SUMMARY_INFO_WIDTH: f32 = 352.0;
+pub const SUMMARY_COLUMN_GAP: f32 = 48.0;
+pub const SUMMARY_COLUMNS_MIN_WIDTH: f32 = 832.0;
+pub const SUMMARY_OUTER_PADDING: f32 = 12.0;
+pub const SUMMARY_INNER_PADDING: f32 = 24.0;
 pub const DETAIL_MIN_WIDTH: f32 = 320.0;
 pub const DETAIL_MAX_INSET: f32 = 256.0;
 /// Radix menu geometry (`contentWidth="menuNarrow"`, `app-menu-item`).

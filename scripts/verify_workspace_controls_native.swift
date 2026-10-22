@@ -471,6 +471,70 @@ func scrollBranches() {
         precondition(menuRect.intersects(rect(find("topic/long-acceptance-branch-149"))), "Last branch was not reachable by scrolling")
     }
 }
+if option("scenario") == "code-review-widths" {
+    let itemTitle = option("pr-title", "Publish native macOS, Windows and Linux installers")
+    for _ in 0..<600 {
+        if elements().contains(where: { title($0) == itemTitle }) { break }
+        Thread.sleep(forTimeInterval: 0.1)
+    }
+    click(find(itemTitle))
+    _ = find("Code review content")
+    func resize(_ width: CGFloat, _ height: CGFloat) {
+        var size = CGSize(width: width, height: height)
+        precondition(AXUIElementSetAttributeValue(mainWindow(), kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &size)!) == .success)
+        Thread.sleep(forTimeInterval: 0.5)
+    }
+    func verifyColumns(_ label: String, sideBySide: Bool) {
+        let content = rect(find("Code review content"))
+        let metadata = rect(find("Code review metadata"))
+        if sideBySide {
+            precondition(abs(metadata.width - 352) < 1, "Metadata column differs from Synara's 352 px")
+            precondition(abs(metadata.minX - content.maxX - 48) < 1, "Column gap differs from Synara's 48 px")
+        } else {
+            precondition(abs(metadata.minX - content.minX) < 1 && abs(metadata.width - content.width) < 1, "Narrow columns must share the available width")
+            precondition(metadata.minY >= content.maxY, "Narrow metadata overlaps the content")
+        }
+        let bounds = rect(mainWindow())
+        precondition(content.minX >= bounds.minX && metadata.maxX <= bounds.maxX, "Columns overflow the window")
+        let pointer = CGPoint(x: bounds.midX, y: bounds.minY + 35)
+        CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: pointer, mouseButton: .left)!.post(tap: .cghidEventTap)
+        record(label)
+    }
+    resize(1582, 1036); verifyColumns("00-wide-columns", sideBySide: true)
+    precondition(abs(rect(find(itemTitle)).width - 360) < 1, "Default inbox width differs from Synara")
+    resize(1470, 1036); verifyColumns("01-medium-stacked", sideBySide: false)
+    resize(1100, 800); verifyColumns("02-narrow-stacked", sideBySide: false)
+    resize(1582, 1036)
+    let splitter = rect(find("Resize workspace panes"))
+    let from = CGPoint(x: splitter.midX, y: splitter.midY)
+    let to = CGPoint(x: splitter.midX + 100, y: splitter.midY)
+    for (type, point) in [(CGEventType.mouseMoved, from), (.leftMouseDown, from), (.leftMouseDragged, to), (.leftMouseUp, to)] {
+        CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .left)!.post(tap: .cghidEventTap)
+        Thread.sleep(forTimeInterval: 0.15)
+    }
+    verifyColumns("03-drag-stacked", sideBySide: false)
+    let windowBounds = rect(mainWindow())
+    let scrollPoint = CGPoint(x: windowBounds.maxX - 180, y: windowBounds.midY)
+    func wheel(_ amount: Int32) {
+        let event = CGEvent(scrollWheelEvent2Source: CGEventSource(stateID: .hidSystemState), units: .pixel, wheelCount: 1, wheel1: amount, wheel2: 0, wheel3: 0)!
+        event.location = scrollPoint; event.timestamp = DispatchTime.now().uptimeNanoseconds
+        event.post(tap: .cgSessionEventTap)
+        Thread.sleep(forTimeInterval: 0.5)
+    }
+    wheel(-5000)
+    precondition(rect(find("Code review metadata")).intersects(windowBounds), "Stacked metadata cannot be reached by scrolling")
+    record("04-stacked-metadata-scrolled")
+    wheel(5000)
+    let resizedSplitter = rect(find("Resize workspace panes"))
+    let restoreFrom = CGPoint(x: resizedSplitter.midX, y: resizedSplitter.midY)
+    for (type, point) in [(CGEventType.mouseMoved, restoreFrom), (.leftMouseDown, restoreFrom), (.leftMouseDragged, from), (.leftMouseUp, from)] {
+        CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: .left)!.post(tap: .cghidEventTap)
+        Thread.sleep(forTimeInterval: 0.15)
+    }
+    verifyColumns("05-wide-restored", sideBySide: true)
+    print("Verified Synara column widths, responsive stacking, and separator drag")
+    exit(0)
+}
 if option("scenario") == "code-review-capture" {
     let itemTitle = option("pr-title", "Publish native macOS, Windows and Linux installers")
     for _ in 0..<600 {

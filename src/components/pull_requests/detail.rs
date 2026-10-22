@@ -525,13 +525,16 @@ impl PullRequestsView {
             Theme::for_mode(self.mode),
             "pull-request-description",
         );
-        // The page column (`mx-auto max-w-[var(--thread-content-max-width)]`,
-        // 768px, `gap-[var(--detail-page-section-gap)]` 24px) inside
-        // `main.px-5.pb-5` with the 11px scrollbar gutter.
+        let body_width =
+            self.pane_width - 1.0 - SUMMARY_OUTER_PADDING * 2.0 - self.scrollbar_gutter();
+        let columns = body_width >= SUMMARY_COLUMNS_MIN_WIDTH;
+        // The main column takes the space left by Synara's fixed metadata
+        // width; cap the complete frame so both columns stay together.
         let mut column = div()
+            .id("pr-summary-content")
+            .role(gpui::Role::Group)
+            .aria_label("Code review content")
             .w_full()
-            .max_w(px(DETAIL_CONTENT_MAX_WIDTH))
-            .mx_auto()
             .flex()
             .flex_col()
             .gap(px(24.0))
@@ -602,24 +605,36 @@ impl PullRequestsView {
                     .when_some(capture_offset, |wrapper, offset| {
                         wrapper.relative().top(px(-offset))
                     })
-                    .pl(px(PANE_PADDING))
-                    .pr(px(PANE_PADDING + self.scrollbar_gutter()))
+                    .pl(px(SUMMARY_OUTER_PADDING))
+                    .pr(px(SUMMARY_OUTER_PADDING + self.scrollbar_gutter()))
                     .pb(px(PANE_PADDING))
                     .child(
                         div()
                             .w_full()
+                            .max_w(px(SUMMARY_MAX_WIDTH))
+                            .mx_auto()
+                            .px(px(SUMMARY_INNER_PADDING))
                             .flex()
-                            .when(self.pane_width < 760.0, |s| s.flex_col())
+                            .when(!columns, |s| s.flex_col())
                             .items_start()
-                            .gap(px(24.0))
-                            .child(div().flex_1().min_w(px(0.0)).child(column))
+                            .gap(px(SUMMARY_COLUMN_GAP))
                             .child(
                                 div()
+                                    .min_w(px(0.0))
+                                    .when(columns, |s| s.flex_1())
+                                    .when(!columns, |s| s.w_full())
+                                    .child(column),
+                            )
+                            .child(
+                                div()
+                                    .id("pr-summary-metadata")
+                                    .role(gpui::Role::Group)
+                                    .aria_label("Code review metadata")
                                     .flex_none()
-                                    .when(self.pane_width >= 760.0, |s| s.w(px(216.0)))
-                                    .when(self.pane_width < 760.0, |s| s.w_full())
+                                    .when(columns, |s| s.w(px(SUMMARY_INFO_WIDTH)))
+                                    .when(!columns, |s| s.w_full())
                                     .pt(px(16.0))
-                                    .border_l(px(if self.pane_width >= 760.0 { 1.0 } else { 0.0 }))
+                                    .border_l(px(if columns { 1.0 } else { 0.0 }))
                                     .border_color(theme.border)
                                     .pl(px(16.0))
                                     .child(self.meta_rows(cx)),
