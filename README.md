@@ -36,7 +36,7 @@ Start a conversation in a local project, attach context, and follow the agent's 
 
 Create local projects from existing folders, or create a new Git workspace. Choose a project and local checkout or new worktree before sending the first message.
 
-The sidebar keeps projects and conversations within reach. Search, rename, pin, archive, delete, or move chats, and organize them into custom sections. The activity view brings together running chats, requests waiting for your attention, and unread results. Switching chats keeps background work running.
+The sidebar keeps projects and conversations within reach. Search, rename, pin, archive, delete, or move chats, and organize them into custom sections. The activity view brings together running chats, requests waiting for your attention, and unread results. Switching chats keeps background work running. The bell badge reflects pending requests or unread results; opening a chat or marking it read clears the unread reminder, including failed results.
 
 ## Use tools beside the conversation
 

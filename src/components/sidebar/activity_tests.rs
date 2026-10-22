@@ -375,6 +375,57 @@ fn a_row_opens_its_chat_and_the_view_stays_open() {
 }
 
 #[test]
+fn failed_turn_can_be_marked_read_without_hiding_its_error() {
+    let mut fixture = Fixture::new();
+    fixture
+        .backend
+        .events
+        .send_blocking(AgentConnectionEvent::ThreadStatusChanged(
+            AgentThreadStatus {
+                thread_id: "running".into(),
+                state: AgentThreadStatusState::SystemError,
+            },
+        ))
+        .unwrap();
+    fixture.settle(|sidebar| {
+        sidebar
+            .snapshot
+            .preferences
+            .unread_thread_ids
+            .contains("running")
+    });
+    fixture.click(BELL.0, BELL.1);
+    assert_eq!(
+        fixture.sections()[0].1,
+        vec![("running".into(), Attention::Unread)]
+    );
+    fixture.click(OPTIONS.0, OPTIONS.1);
+    fixture.click(250.0, 391.0);
+    fixture.settle(|sidebar| sidebar.snapshot.preferences.unread_thread_ids.is_empty());
+    fixture.window.read(|sidebar, _| {
+        assert_eq!(
+            sidebar.snapshot.thread("running").unwrap().activity,
+            ThreadActivity::SystemError
+        );
+        assert!(
+            !sidebar
+                .activity
+                .as_ref()
+                .unwrap()
+                .needs_attention(&sidebar.activity_inputs())
+        );
+    });
+    fixture.click(BELL.0, BELL.1);
+    fixture.click(BELL.0, BELL.1);
+    assert!(
+        !fixture
+            .sections()
+            .iter()
+            .any(|(section, rows)| section == "priority" && !rows.is_empty())
+    );
+}
+
+#[test]
 fn a_finished_turn_stays_in_priority_until_read_chats_are_cleared() {
     let mut fixture = Fixture::new();
     fixture.click(BELL.0, BELL.1);

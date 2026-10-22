@@ -1434,6 +1434,56 @@ fn server_read_state_updates_only_its_thread_and_respects_the_viewed_chat() {
 }
 
 #[test]
+fn failed_turn_badge_clears_on_read_and_stays_cleared_after_restart() {
+    let backend = FakeWorkspaceBackend::new();
+    let path = test_preferences_path("failed-turn-unread");
+    let store = WorkspaceStore::with_preferences_path(backend.clone(), path.clone());
+    store.refresh_all();
+    wait_until(|| !store.snapshot().loading.recent);
+    let needs_attention = |store: &WorkspaceStore| {
+        activity::ActivityInputs::from_snapshot(
+            &store.snapshot(),
+            None,
+            chrono::Utc::now().timestamp_millis(),
+        )
+        .candidates
+        .iter()
+        .any(|candidate| candidate.attention.needs_attention())
+    };
+    assert!(!needs_attention(&store));
+    store.apply_backend_event(status(
+        "thread-a",
+        AgentThreadStatusState::Active {
+            active_flags: Vec::new(),
+        },
+    ));
+    store.apply_backend_event(status("thread-a", AgentThreadStatusState::SystemError));
+    assert!(needs_attention(&store));
+    assert!(
+        store
+            .snapshot()
+            .preferences
+            .unread_thread_ids
+            .contains("thread-a")
+    );
+    let reopened = WorkspaceStore::with_preferences_path(backend.clone(), path.clone());
+    reopened.refresh_all();
+    wait_until(|| !reopened.snapshot().loading.recent);
+    assert!(needs_attention(&reopened));
+    store.set_viewed_thread(Some("thread-a".into()));
+    assert!(!needs_attention(&store));
+    assert_eq!(
+        store.snapshot().thread("thread-a").unwrap().activity,
+        ThreadActivity::SystemError
+    );
+    let reopened = WorkspaceStore::with_preferences_path(backend, path.clone());
+    reopened.refresh_all();
+    wait_until(|| !reopened.snapshot().loading.recent);
+    assert!(!needs_attention(&reopened));
+    let _ = fs::remove_dir_all(path.parent().unwrap());
+}
+
+#[test]
 fn thread_errors_survive_idle_refresh_and_read_until_a_new_run_or_success() {
     let backend = FakeWorkspaceBackend::new();
     let path = test_preferences_path("thread-errors");

@@ -142,6 +142,31 @@ func restoreFromDock() {
 func mainWindow() -> AXUIElement {
     (value(root, kAXWindowsAttribute) as! [AXUIElement]).max { rect($0).width * rect($0).height < rect($1).width * rect($1).height }!
 }
+if option("scenario") == "notifications" {
+    precondition(title(find("查看活动")) == "查看活动", "Read history must not light the bell")
+    record("00-read-history")
+    for (index, prompt) in ["PLAIN_STREAM", "FAIL_STREAM"].enumerated() {
+        click(find("新聊天"))
+        click(find("聊天输入框")); text(prompt); key(36)
+        // Switch away as soon as the submission is accepted; the stop
+        // control can appear after asynchronous thread creation.
+        click(find("新聊天"))
+        for _ in 0..<1000 {
+            if elements().contains(where: { title($0) == "查看活动，需要关注" }) { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        click(find("查看活动，需要关注"))
+        record("0\(index * 3 + 1)-unread-activity")
+        click(find("活动视图选项"))
+        click(find("全部标为已读"))
+        click(find("关闭活动视图"))
+        _ = find("查看活动")
+        precondition(!elements().contains(where: { title($0) == "查看活动，需要关注" }))
+        record("0\(index * 3 + 2)-marked-read")
+    }
+    print("Verified successful and failed background completions light the bell and Mark all as read clears it")
+    exit(0)
+}
 if option("scenario") == "quit-relaunch" {
     let oldPid = app.processIdentifier
     let window = mainWindow()

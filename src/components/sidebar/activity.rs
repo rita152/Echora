@@ -581,7 +581,7 @@ impl SidebarView {
         } else {
             crate::i18n::text("查看活动")
         };
-        let glyph = if needs_attention && !active {
+        let glyph = if needs_attention {
             div()
                 .relative()
                 .size(px(16.0))
@@ -932,13 +932,13 @@ impl SidebarView {
             .iter()
             .any(|candidate| candidate.thread_id == thread_id);
         let worktree = runs_in_codex_worktree(thread);
+        let failed = matches!(thread.activity, crate::agent::ThreadActivity::SystemError);
         let status = match attention {
-            Attention::Failed => Some(Attention::Failed),
             Attention::Unread => Some(Attention::Unread),
             Attention::Active => Some(Attention::Active),
             _ => None,
         };
-        let trailing_icons = usize::from(worktree) + usize::from(status.is_some());
+        let trailing_icons = usize::from(worktree) + usize::from(failed || status.is_some());
         let trailing_width = if trailing_icons == 0 {
             0.0
         } else {
@@ -988,57 +988,58 @@ impl SidebarView {
                     ),
             );
         }
-        match status {
-            Some(Attention::Failed) => {
-                trailing = trailing.child(
-                    div()
-                        .size(px(ROW_TRAILING_ICON_BOX))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .id(format!("activity-thread-error-{thread_id}"))
-                        .role(gpui::Role::Status)
-                        .aria_label(crate::i18n::text("聊天发生错误"))
-                        .child(icon("conversation-error", theme.warning.into()).size(px(16.0))),
-                );
-            }
-            Some(Attention::Unread) => {
-                trailing = trailing.child(
-                    div()
-                        .size(px(ROW_TRAILING_ICON_BOX))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .child(
-                            div()
-                                .size(px(UNREAD_DOT))
-                                .rounded_full()
-                                .bg(theme.activity_badge),
-                        ),
-                );
-            }
-            Some(_) => {
-                let spinner = icon("search-spinner", theme.activity_spinner.into())
-                    .size(px(ROW_SPINNER))
-                    .with_animation(
-                        format!("activity-running-{thread_id}"),
-                        Animation::new(ROW_SPINNER_PERIOD).repeat(),
-                        |spinner, progress| {
-                            spinner.with_transformation(Transformation::rotate(radians(
-                                progress * std::f32::consts::TAU,
-                            )))
-                        },
+        if failed {
+            trailing = trailing.child(
+                div()
+                    .size(px(ROW_TRAILING_ICON_BOX))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .id(format!("activity-thread-error-{thread_id}"))
+                    .role(gpui::Role::Status)
+                    .aria_label(crate::i18n::text("聊天发生错误"))
+                    .child(icon("conversation-error", theme.warning.into()).size(px(16.0))),
+            );
+        } else {
+            match status {
+                Some(Attention::Unread) => {
+                    trailing = trailing.child(
+                        div()
+                            .size(px(ROW_TRAILING_ICON_BOX))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                div()
+                                    .size(px(UNREAD_DOT))
+                                    .rounded_full()
+                                    .bg(theme.activity_badge),
+                            ),
                     );
-                trailing = trailing.child(
-                    div()
-                        .size(px(ROW_TRAILING_ICON_BOX))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .child(spinner),
-                );
+                }
+                Some(_) => {
+                    let spinner = icon("search-spinner", theme.activity_spinner.into())
+                        .size(px(ROW_SPINNER))
+                        .with_animation(
+                            format!("activity-running-{thread_id}"),
+                            Animation::new(ROW_SPINNER_PERIOD).repeat(),
+                            |spinner, progress| {
+                                spinner.with_transformation(Transformation::rotate(radians(
+                                    progress * std::f32::consts::TAU,
+                                )))
+                            },
+                        );
+                    trailing = trailing.child(
+                        div()
+                            .size(px(ROW_TRAILING_ICON_BOX))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(spinner),
+                    );
+                }
+                None => {}
             }
-            None => {}
         }
 
         let title_line =
@@ -1531,6 +1532,7 @@ impl SidebarView {
                     can_mark_read,
                 )
                 .role(gpui::Role::MenuItem)
+                .aria_label(crate::i18n::text("全部标为已读"))
                 .when(!can_mark_read, |row| row.opacity(0.5))
                 .when(can_mark_read, |row| {
                     row.on_click(cx.listener(|this, _, _, cx| this.mark_priority_read(cx)))
