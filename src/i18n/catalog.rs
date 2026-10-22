@@ -409,7 +409,6 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
         "已取消登录" => "Sign-in canceled",
         "已复制" => "Copied",
         "已复制 git apply 命令" => "Copied git apply command",
-        "已安排" => "Scheduled",
         "已安装插件" => "Installed plugin",
         "已完成" => "Completed",
         "已工作" => "Worked",

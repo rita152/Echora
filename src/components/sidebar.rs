@@ -3866,7 +3866,7 @@ impl SidebarView {
                     .child(self.pull_requests_nav_row(theme, self.pull_requests_open, cx))
                     .child(Self::static_nav_row(
                         "sidebar-scheduled",
-                        crate::i18n::text("已安排"),
+                        "Automations",
                         "scheduled",
                         theme,
                     ))
