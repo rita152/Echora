@@ -350,6 +350,7 @@ fn the_pull_request_chip_shows_on_an_idle_row_and_hides_under_its_hover_actions(
                 can_merge: false,
                 has_conflicts: false,
                 ci_status: CiStatus::Passing,
+                labels: Vec::new(),
             },
             head_repository: Some("openai/codex".into()),
             merged_at: None,

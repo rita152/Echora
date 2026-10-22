@@ -150,6 +150,9 @@ impl PullRequestsView {
     /// Overlays anchored inside the detail pane.
     pub(super) fn detail_overlays(&self, cx: &mut gpui::Context<Self>) -> Vec<gpui::AnyElement> {
         let mut overlays = Vec::new();
+        if self.detail_actions_open {
+            overlays.push(self.popup("pr-detail-more", self.detail_actions_menu(cx)));
+        }
         if self.status_menu {
             overlays.push(self.popup("pr-status", self.status_menu(cx)));
         }

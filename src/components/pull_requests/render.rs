@@ -74,6 +74,25 @@ impl gpui::Render for PullRequestsView {
             .text_color(theme.text)
             .bg(theme.surface)
             .track_focus(&self.focus)
+            .on_mouse_move(cx.listener(|view, event: &gpui::MouseMoveEvent, _, cx| {
+                if view.detail_resize.is_some()
+                    && event.pressed_button == Some(gpui::MouseButton::Left)
+                {
+                    view.drag_detail_resize(f32::from(event.position.x), cx);
+                }
+            }))
+            .on_mouse_up(
+                gpui::MouseButton::Left,
+                cx.listener(|view, _, _, cx| {
+                    view.end_detail_resize(cx);
+                }),
+            )
+            .on_mouse_up_out(
+                gpui::MouseButton::Left,
+                cx.listener(|view, _, _, cx| {
+                    view.end_detail_resize(cx);
+                }),
+            )
             .on_key_down(cx.listener(|view, event: &gpui::KeyDownEvent, _, cx| {
                 // Escape closes menus and tooltips; like the reference, it
                 // leaves an inline comment draft, full screen, the file tree,
@@ -174,36 +193,42 @@ impl PullRequestsView {
     /// toolbar menus.
     fn filter_overlays(&self, cx: &mut gpui::Context<Self>) -> Vec<gpui::AnyElement> {
         let mut overlays = Vec::new();
-        if self.list_menu.is_some() {
-            // Radix places the menu (`m-px`) 2px under the trigger, flush with
-            // its end edge.
+        if self.list_menu == Some(super::ListMenu::Filter) {
             overlays.push(self.popup_at(
                 "pr-filter",
-                gpui::point(px(-1.0), px(2.0)),
+                gpui::point(px(0.0), px(4.0)),
                 self.filter_menu(cx),
             ));
             if let Some(submenu) = self.filter_submenu(cx) {
                 let key = match self.filter_submenu {
                     Some(super::FilterSubmenu::Status) => "pr-filter-Status",
-                    _ => "pr-filter-Repository",
+                    Some(super::FilterSubmenu::Labels) => "pr-filter-Labels",
+                    _ => "pr-filter-Projects",
                 };
                 let bounds = self.control_bounds.borrow().get(key).copied();
                 let mut popup = gpui::anchored()
                     .snap_to_window_with_margin(px(8.0))
                     .child(submenu);
                 if let Some(bounds) = bounds {
-                    // The sub-content opens 5px beyond the menu edge (the row
-                    // sits 4px inside it), aligned with the menu's top.
-                    popup = popup.position(bounds.top_right() + gpui::point(px(9.0), px(-4.0)));
+                    popup = popup.position(bounds.top_right() + gpui::point(px(8.0), px(-4.0)));
                 }
                 overlays.push(gpui::deferred(popup).into_any_element());
             }
+        } else if let Some(menu) = self.inbox_aux_menu(cx) {
+            overlays.push(self.popup(
+                if self.list_menu == Some(super::ListMenu::Sort) {
+                    "pr-sort"
+                } else {
+                    "pr-more"
+                },
+                menu,
+            ));
         }
         overlays
     }
 
-    /// The reference keeps both panes while the list can hold 320px beside
-    /// the detail panel; below that the page shows one pane at a time.
+    /// Keep both panes while a 256 px inbox and 320 px detail fit; below
+    /// that the page shows one pane at a time.
     pub(super) fn compact(&self) -> bool {
         !self.fullscreen && self.compact_layout
     }

@@ -10,6 +10,8 @@
 mod activity;
 mod detail;
 mod diff;
+mod inbox;
+mod info;
 mod list;
 mod menus;
 mod mutations;
@@ -100,6 +102,7 @@ impl EventEmitter<OpenChatForPullRequest> for PullRequestsView {}
 pub enum DetailTab {
     Summary,
     Code,
+    Timeline,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -119,12 +122,15 @@ pub struct ReviewTab {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ListMenu {
     Filter,
+    Sort,
+    More,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FilterSubmenu {
     Status,
     Repository,
+    Labels,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -134,6 +140,27 @@ pub struct InlineComment {
     pub file: usize,
     pub old: bool,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InboxKind {
+    All,
+    PullRequests,
+    Issues,
+}
+impl InboxKind {
+    fn matches(self, row: &PullRequestSummary) -> bool {
+        match self {
+            Self::All => true,
+            Self::PullRequests => !row.is_issue(),
+            Self::Issues => row.is_issue(),
+        }
+    }
+}
+#[derive(Clone, Debug)]
+pub struct CodeReviewPinsChanged {
+    pub pins: std::collections::BTreeSet<String>,
+}
+impl EventEmitter<CodeReviewPinsChanged> for PullRequestsView {}
 
 pub struct PullRequestsView {
     mode: ThemeMode,
@@ -195,6 +222,13 @@ pub struct PullRequestsView {
     /// Bumped per keystroke; the search reloads once typing pauses.
     search_serial: u64,
     tab: ListTab,
+    kind: InboxKind,
+    newest: bool,
+    involvement: String,
+    label_filters: Vec<String>,
+    pinned_items: std::collections::BTreeSet<String>,
+    detail_actions_open: bool,
+    visible_rows: usize,
     filter: PullRequestFilter,
     repositories: Vec<String>,
     groups: Vec<PullRequestGroup>,
@@ -295,18 +329,14 @@ pub struct PullRequestsView {
     capture_action: Option<String>,
 }
 
-/// The app-shell detail panel width for a main area of `page` × `height`:
-/// `320 + ratio * (max - 320)` with `max = page - 352`, and without a stored
-/// ratio the reference default `max(320, min(1.6 * height, page - 500),
-/// min(640, page - 352))` clamped into the same range.
-pub(super) fn detail_panel_width(page: f32, height: f32, ratio: Option<f32>) -> f32 {
+/// Preserve the user's split ratio; otherwise use Synara's 32% inbox,
+/// clamped to 256–416 px, with at least 320 px for the detail pane.
+pub(super) fn detail_panel_width(page: f32, _height: f32, ratio: Option<f32>) -> f32 {
     let maximum = (page - theme::DETAIL_MAX_INSET).max(theme::DETAIL_MIN_WIDTH);
     let minimum = theme::DETAIL_MIN_WIDTH.min(maximum);
     let width = match ratio {
         Some(ratio) if ratio.is_finite() => minimum + ratio.clamp(0.0, 1.0) * (maximum - minimum),
-        _ => theme::DETAIL_MIN_WIDTH
-            .max((height * 1.6).min(page - 500.0))
-            .max(640.0_f32.min(page - theme::DETAIL_MAX_INSET)),
+        _ => page - (page * 0.32).clamp(256.0, 416.0),
     };
     width.clamp(minimum, maximum)
 }
@@ -349,8 +379,8 @@ impl PullRequestsView {
 
     fn build(mode: ThemeMode, cwd: Option<PathBuf>, load: bool, cx: &mut Context<Self>) -> Self {
         let search = cx.new(|cx| {
-            let mut input = PromptInput::pull_request_search(mode, "Search pull requests", cx);
-            input.set_accessible_name("Search pull requests");
+            let mut input = PromptInput::code_review_search(mode, cx);
+            input.set_accessible_name("Search pull requests and issues");
             input
         });
         let tree_filter = cx.new(|cx| {
@@ -422,6 +452,13 @@ impl PullRequestsView {
             control_bounds: Default::default(),
             search_serial: 0,
             tab: ListTab::All,
+            kind: InboxKind::All,
+            newest: true,
+            involvement: String::new(),
+            label_filters: Vec::new(),
+            pinned_items: Default::default(),
+            detail_actions_open: false,
+            visible_rows: 10,
             filter: PullRequestFilter::default(),
             repositories: Vec::new(),
             groups: Vec::new(),
@@ -504,6 +541,11 @@ impl PullRequestsView {
             view.reload(cx);
         }
         view
+    }
+
+    pub fn set_directory(&mut self, cwd: Option<PathBuf>) {
+        self.client = Arc::new(GhClient::new(cwd));
+        self.loaded_key = None;
     }
 
     pub fn set_mode(&mut self, mode: ThemeMode, cx: &mut Context<Self>) {
@@ -735,6 +777,7 @@ impl PullRequestsView {
             return;
         }
         match tab {
+            "timeline" => self.set_detail_tab(DetailTab::Timeline, cx),
             "code" => self.set_detail_tab(DetailTab::Code, cx),
             "review" => self.open_review_tab(cx),
             _ => self.set_detail_tab(DetailTab::Summary, cx),
@@ -829,6 +872,7 @@ impl PullRequestsView {
         if let Some((tab, file_tree)) = self.capture_intent.take() {
             if let Some(tab) = tab.as_deref() {
                 match tab {
+                    "timeline" => self.set_detail_tab(DetailTab::Timeline, cx),
                     "code" => self.set_detail_tab(DetailTab::Code, cx),
                     "review" => self.open_review_tab(cx),
                     _ => self.set_detail_tab(DetailTab::Summary, cx),
@@ -957,6 +1001,9 @@ impl PullRequestsView {
         let tab = self.tab;
         let filter = self.filter.clone();
         let query = self.query.trim().to_string();
+        let newest = self.newest;
+        let involvement = self.involvement.clone();
+        let labels = self.label_filters.clone();
         let key = (tab, filter.clone(), query.clone());
         if self.loaded_key.as_ref() != Some(&key) {
             self.groups.clear();
@@ -970,7 +1017,7 @@ impl PullRequestsView {
                 .background_executor()
                 .spawn(async move {
                     client
-                        .list(tab, &filter, &query)
+                        .inbox(tab, &filter, &query, newest, &involvement, &labels)
                         .map_err(|error| format!("{error:#}"))
                 })
                 .await;
@@ -992,6 +1039,16 @@ impl PullRequestsView {
                         view.list_error = None;
                         view.reload_repositories();
                         view.request_avatars(urls, cx);
+                        let direct = view
+                            .groups
+                            .iter()
+                            .flat_map(|g| &g.items)
+                            .find(|r| r.matches_link(&view.query))
+                            .cloned();
+                        if let Some(row) = direct {
+                            view.kind = InboxKind::All;
+                            view.select(row, cx);
+                        }
                     }
                     Err(error) => {
                         view.groups = Vec::new();
@@ -1049,6 +1106,13 @@ impl PullRequestsView {
                 match result {
                     Ok(detail) => {
                         let urls: Vec<String> = std::iter::once(detail.author.avatar_url.clone())
+                            .chain(detail.assignees.iter().map(|user| user.avatar_url.clone()))
+                            .chain(
+                                detail
+                                    .requested_reviewers
+                                    .iter()
+                                    .map(|user| user.avatar_url.clone()),
+                            )
                             .chain(
                                 detail
                                     .comments
@@ -1088,7 +1152,7 @@ impl PullRequestsView {
         let Some(summary) = self.selected.clone() else {
             return;
         };
-        if !self.diff.is_empty() || self.diff_loading {
+        if summary.is_issue() || !self.diff.is_empty() || self.diff_loading {
             return;
         }
         self.diff_generation += 1;
@@ -1181,9 +1245,10 @@ impl PullRequestsView {
     }
 
     pub fn toggle_filter_menu(&mut self, cx: &mut Context<Self>) {
-        self.list_menu = match self.list_menu {
-            Some(ListMenu::Filter) => None,
-            None => Some(ListMenu::Filter),
+        self.list_menu = if self.list_menu == Some(ListMenu::Filter) {
+            None
+        } else {
+            Some(ListMenu::Filter)
         };
         self.filter_submenu = None;
         cx.notify();
@@ -1308,9 +1373,11 @@ impl PullRequestsView {
     }
 
     pub fn select(&mut self, summary: PullRequestSummary, cx: &mut Context<Self>) {
-        let deselect = self.selected.as_ref().is_some_and(|current| {
+        if self.selected.as_ref().is_some_and(|current| {
             current.number == summary.number && current.repository == summary.repository
-        });
+        }) {
+            return;
+        }
         self.detail_generation += 1;
         self.reset_diff(cx);
         self.detail = None;
@@ -1332,14 +1399,8 @@ impl PullRequestsView {
         self.dismiss_menus(cx);
         self.detail_scroll
             .set_offset(gpui::point(gpui::px(0.0), gpui::px(0.0)));
-        self.selected = if deselect {
-            None
-        } else {
-            Some(summary.clone())
-        };
-        if !deselect {
-            self.load_detail(summary.repository, summary.number, cx);
-        }
+        self.selected = Some(summary.clone());
+        self.load_detail(summary.repository, summary.number, cx);
         cx.notify();
     }
 
@@ -1370,6 +1431,9 @@ impl PullRequestsView {
     // ------------------------------------------------------------------
 
     pub fn set_detail_tab(&mut self, tab: DetailTab, cx: &mut Context<Self>) {
+        if tab == DetailTab::Code && self.selected.as_ref().is_some_and(|r| r.is_issue()) {
+            return;
+        }
         if self
             .review_tab
             .as_ref()
@@ -1391,6 +1455,9 @@ impl PullRequestsView {
     }
 
     pub fn open_review_tab(&mut self, cx: &mut Context<Self>) {
+        if self.selected.as_ref().is_some_and(|r| r.is_issue()) {
+            return;
+        }
         let commits = self
             .detail
             .as_ref()
@@ -1486,6 +1553,10 @@ impl PullRequestsView {
 
     pub fn dismiss_menus(&mut self, cx: &mut Context<Self>) -> bool {
         let mut dismissed = false;
+        if self.detail_actions_open {
+            self.detail_actions_open = false;
+            dismissed = true;
+        }
         if self.list_menu.is_some() {
             self.list_menu = None;
             self.filter_submenu = None;
@@ -1627,8 +1698,15 @@ impl PullRequestsView {
             return;
         };
         let prompt = format!(
-            "Help me understand pull request #{}: {} {}",
-            summary.number, summary.title, summary.url
+            "Help me understand {} #{}: {} {}",
+            if summary.is_issue() {
+                "issue"
+            } else {
+                "pull request"
+            },
+            summary.number,
+            summary.title,
+            summary.url
         );
         cx.emit(OpenChatForPullRequest { prompt });
     }

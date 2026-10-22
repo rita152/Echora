@@ -1537,6 +1537,11 @@ impl WorkspaceStore {
         self.save_preferences();
     }
 
+    pub fn set_code_review_pins(&self, pins: std::collections::BTreeSet<String>) {
+        self.update(|snapshot| snapshot.preferences.code_review_pins = pins);
+        self.save_preferences();
+    }
+
     pub fn set_review_preferences(&self, review: ReviewPreferences) {
         self.update(|snapshot| snapshot.preferences.review = review);
         self.save_preferences();

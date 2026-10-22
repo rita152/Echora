@@ -48,6 +48,7 @@ fn summary(title: &str) -> crate::pull_requests::PullRequestSummary {
         can_merge: false,
         has_conflicts: false,
         ci_status: crate::pull_requests::CiStatus::None,
+        labels: Vec::new(),
     }
 }
 fn detail(title: &str) -> PullRequestDetail {
@@ -55,6 +56,8 @@ fn detail(title: &str) -> PullRequestDetail {
         viewer: None,
         summary: summary(title),
         body: String::new(),
+        assignees: vec![],
+        labels: vec![],
         requested_reviewers: vec![],
         reviewers: vec![],
         comments: vec![],
@@ -273,7 +276,7 @@ fn titlebar_layout(
     visual.update(|window, cx| window.draw(cx).clear(cx));
     (
         visual
-            .debug_bounds("pr-tab-All")
+            .debug_bounds("pr-kind-All")
             .map(|bounds| bounds.left()),
         visual.debug_bounds("pr-review-tab").unwrap().left(),
     )
@@ -282,15 +285,12 @@ fn titlebar_layout(
 #[gpui::test]
 fn headers_start_after_the_titlebar_once_the_sidebar_closes(cx: &mut gpui::TestAppContext) {
     use gpui::px;
-    // Sidebar open: the trigger ends at x=190, left of a page that starts
-    // past the 240px sidebar and its hairline, so the tabs keep the header's
-    // 15px inset.
+    // The inbox now begins below the 44 px titlebar, so kind tabs keep
+    // their 24 px inset with the sidebar either open or closed.
     let (all, review) = titlebar_layout(cx, 190.0 - 241.0, false);
-    assert_eq!(all, Some(px(15.0)));
-    // Sidebar closed (ChatGPT 26.924 at 1470px: the header starts at x=128,
-    // `px-2` twice): the tabs move past the traffic lights and the trigger.
+    assert_eq!(all, Some(px(24.0)));
     let (all, split_review) = titlebar_layout(cx, 128.0, false);
-    assert_eq!(all, Some(px(144.0)));
+    assert_eq!(all, Some(px(24.0)));
     // The split detail panel sits right of the list and stays put.
     assert_eq!(split_review, review);
     // Full screen spans the page, so the task tab strip leads with a
@@ -400,4 +400,55 @@ fn tooltips_wait_for_their_delay_and_close_when_pressed(cx: &mut gpui::TestAppCo
     cx.executor().advance_clock(TOOLTIP_DELAY * 2);
     cx.run_until_parked();
     assert_eq!(shown(cx), None);
+}
+
+#[test]
+fn selecting_the_current_inbox_item_keeps_the_comment_draft() {
+    let (mut app, view) = setup();
+    app.update_entity(&view, |view, cx| {
+        view.comment_box.update(cx, |editor, cx| {
+            editor.set_text_silently("Unsent draft", cx)
+        });
+        let generation = view.detail_generation;
+        view.select(view.selected.clone().unwrap(), cx);
+        assert_eq!(view.detail_generation, generation);
+        assert!(view.detail.is_some());
+        assert_eq!(view.comment_box.read(cx).text(), "Unsent draft");
+    });
+}
+#[test]
+fn issue_selection_cannot_start_a_diff_review_or_merge() {
+    let (mut app, view) = setup();
+    app.update_entity(&view, |view, cx| {
+        let mut issue = summary("Issue");
+        issue.url = "https://github.com/test/repository/issues/1".into();
+        view.selected = Some(issue.clone());
+        view.detail.as_mut().unwrap().summary = issue;
+        view.set_detail_tab(DetailTab::Code, cx);
+        view.open_review_tab(cx);
+        view.merge(cx);
+        assert_eq!(view.detail_tab, DetailTab::Summary);
+        assert!(view.review_tab.is_none());
+        assert!(!view.diff_loading);
+        assert!(!view.mutation_pending);
+    });
+}
+#[test]
+fn pins_use_the_item_identity_and_can_be_restored_independently_of_selection() {
+    let (mut app, view) = setup();
+    app.update_entity(&view, |view, cx| {
+        let first = summary("PR");
+        let mut second = first.clone();
+        second.repository = "other/repo".into();
+        second.url = "https://github.com/other/repo/pull/1".into();
+        view.toggle_pin(&first, cx);
+        view.toggle_pin(&second, cx);
+        view.toggle_pin(&first, cx);
+        assert!(!view.pinned_items.contains(&first.url));
+        assert!(view.pinned_items.contains(&second.url));
+        let pins = view.pinned_items.clone();
+        view.set_pins(pins.clone(), cx);
+        assert_eq!(view.pinned_items, pins);
+        assert_eq!(view.selected.as_ref().unwrap().title, "original");
+    });
 }

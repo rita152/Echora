@@ -17,7 +17,7 @@ use super::model::{
     ActivityEventKind, ActivityItem, Check, CheckState, CiStatus, Comment, Commit, GroupKind,
     ListTab, PullRequestDetail, PullRequestFilter, PullRequestGroup, PullRequestStatus,
     PullRequestSummary, ReviewThread, StatusFilter, User, build_activity, dedupe_sections,
-    relative_age,
+    parse_item_link, relative_age,
 };
 use crate::git_review::{FileDiff, process};
 
@@ -33,9 +33,10 @@ const SEARCH_FIELDS: &str = r#"
   deletions
   headRefName
   baseRefName
-  updatedAt
+  createdAt updatedAt
   author { login avatarUrl(size: 48) }
   repository { nameWithOwner }
+  labels(first:100) { nodes { name color } }
   mergeable
   mergeStateStatus
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
@@ -157,6 +158,10 @@ fn summary_from(node: &Value) -> PullRequestSummary {
             && text(node, "mergeStateStatus").as_deref() == Some("CLEAN"),
         has_conflicts: mergeable == "CONFLICTING",
         ci_status,
+        labels: nodes(node, "/labels")
+            .iter()
+            .filter_map(|n| Some((text(n, "name")?, text(n, "color")?)))
+            .collect(),
     }
 }
 
@@ -166,7 +171,7 @@ fn search(query: &str) -> Result<Vec<PullRequestSummary>> {
     loop {
         let value = graphql(
             &format!(
-                "query($searchQuery: String!, $after: String) {{ search(query: $searchQuery, type: ISSUE, first: 100, after: $after) {{ pageInfo {{ hasNextPage endCursor }} nodes {{ ... on PullRequest {{ {SEARCH_FIELDS} }} }} }} }}"
+                "query($searchQuery: String!, $after: String) {{ search(query: $searchQuery, type: ISSUE, first: 100, after: $after) {{ pageInfo {{ hasNextPage endCursor }} nodes {{ ... on PullRequest {{ {SEARCH_FIELDS} }} ... on Issue {{ number title url state createdAt updatedAt author {{ login avatarUrl(size:48) }} repository {{ nameWithOwner }} labels(first:100) {{ nodes {{ name color }} }} }} }} }} }}"
             ),
             &[
                 ("searchQuery", Value::from(query)),
@@ -176,7 +181,13 @@ fn search(query: &str) -> Result<Vec<PullRequestSummary>> {
         results.extend(
             nodes(&value, "/data/search")
                 .iter()
-                .map(summary_from)
+                .map(|node| {
+                    let mut row = summary_from(node);
+                    if query.contains("sort:created-desc") {
+                        row.age = relative_age(&text(node, "createdAt").unwrap_or_default(), now());
+                    }
+                    row
+                })
                 .filter(|summary| !summary.repository.is_empty() && !summary.title.is_empty()),
         );
         if value
@@ -447,6 +458,88 @@ impl GhClient {
         }
     }
 
+    pub fn inbox(
+        &self,
+        tab: ListTab,
+        filter: &PullRequestFilter,
+        text: &str,
+        newest: bool,
+        involvement: &str,
+        labels: &[String],
+    ) -> Result<Vec<PullRequestGroup>> {
+        // Direct links also work while the review-requested filter is active.
+        if let Some((repository, number)) = parse_item_link(text) {
+            return Ok(vec![PullRequestGroup {
+                kind: GroupKind::Results,
+                items: vec![self.detail(&repository, number)?.summary],
+            }]);
+        }
+        let mut effective = filter.clone();
+        if effective.repository.is_none()
+            && let Some(cwd) = self.cwd.as_deref()
+        {
+            effective.repository = gh(
+                &[
+                    "repo",
+                    "view",
+                    "--json",
+                    "nameWithOwner",
+                    "--jq",
+                    ".nameWithOwner",
+                ],
+                None,
+                Some(cwd),
+            )
+            .ok()
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty());
+        }
+        if tab == ListTab::Reviewing && involvement.is_empty() && labels.is_empty() {
+            return self.list(tab, &effective, text);
+        }
+        let scoped_search = qualifier_names(text)
+            .iter()
+            .any(|name| matches!(name.as_str(), "repo" | "org" | "user"));
+        let relation = if has_relationship_qualifier(text) {
+            ""
+        } else if !involvement.is_empty() {
+            involvement
+        } else if tab == ListTab::Authored {
+            "author:@me"
+        } else if effective.repository.is_none() && !scoped_search {
+            "involves:@me"
+        } else {
+            ""
+        };
+        let mut query = query_for(&effective, text, relation)
+            .replacen("is:pr ", "", 1)
+            .replace("is:closed is:unmerged", "is:closed -is:merged");
+        if newest {
+            query = query.replace("sort:updated-desc", "sort:created-desc");
+        }
+        for label in labels {
+            query.push_str(&format!(" label:{}", serde_json::to_string(label)?));
+        }
+        // GitHub accepts author:@me, but its involves qualifier requires login.
+        if query.contains("involves:@me") {
+            let viewer = graphql("query { viewer { login } }", &[])?;
+            let login = viewer
+                .pointer("/data/viewer/login")
+                .and_then(Value::as_str)
+                .context("GitHub did not return the signed-in account")?;
+            query = query.replace("involves:@me", &format!("involves:{login}"));
+        }
+        let items = search(&query)?;
+        Ok(if items.is_empty() {
+            Vec::new()
+        } else {
+            vec![PullRequestGroup {
+                kind: GroupKind::Results,
+                items,
+            }]
+        })
+    }
+
     pub fn detail(&self, repository: &str, number: u64) -> Result<PullRequestDetail> {
         let (owner, name) = repository
             .split_once('/')
@@ -455,10 +548,13 @@ impl GhClient {
 query($owner: String!, $name: String!, $number: Int!) {
   viewer { login avatarUrl(size: 48) }
   repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) {
+    issueOrPullRequest(number: $number) {
+      ... on PullRequest {
       number title url isDraft state additions deletions headRefOid
       headRefName baseRefName createdAt updatedAt merged mergeable
       body viewerDidAuthor
+      assignees(first:100) { nodes { login name avatarUrl } }
+      labels(first:100) { nodes { name color } }
       author { login avatarUrl }
       reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login name avatarUrl } } } }
       reviews(first: 50) { nodes { id url viewerCanUpdate viewerCanDelete author { __typename login avatarUrl(size: 48) } body submittedAt state } }
@@ -487,6 +583,14 @@ query($owner: String!, $name: String!, $number: Int!) {
           }
         }
       }
+      }
+      ... on Issue {
+        number title url state body viewerDidAuthor createdAt updatedAt
+        author { login avatarUrl }
+        assignees(first:100) { nodes { login name avatarUrl } }
+        labels(first:100) { nodes { name color } }
+        comments(first:100) { nodes { id databaseId url viewerCanUpdate viewerCanDelete author { __typename login avatarUrl(size:48) } body createdAt } }
+      }
     }
   }
 }
@@ -500,7 +604,7 @@ query($owner: String!, $name: String!, $number: Int!) {
             ],
         )?;
         let pull = value
-            .pointer("/data/repository/pullRequest")
+            .pointer("/data/repository/issueOrPullRequest")
             .cloned()
             .unwrap_or(Value::Null);
         if pull.is_null() {
@@ -700,6 +804,14 @@ query($owner: String!, $name: String!, $number: Int!) {
             viewer,
             summary: summary.clone(),
             body: text(&pull, "body").unwrap_or_default(),
+            assignees: nodes(&pull, "/assignees")
+                .iter()
+                .filter_map(user_from)
+                .collect(),
+            labels: nodes(&pull, "/labels")
+                .iter()
+                .filter_map(|n| Some((text(n, "name")?, text(n, "color")?)))
+                .collect(),
             requested_reviewers,
             reviewers: Vec::new(),
             comments,
@@ -840,32 +952,69 @@ query($owner: String!, $name: String!, $number: Int!) {
     }
 
     pub fn edit_title(&self, repository: &str, number: u64, title: &str) -> Result<()> {
-        let number = number.to_string();
         gh(
             &[
-                "pr", "edit", &number, "--repo", repository, "--title", title,
+                "api",
+                &format!("repos/{repository}/issues/{number}"),
+                "--method",
+                "PATCH",
+                "-f",
+                &format!("title={title}"),
             ],
             None,
             self.cwd.as_deref(),
         )?;
         Ok(())
     }
-
     pub fn edit_body(&self, repository: &str, number: u64, body: &str) -> Result<()> {
-        let number = number.to_string();
         gh(
-            &["pr", "edit", &number, "--repo", repository, "--body", body],
+            &[
+                "api",
+                &format!("repos/{repository}/issues/{number}"),
+                "--method",
+                "PATCH",
+                "-f",
+                &format!("body={body}"),
+            ],
             None,
             self.cwd.as_deref(),
         )?;
         Ok(())
     }
-
     pub fn comment(&self, repository: &str, number: u64, body: &str) -> Result<()> {
-        let number = number.to_string();
         gh(
             &[
-                "pr", "comment", &number, "--repo", repository, "--body", body,
+                "api",
+                &format!("repos/{repository}/issues/{number}/comments"),
+                "--method",
+                "POST",
+                "-f",
+                &format!("body={body}"),
+            ],
+            None,
+            self.cwd.as_deref(),
+        )?;
+        Ok(())
+    }
+    pub fn set_issue_status(
+        &self,
+        repository: &str,
+        number: u64,
+        status: PullRequestStatus,
+    ) -> Result<()> {
+        let state = if status == PullRequestStatus::Closed {
+            "closed"
+        } else {
+            "open"
+        };
+        gh(
+            &[
+                "api",
+                &format!("repos/{repository}/issues/{number}"),
+                "--method",
+                "PATCH",
+                "-f",
+                &format!("state={state}"),
             ],
             None,
             self.cwd.as_deref(),
@@ -1074,6 +1223,40 @@ fn comment_from(node: &Value, thread: Option<(&str, &str, Option<u32>)>) -> Comm
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn inbox_links_accept_both_kinds_and_reject_other_hosts_or_paths() {
+        assert_eq!(
+            parse_item_link("https://github.com/owner/repo/issues/81#issuecomment-1"),
+            Some(("owner/repo".into(), 81))
+        );
+        assert_eq!(
+            parse_item_link("https://github.com/owner/repo/pull/50/"),
+            Some(("owner/repo".into(), 50))
+        );
+        for link in [
+            "https://github.com.evil.test/o/r/pull/1",
+            "https://evil.test/o/r/issues/1",
+            "https://github.com/o/r/pull/1/files",
+            "https://github.com/o/r/issues/nope",
+        ] {
+            assert_eq!(parse_item_link(link), None);
+        }
+    }
+    #[test]
+    fn issue_search_results_keep_labels_state_and_kind_without_pr_fields() {
+        let row = summary_from(
+            &serde_json::json!({"number":81,"title":"Issue","url":"https://github.com/o/r/issues/81","state":"CLOSED","author":{"login":"someone"},"repository":{"nameWithOwner":"o/r"},"labels":{"nodes":[{"name":"needs review","color":"abcdef"}]}}),
+        );
+        assert!(row.is_issue());
+        assert_eq!(row.status, PullRequestStatus::Closed);
+        assert!(!row.can_merge);
+        assert_eq!(row.labels, vec![("needs review".into(), "abcdef".into())]);
+        assert!(row.matches_query("#81"));
+        assert!(row.matches_link("https://github.com/O/R/issues/81/?x=y#issuecomment-1"));
+        assert!(row.matches_query("https://github.com/o/r/issues/81#issuecomment-1"));
+        assert!(!row.matches_link("https://github.com/o/other/issues/81"));
+        assert!(!row.matches_link("https://example.com/o/r/issues/81"));
+    }
     #[test]
     fn comment_permissions_and_links_come_from_github() {
         let node = serde_json::json!({"id":"IC_node", "author":{"login":"someone"}, "body":"body", "url":"https://github.com/a/b/pull/1#issuecomment-2", "viewerCanUpdate":false, "viewerCanDelete":false});

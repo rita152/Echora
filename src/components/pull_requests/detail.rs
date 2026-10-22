@@ -40,239 +40,218 @@ impl PullRequestsView {
             return self.review_tab_strip(cx).into_any_element();
         }
         let theme = self.theme();
-        let has_detail = self.selected.is_some();
         let mut tabs = div()
             .id("pr-detail-tabs")
             .role(gpui::Role::TabList)
-            .aria_label("Pull request view")
-            .flex_1()
-            .min_w(px(0.0))
+            .aria_label("Pull request detail tabs")
+            .overflow_x_scroll()
             .flex()
+            .min_w(px(0.0))
             .items_center()
             .gap(px(2.0));
-        if has_detail {
-            for (tab, label) in [(DetailTab::Summary, "Summary"), (DetailTab::Code, "Code")] {
-                let selected = self.review_tab.is_none() && self.detail_tab == tab;
-                let view = cx.entity();
-                tabs = tabs.child(
-                    Self::toolbar_button(
-                        SharedString::from(format!("pr-detail-tab-{label}")),
-                        theme,
-                        selected,
+        if self.compact() {
+            let back = cx.entity();
+            tabs = tabs.child(
+                self.inbox_button("pr-back-list", "Back to code review list")
+                    .size(px(28.0))
+                    .px(px(0.0))
+                    .child(
+                        icon("pr-chevron-right", theme.text_muted.into())
+                            .size(px(16.0))
+                            .with_transformation(gpui::Transformation::rotate(gpui::radians(
+                                std::f32::consts::PI,
+                            ))),
                     )
-                    .role(gpui::Role::Tab)
-                    .aria_label(SharedString::from(label))
-                    .aria_selected(selected)
                     .on_click(move |_, _, cx| {
-                        view.update(cx, |view, cx| view.set_detail_tab(tab, cx));
-                    })
-                    .child(label),
+                        back.update(cx, |v, cx| {
+                            v.selected = None;
+                            v.detail = None;
+                            v.detail_generation += 1;
+                            cx.notify();
+                        })
+                    }),
+            );
+        }
+        if let Some(item) = &self.selected {
+            for (tab, label) in [
+                (DetailTab::Summary, "Summary"),
+                (DetailTab::Code, "Changes"),
+                (DetailTab::Timeline, "Timeline"),
+            ] {
+                if item.is_issue() && tab == DetailTab::Code {
+                    continue;
+                }
+                let view = cx.entity();
+                let selected = self.detail_tab == tab;
+                tabs = tabs.child(
+                    self.inbox_button(SharedString::from(format!("pr-detail-tab-{label}")), label)
+                        .role(gpui::Role::Tab)
+                        .aria_selected(selected)
+                        .when(selected, |s| s.bg(theme.control).text_color(theme.text))
+                        .on_click(move |_, _, cx| {
+                            view.update(cx, |v, cx| v.set_detail_tab(tab, cx))
+                        })
+                        .child(label)
+                        .when(tab == DetailTab::Code && self.pane_width >= 800.0, |s| {
+                            s.child(Self::diff_stats(
+                                item.additions,
+                                item.deletions,
+                                theme.additions_text,
+                                theme.deletions_text,
+                                11.0,
+                            ))
+                        }),
                 );
             }
         }
-
-        let draft = self
-            .detail
-            .as_ref()
-            .is_some_and(|detail| detail.summary.status == PullRequestStatus::Draft);
-        let status = self.selected.as_ref().map(|pr| pr.status);
-        let view = cx.entity();
-        let mut actions = div().flex_none().flex().items_center().gap(px(4.0));
-        if has_detail {
-            let browser_view = view.clone();
-            let browser = Self::toolbar_button("pr-open-browser", theme, false)
-                .w(px(28.0))
-                .px(px(0.0))
-                .justify_center()
-                .aria_label("Open in browser")
-                .on_click(move |_, _, cx| {
-                    browser_view.update(cx, |view, cx| view.open_in_browser(cx));
-                })
-                .child(icon("pr-open-browser", theme.text.into()).size(px(16.0)));
-            actions = actions.child(self.with_tooltip(
-                browser,
-                "pr-open-browser",
-                "Open in browser",
-                TooltipPlacement::Below,
-                cx,
-            ));
-            let chat_view = view.clone();
-            let chat_label = if self.chat_thread.is_some() {
-                "Open chat"
-            } else {
-                "Chat"
-            };
-            actions = actions.child(
-                Self::toolbar_button("pr-chat", theme, true)
-                    .aria_label(chat_label)
+        let mut actions = div().flex_none().flex().items_center().gap(px(6.0));
+        if let Some(item) = &self.selected {
+            let pinned = self.pinned_items.contains(&item.url);
+            for (id, label, glyph) in [
+                (
+                    "pr-pin-detail",
+                    format!(
+                        "{} {} #{}",
+                        if pinned { "Unpin" } else { "Pin" },
+                        if item.is_issue() {
+                            "issue"
+                        } else {
+                            "pull request"
+                        },
+                        item.number
+                    ),
+                    if pinned {
+                        "review-pin-filled"
+                    } else {
+                        "review-pin"
+                    },
+                ),
+                ("pr-copy-link", "Copy link".into(), "review-link"),
+                (
+                    "pr-open-browser",
+                    "Open on GitHub".into(),
+                    "review-open-browser",
+                ),
+            ] {
+                let view = cx.entity();
+                let row = item.clone();
+                let button = self
+                    .inbox_button(id, SharedString::from(label.clone()))
+                    .size(px(28.0))
+                    .px(px(0.0))
+                    .child(icon(glyph, theme.text_muted.into()).size(px(16.0)))
                     .on_click(move |_, _, cx| {
-                        chat_view.update(cx, |view, cx| view.open_chat(cx));
-                    })
-                    .child(chat_label),
-            );
-            // Merging only exists for open pull requests; a draft keeps the
-            // button but disables it.
-            if matches!(
-                status,
-                Some(PullRequestStatus::Open | PullRequestStatus::Draft)
-            ) {
-                let merge_view = view.clone();
-                let enabled = !draft && self.detail.is_some() && !self.mutation_pending;
+                        view.update(cx, |v, cx| match id {
+                            "pr-pin-detail" => v.toggle_pin(&row, cx),
+                            "pr-copy-link" => {
+                                cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                    row.url.clone(),
+                                ));
+                                v.show_notice("Link copied".into(), cx);
+                            }
+                            _ => v.open_in_browser(cx),
+                        })
+                    });
+                actions = actions.child(self.with_tooltip(
+                    button,
+                    id,
+                    label,
+                    TooltipPlacement::Below,
+                    cx,
+                ));
+            }
+            if !item.is_issue()
+                && matches!(
+                    item.status,
+                    PullRequestStatus::Open | PullRequestStatus::Draft
+                )
+            {
+                let view = cx.entity();
+                let draft = item.status == PullRequestStatus::Draft;
+                let enabled = self.detail.as_ref().is_some_and(|d| d.mergeable)
+                    && !self.mutation_pending
+                    && !draft;
+                let label = if draft { "Ready for review" } else { "Merge" };
                 actions = actions.child(
-                    div()
-                        .id("pr-merge")
-                        .h(px(28.0))
-                        .px(px(9.0))
-                        .flex()
-                        .items_center()
-                        .gap(px(4.0))
-                        .rounded(px(12.5))
-                        .text_size(px(crate::typography::ui_size(13.0)))
-                        .line_height(px(18.0))
+                    self.inbox_button("pr-merge", label)
                         .bg(theme.inverted_surface)
                         .text_color(theme.inverted_text)
-                        .when(enabled, |button| {
-                            button.on_click(move |_, _, cx| {
-                                merge_view.update(cx, |view, cx| view.merge(cx));
+                        .aria_disabled(!enabled && !draft)
+                        .when(!enabled && !draft, |s| s.opacity(0.5))
+                        .on_click(move |_, _, cx| {
+                            view.update(cx, |v, cx| {
+                                if draft {
+                                    v.set_status(PullRequestStatus::Open, cx);
+                                } else if enabled {
+                                    v.merge(cx);
+                                }
                             })
                         })
-                        .when(!enabled, |button| button.opacity(0.5))
-                        .role(gpui::Role::Button)
-                        .aria_label(if self.mutation_pending {
-                            "Saving to GitHub"
-                        } else if self.detail.is_none() {
-                            "Merge unavailable: details are loading"
-                        } else if draft {
-                            "Merge unavailable: Mark as \"Ready for review\" to merge"
-                        } else {
-                            "Merge"
-                        })
-                        .child(icon("pr-merge", theme.inverted_text.into()).size(px(16.0)))
-                        .child("Merge"),
+                        .child(icon("pr-merge", theme.inverted_text.into()).size(px(14.0)))
+                        .when(self.pane_width >= 700.0, |s| s.child(label)),
                 );
             }
-            let fullscreen_view = view.clone();
-            let fullscreen = self.fullscreen;
-            actions = actions.child(
-                self.fullscreen_button(
-                    Self::toolbar_button("pr-fullscreen", theme, false)
-                        .w(px(28.0))
-                        .px(px(0.0))
-                        .justify_center()
-                        .aria_label(if fullscreen {
-                            "Exit full screen"
-                        } else {
-                            "Enter full screen"
-                        })
-                        .on_click(move |_, _, cx| {
-                            fullscreen_view.update(cx, |view, cx| view.toggle_fullscreen(cx));
-                        })
-                        .child(
-                            icon(
-                                if fullscreen {
-                                    "pr-exit-fullscreen"
-                                } else {
-                                    "pr-fullscreen"
-                                },
-                                theme.text_muted.into(),
-                            )
-                            .size(px(16.0)),
-                        ),
-                    cx,
-                ),
-            );
-        }
-
-        // `grid h-toolbar grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-3`:
-        // a detail panel 900px or wider (full screen, say) centers the tabs
-        // between the state glyph with the truncated title and the actions.
-        if has_detail && !self.compact() && self.pane_width >= DETAIL_WIDE_HEADER {
-            let title = self
-                .detail
-                .as_ref()
-                .map(|detail| detail.summary.title.clone())
-                .or_else(|| self.selected.as_ref().map(|pr| pr.title.clone()))
-                .unwrap_or_default();
-            return div()
-                .flex_none()
-                .h(px(TOOLBAR_HEIGHT))
-                .px(px(16.0))
-                .flex()
-                .items_center()
-                .gap(px(12.0))
+            let send = cx.entity();
+            let more = cx.entity();
+            actions = actions
                 .child(
-                    div()
-                        .flex_1()
-                        .min_w(px(0.0))
-                        .flex()
-                        .items_center()
+                    self.inbox_button("pr-chat", "Send to agent")
+                        .text_size(px(13.0))
+                        .font_weight(gpui::FontWeight::MEDIUM)
                         .gap(px(8.0))
-                        .children(self.titlebar_spacer())
-                        .when_some(status, |left, status| {
-                            left.child(Self::state_glyph(status, theme, 18.0))
-                        })
-                        .child(
-                            div()
-                                .min_w(px(0.0))
-                                .max_w(px(200.0))
-                                .truncate()
-                                .text_size(px(crate::typography::ui_size(13.0)))
-                                .line_height(px(crate::typography::ui_leading(13.0, 18.5714)))
-                                .text_color(theme.text)
-                                .child(title),
-                        ),
-                )
-                .child(tabs.flex_none())
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w(px(0.0))
-                        .flex()
-                        .justify_end()
-                        .child(actions),
-                )
-                .into_any_element();
-        }
-        // `grid h-toolbar px-toolbar`: at this panel width the state glyph,
-        // the tab list, and the actions sit in one row 4px apart.
-        div()
-            .flex_none()
-            .h(px(TOOLBAR_HEIGHT))
-            .px(px(16.0))
-            .flex()
-            .items_center()
-            .gap(px(4.0))
-            // The leading column keeps its own `gap-2` after the spacer.
-            .children(self.titlebar_spacer().map(|spacer| spacer.mr(px(4.0))))
-            .when_some(status.filter(|_| has_detail), |header, status| {
-                header.child(Self::state_glyph(status, theme, 18.0))
-            })
-            .when(self.compact(), |header| {
-                header.child(
-                    Self::toolbar_button("pr-back-list", theme, false)
-                        .aria_label("Back to pull requests")
-                        .child("Back")
-                        .on_click({
-                            let view = cx.entity();
-                            move |_, _, cx| {
-                                view.update(cx, |view, cx| {
-                                    if let Some(pr) = view.selected.clone() {
-                                        view.select(pr, cx);
-                                    }
-                                });
-                            }
+                        .border(px(1.0))
+                        .border_color(theme.border)
+                        .aria_disabled(self.detail.is_none())
+                        .when(self.detail.is_none(), |s| s.opacity(0.5))
+                        .child(icon("review-send", theme.text.into()).size(px(16.0)))
+                        .when(self.pane_width >= 736.0, |s| s.child("Send to agent"))
+                        .on_click(move |_, _, cx| {
+                            send.update(cx, |v, cx| {
+                                if v.detail.is_some() {
+                                    v.open_chat(cx);
+                                }
+                            })
                         }),
                 )
-            })
-            .child(tabs)
-            .child(actions)
+                .child(
+                    self.with_tooltip(
+                        self.inbox_button("pr-detail-more", "More actions")
+                            .relative()
+                            .child(self.control_anchor("pr-detail-more"))
+                            .w(px(30.0))
+                            .px(px(0.0))
+                            .child(icon("review-more", theme.text_muted.into()).size(px(16.0)))
+                            .on_click(move |_, _, cx| {
+                                more.update(cx, |v, cx| {
+                                    v.detail_actions_open = !v.detail_actions_open;
+                                    cx.notify();
+                                })
+                            }),
+                        "pr-detail-more",
+                        "More actions",
+                        TooltipPlacement::Below,
+                        cx,
+                    ),
+                );
+        }
+        div()
+            .flex_none()
+            .pt(px(44.0))
+            .child(
+                div()
+                    .h(px(64.0))
+                    .px(px(24.0))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .children(self.titlebar_spacer())
+                    .child(tabs)
+                    .child(div().flex_1())
+                    .child(actions),
+            )
             .into_any_element()
     }
 
-    /// A review opens as an app-shell task tab: the 46px strip (`ps-2 pe-1.5`,
-    /// 6px gaps) holds its 240px tab (`rounded-lg`, 8% fill, 0.5px border)
-    /// with the review glyph, the title, and the close button, then the full
-    /// screen toggle. The pull request tabs and actions give way to it.
     fn review_tab_strip(&self, cx: &mut gpui::Context<Self>) -> impl IntoElement {
         let theme = self.theme();
         let view = cx.entity();
@@ -482,7 +461,7 @@ impl PullRequestsView {
                 .justify_center()
                 .text_size(px(crate::typography::ui_size(14.0)))
                 .text_color(theme.text)
-                .child("Select pull request to view")
+                .child("Select a pull request or issue")
                 .into_any_element();
         }
         if self.detail_loading {
@@ -556,9 +535,11 @@ impl PullRequestsView {
             .flex()
             .flex_col()
             .gap(px(24.0))
-            .child(self.title_block(cx))
-            .child(self.meta_rows(cx));
+            .child(self.title_block(cx));
 
+        if self.detail_tab == DetailTab::Timeline {
+            column = column.child(self.activity_section(cx));
+        }
         let description_view = cx.entity();
         let mut description = div().flex().flex_col().gap(px(16.0)).child(
             Self::section_summary(
@@ -599,9 +580,13 @@ impl PullRequestsView {
                 div().px(px(8.0)).child(markdown)
             });
         }
-        column = column.child(description);
-        column = column.child(self.checks_section(cx));
-        column = column.child(self.activity_section(cx));
+        if self.detail_tab != DetailTab::Timeline {
+            column = column.child(description);
+            if !detail.summary.is_issue() {
+                column = column.child(self.checks_section(cx));
+            }
+            column = column.child(self.activity_section(cx));
+        }
         column = column.child(div().px(px(8.0)).child(self.comment_composer(cx)));
         // The reference scrolls the whole tab body so long descriptions reach
         // the Checks / Activity / commits sections.
@@ -620,7 +605,26 @@ impl PullRequestsView {
                     .pl(px(PANE_PADDING))
                     .pr(px(PANE_PADDING + self.scrollbar_gutter()))
                     .pb(px(PANE_PADDING))
-                    .child(column),
+                    .child(
+                        div()
+                            .w_full()
+                            .flex()
+                            .when(self.pane_width < 760.0, |s| s.flex_col())
+                            .items_start()
+                            .gap(px(24.0))
+                            .child(div().flex_1().min_w(px(0.0)).child(column))
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .when(self.pane_width >= 760.0, |s| s.w(px(216.0)))
+                                    .when(self.pane_width < 760.0, |s| s.w_full())
+                                    .pt(px(16.0))
+                                    .border_l(px(if self.pane_width >= 760.0 { 1.0 } else { 0.0 }))
+                                    .border_color(theme.border)
+                                    .pl(px(16.0))
+                                    .child(self.meta_rows(cx)),
+                            ),
+                    ),
             )
             .into_any_element()
     }
@@ -688,6 +692,21 @@ impl PullRequestsView {
                         .gap(px(6.0))
                         .child(
                             div()
+                                .flex()
+                                .items_center()
+                                .gap(px(8.0))
+                                .text_size(px(crate::typography::ui_size(12.0)))
+                                .line_height(px(18.0))
+                                .text_color(theme.text_muted)
+                                .child(Self::state_glyph(detail.summary.status, theme, 14.0))
+                                .child(detail.summary.status.label())
+                                .child(format!(
+                                    "{} #{}",
+                                    detail.summary.repository, detail.summary.number
+                                )),
+                        )
+                        .child(
+                            div()
                                 .text_size(px(crate::typography::ui_size(24.0)))
                                 .line_height(px(crate::typography::ui_leading(24.0, 28.8)))
                                 .font_weight(gpui::FontWeight::MEDIUM)
@@ -739,63 +758,96 @@ impl PullRequestsView {
             return div();
         };
         let editable = self.can_edit();
-        let mut list = div().flex().flex_col().px(px(8.0)).pb(px(8.0));
+        let mut list = div()
+            .id("pr-information-group")
+            .role(gpui::Role::Group)
+            .aria_label("Details")
+            .flex()
+            .flex_col()
+            .gap(px(16.0))
+            .pb(px(8.0));
+        let mut assignees = div().flex().flex_col().gap(px(6.0));
+        for user in &detail.assignees {
+            assignees = assignees.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0))
+                    .child(self.avatar(user.avatar_url.as_deref(), 18.0))
+                    .child(user.login.clone()),
+            );
+        }
+        if detail.assignees.is_empty() {
+            assignees = assignees.child("Unassigned");
+        }
+        list = list.child(self.meta_row(
+            "Assignees",
+            Self::meta_label_icon("pr-meta-reviewers", theme),
+            theme,
+            assignees,
+        ));
+        let mut labels = div().flex().flex_wrap().gap(px(4.0));
+        for (name, color) in &detail.labels {
+            let rgb = u32::from_str_radix(color, 16).unwrap_or(0x808080);
+            labels = labels.child(
+                div()
+                    .px(px(7.0))
+                    .py(px(2.0))
+                    .rounded_full()
+                    .bg(gpui::rgba((rgb << 8) | 0x22))
+                    .text_color(theme.text)
+                    .child(name.clone()),
+            );
+        }
+        if detail.labels.is_empty() {
+            labels = labels.child("None");
+        }
+        list = list.child(self.meta_row(
+            "Labels",
+            Self::meta_label_icon("pr-menu-status", theme),
+            theme,
+            labels,
+        ));
 
         let (additions, deletions) = (detail.summary.additions, detail.summary.deletions);
+        let changes = cx.entity();
         let branch = div()
             .min_w(px(0.0))
+            .w_full()
             .flex()
-            .items_center()
+            .flex_col()
             .gap(px(8.0))
             .child(
                 div()
-                    .min_w(px(0.0))
-                    .flex()
-                    .items_center()
-                    .gap(px(8.0))
-                    .child(
-                        div()
-                            .min_w(px(0.0))
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_ellipsis()
-                            .child(detail.summary.head_branch.clone()),
-                    )
-                    .child(
-                        icon("pr-chevron-right", theme.text_muted.into())
-                            .flex_none()
-                            .size(px(14.0)),
-                    )
-                    .child(
-                        div()
-                            .min_w(px(0.0))
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_ellipsis()
-                            .child(detail.summary.base_branch.clone()),
-                    ),
+                    .id("pr-branch-names")
+                    .w_full()
+                    .overflow_x_scroll()
+                    .text_size(px(crate::typography::ui_size(12.0)))
+                    .child(format!(
+                        "{} → {}",
+                        detail.summary.head_branch, detail.summary.base_branch
+                    )),
             )
-            .child({
-                let view = cx.entity();
+            .child(
                 Self::toolbar_button("pr-review-changes", theme, false)
                     .aria_label("Review pull request changes")
-                    .on_click(move |_, _, cx| {
-                        view.update(cx, |view, cx| view.open_review_tab(cx));
-                    })
+                    .on_click(move |_, _, cx| changes.update(cx, |v, cx| v.open_review_tab(cx)))
                     .child(Self::diff_stats(
                         additions,
                         deletions,
                         theme.additions_text,
                         theme.deletions_text,
                         13.0,
-                    ))
-            });
-        list = list.child(self.meta_row(
-            "Branch",
-            Self::meta_label_icon("pr-meta-branch", theme),
-            theme,
-            branch,
-        ));
+                    )),
+            );
+        if !detail.summary.is_issue() {
+            list = list.child(self.meta_row(
+                "Branch",
+                Self::meta_label_icon("pr-meta-branch", theme),
+                theme,
+                branch,
+            ));
+        }
 
         let view = cx.entity();
         let mut reviewers = div()
@@ -843,12 +895,14 @@ impl PullRequestsView {
                     ),
             );
         }
-        list = list.child(self.meta_row(
-            "Reviewers",
-            Self::meta_label_icon("pr-meta-reviewers", theme),
-            theme,
-            reviewers,
-        ));
+        if !detail.summary.is_issue() {
+            list = list.child(self.meta_row(
+                "Reviewers",
+                Self::meta_label_icon("pr-meta-reviewers", theme),
+                theme,
+                reviewers,
+            ));
+        }
 
         let count = detail.comment_count();
         let comments = div().child(match count {
@@ -880,12 +934,14 @@ impl PullRequestsView {
         } else {
             "Successful".to_string()
         });
-        list = list.child(self.meta_row(
-            "Checks",
-            Self::meta_label_icon("pr-meta-checks", theme),
-            theme,
-            checks,
-        ));
+        if !detail.summary.is_issue() {
+            list = list.child(self.meta_row(
+                "Checks",
+                Self::meta_label_icon("pr-meta-checks", theme),
+                theme,
+                checks,
+            ));
+        }
 
         let status = detail.summary.status;
         let status_menu_view = cx.entity();
@@ -912,7 +968,7 @@ impl PullRequestsView {
             theme,
             status_value,
         ));
-        list
+        div().child(list)
     }
 
     fn meta_label_icon(name: &'static str, theme: PrTheme) -> gpui::AnyElement {
@@ -931,15 +987,15 @@ impl PullRequestsView {
     ) -> Div {
         div()
             .min_h(px(30.0))
-            .py(px(5.0))
             .flex()
-            .items_center()
-            .gap(px(12.0))
+            .flex_col()
+            .gap(px(6.0))
             .text_size(px(crate::typography::ui_size(14.0)))
             .line_height(px(crate::typography::ui_leading(14.0, 20.0)))
             .child(
                 div()
-                    .w(px(120.0))
+                    .w_full()
+                    .text_size(px(crate::typography::ui_size(12.0)))
                     .flex_none()
                     .flex()
                     .items_center()

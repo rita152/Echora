@@ -128,7 +128,13 @@ impl PullRequestsView {
         self.mutate(
             summary,
             "Status updated",
-            move |client, pr| client.set_status(&pr.repository, pr.number, current, status),
+            move |client, pr| {
+                if pr.is_issue() {
+                    client.set_issue_status(&pr.repository, pr.number, status)
+                } else {
+                    client.set_status(&pr.repository, pr.number, current, status)
+                }
+            },
             |_, _| {},
             cx,
         );
@@ -138,7 +144,7 @@ impl PullRequestsView {
         let Some(detail) = self.detail.as_ref() else {
             return;
         };
-        if detail.summary.status != PullRequestStatus::Open {
+        if detail.summary.is_issue() || detail.summary.status != PullRequestStatus::Open {
             return;
         }
         let summary = detail.summary.clone();

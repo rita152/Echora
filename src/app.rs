@@ -266,7 +266,8 @@ impl ChatApp {
         #[cfg(not(test))]
         let workspace_receiver = workspace_store.subscribe();
         let settings = cx.new(|cx| SettingsView::new(mode, agent_backend.clone(), cx));
-        let pull_requests = cx.new(|cx| PullRequestsView::new(mode, None, cx));
+        let pull_requests =
+            cx.new(|cx| PullRequestsView::new(mode, std::env::current_dir().ok(), cx));
         let chat_search = cx.new(|cx| {
             ChatSearchView::new(mode, workspace_store.clone(), agent_backend.clone(), cx)
         });
@@ -362,6 +363,14 @@ impl ChatApp {
             &sidebar,
             |this, _, _: &crate::components::sidebar::OpenPullRequests, cx| {
                 this.open_pull_requests(cx);
+            },
+        )
+        .detach();
+        cx.subscribe(
+            &pull_requests,
+            |this, _, event: &crate::components::pull_requests::CodeReviewPinsChanged, _| {
+                this.workspace_store
+                    .set_code_review_pins(event.pins.clone());
             },
         )
         .detach();
@@ -1241,7 +1250,21 @@ impl ChatApp {
             .preferences
             .pull_requests_detail_ratio
             .map(|ratio| ratio.0);
+        let directory = self
+            .conversation_hosts
+            .get(&self.active_conversation)
+            .filter(|host| host.project_id.is_some())
+            .map(|host| host.cwd.clone())
+            .or_else(|| std::env::current_dir().ok());
+        let pins = self
+            .workspace_store
+            .snapshot()
+            .preferences
+            .code_review_pins
+            .clone();
         self.pull_requests.update(cx, |view, cx| {
+            view.set_directory(directory);
+            view.set_pins(pins, cx);
             view.set_mode(self.mode, cx);
             view.set_detail_ratio(ratio, cx);
             view.refresh(cx);

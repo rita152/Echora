@@ -17,24 +17,11 @@ pub const PANE_PADDING: f32 = 20.0;
 /// ends 11px before the pane edge (592.84 → 581.84). Overlay scrollers reserve
 /// nothing (the list's content spans its full 606.77px).
 pub const SCROLLBAR_GUTTER: f32 = 11.0;
-pub const ROW_RADIUS: f32 = 15.0;
-/// The app-shell header toolbar sits 7px inside the list pane on the left and
-/// 8px on the right (241 → 248, 825.84 → 833.84).
-pub const LIST_TOOLBAR_INSET_LEFT: f32 = 7.0;
-pub const LIST_TOOLBAR_INSET_RIGHT: f32 = 8.0;
-/// `pt-panel pb-2` around the 32px search pill.
-pub const LIST_SEARCH_ROW_HEIGHT: f32 = 60.0;
-/// App-shell detail panel sizing (`app-shell:right-panel-width:v3`): the
-/// panel spans `320 + ratio * (max - 320)` where `max = main - 352`.
-/// The detail page column (`--thread-content-max-width`).
+/// The preserved Echora detail content column.
 pub const DETAIL_CONTENT_MAX_WIDTH: f32 = 768.0;
-/// From this detail width the header centers its tabs between the title and
-/// the actions (`@container/app-shell-detail-panel (min-width: 900px)`).
-pub const DETAIL_WIDE_HEADER: f32 = 900.0;
 pub const DETAIL_MIN_WIDTH: f32 = 320.0;
-pub const DETAIL_MAX_INSET: f32 = 352.0;
+pub const DETAIL_MAX_INSET: f32 = 256.0;
 /// Radix menu geometry (`contentWidth="menuNarrow"`, `app-menu-item`).
-pub const MENU_NARROW_WIDTH: f32 = 208.0;
 pub const MENU_SUBMENU_WIDTH: f32 = 180.0;
 pub const MENU_ROW_HEIGHT: f32 = 28.5625;
 pub const MENU_ICON_SIZE: f32 = 16.0;

@@ -37,6 +37,7 @@ fn live(status: PullRequestStatus, head: &str, repository: &str) -> PullRequestL
             can_merge: false,
             has_conflicts: false,
             ci_status: CiStatus::Passing,
+            labels: Vec::new(),
         },
         head_repository: Some(repository.to_owned()),
         merged_at: None,

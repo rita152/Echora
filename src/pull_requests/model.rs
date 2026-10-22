@@ -13,8 +13,6 @@ pub enum ListTab {
 }
 
 impl ListTab {
-    pub const ALL: [Self; 3] = [Self::All, Self::Reviewing, Self::Authored];
-
     pub fn label(self) -> &'static str {
         match self {
             Self::All => "All",
@@ -279,6 +277,20 @@ pub struct PullRequestSummary {
     pub can_merge: bool,
     pub has_conflicts: bool,
     pub ci_status: CiStatus,
+    pub labels: Vec<(String, String)>,
+}
+
+pub(super) fn parse_item_link(text: &str) -> Option<(String, u64)> {
+    let url = url::Url::parse(text.trim()).ok()?;
+    if url.scheme() != "https" || url.host_str()? != "github.com" {
+        return None;
+    }
+    let parts: Vec<_> = url.path_segments()?.filter(|s| !s.is_empty()).collect();
+    if parts.len() != 4 || !matches!(parts[2], "pull" | "issues") {
+        return None;
+    }
+    let number = parts[3].parse().ok()?;
+    Some((format!("{}/{}", parts[0], parts[1]), number))
 }
 
 impl PullRequestSummary {
@@ -304,13 +316,26 @@ impl PullRequestSummary {
         }
     }
 
-    /// Matches the search box: title, repository, and branch names.
+    pub fn is_issue(&self) -> bool {
+        self.url.contains("/issues/")
+    }
+
+    /// A GitHub item identity survives query strings, comment anchors and redirects.
+    pub fn matches_link(&self, text: &str) -> bool {
+        parse_item_link(text).is_some_and(|(repository, number)| {
+            repository.eq_ignore_ascii_case(&self.repository) && number == self.number
+        })
+    }
+
+    /// Matches the search box: title, repository, number, URL, and branch names.
     pub fn matches_query(&self, query: &str) -> bool {
         let query = query.trim().to_lowercase();
         if query.is_empty() {
             return true;
         }
-        self.title.to_lowercase().contains(&query)
+        self.number.to_string() == query.trim_start_matches('#')
+            || self.matches_link(&query)
+            || self.title.to_lowercase().contains(&query)
             || self.repository.to_lowercase().contains(&query)
             || self.head_branch.to_lowercase().contains(&query)
             || self.base_branch.to_lowercase().contains(&query)
@@ -499,6 +524,9 @@ pub struct PullRequestDetail {
     pub viewer: Option<User>,
     pub summary: PullRequestSummary,
     pub body: String,
+    pub assignees: Vec<User>,
+    /// GitHub label name and six-digit RGB color.
+    pub labels: Vec<(String, String)>,
     pub requested_reviewers: Vec<User>,
     pub reviewers: Vec<User>,
     pub comments: Vec<Comment>,
@@ -665,6 +693,7 @@ mod tests {
             can_merge: false,
             has_conflicts: false,
             ci_status: CiStatus::None,
+            labels: Vec::new(),
         }
     }
 

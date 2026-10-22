@@ -63,6 +63,8 @@ pub struct UiPreferences {
     /// `app-shell:right-panel-width:v3`; absent until the separator is dragged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pull_requests_detail_ratio: Option<PanelRatio>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub code_review_pins: BTreeSet<String>,
     /// What a message sent while a turn runs does. Kept locally: the reference
     /// stores its own copy in the Codex config's desktop section, which is the
     /// desktop app's setting, not app-server state this client should write.

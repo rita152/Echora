@@ -8,7 +8,7 @@ use gpui::{Div, SharedString, div, prelude::*, px};
 use super::render::TooltipPlacement;
 use super::{
     DetailTab, PullRequestsView, ReviewScope,
-    theme::{DETAIL_MIN_WIDTH, MENU_SUBMENU_WIDTH},
+    theme::{DETAIL_MAX_INSET, DETAIL_MIN_WIDTH, MENU_SUBMENU_WIDTH},
 };
 use crate::components::icons::icon;
 use crate::git_review::{FileDiff, LineKind};
@@ -149,7 +149,7 @@ impl PullRequestsView {
             f32::from(window.viewport_size().height)
         };
         let detail = super::detail_panel_width(page, height, self.detail_ratio);
-        let compact = page - detail < DETAIL_MIN_WIDTH;
+        let compact = page < DETAIL_MIN_WIDTH + DETAIL_MAX_INSET;
         self.compact_layout = compact;
         self.list_width = if compact {
             if self.selected.is_none() { page } else { 0.0 }
@@ -1789,6 +1789,11 @@ impl PullRequestsView {
             .text_size(px(crate::typography::ui_size(13.0)))
             .text_color(theme.text);
         for status in crate::pull_requests::PullRequestStatus::selectable() {
+            if status == crate::pull_requests::PullRequestStatus::Draft
+                && self.selected.as_ref().is_some_and(|r| r.is_issue())
+            {
+                continue;
+            }
             let disabled = status == current
                 || current == crate::pull_requests::PullRequestStatus::Merged
                 || self.mutation_pending;

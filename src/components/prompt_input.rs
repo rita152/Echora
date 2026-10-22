@@ -39,6 +39,7 @@ pub enum PromptInputKind {
     /// The Pull Requests search field: an 18px box inside the reference's
     /// pill, 14px type on an 18px line, `placeholder:text-tertiary`.
     PullRequestSearch,
+    CodeReviewSearch,
     /// The in-app browser's address field: a 28px box with `ps-2`, 13px type
     /// on an 18px line, and the reference's centred `placeholder:text-tertiary`.
     BrowserAddress,
@@ -161,6 +162,12 @@ impl PromptInput {
         let mut input = Self::new(mode, cx);
         input.kind = PromptInputKind::PullRequestSearch;
         input.placeholder = placeholder.into();
+        input
+    }
+
+    pub fn code_review_search(mode: ThemeMode, cx: &mut Context<Self>) -> Self {
+        let mut input = Self::pull_request_search(mode, "Search or paste a PR link", cx);
+        input.kind = PromptInputKind::CodeReviewSearch;
         input
     }
 
@@ -1029,12 +1036,17 @@ impl PromptInput {
             PromptInputKind::MessageEdit => "message-edit-input",
             PromptInputKind::Composer => "prompt-input",
             PromptInputKind::RenameChat => "rename-chat-input",
-            PromptInputKind::PullRequestSearch => "pull-request-search-input",
+            PromptInputKind::PullRequestSearch | PromptInputKind::CodeReviewSearch => {
+                "pull-request-search-input"
+            }
             PromptInputKind::BrowserAddress => "browser-address-input",
             PromptInputKind::ProjectName => "project-name-input",
         };
         let browser_address = self.kind == PromptInputKind::BrowserAddress;
-        let pull_request_search = self.kind == PromptInputKind::PullRequestSearch;
+        let pull_request_search = matches!(
+            self.kind,
+            PromptInputKind::PullRequestSearch | PromptInputKind::CodeReviewSearch
+        );
         let height = match self.kind {
             PromptInputKind::InlineOther => 28.0,
             PromptInputKind::ChatSearch => 33.0,
@@ -1043,7 +1055,7 @@ impl PromptInput {
             // The dialog's 36px box already carries its own 1px outline; the
             // text is centred in the remaining 34px.
             PromptInputKind::RenameChat => 36.0,
-            PromptInputKind::PullRequestSearch => 18.0,
+            PromptInputKind::PullRequestSearch | PromptInputKind::CodeReviewSearch => 18.0,
             PromptInputKind::BrowserAddress => 28.0,
             PromptInputKind::ProjectName => crate::typography::ui_leading(13.0, 18.5714),
         };
@@ -1053,7 +1065,7 @@ impl PromptInput {
             PromptInputKind::MessageEdit => 0.0,
             PromptInputKind::Composer => 4.0,
             PromptInputKind::RenameChat => 10.0,
-            PromptInputKind::PullRequestSearch => 0.0,
+            PromptInputKind::PullRequestSearch | PromptInputKind::CodeReviewSearch => 0.0,
             PromptInputKind::BrowserAddress => 8.0,
             PromptInputKind::ProjectName => 0.0,
         };
@@ -1062,7 +1074,7 @@ impl PromptInput {
             PromptInputKind::ChatSearch => 6.0,
             PromptInputKind::MessageEdit => 0.0,
             PromptInputKind::Composer => 1.0,
-            PromptInputKind::PullRequestSearch => 0.0,
+            PromptInputKind::PullRequestSearch | PromptInputKind::CodeReviewSearch => 0.0,
             PromptInputKind::BrowserAddress => 5.0,
             PromptInputKind::ProjectName => 0.0,
             // (34 - 18.5714) / 2 measured from the reference's content box.
@@ -1078,6 +1090,8 @@ impl PromptInput {
         };
         let font_size = if inline || browser_address || self.kind == PromptInputKind::ProjectName {
             13.0
+        } else if self.kind == PromptInputKind::CodeReviewSearch {
+            12.0
         } else if pull_request_search {
             14.0
         } else if self.kind == PromptInputKind::RenameChat {
@@ -1191,6 +1205,7 @@ impl Render for PromptInput {
         } else if matches!(
             self.kind,
             PromptInputKind::PullRequestSearch
+                | PromptInputKind::CodeReviewSearch
                 | PromptInputKind::BrowserAddress
                 | PromptInputKind::ProjectName
         ) {

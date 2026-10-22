@@ -87,7 +87,7 @@ impl PullRequestsView {
                 }
                 ActivityItem::Event {
                     kind, actor, age, ..
-                } => Self::event_card(*kind, actor, age, theme),
+                } => Self::event_card(*kind, actor, age, detail.summary.is_issue(), theme),
                 ActivityItem::Comment { id, .. } => match detail.comment(id) {
                     Some(comment) => self.comment_card(comment, None, cx),
                     None => div(),
@@ -125,13 +125,22 @@ impl PullRequestsView {
             .child(glyph)
     }
 
-    fn event_card(kind: ActivityEventKind, actor: &str, age: &str, theme: PrTheme) -> Div {
+    fn event_card(
+        kind: ActivityEventKind,
+        actor: &str,
+        age: &str,
+        issue: bool,
+        theme: PrTheme,
+    ) -> Div {
         let actor = if actor.is_empty() { "Someone" } else { actor };
         let (name, color, label) = match kind {
             ActivityEventKind::Opened => (
                 "pr-status-open",
                 theme.chart_green,
-                format!("{actor} opened this pull request"),
+                format!(
+                    "{actor} opened this {}",
+                    if issue { "issue" } else { "pull request" }
+                ),
             ),
             ActivityEventKind::Merged => (
                 "pr-status-merged",

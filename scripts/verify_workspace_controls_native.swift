@@ -471,6 +471,144 @@ func scrollBranches() {
         precondition(menuRect.intersects(rect(find("topic/long-acceptance-branch-149"))), "Last branch was not reachable by scrolling")
     }
 }
+if option("scenario") == "code-review-capture" {
+    let itemTitle = option("pr-title", "Publish native macOS, Windows and Linux installers")
+    for _ in 0..<600 {
+        if elements().contains(where: { title($0) == itemTitle }) { break }
+        Thread.sleep(forTimeInterval: 0.1)
+    }
+    click(find(itemTitle))
+    for _ in 0..<600 {
+        if elements().contains(where: { title($0) == "Details" }) { break }
+        Thread.sleep(forTimeInterval: 0.1)
+    }
+    _ = find("Details")
+    if let all = elements().first(where: { title($0).hasPrefix("All, ") }) { click(all) }
+    key(53)
+    let window = rect(mainWindow())
+    let point = CGPoint(x: window.midX, y: window.minY + 35)
+    CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)!.post(tap: .cghidEventTap)
+    Thread.sleep(forTimeInterval: 0.3)
+    record("after-pr50")
+    print("Captured code review with no active hover")
+    exit(0)
+}
+if option("scenario") == "code-review-send-to-agent" {
+    click(find("Send to agent"))
+    let input = find("聊天输入框")
+    let draft = value(input, kAXValueAttribute) as? String ?? ""
+    precondition(draft.contains("pull request #50") && draft.contains("https://github.com/rita152/Echora/pull/50"), "Send to agent lost the selected item")
+    record("send-to-agent-draft")
+    click(input); key(0, command: true); key(51)
+    precondition((value(find("聊天输入框"), kAXValueAttribute) as? String ?? "").isEmpty, "Verification draft was not cleared")
+    click(find("Pull requests"))
+    print("Verified Send to agent prefill and cleared the unsent draft")
+    exit(0)
+}
+if ["code-review-pin", "code-review-pin-restored"].contains(option("scenario")) {
+    let restored = option("scenario") == "code-review-pin-restored"
+    let label = restored ? "Unpin pull request #50" : "Pin pull request #50"
+    for _ in 0..<600 {
+        if elements().filter({ title($0) == label }).count == 2 { break }
+        Thread.sleep(forTimeInterval: 0.1)
+    }
+    let pins = elements().filter { title($0) == label }
+    precondition(pins.count == 2, "Header and list did not share the persisted pin state")
+    record(restored ? "pin-restored-after-restart" : "pin-before-restart")
+    click(pins.last!)
+    _ = find(restored ? "Pin pull request #50" : "Unpin pull request #50")
+    record(restored ? "pin-cleaned-up" : "pin-persisted")
+    print("Verified code review pin persistence checkpoint")
+    exit(0)
+}
+if option("scenario") == "code-review" {
+    app.activate(options: [.activateAllWindows])
+    let prTitle=option("pr-title", "Publish native macOS, Windows and Linux installers")
+    func waitUntil(_ reason:String,_ test:()->Bool) {
+        for _ in 0..<600 { if test() { return };Thread.sleep(forTimeInterval:0.1) }
+        record("failure");fatalError(reason)
+    }
+    func has(_ label:String)->Bool { elements().contains {title($0)==label} }
+    func waitLoaded() {
+        // Search is debounced; observe its loading state after the timer fires.
+        Thread.sleep(forTimeInterval:0.6)
+        waitUntil("Inbox did not load") {!has("Loading code review")}
+        Thread.sleep(forTimeInterval:0.2)
+    }
+    func chooseKind(_ prefix:String) {click(elements().first {title($0).hasPrefix(prefix+", ")}!)}
+    func filter(_ label:String) {click(find("Filter"));click(find(label));waitLoaded()}
+    func resize(_ width:CGFloat,_ height:CGFloat) {
+        let window=mainWindow()
+        var size=CGSize(width:width,height:height)
+        precondition(AXUIElementSetAttributeValue(window,kAXSizeAttribute as CFString,AXValueCreate(.cgSize,&size)!) == .success)
+        Thread.sleep(forTimeInterval:0.5)
+    }
+    func hover(_ e:AXUIElement) {
+        let r=rect(e);let event=CGEvent(mouseEventSource:nil,mouseType:.mouseMoved,mouseCursorPosition:CGPoint(x:r.midX,y:r.midY),mouseButton:.left)!
+        event.post(tap:.cghidEventTap);Thread.sleep(forTimeInterval:0.7)
+    }
+    waitLoaded()
+    click(find("Search pull requests and issues"));key(0,command:true);text("repo:rita152/Echora");waitLoaded()
+    waitUntil("Current repository inbox did not load") {has(prTitle)}
+    click(find(prTitle));waitUntil("PR detail not loaded") {has("Details")}
+    record("00-pr-summary")
+    let original=rect(find(prTitle));precondition(abs(original.height-57.25)<2,"List row height differs from reference")
+    let pins=elements().filter {title($0)=="Pin pull request #50"}
+    precondition(pins.count==2,"Expected list and header pin")
+    hover(pins.last!);record("01-pin-hover")
+    click(pins.last!,edge:-1);_ = find("Unpin pull request #50");record("02-pinned")
+    click(elements().last {title($0)=="Unpin pull request #50"}!,edge:1);_ = find("Pin pull request #50")
+    let clipboard=NSPasteboard.general
+    let saved=(clipboard.pasteboardItems ?? []).map { item -> NSPasteboardItem in let copy=NSPasteboardItem();for type in item.types {if let data=item.data(forType:type){copy.setData(data,forType:type)}};return copy }
+    click(find("Copy link"),edge:-1)
+    precondition(clipboard.string(forType:.string)=="https://github.com/rita152/Echora/pull/50","Copy link used the wrong item")
+    clipboard.clearContents();clipboard.writeObjects(saved)
+    record("03-link-copied")
+    click(find("More actions"),edge:1);_ = find("Fix findings");record("04-more-actions");key(53)
+    click(find("Sort: Newest"),edge:-1);click(find("Recently updated"));waitLoaded();record("05-recently-updated")
+    click(find("Sort: Recently updated"),edge:1);click(find("Newest"));waitLoaded()
+    click(find("Search pull requests and issues"));text("no-such-echora-code-review-item-81");waitLoaded()
+    waitUntil("Search did not reach empty state") {has("Clear filters") && !has(prTitle)}
+    record("06-empty-search");click(find("Clear search"));waitLoaded()
+    waitUntil("Search did not restore the PR list") {has(prTitle)}
+    click(find("Changes"));waitUntil("Diff did not load") {has("Review options") || has("All changes") || has("Show file tree")};record("07-changes")
+    click(find("Timeline"));record("08-timeline")
+    click(find("Summary"));record("09-summary-restored")
+    let split=find("Resize workspace panes");let sr=rect(split)
+    let from=CGPoint(x:sr.midX,y:sr.midY),to=CGPoint(x:sr.midX+70,y:sr.midY)
+    for (type,p) in [(CGEventType.mouseMoved,from),(.leftMouseDown,from),(.leftMouseDragged,to),(.leftMouseUp,to)] {
+        CGEvent(mouseEventSource:nil,mouseType:type,mouseCursorPosition:p,mouseButton:.left)!.post(tap:.cghidEventTap);Thread.sleep(forTimeInterval:0.15)
+    }
+    precondition(abs(rect(find("Resize workspace panes")).midX-sr.midX)>40,"Separator drag did not resize the list")
+    record("10-separator-dragged")
+    resize(1100,800);record("11-narrow-window");resize(1582,1036)
+    filter("Open");chooseKind("Issues");waitLoaded()
+    let issue=elements().first {title($0).hasPrefix("Issue / PR 页面：") }!
+    click(issue);waitUntil("Issue detail not loaded") {has("Details")}
+    precondition(!has("Changes") && !has("Merge") && !has("Review pull request changes"),"Issue exposed a PR-only action")
+    record("12-issue-summary")
+    click(find("Timeline"));record("13-issue-timeline")
+    click(find("Search pull requests and issues"));key(0,command:true);text("https://github.com/rita152/Echora/pull/50?diff=split#issuecomment-1")
+    waitUntil("Pasted PR link did not bypass issue/open filters") {has("Changes") && has("Details")}
+    record("14-pasted-pr-link")
+    click(find("More code review actions"));click(find("Refresh"));waitLoaded();record("15-refresh")
+    click(find("Search pull requests and issues"));key(0,command:true);text("repo:rita152/Echora");waitLoaded()
+    filter("Merged");chooseKind("All");waitLoaded()
+    waitUntil("Merged repository list did not restore") {has("Show more")}
+    click(find("Show more"));record("16-show-more");_ = find("Show less")
+    func wheel(_ point:CGPoint,_ delta:Int32) {
+        let event=CGEvent(scrollWheelEvent2Source:CGEventSource(stateID:.hidSystemState),units:.pixel,wheelCount:1,wheel1:delta,wheel2:0,wheel3:0)!
+        event.location=point;event.timestamp=DispatchTime.now().uptimeNanoseconds;event.post(tap:.cgSessionEventTap);Thread.sleep(forTimeInterval:0.4)
+    }
+    let listPoint=CGPoint(x:original.midX,y:original.midY+250)
+    wheel(listPoint,-700);record("17-list-scrolled");wheel(listPoint,1400)
+    let separator=rect(find("Resize workspace panes"))
+    wheel(CGPoint(x:separator.midX+150,y:separator.midY),-700);record("18-detail-scrolled");wheel(CGPoint(x:separator.midX+150,y:separator.midY),2000)
+    wheel(listPoint,-900)
+    click(find("Show less"));record("19-show-less")
+    print("Verified code review native controls; \(report.count) captures in \(output.path)")
+    exit(0)
+}
 if option("scenario") == "scroll" {
     scrollBranches()
     exit(0)
