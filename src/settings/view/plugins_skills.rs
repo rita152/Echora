@@ -64,10 +64,8 @@ impl SettingsView {
     /// client.  It is installed only for explicit screenshot fixtures; live
     /// settings continue to use `skills/list` through `refresh_skills`.
     pub(super) fn install_skills_capture_fixture(&mut self) {
-        // The management page uses the monochrome 20px cube glyph, not the
-        // colored profile-plugin artwork used by the account menu.
         // GPUI's asset source is rooted at `assets/`, so view paths omit that
-        // directory prefix.
+        // directory prefix. The fixture supplies an explicit bundled icon.
         let cube = PathBuf::from("icons/skill-cube.svg");
         let skills = vec![
             AgentSkill {
@@ -512,34 +510,37 @@ impl SettingsView {
             .child(message.to_owned())
     }
 
-    fn skill_icon(&self, skill: &AgentSkill, theme: &Theme) -> impl IntoElement {
-        let icon = skill.icon_path().cloned();
-        let icon_color = if theme.surface == gpui::rgba(0x181818ff) {
-            gpui::rgba(0xffffffa6)
-        } else {
-            gpui::rgba(0x1a1c1fa6)
+    fn skill_icon(&self, skill: &AgentSkill, theme: &Theme) -> gpui::AnyElement {
+        use gpui::{ObjectFit, StyledImage};
+        let color: gpui::Hsla = theme.settings_description.into();
+        let review = skill.name.to_lowercase().contains("review");
+        let dark = self.mode == crate::theme::ThemeMode::Dark;
+        let background = theme.surface;
+        let fallback = move || skill_artwork_fallback(review, dark, background.into(), color);
+        let Some(source) = skill_artwork_source(skill) else {
+            return fallback();
         };
+        // The reference list treats custom SVG icons as current-color masks.
+        // Raster artwork must use the image renderer rather than an SVG mask.
+        if source.ends_with(".svg") && !source.contains("://") {
+            return div()
+                .size(px(40.0))
+                .flex_none()
+                .child(gpui::svg().path(source).size(px(40.0)).text_color(color))
+                .into_any_element();
+        }
         div()
-            .relative()
-            .left(px(-1.0))
             .size(px(40.0))
             .flex_none()
-            .rounded_full()
-            .border_1()
-            .border_color(theme.border)
-            .flex()
-            .items_center()
-            .justify_center()
+            .rounded(px(4.0))
             .overflow_hidden()
-            .text_color(icon_color)
-            .when_some(icon, |row, path| {
-                row.child(
-                    gpui::svg()
-                        .path(path.to_string_lossy().to_string())
-                        .size(px(18.0))
-                        .text_color(icon_color),
-                )
-            })
+            .child(
+                gpui::img(source)
+                    .size(px(40.0))
+                    .object_fit(ObjectFit::Cover)
+                    .with_fallback(fallback),
+            )
+            .into_any_element()
     }
 
     fn scope_tag(&self, scope: AgentSkillScope, theme: &Theme) -> impl IntoElement {
@@ -620,4 +621,59 @@ impl SettingsView {
                     .border_color(gpui::rgba(0x00000012)),
             )
     }
+}
+
+/// The 40px directory thumbnails prefer large artwork; paths are relative to SKILL.md
+/// when an adapter has not already resolved them. URL fields are valid sources.
+fn skill_artwork_source(skill: &AgentSkill) -> Option<String> {
+    let interface = skill.interface.as_ref()?;
+    for (path, url) in [
+        (&interface.icon_large, &interface.icon_large_url),
+        (&interface.icon_small, &interface.icon_small_url),
+    ] {
+        if let Some(path) = path.as_ref().filter(|path| !path.as_os_str().is_empty()) {
+            let path = if path.is_absolute() || path.starts_with("icons") {
+                path.clone()
+            } else {
+                skill.path.parent()?.join(path)
+            };
+            return Some(path.to_string_lossy().into_owned());
+        }
+        if let Some(url) = url.as_ref().filter(|url| !url.trim().is_empty()) {
+            return Some(url.clone());
+        }
+    }
+    None
+}
+
+fn skill_artwork_fallback(
+    review: bool,
+    dark: bool,
+    background: gpui::Hsla,
+    color: gpui::Hsla,
+) -> gpui::AnyElement {
+    div()
+        .size(px(40.0))
+        .flex_none()
+        .rounded(px(4.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .bg(background)
+        .child(if review {
+            gpui::svg()
+                .path("icons/skill-review.svg")
+                .size(px(20.0))
+                .text_color(color)
+                .into_any_element()
+        } else {
+            gpui::img(if dark {
+                "icons/skill-fallback-dark.svg"
+            } else {
+                "icons/skill-fallback-light.svg"
+            })
+            .size(px(24.0))
+            .into_any_element()
+        })
+        .into_any_element()
 }
