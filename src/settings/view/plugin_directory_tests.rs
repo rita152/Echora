@@ -179,6 +179,58 @@ impl Fixture {
 }
 
 #[test]
+fn app_managed_runtimes_are_hidden_in_all_installed_and_search_views() {
+    let mut f = Fixture::new();
+    let bundled = |name: &str| {
+        let mut p = plugin(name, true);
+        p.id = format!("{name}@openai-bundled");
+        p
+    };
+    let plugins = vec![
+        bundled("codex-app-tools"),
+        bundled("unified-computer-use"),
+        bundled("browser"),
+        bundled("chrome"),
+        bundled("computer-use"),
+        // A same-named third-party plugin must remain visible.
+        plugin("codex-app-tools", true),
+    ];
+    f.reply(0, plugins.clone(), plugins);
+    f.with(|s, _| {
+        for scope in [Scope::All, Scope::Installed] {
+            s.directory_scope = scope;
+            let rows = s.directory_rows();
+            assert_eq!(rows.len(), 4);
+            assert!(
+                rows.iter()
+                    .any(|r| r.plugin.id == "codex-app-tools@test-market")
+            );
+            assert!(
+                !rows
+                    .iter()
+                    .any(|r| r.plugin.id == "codex-app-tools@openai-bundled")
+            );
+            s.plugins_catalog
+                .directory
+                .set_search_term("codex-app-tools".into());
+            assert_eq!(s.directory_rows().len(), 1);
+            s.plugins_catalog.directory.set_search_term(String::new());
+        }
+        // Filtering is presentation only; it does not uninstall or remove data.
+        assert_eq!(
+            s.plugins_catalog
+                .directory
+                .installed
+                .as_ref()
+                .unwrap()
+                .plugins()
+                .count(),
+            6
+        );
+    });
+}
+
+#[test]
 fn all_sources_are_isolated_and_switching_to_installed_discards_late_catalogs() {
     let mut f = Fixture::new();
     {

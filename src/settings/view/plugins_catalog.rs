@@ -3,7 +3,7 @@
 //! failure text. The client renders an empty, loading or failed state exactly
 //! as the backend reported it and never substitutes sample entries.
 
-use gpui::{Context, IntoElement, div, prelude::*, px, svg};
+use gpui::{Context, IntoElement, div, prelude::*, px};
 
 use super::{PluginSegment, SettingsView};
 use crate::{
@@ -12,8 +12,24 @@ use crate::{
     theme::{Theme, ThemeMode},
 };
 
-/// A catalog entry the server reported without artwork this client can draw.
-const PLUGIN_ICON_FALLBACK: &str = "icons/settings-plugin-broken.svg";
+/// Match the reference's stable selection from its 25 colored default logos.
+fn plugin_fallback_icon(plugin: &AgentPluginSummary) -> String {
+    let id = plugin
+        .remote_plugin_id
+        .as_deref()
+        .or_else(|| {
+            plugin
+                .share_context
+                .as_ref()
+                .map(|s| s.remote_plugin_id.as_str())
+        })
+        .unwrap_or(&plugin.id);
+    let id = id.strip_prefix("plugins~").unwrap_or(id);
+    let index = id
+        .encode_utf16()
+        .fold(0usize, |hash, c| (hash * 31 + c as usize) % 25);
+    format!("icons/plugin-fallback-{index:02}.svg")
+}
 
 /// One state-changing action waiting for the user's confirmation. The reference
 /// confirms installs, uninstalls and marketplace changes before they run.
@@ -166,12 +182,7 @@ impl SettingsView {
     /// Total plugin count for the segment badge: what the catalog actually
     /// returned, never a reference constant.
     pub(super) fn live_plugin_count(&self) -> usize {
-        self.plugins_catalog
-            .directory
-            .catalog
-            .as_ref()
-            .map(|catalog| catalog.plugins().count())
-            .unwrap_or(0)
+        self.plugins_catalog.directory.catalog_rows().len()
     }
 
     /// App count for the segment badge: the directory page the server answered
@@ -280,38 +291,27 @@ impl SettingsView {
     pub(super) fn plugin_icon(
         &self,
         plugin: &AgentPluginSummary,
-        theme: &Theme,
-        index: usize,
+        _theme: &Theme,
+        _index: usize,
     ) -> gpui::AnyElement {
+        use gpui::StyledImage;
         let dark = self.mode == ThemeMode::Dark;
-        match plugin
+        let fallback = plugin_fallback_icon(plugin);
+        let source = plugin
             .interface
             .as_ref()
             .and_then(|interface| interface.logo_source(dark))
-        {
-            Some(source) => div()
-                .size(px(40.0))
-                .child(gpui::img(source.to_owned()).size(px(40.0)))
-                .into_any_element(),
-            // The server shipped no artwork this client can load. The row keeps
-            // the same footprint with the placeholder the reference uses for a
-            // plugin whose assets are missing.
-            None => div()
-                .id(("plugin-icon-fallback", index))
-                .size(px(40.0))
-                .border_1()
-                .border_color(theme.border)
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(
-                    svg()
-                        .path(PLUGIN_ICON_FALLBACK)
-                        .size(px(16.0))
-                        .text_color(theme.text_tertiary),
-                )
-                .into_any_element(),
-        }
+            .unwrap_or(&fallback)
+            .to_owned();
+        div()
+            .size(px(40.0))
+            .flex_none()
+            .child(gpui::img(source).size(px(40.0)).with_fallback(move || {
+                gpui::img(fallback.clone())
+                    .size(px(40.0))
+                    .into_any_element()
+            }))
+            .into_any_element()
     }
 
     /// A switch that performs an operation instead of only toggling a local
@@ -364,12 +364,13 @@ impl SettingsView {
                 theme,
             ));
         }
-        if let Some(catalog) = &directory.catalog {
+        if directory.catalog.is_some() {
+            let rows = directory.catalog_rows();
             list = list.child(self.catalog_state_card(
                 &crate::i18n::format!(
                     "已安装 {} / 共 {} 个插件" => "{} installed / {} plugins total",
-                    catalog.installed_plugin_count(),
-                    catalog.plugins().count()
+                    rows.iter().filter(|row| row.plugin.installed).count(),
+                    rows.len()
                 ),
                 None,
                 theme,

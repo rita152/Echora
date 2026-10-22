@@ -321,15 +321,19 @@ impl PluginsDirectory {
         self.installed
             .as_ref()
             .map(|catalog| {
-                catalog
-                    .plugins()
-                    .filter(|(_, plugin)| plugin.installed)
-                    .map(|(marketplace, plugin)| PluginRow {
-                        marketplace_name: &marketplace.name,
-                        marketplace_path: marketplace.path.as_deref(),
-                        plugin,
-                    })
-                    .collect()
+                let mut rows = Vec::with_capacity(catalog.installed_plugin_count());
+                rows.extend(
+                    catalog
+                        .plugins()
+                        .filter(|(_, plugin)| plugin.installed)
+                        .map(|(marketplace, plugin)| PluginRow {
+                            marketplace_name: &marketplace.name,
+                            marketplace_path: marketplace.path.as_deref(),
+                            plugin,
+                        })
+                        .filter(PluginRow::user_visible),
+                );
+                rows
             })
             .unwrap_or_default()
     }
@@ -505,6 +509,7 @@ impl PluginsDirectory {
                             marketplace_path: result.marketplace_path.as_deref(),
                             plugin: &result.plugin,
                         })
+                        .filter(PluginRow::user_visible)
                         .collect()
                 })
                 .unwrap_or_default();
@@ -523,6 +528,7 @@ impl PluginsDirectory {
                         marketplace_path: marketplace.path.as_deref(),
                         plugin,
                     })
+                    .filter(PluginRow::user_visible)
                     .collect()
             })
             .unwrap_or_default()
@@ -565,6 +571,23 @@ pub struct PluginRow<'a> {
     pub marketplace_name: &'a str,
     pub marketplace_path: Option<&'a str>,
     pub plugin: &'a crate::agent::AgentPluginSummary,
+}
+
+impl PluginRow<'_> {
+    /// The desktop reference hides these app-managed runtimes in UI catalogs.
+    /// Keep them in backend snapshots so runtime capabilities stay available.
+    pub fn user_visible(&self) -> bool {
+        let marketplace = self
+            .plugin
+            .id
+            .rsplit_once('@')
+            .map_or(self.marketplace_name, |(_, marketplace)| marketplace);
+        marketplace != "openai-bundled"
+            || !matches!(
+                self.plugin.name.as_str(),
+                "codex-app-tools" | "unified-computer-use"
+            )
+    }
 }
 
 #[cfg(test)]

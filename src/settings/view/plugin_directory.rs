@@ -129,11 +129,10 @@ impl SettingsView {
         }
         let query = directory.search_term.trim().to_lowercase();
         directory
-            .catalog
-            .as_ref()
+            .catalog_rows()
             .into_iter()
-            .flat_map(|catalog| catalog.plugins())
-            .filter(|(_, plugin)| {
+            .filter(|row| {
+                let plugin = row.plugin;
                 query.is_empty()
                     || plugin.display_name().to_lowercase().contains(&query)
                     || plugin.name.to_lowercase().contains(&query)
@@ -145,11 +144,6 @@ impl SettingsView {
                             .iter()
                             .any(|word| word.to_lowercase().contains(&query))
                     })
-            })
-            .map(|(marketplace, plugin)| PluginRow {
-                plugin,
-                marketplace_name: &marketplace.name,
-                marketplace_path: marketplace.path.as_deref(),
             })
             .collect()
     }
