@@ -216,6 +216,11 @@ impl TasksView {
             .relative()
             .w_full()
             .min_w(px(0.))
+            // All card rows are single-line. A definite height also keeps long
+            // boards from repeatedly measuring every title for intrinsic size.
+            .h(px(61.
+                + if card.attention.is_some() { 22. } else { 0. }
+                + if pr.is_some() { 22. } else { 0. }))
             .flex_none()
             .px(px(12.))
             .py(px(10.))
@@ -295,6 +300,8 @@ impl TasksView {
             .child(
                 div()
                     .w_full()
+                    .h(px(18.))
+                    .flex_none()
                     .truncate()
                     .text_color(theme.text)
                     .text_size(px(crate::typography::ui_size(14.)))
@@ -303,6 +310,8 @@ impl TasksView {
             )
             .child(
                 div()
+                    .h(px(16.))
+                    .flex_none()
                     .flex()
                     .items_center()
                     .gap(px(5.))
@@ -332,6 +341,9 @@ impl TasksView {
             .when_some(card.attention, |s, attention| {
                 s.child(
                     div()
+                        .h(px(16.))
+                        .flex_none()
+                        .line_height(px(16.))
                         .text_size(px(11.))
                         .text_color(theme.warning)
                         .child(attention),
@@ -343,6 +355,9 @@ impl TasksView {
                         .id(SharedString::from(format!("task-pr-{}", card.id)))
                         .role(Role::Link)
                         .aria_label(label.clone())
+                        .h(px(16.))
+                        .flex_none()
+                        .line_height(px(16.))
                         .text_size(px(11.))
                         .text_color(theme.effort)
                         .cursor_pointer()
@@ -355,10 +370,9 @@ impl TasksView {
             })
     }
     fn column(
-        &self,
+        &mut self,
         project: &ProjectBoard,
         column: Column,
-        min_height: gpui::Pixels,
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
@@ -373,18 +387,20 @@ impl TasksView {
         } else {
             30
         };
+        let scroll_id = format!("task-column-{}-{}", project.id, column.label());
+        let scroll = self
+            .column_scrolls
+            .entry(scroll_id.clone())
+            .or_default()
+            .clone();
         let mut list = div()
-            .id(SharedString::from(format!(
-                "task-column-{}-{}",
-                project.id,
-                column.label()
-            )))
+            .id(SharedString::from(scroll_id))
             .role(Role::List)
             .aria_label(format!("{} drop area", column.label()))
-            .min_h(min_height)
             .flex_1()
-            .min_w(px(240.))
-            .h_full()
+            .min_h(px(0.))
+            .overflow_y_scroll()
+            .track_scroll(&scroll)
             .flex()
             .flex_col()
             .gap(px(8.))
@@ -401,53 +417,51 @@ impl TasksView {
                 }
                 cx.stop_propagation();
             }));
-        list = list.child(
-            div()
-                .h(px(28.))
-                .flex_none()
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .px(px(2.))
-                .text_size(px(14.))
-                .text_color(theme.text)
-                .child(column.label())
-                .child(
-                    div()
-                        .text_size(px(12.))
-                        .text_color(theme.text_tertiary)
-                        .child(all.len().to_string()),
+        let header = div()
+            .h(px(28.))
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .px(px(2.))
+            .text_size(px(14.))
+            .text_color(theme.text)
+            .child(column.label())
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(theme.text_tertiary)
+                    .child(all.len().to_string()),
+            )
+            .child(div().flex_1())
+            .when(column == Column::Draft, |s| {
+                s.child(
+                    self.control(
+                        SharedString::from(format!("new-task-{}", project.id)),
+                        "+",
+                        Control::New(Some(project.id.clone()), true),
+                        theme,
+                        cx,
+                    )
+                    .aria_label("New task in Draft"),
                 )
-                .child(div().flex_1())
-                .when(column == Column::Draft, |s| {
-                    s.child(
-                        self.control(
-                            SharedString::from(format!("new-task-{}", project.id)),
-                            "+",
-                            Control::New(Some(project.id.clone()), true),
-                            theme,
-                            cx,
-                        )
-                        .aria_label("New task in Draft"),
-                    )
-                })
-                .child(
-                    icon(
-                        if column == Column::Done {
-                            "task-done"
-                        } else {
-                            "scheduled"
-                        },
-                        if column == Column::Done {
-                            rgba(0x7068ccff)
-                        } else {
-                            theme.text_tertiary
-                        }
-                        .into(),
-                    )
-                    .size(px(14.)),
-                ),
-        );
+            })
+            .child(
+                icon(
+                    if column == Column::Done {
+                        "task-done"
+                    } else {
+                        "scheduled"
+                    },
+                    if column == Column::Done {
+                        rgba(0x7068ccff)
+                    } else {
+                        theme.text_tertiary
+                    }
+                    .into(),
+                )
+                .size(px(14.)),
+            );
         if all.is_empty() {
             list = list.child(
                 div()
@@ -476,10 +490,24 @@ impl TasksView {
                 cx,
             ));
         }
-        list
+        div()
+            .id(SharedString::from(format!(
+                "task-section-{}-{}",
+                project.id,
+                column.label()
+            )))
+            .flex_1()
+            .min_w(px(240.))
+            .min_h(px(0.))
+            .h_full()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .child(header)
+            .child(list)
     }
     fn overview_project(
-        &self,
+        &mut self,
         project: &ProjectBoard,
         theme: Theme,
         cx: &mut Context<Self>,
@@ -488,10 +516,29 @@ impl TasksView {
         let mut counts = [0; 4];
         let cap = if prefs.expanded { usize::MAX } else { 20 };
         let mut hidden = 0;
+        let scroll_id = format!("task-project-cards-{}", project.id);
+        let scroll = self
+            .column_scrolls
+            .entry(scroll_id.clone())
+            .or_default()
+            .clone();
+        let mut list = div()
+            .id(SharedString::from(scroll_id))
+            .role(Role::List)
+            .aria_label(format!("{} tasks", project.name))
+            .flex_1()
+            .min_h(px(0.))
+            .overflow_y_scroll()
+            .track_scroll(&scroll)
+            .flex()
+            .flex_col()
+            .gap(px(8.));
         let mut column = div()
             .id(SharedString::from(format!("task-project-{}", project.id)))
             .w(px(280.))
             .min_w(px(280.))
+            .min_h(px(0.))
+            .h_full()
             .flex_none()
             .flex()
             .flex_col()
@@ -544,10 +591,10 @@ impl TasksView {
                 hidden += 1;
                 continue;
             }
-            column = column.child(self.card(card, theme, cx));
+            list = list.child(self.card(card, theme, cx));
         }
         if hidden > 0 {
-            column = column.child(self.control(
+            list = list.child(self.control(
                 SharedString::from(format!("project-more-{}", project.id)),
                 format!("Show {hidden} more"),
                 Control::Expand,
@@ -555,6 +602,7 @@ impl TasksView {
                 cx,
             ));
         }
+        column = column.child(list);
         column
     }
     fn editor_overlay(
@@ -972,6 +1020,7 @@ impl Render for TasksView {
             if prefs.mode == BoardMode::Attention {
                 body = body.child(
                     div()
+                        .flex_none()
                         .flex()
                         .items_center()
                         .gap(px(8.))
@@ -1011,7 +1060,7 @@ impl Render for TasksView {
                 .id("tasks-scroll")
                 .flex_1()
                 .min_h(px(0.))
-                .overflow_scroll()
+                .overflow_x_scroll()
                 .track_scroll(&self.scroll)
                 .px(px(20.))
                 .pb(px(20.))
@@ -1027,17 +1076,7 @@ impl Render for TasksView {
                     if column == Column::AwaitingYou && prefs.mode == BoardMode::Classic {
                         continue;
                     }
-                    let filter_height = if prefs.mode == BoardMode::Attention {
-                        36.
-                    } else {
-                        0.
-                    };
-                    let drop_height = px((f32::from(window.viewport_size().height)
-                        - 46.
-                        - filter_height
-                        - 20.)
-                        .max(120.));
-                    content = content.child(self.column(project, column, drop_height, theme, cx));
+                    content = content.child(self.column(project, column, theme, cx));
                 }
             } else {
                 for project in boards.iter().filter(|p| !p.cards.is_empty()) {

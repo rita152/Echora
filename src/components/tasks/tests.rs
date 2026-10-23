@@ -167,3 +167,114 @@ fn narrow_project_board_scroll_reaches_the_last_column(cx: &mut gpui::TestAppCon
     assert!(last.right() + scroll.offset().x <= scroll.bounds().right() + px(1.));
     std::fs::remove_file(path).ok();
 }
+
+#[gpui::test]
+fn long_boards_scroll_to_the_end_before_and_after_expanding(cx: &mut gpui::TestAppContext) {
+    use crate::tasks::BoardMode;
+    use gpui::{point, px, size};
+    cx.executor().allow_parking();
+    let path = std::env::temp_dir().join(format!("{}.json", crate::tasks::new_id()));
+    let store = WorkspaceStore::with_preferences_path(Arc::new(Offline), path.clone());
+    store.insert_project_for_test(Project {
+        project_id: "project".into(),
+        name: "Project".into(),
+        roots: vec!["/tmp/project".into()],
+        created_at: 1,
+        updated_at: 1,
+        recency_at: None,
+        position: 0,
+    });
+    store.update_tasks(|p| {
+        p.drafts = (0..45)
+            .map(|index| TaskDraft {
+                id: format!("draft-{index}"),
+                input: crate::tasks::TaskInput {
+                    text: format!(
+                        "历史任务 {index}: {}",
+                        "Verify long mixed-language task titles. ".repeat(10)
+                    ),
+                    ..Default::default()
+                },
+                ..draft()
+            })
+            .collect();
+    });
+    let handle = cx.add_window(|_, cx| TasksView::new(ThemeMode::Dark, store.clone(), cx));
+    let entity = handle.root(cx).unwrap();
+    let mut visual = gpui::VisualTestContext::from_window(handle.into(), cx);
+    visual.simulate_resize(size(px(720.), px(620.)));
+    for mode in [BoardMode::Attention, BoardMode::Classic] {
+        for project in [None, Some("project".to_owned())] {
+            let mut collapsed_extent = px(0.);
+            for expanded in [false, true] {
+                store.update_tasks(|p| {
+                    p.mode = mode;
+                    p.expanded = expanded;
+                });
+                visual.update(|_, cx| {
+                    entity.update(cx, |view, cx| {
+                        view.set_route(
+                            TaskRoute {
+                                project: project.clone(),
+                                list: false,
+                            },
+                            cx,
+                        );
+                        view.scroll.set_offset(point(px(0.), px(0.)));
+                        cx.notify();
+                    });
+                });
+                visual.run_until_parked();
+                visual.update(|window, cx| window.draw(cx).clear(cx));
+                let scroll_id = if project.is_some() {
+                    "task-column-project-Draft"
+                } else {
+                    "task-project-cards-project"
+                };
+                let (scroll, board_scroll) = visual.update(|_, cx| {
+                    let view = entity.read(cx);
+                    (view.column_scrolls[scroll_id].clone(), view.scroll.clone())
+                });
+                scroll.set_offset(point(px(0.), px(0.)));
+                let viewport = scroll.bounds();
+                let section = board_scroll.bounds_for_item(0).unwrap();
+                assert!(
+                    viewport.top() > section.top(),
+                    "Column header stays above the scrolling cards"
+                );
+                assert!(viewport.bottom() <= px(620.));
+                let extent = scroll.max_offset().y;
+                assert!(extent > px(0.), "{mode:?}, {project:?}, {expanded}");
+                if expanded {
+                    assert!(
+                        extent > collapsed_extent,
+                        "Expanded cards must extend the scroll range"
+                    );
+                } else {
+                    collapsed_extent = extent;
+                }
+                visual.simulate_event(gpui::ScrollWheelEvent {
+                    position: point(viewport.left() + px(140.), viewport.center().y),
+                    delta: gpui::ScrollDelta::Pixels(point(px(0.), px(-10_000.))),
+                    touch_phase: gpui::TouchPhase::Moved,
+                    modifiers: Default::default(),
+                });
+                visual.update(|window, cx| window.draw(cx).clear(cx));
+                assert!(scroll.offset().y < px(0.));
+                let last = scroll
+                    .bounds_for_item(if expanded {
+                        44
+                    } else if project.is_some() {
+                        30
+                    } else {
+                        20
+                    })
+                    .unwrap();
+                assert!(last.bottom() + scroll.offset().y <= viewport.bottom() + px(1.));
+                assert_eq!(board_scroll.offset().y, px(0.));
+                assert_eq!(board_scroll.bounds_for_item(0).unwrap(), section);
+            }
+        }
+    }
+    std::fs::remove_file(path).ok();
+}
