@@ -452,3 +452,132 @@ fn pins_use_the_item_identity_and_can_be_restored_independently_of_selection() {
         assert_eq!(view.selected.as_ref().unwrap().title, "original");
     });
 }
+
+#[test]
+fn question_handoff_keeps_the_typed_question_and_selected_item_context() {
+    let (mut app, view) = setup();
+    let prompts = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let record = prompts.clone();
+    app.update(|cx| {
+        cx.subscribe(&view, move |_, event: &OpenChatForPullRequest, _| {
+            record.borrow_mut().push(event.prompt.clone());
+        })
+        .detach();
+    });
+    app.update_entity(&view, |view, cx| {
+        view.ask_about_item(cx);
+        view.question.update(cx, |input, cx| {
+            input.set_text_silently("Explain the validation risks", cx)
+        });
+        view.detail_loading = true;
+        view.ask_about_item(cx);
+        assert_eq!(
+            view.question.read(cx).text(),
+            "Explain the validation risks"
+        );
+        view.detail_loading = false;
+        view.ask_about_item(cx);
+        assert!(view.question.read(cx).text().is_empty());
+    });
+    app.run_until_parked();
+    assert_eq!(
+        &*prompts.borrow(),
+        &[
+            "Explain the validation risks\n\nPull request #1: original\nhttps://github.com/test/repository/pull/1"
+        ]
+    );
+}
+
+#[test]
+fn escape_closes_the_filter_flyout_before_the_parent_menu() {
+    let (mut app, view) = setup();
+    app.update_entity(&view, |view, cx| {
+        view.list_menu = Some(ListMenu::Filter);
+        view.filter_submenu = Some(FilterSubmenu::Labels);
+        assert!(view.dismiss_top_menu(cx));
+        assert!(view.filter_submenu.is_none());
+        assert_eq!(view.list_menu, Some(ListMenu::Filter));
+        assert!(view.dismiss_top_menu(cx));
+        assert!(view.list_menu.is_none());
+        assert!(!view.dismiss_top_menu(cx));
+    });
+}
+
+#[test]
+fn tab_and_enter_activate_the_inbox_sort_button() {
+    let (mut app, view) = setup();
+    let rendered = view.clone();
+    struct InboxHost(Entity<PullRequestsView>);
+    impl gpui::Render for InboxHost {
+        fn render(
+            &mut self,
+            _: &mut gpui::Window,
+            _: &mut Context<Self>,
+        ) -> impl gpui::IntoElement {
+            gpui::div().size_full().child(self.0.clone())
+        }
+    }
+    let mut window = app.open_window(|_, _| InboxHost(rendered));
+    window.draw();
+    window.update(|_, window, cx| view.update(cx, |view, cx| view.focus.focus(window, cx)));
+    window.simulate_keystrokes("tab");
+    window.draw();
+    window.simulate_keystrokes("enter");
+    window.update(|_, window, cx| {
+        window.dispatch_event(
+            gpui::PlatformInput::KeyUp(gpui::KeyUpEvent {
+                keystroke: gpui::Keystroke::parse("enter").unwrap(),
+            }),
+            cx,
+        );
+    });
+    assert_eq!(
+        app.read_entity(&view, |view, _| view.list_menu.clone()),
+        Some(ListMenu::Sort)
+    );
+}
+
+#[test]
+fn findings_include_inline_threads_with_locations_and_no_duplicate_comments() {
+    let mut detail = detail("Review");
+    let comment = crate::pull_requests::Comment {
+        id: "inline-1".into(),
+        database_id: None,
+        url: String::new(),
+        author: "reviewer".into(),
+        avatar_url: None,
+        body: "Handle empty input".into(),
+        age: String::new(),
+        at: String::new(),
+        is_review: false,
+        path: Some("src/input.rs".into()),
+        line: Some(42),
+        thread_id: Some("thread-1".into()),
+        diff_hunk: String::new(),
+        resolved: false,
+        can_edit: false,
+        can_delete: false,
+        can_quote: true,
+        author_is_bot: false,
+    };
+    detail.comments.push(comment.clone());
+    let mut reply = comment.clone();
+    reply.id = "inline-2".into();
+    reply.body = "Also cover Unicode".into();
+    reply.path = None;
+    reply.line = None;
+    detail
+        .review_threads
+        .push(crate::pull_requests::ReviewThread {
+            id: "thread-1".into(),
+            path: "src/input.rs".into(),
+            line: Some(42),
+            resolved: true,
+            can_resolve: false,
+            comments: vec![comment, reply],
+        });
+    let prompt = super::info::findings_prompt(&detail);
+    assert!(prompt.contains(&detail.summary.url));
+    assert_eq!(prompt.matches("Handle empty input").count(), 1);
+    assert!(prompt.contains("reviewer (src/input.rs:42) [resolved]: Also cover Unicode"));
+}

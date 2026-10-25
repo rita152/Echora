@@ -8,6 +8,36 @@ use crate::components::icons::icon;
 use crate::pull_requests::{CheckState, PullRequestStatus};
 use crate::theme::Theme;
 
+fn status_color(status: PullRequestStatus, issue: bool, theme: PrTheme) -> gpui::Rgba {
+    match status {
+        PullRequestStatus::Merged => theme.purple,
+        PullRequestStatus::Closed if issue => theme.purple,
+        PullRequestStatus::Closed => theme.chart_red,
+        PullRequestStatus::Open => theme.chart_green,
+        PullRequestStatus::Draft => theme.text_muted,
+    }
+}
+
+fn item_state_glyph(
+    summary: &crate::pull_requests::PullRequestSummary,
+    theme: PrTheme,
+) -> gpui::AnyElement {
+    if summary.is_issue() {
+        icon(
+            if summary.status == PullRequestStatus::Closed {
+                "review-issue-closed"
+            } else {
+                "review-issue"
+            },
+            status_color(summary.status, true, theme).into(),
+        )
+        .size(px(14.0))
+        .into_any_element()
+    } else {
+        PullRequestsView::state_glyph(summary.status, theme, 14.0).into_any_element()
+    }
+}
+
 /// Which collapsible section a header row toggles.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SectionKind {
@@ -32,7 +62,86 @@ impl PullRequestsView {
             .relative()
             .child(self.detail_header(cx))
             .child(self.detail_body(cx))
+            .when(
+                self.detail.is_some()
+                    && !self.detail_loading
+                    && self.detail_tab != DetailTab::Code
+                    && self.review_tab.is_none(),
+                |s| s.child(self.question_composer(cx)),
+            )
             .children(self.detail_overlays(cx))
+    }
+
+    fn question_composer(&self, cx: &mut gpui::Context<Self>) -> Div {
+        let theme = self.theme();
+        let ready = !self.question.read(cx).text().trim().is_empty();
+        let view = cx.entity();
+        div()
+            .flex_none()
+            .px(px(16.0))
+            .pb(px(12.0))
+            .flex()
+            .justify_end()
+            .child(
+                div()
+                    .w_full()
+                    .max_w(px(640.0))
+                    .p(px(12.0))
+                    .rounded(px(20.0))
+                    .bg(theme.composer_surface)
+                    .border_1()
+                    .border_color(theme.border)
+                    .flex()
+                    .flex_col()
+                    .gap(px(10.0))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.0))
+                            .text_size(px(12.0))
+                            .text_color(theme.text_muted)
+                            .child(icon("folder", theme.text_muted.into()).size(px(14.0)))
+                            .child(
+                                self.selected
+                                    .as_ref()
+                                    .map(|s| {
+                                        s.repository.rsplit('/').next().unwrap_or("").to_owned()
+                                    })
+                                    .unwrap_or_default(),
+                            )
+                            .child(
+                                icon("local", theme.text_muted.into())
+                                    .ml(px(8.0))
+                                    .size(px(14.0)),
+                            )
+                            .child("Local"),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(10.0))
+                            .child(div().min_w(px(0.0)).flex_1().child(self.question.clone()))
+                            .child(
+                                self.inbox_button("pr-ask-agent", "Ask in chat")
+                                    .size(px(28.0))
+                                    .px(px(0.0))
+                                    .rounded_full()
+                                    .aria_disabled(!ready)
+                                    .tab_stop(ready)
+                                    .bg(theme.inverted_surface)
+                                    .when(!ready, |s| s.opacity(0.3))
+                                    .child(
+                                        icon("pr-arrow-up", theme.inverted_text.into())
+                                            .size(px(16.0)),
+                                    )
+                                    .on_click(move |_, _, cx| {
+                                        view.update(cx, |v, cx| v.ask_about_item(cx))
+                                    }),
+                            ),
+                    ),
+            )
     }
 
     fn detail_header(&self, cx: &mut gpui::Context<Self>) -> gpui::AnyElement {
@@ -461,7 +570,16 @@ impl PullRequestsView {
                 .justify_center()
                 .text_size(px(crate::typography::ui_size(14.0)))
                 .text_color(theme.text)
+                .flex_col()
+                .gap(px(12.0))
+                .child(icon("pr-status-open", theme.text_muted.into()).size(px(24.0)))
                 .child("Select a pull request or issue")
+                .child(
+                    div()
+                        .text_size(px(12.0))
+                        .text_color(theme.text_muted)
+                        .child("Choose one from the sidebar to review it"),
+                )
                 .into_any_element();
         }
         if self.detail_loading {
@@ -473,7 +591,7 @@ impl PullRequestsView {
                 .justify_center()
                 .text_size(px(crate::typography::ui_size(13.0)))
                 .text_color(theme.text_muted)
-                .child("Loading pull request details")
+                .child("Loading item details…")
                 .into_any_element();
         }
         if let Some(error) = self.detail_error.clone() {
@@ -537,7 +655,7 @@ impl PullRequestsView {
             .w_full()
             .flex()
             .flex_col()
-            .gap(px(24.0))
+            .gap(px(16.0))
             .child(self.title_block(cx));
 
         if self.detail_tab == DetailTab::Timeline {
@@ -591,56 +709,52 @@ impl PullRequestsView {
             column = column.child(self.activity_section(cx));
         }
         column = column.child(div().px(px(8.0)).child(self.comment_composer(cx)));
-        // The reference scrolls the whole tab body so long descriptions reach
-        // the Checks / Activity / commits sections.
+        let metadata = div()
+            .id("pr-summary-metadata")
+            .role(gpui::Role::Group)
+            .aria_label("Code review metadata")
+            .flex_none()
+            .when(columns, |s| {
+                s.w(px(SUMMARY_INFO_WIDTH)).h_full().overflow_y_scroll()
+            })
+            .when(!columns, |s| s.w_full())
+            .pt(px(16.0))
+            .border_l(px(if columns { 1.0 } else { 0.0 }))
+            .border_color(theme.border)
+            .pl(px(16.0))
+            .child(self.meta_rows(cx));
         let capture_offset = (self.capture_offset > 0.0).then_some(self.capture_offset);
+        let mut content = div()
+            .when_some(capture_offset, |s, offset| s.relative().top(px(-offset)))
+            .pb(px(PANE_PADDING))
+            .child(column);
+        let mut metadata = Some(metadata);
+        if !columns {
+            content = content.children(metadata.take());
+        }
         div()
-            .id("pr-detail-scroll")
             .flex_1()
             .min_h(px(0.0))
-            .overflow_y_scroll()
-            .track_scroll(&self.detail_scroll)
+            .min_w(px(0.0))
+            .w_full()
+            .max_w(px(SUMMARY_MAX_WIDTH))
+            .mx_auto()
+            .px(px(SUMMARY_OUTER_PADDING + SUMMARY_INNER_PADDING))
+            .flex()
+            .gap(px(SUMMARY_COLUMN_GAP))
             .child(
                 div()
-                    .when_some(capture_offset, |wrapper, offset| {
-                        wrapper.relative().top(px(-offset))
-                    })
-                    .pl(px(SUMMARY_OUTER_PADDING))
-                    .pr(px(SUMMARY_OUTER_PADDING + self.scrollbar_gutter()))
-                    .pb(px(PANE_PADDING))
-                    .child(
-                        div()
-                            .w_full()
-                            .max_w(px(SUMMARY_MAX_WIDTH))
-                            .mx_auto()
-                            .px(px(SUMMARY_INNER_PADDING))
-                            .flex()
-                            .when(!columns, |s| s.flex_col())
-                            .items_start()
-                            .gap(px(SUMMARY_COLUMN_GAP))
-                            .child(
-                                div()
-                                    .min_w(px(0.0))
-                                    .when(columns, |s| s.flex_1())
-                                    .when(!columns, |s| s.w_full())
-                                    .child(column),
-                            )
-                            .child(
-                                div()
-                                    .id("pr-summary-metadata")
-                                    .role(gpui::Role::Group)
-                                    .aria_label("Code review metadata")
-                                    .flex_none()
-                                    .when(columns, |s| s.w(px(SUMMARY_INFO_WIDTH)))
-                                    .when(!columns, |s| s.w_full())
-                                    .pt(px(16.0))
-                                    .border_l(px(if columns { 1.0 } else { 0.0 }))
-                                    .border_color(theme.border)
-                                    .pl(px(16.0))
-                                    .child(self.meta_rows(cx)),
-                            ),
-                    ),
+                    .id("pr-detail-scroll")
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .min_w(px(0.0))
+                    .h_full()
+                    .pr(px(self.scrollbar_gutter()))
+                    .overflow_y_scroll()
+                    .track_scroll(&self.detail_scroll)
+                    .child(content),
             )
+            .children(metadata)
             .into_any_element()
     }
 
@@ -713,8 +827,28 @@ impl PullRequestsView {
                                 .text_size(px(crate::typography::ui_size(12.0)))
                                 .line_height(px(18.0))
                                 .text_color(theme.text_muted)
-                                .child(Self::state_glyph(detail.summary.status, theme, 14.0))
-                                .child(detail.summary.status.label())
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(6.0))
+                                        .px(px(8.0))
+                                        .py(px(3.0))
+                                        .rounded_full()
+                                        .bg(status_color(
+                                            detail.summary.status,
+                                            detail.summary.is_issue(),
+                                            theme,
+                                        )
+                                        .alpha(0.10))
+                                        .text_color(status_color(
+                                            detail.summary.status,
+                                            detail.summary.is_issue(),
+                                            theme,
+                                        ))
+                                        .child(item_state_glyph(&detail.summary, theme))
+                                        .child(detail.summary.status.label()),
+                                )
                                 .child(format!(
                                     "{} #{}",
                                     detail.summary.repository, detail.summary.number
@@ -724,7 +858,7 @@ impl PullRequestsView {
                             div()
                                 .text_size(px(crate::typography::ui_size(24.0)))
                                 .line_height(px(crate::typography::ui_leading(24.0, 28.8)))
-                                .font_weight(gpui::FontWeight::MEDIUM)
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
                                 .text_color(theme.text)
                                 .child(title),
                         )
@@ -737,12 +871,30 @@ impl PullRequestsView {
                                 .gap(px(8.0))
                                 .overflow_hidden()
                                 .whitespace_nowrap()
-                                .text_size(px(crate::typography::ui_size(14.0)))
+                                .text_size(px(crate::typography::ui_size(12.0)))
                                 .line_height(px(crate::typography::ui_leading(14.0, 21.0)))
                                 .text_color(theme.icon_muted)
-                                .child(self.avatar(detail.author.avatar_url.as_deref(), 18.0))
+                                .child(self.avatar(detail.author.avatar_url.as_deref(), 16.0))
                                 .child(author)
-                                .when(!age.is_empty(), |line| line.child("·").child(age)),
+                                .when(!age.is_empty(), |line| {
+                                    line.child("·").child(format!("{age} ago"))
+                                })
+                                .when(!detail.summary.is_issue(), |line| {
+                                    line.child("·")
+                                        .child(
+                                            div()
+                                                .min_w(px(0.0))
+                                                .truncate()
+                                                .child(detail.summary.head_branch.clone()),
+                                        )
+                                        .child("→")
+                                        .child(
+                                            div()
+                                                .min_w(px(0.0))
+                                                .truncate()
+                                                .child(detail.summary.base_branch.clone()),
+                                        )
+                                }),
                         ),
                 )
                 .when(self.can_edit(), |row| {
@@ -969,7 +1121,11 @@ impl PullRequestsView {
                 .ml(px(-9.0))
                 .text_color(theme.text)
                 .text_size(px(crate::typography::ui_size(14.0)))
-                .aria_label("Change pull request status")
+                .aria_label(if detail.summary.is_issue() {
+                    "Change issue status"
+                } else {
+                    "Change pull request status"
+                })
                 .on_click(move |_, _, cx| {
                     status_menu_view.update(cx, |view, cx| view.toggle_status_menu(cx));
                 })

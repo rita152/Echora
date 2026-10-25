@@ -577,6 +577,12 @@ impl Render for ChatApp {
                 cx.stop_propagation();
             }))
             .on_key_down(cx.listener(Self::handle_project_creation_key))
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if this.showing_pull_requests && event.keystroke.key == "tab" {
+                    this.pull_requests.update(cx, |view, cx| view.advance_focus(event.keystroke.modifiers.shift, window, cx));
+                    cx.stop_propagation();
+                }
+            }))
             .on_action(cx.listener(|this,_:&super::OpenSettingsPage,_,cx|{this.open_settings(cx);cx.stop_propagation();}))
             .on_action(cx.listener(|this, _: &super::ToggleActivityView, _, cx| {
                 this.sidebar.update(cx, |sidebar, cx| sidebar.toggle_activity(cx));
@@ -631,7 +637,7 @@ impl Render for ChatApp {
                         cx.stop_propagation();
                         return;
                     }
-                    if this.pull_requests.update(cx, |view, cx| view.dismiss_menus(cx)) {
+                    if this.pull_requests.update(cx, |view, cx| view.dismiss_top_menu(cx)) {
                         cx.stop_propagation();
                         return;
                     }

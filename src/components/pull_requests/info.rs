@@ -21,15 +21,7 @@ impl PullRequestsView {
                         fix.update(cx, |v, cx| {
                             v.dismiss_menus(cx);
                             if let Some(detail) = &v.detail {
-                                let mut prompt = format!(
-                                    "Fix the review findings for {}. Read the review comments, address each actionable finding, and verify the changes.",
-                                    detail.summary.url
-                                );
-                                for comment in &detail.comments {
-                                    if !comment.body.trim().is_empty() {
-                                        prompt.push_str(&format!("\n\n{}: {}", comment.author, comment.body));
-                                    }
-                                }
+                                let prompt = findings_prompt(detail);
                                 cx.emit(super::OpenChatForPullRequest { prompt });
                             }
                         })
@@ -97,4 +89,43 @@ impl PullRequestsView {
                     }),
             )
     }
+}
+
+pub(super) fn findings_prompt(detail: &crate::pull_requests::PullRequestDetail) -> String {
+    let mut prompt = format!(
+        "Fix the review findings for {}. Read the review comments, address each actionable finding, and verify the changes. Resolved threads are included for context; check whether they still need action.",
+        detail.summary.url
+    );
+    let mut seen = std::collections::HashSet::new();
+    for (comment, thread) in detail.comments.iter().map(|c| (c, None)).chain(
+        detail
+            .review_threads
+            .iter()
+            .flat_map(|t| t.comments.iter().map(move |c| (c, Some(t)))),
+    ) {
+        if comment.body.trim().is_empty() || !seen.insert(&comment.id) {
+            continue;
+        }
+        let path = comment
+            .path
+            .as_deref()
+            .or_else(|| thread.map(|t| t.path.as_str()));
+        let line = comment.line.or_else(|| thread.and_then(|t| t.line));
+        let location = path
+            .map(|path| match line {
+                Some(line) => format!(" ({path}:{line})"),
+                None => format!(" ({path})"),
+            })
+            .unwrap_or_default();
+        let resolved = if comment.resolved || thread.is_some_and(|t| t.resolved) {
+            " [resolved]"
+        } else {
+            ""
+        };
+        prompt.push_str(&format!(
+            "\n\n{}{location}{resolved}: {}",
+            comment.author, comment.body
+        ));
+    }
+    prompt
 }

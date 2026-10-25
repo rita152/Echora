@@ -852,6 +852,7 @@ pub fn render_pull_request_markdown(source: &str, theme: Theme, scope: &str) -> 
     let source = strip_html_comments(source);
     let document = parse_markdown(&source);
     let mut style = MarkdownRenderStyle::new(theme);
+    style.selectable = true;
     style.layout.base_line_height = crate::typography::prose_size(PULL_REQUEST_BODY_LINE_HEIGHT);
     // `p { margin-bottom: var(--markdown-space) }` before a list or code.
     style.layout.paragraph_space = style.layout.markdown_space;
@@ -887,6 +888,7 @@ pub fn render_pull_request_comment_markdown(
 ) -> Div {
     let source = strip_html_comments(source);
     let mut style = small_markdown_style(theme);
+    style.selectable = true;
     style.line_clamp = line_clamp;
     render_small_markdown(&source, style, scope)
 }

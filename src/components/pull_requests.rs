@@ -263,6 +263,7 @@ pub struct PullRequestsView {
     reply: Option<(Option<String>, Entity<FileEditor>)>,
     reply_target: Option<String>,
     comment_box: Entity<FileEditor>,
+    question: Entity<PromptInput>,
     reviewers_open: bool,
     reviewers_query: Option<Entity<PromptInput>>,
     reviewers_results: Vec<User>,
@@ -404,6 +405,19 @@ impl PullRequestsView {
             |_, _, _: &super::file_editor::EditorEvent, cx| cx.notify(),
         )
         .detach();
+        let question = cx.new(|cx| PromptInput::project_name(mode, "Ask about this item", cx));
+        cx.subscribe(
+            &question,
+            |_, _, _: &super::prompt_input::PromptChanged, cx| cx.notify(),
+        )
+        .detach();
+        cx.subscribe(
+            &question,
+            |this, _, _: &super::prompt_input::PromptSubmitted, cx| {
+                this.ask_about_item(cx);
+            },
+        )
+        .detach();
         cx.subscribe(
             &search,
             |this, input, _: &super::prompt_input::PromptChanged, cx| {
@@ -489,6 +503,7 @@ impl PullRequestsView {
             reply: None,
             reply_target: None,
             comment_box,
+            question,
             reviewers_open: false,
             reviewers_query: None,
             reviewers_results: Vec::new(),
@@ -503,7 +518,7 @@ impl PullRequestsView {
             diff_loading: false,
             diff_error: None,
             collapsed_files: HashSet::new(),
-            diff_layout: DiffLayout::Unified,
+            diff_layout: DiffLayout::Split,
             // The reference diff view opens with word wrap on, which is why its
             // toolbar offers `Disable word wrap`.
             wrap: true,
@@ -551,6 +566,8 @@ impl PullRequestsView {
     pub fn set_mode(&mut self, mode: ThemeMode, cx: &mut Context<Self>) {
         self.mode = mode;
         self.search.update(cx, |input, cx| input.set_mode(mode, cx));
+        self.question
+            .update(cx, |input, cx| input.set_mode(mode, cx));
         self.tree_filter
             .update(cx, |input, cx| input.set_mode(mode, cx));
         self.comment_box
@@ -577,7 +594,11 @@ impl PullRequestsView {
     }
 
     pub fn theme(&self) -> PrTheme {
-        PrTheme::for_mode(self.mode)
+        let mut theme = PrTheme::for_mode(self.mode);
+        if self.mode == ThemeMode::Light {
+            theme.surface = gpui::rgba(0xf9f9f9ff);
+        }
+        theme
     }
 
     /// The host reports the page's size each frame; it is not a render input
@@ -1396,6 +1417,17 @@ impl PullRequestsView {
         self.reply_target = None;
         self.comment_box
             .update(cx, |editor, cx| editor.set_text_silently("", cx));
+        self.question.update(cx, |input, cx| {
+            input.set_text_silently("", cx);
+            input.set_placeholder(
+                if summary.is_issue() {
+                    "Ask about this issue"
+                } else {
+                    "Ask about this pull request"
+                },
+                cx,
+            );
+        });
         self.dismiss_menus(cx);
         self.detail_scroll
             .set_offset(gpui::point(gpui::px(0.0), gpui::px(0.0)));
@@ -1549,6 +1581,34 @@ impl PullRequestsView {
             self.description_menu = false;
         }
         cx.notify();
+    }
+
+    pub fn dismiss_top_menu(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.filter_submenu.take().is_some() {
+            cx.notify();
+            return true;
+        }
+        self.dismiss_menus(cx)
+    }
+
+    pub fn advance_focus(
+        &self,
+        backwards: bool,
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.focus.contains_focused(window, cx) {
+            self.focus.focus(window, cx);
+        }
+        if backwards {
+            window.focus_prev(cx);
+        } else {
+            window.focus_next(cx);
+        }
+        if !self.focus.contains_focused(window, cx) {
+            self.focus.focus(window, cx);
+            window.focus_next(cx);
+        }
     }
 
     pub fn dismiss_menus(&mut self, cx: &mut Context<Self>) -> bool {
@@ -1709,6 +1769,32 @@ impl PullRequestsView {
             summary.url
         );
         cx.emit(OpenChatForPullRequest { prompt });
+    }
+
+    fn ask_about_item(&mut self, cx: &mut Context<Self>) {
+        let question = self.question.read(cx).text().trim().to_owned();
+        let Some(detail) = self.detail.as_ref().filter(|_| !self.detail_loading) else {
+            return;
+        };
+        if question.is_empty() {
+            return;
+        }
+        let prompt = format!(
+            "{}\n\n{} #{}: {}\n{}",
+            question,
+            if detail.summary.is_issue() {
+                "Issue"
+            } else {
+                "Pull request"
+            },
+            detail.summary.number,
+            detail.summary.title,
+            detail.summary.url
+        );
+        cx.emit(OpenChatForPullRequest { prompt });
+        self.question
+            .update(cx, |input, cx| input.set_text_silently("", cx));
+        cx.notify();
     }
 
     pub fn open_in_browser(&mut self, cx: &mut Context<Self>) {

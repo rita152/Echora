@@ -34,6 +34,8 @@ fn a_large_hunk_only_highlights_the_viewport_and_reuses_warm_runs(cx: &mut TestA
     let inner = cx.new(|cx| {
         let mut view = PullRequestsView::build(ThemeMode::Dark, None, false, cx);
         view.detail_tab = DetailTab::Code;
+        // Row-count and scroll assertions below exercise the unified layout.
+        view.diff_layout = crate::components::pull_requests::DiffLayout::Unified;
         view.fullscreen = true;
         view.words = true;
         view.diff = crate::git_review::parse_unified(&patch);

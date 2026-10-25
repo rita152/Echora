@@ -74,6 +74,12 @@ impl gpui::Render for PullRequestsView {
             .text_color(theme.text)
             .bg(theme.surface)
             .track_focus(&self.focus)
+            .capture_action(cx.listener(
+                |view, _: &crate::components::file_editor::EditorTab, window, cx| {
+                    view.advance_focus(false, window, cx);
+                    cx.stop_propagation();
+                },
+            ))
             .on_mouse_move(cx.listener(|view, event: &gpui::MouseMoveEvent, _, cx| {
                 if view.detail_resize.is_some()
                     && event.pressed_button == Some(gpui::MouseButton::Left)
@@ -93,13 +99,17 @@ impl gpui::Render for PullRequestsView {
                     view.end_detail_resize(cx);
                 }),
             )
-            .on_key_down(cx.listener(|view, event: &gpui::KeyDownEvent, _, cx| {
+            .on_key_down(cx.listener(|view, event: &gpui::KeyDownEvent, window, cx| {
                 // Escape closes menus and tooltips; like the reference, it
                 // leaves an inline comment draft, full screen, the file tree,
                 // and the selection as they are.
                 if event.keystroke.key == "escape" {
-                    view.dismiss_menus(cx);
+                    view.dismiss_top_menu(cx);
                     view.dismiss_tooltip(cx);
+                    cx.stop_propagation();
+                }
+                if event.keystroke.key == "tab" {
+                    view.advance_focus(event.keystroke.modifiers.shift, window, cx);
                     cx.stop_propagation();
                 }
             }))
@@ -343,6 +353,9 @@ impl PullRequestsView {
         div()
             .id(id)
             .role(gpui::Role::Button)
+            .focusable()
+            .tab_stop(true)
+            .focus_visible(move |s| s.bg(theme.control_hover))
             .flex_none()
             .h(px(28.0))
             .px(px(9.0))
@@ -573,6 +586,9 @@ impl PullRequestsView {
             .id(id)
             .group("pr-menu-row")
             .role(gpui::Role::MenuItem)
+            .aria_disabled(disabled)
+            .when(!disabled, |row| row.focusable().tab_stop(true))
+            .focus_visible(move |s| s.bg(theme.menu_hover))
             .flex_none()
             .h(px(MENU_ROW_HEIGHT))
             .px(px(8.0))

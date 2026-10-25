@@ -80,6 +80,13 @@ impl PullRequestsView {
             .id(id)
             .role(gpui::Role::Button)
             .aria_label(label)
+            .focusable()
+            .tab_stop(true)
+            .focus_visible(move |s| {
+                s.bg(theme.control_hover)
+                    .border_1()
+                    .border_color(theme.text_muted)
+            })
             .relative()
             .flex_none()
             .h(px(28.0))
@@ -398,7 +405,8 @@ impl PullRequestsView {
     fn inbox_rows(&self, cx: &mut gpui::Context<Self>) -> Div {
         let theme = self.inbox_theme();
         let mut body = div()
-            .px(px(12.0))
+            .pl(px(12.0))
+            .pr(px(22.0))
             .pt(px(8.0))
             .pb(px(16.0))
             .flex()
@@ -613,13 +621,6 @@ impl PullRequestsView {
             }
             Self::state_glyph(row.status, status_theme, 14.0).into_any_element()
         };
-        let repositories = self
-            .groups
-            .iter()
-            .flat_map(|g| &g.items)
-            .map(|r| &r.repository)
-            .collect::<std::collections::HashSet<_>>()
-            .len();
         div()
             .w_full()
             .rounded(px(10.0))
@@ -637,6 +638,9 @@ impl PullRequestsView {
                     .role(gpui::Role::Button)
                     .aria_label(SharedString::from(row.title.clone()))
                     .aria_selected(selected)
+                    .focusable()
+                    .tab_stop(true)
+                    .focus_visible(move |s| s.bg(theme.control_hover))
                     .flex_1()
                     .min_w(px(0.0))
                     .py(px(8.0))
@@ -677,11 +681,16 @@ impl PullRequestsView {
                                 muted
                             })
                             .child(glyph)
-                            .when(repositories > 1, |s| {
-                                s.child(div().max_w(px(96.0)).truncate().child(
+                            .child(
+                                icon("folder", theme.text_muted.into())
+                                    .flex_none()
+                                    .size(px(10.0)),
+                            )
+                            .child(
+                                div().min_w(px(0.0)).max_w(px(96.0)).truncate().child(
                                     row.repository.rsplit('/').next().unwrap_or("").to_owned(),
-                                ))
-                            })
+                                ),
+                            )
                             .child(self.avatar(row.author_avatar_url.as_deref(), 14.0))
                             .child(div().truncate().child(row.author.clone()))
                             .child("·")

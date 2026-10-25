@@ -254,6 +254,41 @@ impl PullRequestsView {
             } else {
                 self.diff_toolbar(cx).into_any_element()
             })
+            .when(self.review_tab.is_none(), |s| {
+                s.child(
+                    div()
+                        .flex_none()
+                        .px(px(20.0))
+                        .py(px(8.0))
+                        .flex()
+                        .items_center()
+                        .gap(px(6.0))
+                        .text_size(px(12.0))
+                        .text_color(theme.text_muted)
+                        .child(if self.diff_loading {
+                            "Loading files…".into()
+                        } else {
+                            format!(
+                                "{} {}",
+                                self.diff.len(),
+                                if self.diff.len() == 1 {
+                                    "file"
+                                } else {
+                                    "files"
+                                }
+                            )
+                        })
+                        .when_some(self.detail.as_ref(), |s, d| {
+                            s.child(Self::diff_stats(
+                                d.additions,
+                                d.deletions,
+                                theme.additions_text,
+                                theme.deletions_text,
+                                12.0,
+                            ))
+                        }),
+                )
+            })
             .child(body);
         let _ = theme;
         surface
