@@ -178,6 +178,7 @@ const PARTICLE_TIMELINE_MS: f32 = 120_000.0;
 pub struct ComposerView {
     task_editor: bool,
     task_options_open: bool,
+    task_mode_menu: bool,
     conversation: ConversationState,
     backend: Arc<dyn AgentBackend>,
     mode: ThemeMode,
@@ -462,6 +463,7 @@ impl ComposerView {
         let mut view = Self {
             task_editor: false,
             task_options_open: false,
+            task_mode_menu: false,
             conversation: ConversationState::default(),
             backend,
             mode,

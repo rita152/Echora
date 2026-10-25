@@ -165,6 +165,13 @@ fn narrow_project_board_scroll_reaches_the_last_column(cx: &mut gpui::TestAppCon
     visual.update(|window, cx| window.draw(cx).clear(cx));
     assert!(scroll.offset().x < px(0.));
     assert!(last.right() + scroll.offset().x <= scroll.bounds().right() + px(1.));
+    visual.update(|_, cx| entity.update(cx, |view, cx| view.set_route(TaskRoute::default(), cx)));
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    assert_eq!(
+        scroll.offset(),
+        point(px(0.), px(0.)),
+        "The overview must not inherit a project's horizontal scroll"
+    );
     std::fs::remove_file(path).ok();
 }
 
@@ -276,5 +283,82 @@ fn long_boards_scroll_to_the_end_before_and_after_expanding(cx: &mut gpui::TestA
             }
         }
     }
+    std::fs::remove_file(path).ok();
+}
+
+#[test]
+fn leaving_list_details_flushes_pending_edits_before_clearing_selection() {
+    let mut app = TestApp::new();
+    let (store, view, path) = setup(&mut app);
+    app.update_entity(&view, |v, cx| {
+        v.add_todo("Original".into(), cx);
+        v.route.list = true;
+        let todo = store.snapshot().preferences.tasks.todos.remove(0);
+        v.selected = Some(format!("todo:{}", todo.id));
+        v.todo_title
+            .update(cx, |i, cx| i.set_text_silently("Pending title", cx));
+        v.set_route(TaskRoute::default(), cx);
+        assert!(v.selected.is_none());
+    });
+    assert_eq!(
+        store.snapshot().preferences.tasks.todos[0].title,
+        "Pending title"
+    );
+    let restored = WorkspaceStore::with_preferences_path(Arc::new(Offline), path.clone());
+    assert_eq!(
+        restored.snapshot().preferences.tasks.todos[0].title,
+        "Pending title"
+    );
+    std::fs::remove_file(path).ok();
+}
+
+struct ModalHost(Entity<TasksView>);
+impl gpui::Render for ModalHost {
+    fn render(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let overlay = self
+            .0
+            .update(cx, |view, cx| view.render_modal_overlay(window, cx));
+        gpui::div()
+            .size_full()
+            .relative()
+            .child(self.0.clone())
+            .children(overlay)
+    }
+}
+
+#[test]
+fn escape_closes_project_and_task_submenus_before_discarding_the_editor() {
+    let mut app = TestApp::new();
+    let (_, view, path) = setup(&mut app);
+    let composer = app
+        .new_entity(|cx| ComposerView::new_with_backend(ThemeMode::Light, Arc::new(Offline), cx));
+    let input = draft();
+    app.update_entity(&composer, |c, cx| c.restore_task_input(&input.input, cx));
+    app.update_entity(&view, |v, cx| {
+        v.show_editor(input, composer.clone(), true, cx);
+        v.editor.as_mut().unwrap().project_menu = true;
+    });
+    let mut window = app.open_window(|_, _| ModalHost(view.clone()));
+    window.draw();
+    window.simulate_keystrokes("escape");
+    app.read_entity(&view, |v, cx| {
+        assert!(!v.editor.as_ref().unwrap().project_menu);
+        assert_eq!(
+            v.editor
+                .as_ref()
+                .unwrap()
+                .composer
+                .read(cx)
+                .task_input(cx)
+                .text,
+            "preserve me"
+        );
+    });
+    window.simulate_keystrokes("tab enter");
+    window.draw();
+    window.simulate_keystrokes("escape");
+    assert!(app.read_entity(&view, |v, _| v.editor.is_some()));
+    window.simulate_keystrokes("escape");
+    assert!(app.read_entity(&view, |v, _| v.editor.is_none()));
     std::fs::remove_file(path).ok();
 }

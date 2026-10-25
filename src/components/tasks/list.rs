@@ -805,7 +805,27 @@ impl TasksView {
                             .size(px(18.))
                             .text_color(theme.text_tertiary)
                             .cursor_pointer()
-                            .child(if todo.completed { "✓" } else { "◯" })
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                crate::components::icons::icon(
+                                    match rank {
+                                        0 | 1 => "task-progress",
+                                        3 => "task-done",
+                                        _ => "task-draft",
+                                    },
+                                    if rank == 0 {
+                                        theme.effort
+                                    } else if rank == 1 {
+                                        theme.warning
+                                    } else {
+                                        theme.text_tertiary
+                                    }
+                                    .into(),
+                                )
+                                .size(px(16.)),
+                            )
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.toggle_todo(&toggle);
                                 cx.stop_propagation();
@@ -906,8 +926,12 @@ impl TasksView {
                                             .text_color(theme.text_tertiary)
                                             .child(if needs > 0 {
                                                 format!(
-                                                    "{needs} {} needs you",
-                                                    if needs == 1 { "thing" } else { "things" }
+                                                    "{needs} {}",
+                                                    if needs == 1 {
+                                                        "thing needs you"
+                                                    } else {
+                                                        "things need you"
+                                                    }
                                                 )
                                             } else if done > 0
                                                 && snapshot
@@ -930,7 +954,13 @@ impl TasksView {
                                     .items_center()
                                     .gap(px(12.))
                                     .px(px(12.))
-                                    .child("◌")
+                                    .child(
+                                        crate::components::icons::icon(
+                                            "task-draft",
+                                            theme.text_tertiary.into(),
+                                        )
+                                        .size(px(16.)),
+                                    )
                                     .child(self.quick_add.clone())
                                     .capture_key_down(cx.listener(
                                         |this, e: &gpui::KeyDownEvent, _, cx| {

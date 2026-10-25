@@ -258,11 +258,11 @@ impl ComposerView {
                                                 .relative()
                                                 .flex_none()
                                                 .role(gpui::Role::Button)
-                                                .aria_label(crate::i18n::text("添加文件等内容"))
+                                                .aria_label(if self.task_editor {"Task options"} else {crate::i18n::text("添加文件等内容")})
                                                 .focusable()
                                                 .tab_stop(true)
-                                                .on_click(cx.listener(|this, _, window, cx| { this.toggle_context(window, cx); cx.stop_propagation(); }))
-                                                    .on_key_down(cx.listener(|this, e: &gpui::KeyDownEvent, window, cx| { if matches!(e.keystroke.key.as_str(), "enter" | "space" | "down") { this.toggle_context(window, cx); cx.stop_propagation(); } }))
+                                                .on_click(cx.listener(|this, _, window, cx| { if this.task_editor { this.toggle_task_options(cx); } else { this.toggle_context(window, cx); } cx.stop_propagation(); }))
+                                                    .on_key_down(cx.listener(|this, e: &gpui::KeyDownEvent, window, cx| { if matches!(e.keystroke.key.as_str(), "enter" | "space" | "down") { if this.task_editor { this.toggle_task_options(cx); } else { this.toggle_context(window, cx); } cx.stop_propagation(); } }))
                                                 .size(px(28.0))
                                                 .rounded_full()
                                                 .flex()
@@ -277,7 +277,7 @@ impl ComposerView {
                                                 )
                                                 .child(canvas(move |bounds,_,_| context_trigger_bounds.set(Some(bounds)),|_,(),_,_|{}).absolute().inset_0().size_full()),
                                         )
-                                        .children(self.task_editor.then(|| self.render_task_utilities(cx)))
+                                        .children((self.task_editor && self.task_options_open).then(|| self.render_task_utilities(cx)))
                                         .when(self.permission_ui_enabled, |controls| {
                                             controls.child(
                                                 div()
@@ -315,6 +315,7 @@ impl ComposerView {
                                                         MouseButton::Left,
                                                         cx.listener(|this, _, window, cx| {
                                                             cx.stop_propagation();
+                                                            this.task_options_open = false;
                                                             this.menu_open = false;
                                                             this.model_list_open = false;
                                                             this.permission_menu_open =
@@ -394,6 +395,7 @@ impl ComposerView {
                                                 .hover(move |style| style.bg(theme.sidebar_hover))
                                                 .on_click(cx.listener(|this, _, window, cx| {
                                                     cx.stop_propagation();
+                                                    this.task_options_open = false;
                                                     this.permission_menu_open = false;
                                                     this.permission_menu_keyboard_focus = false;
                                                     this.menu_open = !this.menu_open;
@@ -423,7 +425,7 @@ impl ComposerView {
                                                 .flex()
                                                 .items_center()
                                                 .gap(px(8.0))
-                                                .child(
+                                                .when(!self.task_editor, |row| row.child(
                                                     div()
                                                         .id("composer-dictation")
                                                         .role(gpui::Role::Button)
@@ -446,7 +448,7 @@ impl ComposerView {
                                                             icon("dictation", theme.text.into())
                                                                 .size(px(16.0)),
                                                         ),
-                                                )
+                                                ))
                                                 .when(!self.task_editor, |row| row.child(
                                                     div()
                                                         .id("composer-send")
@@ -821,13 +823,7 @@ impl Render for ComposerView {
             self.prompt_focus_handle(cx).focus(window, cx);
             self.focus_prompt_pending = false;
         }
-        let mut theme = Theme::for_mode(self.mode);
-        if self.task_editor {
-            theme.surface = match self.mode {
-                ThemeMode::Light => rgba(0xf9f9f9ff),
-                ThemeMode::Dark => rgba(0x171717ff),
-            };
-        }
+        let theme = Theme::for_mode(self.mode);
         self.render_composer(f32::from(window.viewport_size().width), theme, cx)
     }
 }

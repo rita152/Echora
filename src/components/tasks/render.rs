@@ -107,6 +107,47 @@ impl TasksView {
                 }),
             )
     }
+    fn editor_switch(
+        &self,
+        id: &'static str,
+        state: (&'static str, bool, bool),
+        action: Control,
+        theme: Theme,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<Div> {
+        let (label, value, disabled) = state;
+        self.control(id, "", action, theme, cx)
+            .role(Role::Switch)
+            .aria_label(label)
+            .aria_disabled(disabled)
+            .aria_toggled(if value {
+                gpui::Toggled::True
+            } else {
+                gpui::Toggled::False
+            })
+            .px(px(0.))
+            .gap(px(8.))
+            .opacity(if disabled { 0.5 } else { 1. })
+            .child(
+                div()
+                    .w(px(30.))
+                    .h(px(18.))
+                    .rounded_full()
+                    .border_1()
+                    .border_color(theme.text.alpha(0.12))
+                    .bg(if value {
+                        theme.text
+                    } else {
+                        theme.text.alpha(0.18)
+                    })
+                    .flex()
+                    .items_center()
+                    .px(px(2.))
+                    .when(value, |s| s.justify_end())
+                    .child(div().size(px(14.)).rounded_full().bg(theme.surface)),
+            )
+            .child(label)
+    }
     fn perform(&mut self, action: Control, window: &mut Window, cx: &mut Context<Self>) {
         match action {
             Control::New(project, draft) => self.new_task(project, draft, cx),
@@ -137,6 +178,9 @@ impl TasksView {
             Control::ProjectMenu => {
                 if let Some(e) = &mut self.editor {
                     e.project_menu = !e.project_menu;
+                    e.composer.update(cx, |c, cx| {
+                        c.close_side_menus(cx);
+                    });
                 }
             }
             Control::Project(id) => {
@@ -218,7 +262,7 @@ impl TasksView {
             .min_w(px(0.))
             // All card rows are single-line. A definite height also keeps long
             // boards from repeatedly measuring every title for intrinsic size.
-            .h(px(61.
+            .h(px(65.
                 + if card.attention.is_some() { 22. } else { 0. }
                 + if pr.is_some() { 22. } else { 0. }))
             .flex_none()
@@ -325,17 +369,7 @@ impl TasksView {
                     })
                     .child(div().flex_1())
                     .child(crate::tasks::relative_time(card.timestamp, now))
-                    .child(
-                        icon(
-                            if card.column == Column::Done {
-                                "task-done"
-                            } else {
-                                "scheduled"
-                            },
-                            color.into(),
-                        )
-                        .size(px(12.)),
-                    )
+                    .child(icon(column_icon(card.column), color.into()).size(px(12.)))
                     .child(status),
             )
             .when_some(card.attention, |s, attention| {
@@ -448,15 +482,12 @@ impl TasksView {
             })
             .child(
                 icon(
-                    if column == Column::Done {
-                        "task-done"
-                    } else {
-                        "scheduled"
-                    },
-                    if column == Column::Done {
-                        rgba(0x7068ccff)
-                    } else {
-                        theme.text_tertiary
+                    column_icon(column),
+                    match column {
+                        Column::Done => rgba(0x7068ccff),
+                        Column::InProgress => rgba(0xd8b333ff),
+                        Column::AwaitingYou => rgba(0xc98927ff),
+                        Column::Draft => theme.text_tertiary,
                     }
                     .into(),
                 )
@@ -468,6 +499,7 @@ impl TasksView {
                     .h(px(50.))
                     .w_full()
                     .border(px(0.5))
+                    .border_dashed()
                     .border_color(theme.text.alpha(0.06))
                     .rounded(px(10.))
                     .flex()
@@ -497,7 +529,7 @@ impl TasksView {
                 column.label()
             )))
             .flex_1()
-            .min_w(px(240.))
+            .min_w(px(248.))
             .min_h(px(0.))
             .h_full()
             .flex()
@@ -552,7 +584,7 @@ impl TasksView {
                     .child(
                         self.control(
                             SharedString::from(format!("open-board-{}", project.id)),
-                            format!("{}  {}", project.name, project.cards.len()),
+                            "",
                             Control::Route(TaskRoute {
                                 project: Some(project.id.clone()),
                                 list: false,
@@ -562,8 +594,24 @@ impl TasksView {
                         )
                         .flex_1()
                         .justify_start()
-                        .font_weight(gpui::FontWeight::MEDIUM)
-                        .text_color(theme.text),
+                        .min_w(px(0.))
+                        .px(px(4.))
+                        .aria_label(format!("{} {}", project.name, project.cards.len()))
+                        .child(
+                            div()
+                                .min_w(px(0.))
+                                .truncate()
+                                .font_weight(gpui::FontWeight::MEDIUM)
+                                .text_color(theme.text)
+                                .child(project.name.clone()),
+                        )
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_size(px(12.))
+                                .text_color(theme.text_tertiary)
+                                .child(project.cards.len().to_string()),
+                        ),
                     )
                     .child(
                         self.control(
@@ -608,9 +656,10 @@ impl TasksView {
     fn editor_overlay(
         &mut self,
         window: &mut Window,
-        theme: Theme,
+        _theme: Theme,
         cx: &mut Context<Self>,
     ) -> Option<gpui::AnyElement> {
+        let theme = Theme::for_mode(self.mode);
         let editor = self.editor.as_mut()?;
         if editor.previous_focus.is_none() {
             editor.previous_focus = window.focused(cx);
@@ -629,6 +678,10 @@ impl TasksView {
             .find(|p| p.project_id == draft.project_id)
             .map(|p| p.name.clone())
             .unwrap_or_else(|| "No project".into());
+        let picker_bounds =
+            std::rc::Rc::new(std::cell::Cell::new(None::<gpui::Bounds<gpui::Pixels>>));
+        let picker_canvas = picker_bounds.clone();
+        let utilities = composer.update(cx, |c, cx| c.render_task_footer(cx));
         let child_overlay = composer.update(cx, |c, cx| c.render_overlay(window, cx));
         let toasts = composer.update(cx, |c, cx| c.render_toasts(cx));
         Some(
@@ -681,15 +734,16 @@ impl TasksView {
                             },
                         ))
                         .w(px(768.))
-                        .max_w_full()
-                        .max_h_full()
+                        .max_w((window.viewport_size().width - px(32.)).max(px(0.)))
+                        .max_h((window.viewport_size().height - px(32.)).max(px(0.)))
+                        .overflow_y_scroll()
                         .p(px(16.))
                         .rounded(px(22.))
                         .bg(theme.surface)
                         .text_color(theme.text)
                         .flex()
                         .flex_col()
-                        .gap(px(8.))
+                        .gap(px(4.))
                         .relative()
                         .on_click(|_, _, cx| cx.stop_propagation())
                         .capture_key_down(cx.listener(
@@ -708,8 +762,14 @@ impl TasksView {
                                     return;
                                 }
                                 if e.keystroke.key == "escape"
-                                    && let Some(editor) = &this.editor
+                                    && let Some(editor) = &mut this.editor
                                 {
+                                    if editor.project_menu {
+                                        editor.project_menu = false;
+                                        cx.notify();
+                                        cx.stop_propagation();
+                                        return;
+                                    }
                                     if editor.composer.read(cx).has_modal_overlay() {
                                         cx.propagate();
                                         return;
@@ -731,10 +791,27 @@ impl TasksView {
                                 .child(
                                     self.control(
                                         "task-project-picker",
-                                        project_name,
+                                        "",
                                         Control::ProjectMenu,
                                         theme,
                                         cx,
+                                    )
+                                    .min_w(px(0.))
+                                    .max_w(px(260.))
+                                    .aria_label(format!("Choose project: {project_name}"))
+                                    .child(div().min_w(px(0.)).truncate().child(project_name))
+                                    .child(
+                                        icon("chevron-down", theme.text_secondary.into())
+                                            .size(px(12.)),
+                                    )
+                                    .relative()
+                                    .child(
+                                        gpui::canvas(
+                                            move |bounds, _, _| picker_canvas.set(Some(bounds)),
+                                            |_, (), _, _| {},
+                                        )
+                                        .absolute()
+                                        .inset_0(),
                                     )
                                     .border(px(0.5))
                                     .border_color(theme.border),
@@ -754,10 +831,33 @@ impl TasksView {
                                 ),
                         )
                         .when(project_menu, |s| {
-                            s.child(
+                            s.child(gpui::deferred(
                                 div()
                                     .id("task-project-options")
+                                    .on_mouse_down_out(cx.listener(
+                                        move |this, event: &gpui::MouseDownEvent, _, cx| {
+                                            if !picker_bounds
+                                                .get()
+                                                .is_some_and(|b| b.contains(&event.position))
+                                            {
+                                                if let Some(editor) = &mut this.editor {
+                                                    editor.project_menu = false;
+                                                }
+                                                cx.notify();
+                                            }
+                                        },
+                                    ))
                                     .role(Role::Menu)
+                                    .absolute()
+                                    .top(px(46.))
+                                    .left(px(16.))
+                                    .w(px(280.))
+                                    .max_w_full()
+                                    .p(px(6.))
+                                    .rounded(px(10.))
+                                    .bg(theme.surface)
+                                    .border_1()
+                                    .border_color(theme.border)
                                     .max_h(px(200.))
                                     .overflow_y_scroll()
                                     .flex()
@@ -773,8 +873,10 @@ impl TasksView {
                                             theme,
                                             cx,
                                         )
+                                        .justify_start()
+                                        .truncate()
                                     })),
-                            )
+                            ))
                         })
                         .child(composer.clone())
                         .child(
@@ -785,39 +887,23 @@ impl TasksView {
                                 .flex()
                                 .items_center()
                                 .justify_end()
-                                .gap(px(4.))
-                                .child(
-                                    self.control(
-                                        "task-draft-toggle",
-                                        format!("{} Send as draft", if save { "●" } else { "○" }),
-                                        Control::EditorDraft,
-                                        theme,
-                                        cx,
-                                    )
-                                    .role(Role::Switch)
-                                    .aria_toggled(if save {
-                                        gpui::Toggled::True
-                                    } else {
-                                        gpui::Toggled::False
-                                    }),
-                                )
-                                .child(
-                                    self.control(
-                                        "task-goal-toggle",
-                                        format!("{} Send as goal", if goal { "●" } else { "○" }),
-                                        Control::EditorGoal,
-                                        theme,
-                                        cx,
-                                    )
-                                    .role(Role::Switch)
-                                    .aria_disabled(save)
-                                    .opacity(if save { 0.5 } else { 1. })
-                                    .aria_toggled(if goal {
-                                        gpui::Toggled::True
-                                    } else {
-                                        gpui::Toggled::False
-                                    }),
-                                )
+                                .gap(px(12.))
+                                .child(utilities)
+                                .child(div().flex_1())
+                                .child(self.editor_switch(
+                                    "task-draft-toggle",
+                                    ("Send as draft", save, false),
+                                    Control::EditorDraft,
+                                    theme,
+                                    cx,
+                                ))
+                                .child(self.editor_switch(
+                                    "task-goal-toggle",
+                                    ("Send as goal", goal, save),
+                                    Control::EditorGoal,
+                                    theme,
+                                    cx,
+                                ))
                                 .child(
                                     self.control(
                                         "task-create",
@@ -910,6 +996,9 @@ impl Render for TasksView {
             |p| p.cards.len(),
         );
         let mut header = div()
+            .id("tasks-toolbar")
+            .min_w(px(0.))
+            .overflow_x_scroll()
             .h(px(46.))
             .flex_none()
             .pl(px(self.titlebar_inset.max(20.)))
@@ -931,6 +1020,9 @@ impl Render for TasksView {
                 )
                 .child(
                     div()
+                        .min_w(px(80.))
+                        .max_w(px(260.))
+                        .truncate()
                         .text_size(px(14.))
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .child(project.name.clone()),
@@ -1027,23 +1119,38 @@ impl Render for TasksView {
                         .px(px(16.))
                         .pb(px(8.))
                         .child(
-                            self.control(
-                                "tasks-needs-review",
-                                format!(
-                                    "{} Needs review",
-                                    if prefs.needs_review { "☑" } else { "□" }
-                                ),
-                                Control::Review,
-                                theme,
-                                cx,
-                            )
-                            .role(Role::CheckBox)
-                            .aria_toggled(if prefs.needs_review {
-                                gpui::Toggled::True
-                            } else {
-                                gpui::Toggled::False
-                            })
-                            .text_size(px(12.)),
+                            self.control("tasks-needs-review", "", Control::Review, theme, cx)
+                                .role(Role::CheckBox)
+                                .aria_label("Needs review")
+                                .px(px(4.))
+                                .child(
+                                    div()
+                                        .size(px(15.))
+                                        .flex_none()
+                                        .rounded(px(4.))
+                                        .border_1()
+                                        .border_color(theme.text.alpha(0.10))
+                                        .bg(if prefs.needs_review {
+                                            theme.text
+                                        } else {
+                                            theme.control_soft
+                                        })
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .when(prefs.needs_review, |s| {
+                                            s.child(
+                                                icon("check", theme.surface.into()).size(px(11.)),
+                                            )
+                                        }),
+                                )
+                                .child("Needs review")
+                                .aria_toggled(if prefs.needs_review {
+                                    gpui::Toggled::True
+                                } else {
+                                    gpui::Toggled::False
+                                })
+                                .text_size(px(12.)),
                         )
                         .when(prefs.expanded, |s| {
                             s.child(self.control(
@@ -1093,20 +1200,19 @@ impl Render for TasksView {
                             .justify_center()
                             .gap(px(12.))
                             .text_color(theme.text_tertiary)
-                            .child(if snapshot.loading.projects || snapshot.loading.recent {
-                                "Loading tasks…"
-                            } else if prefs.needs_review {
-                                "No tasks need review"
-                            } else {
-                                "No tasks yet"
-                            })
-                            .when(!snapshot.projects.is_empty() && !prefs.needs_review, |s| {
-                                s.child(self.control(
-                                    "tasks-empty-new",
-                                    "+ New task",
-                                    Control::New(None, false),
-                                    theme,
-                                    cx,
+                            .child(div().text_size(px(14.)).text_color(theme.text).child(
+                                if snapshot.loading.projects || snapshot.loading.recent {
+                                    "Loading tasks…"
+                                } else if prefs.needs_review {
+                                    "No tasks need review"
+                                } else {
+                                    "Nothing on the board yet"
+                                }
+                            ))
+                            .when(!snapshot.loading.projects && !snapshot.loading.recent, |s| {
+                                s.child(div().max_w(px(400.)).text_size(px(13.)).text_center().text_color(theme.text_secondary).child(
+                                    if prefs.needs_review {"Clear Needs review to see all tasks."}
+                                    else {"Drafted prompts, running turns, and completed chats will show up here automatically."}
                                 ))
                             })
                             .when(
@@ -1255,4 +1361,13 @@ fn board_theme(mode: crate::theme::ThemeMode) -> Theme {
         }
     }
     theme
+}
+
+fn column_icon(column: Column) -> &'static str {
+    match column {
+        Column::Draft => "task-draft",
+        Column::InProgress => "task-progress",
+        Column::AwaitingYou => "task-attention",
+        Column::Done => "task-done",
+    }
 }

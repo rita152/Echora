@@ -125,6 +125,8 @@ impl ComposerView {
     }
 
     pub(crate) fn close_side_menus(&mut self, cx: &mut Context<Self>) {
+        self.task_options_open = false;
+        self.task_mode_menu = false;
         if self.context_menu_open {
             self.focus_prompt_pending = true;
         }

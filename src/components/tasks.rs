@@ -303,6 +303,13 @@ impl TasksView {
         self.route.clone()
     }
     pub fn set_route(&mut self, route: TaskRoute, cx: &mut Context<Self>) {
+        if self.route != route {
+            self.save_todo_details(cx);
+            self.scroll
+                .set_offset(gpui::point(gpui::px(0.), gpui::px(0.)));
+            self.selected = None;
+            self.detail_menu = None;
+        }
         self.route = route;
         self.menu = None;
         self.focus_pending = true;

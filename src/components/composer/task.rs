@@ -152,6 +152,11 @@ impl ComposerView {
             .any(|s| s.status == crate::conversation::SubmissionStatus::Accepted)
     }
     pub(crate) fn dismiss_task_menu(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.task_options_open && self.task_mode_menu {
+            self.task_mode_menu = false;
+            cx.notify();
+            return true;
+        }
         let open = self.task_options_open
             || self.menu_open
             || self.permission_menu_open
@@ -160,6 +165,7 @@ impl ComposerView {
             || self.workspace_controls.menu.is_some();
         if open {
             self.task_options_open = false;
+            self.task_mode_menu = false;
             self.close_side_menus(cx);
             self.slash_menu = None;
             self.workspace_controls.menu = None;
@@ -167,124 +173,268 @@ impl ComposerView {
         }
         open
     }
-    pub(crate) fn render_task_utilities(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    pub(super) fn toggle_task_options(&mut self, cx: &mut Context<Self>) {
+        let open = !self.task_options_open;
+        self.close_side_menus(cx);
+        self.task_options_open = open;
+        self.task_mode_menu = false;
+        cx.notify();
+    }
+    pub(crate) fn render_task_footer(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         use gpui::{Role, div, prelude::*, px};
         let theme = crate::theme::Theme::for_mode(self.mode);
-        let branch = self.workspace_controls.base.clone().or_else(|| {
-            self.workspace
-                .checkout
-                .as_ref()
-                .and_then(crate::git_review::Checkout::branch)
-                .map(str::to_owned)
-        });
         div()
             .flex()
             .items_center()
-            .gap(px(8.))
-            .text_size(px(13.))
-            .child(self.location_trigger(theme, cx))
-            .when_some(branch, |s, branch| {
-                s.child(self.branch_trigger(branch.into(), theme, cx))
-            })
-            .child(
-                div()
-                    .relative()
-                    .child(
-                        div()
-                            .id("task-mode-options")
-                            .role(Role::Button)
-                            .aria_label("Task options")
-                            .focusable()
-                            .tab_stop(true)
-                            .px(px(8.))
-                            .py(px(4.))
-                            .rounded(px(6.))
-                            .cursor_pointer()
-                            .hover(move |s| s.bg(theme.sidebar_hover))
-                            .child(if self.prompt_context.plan_mode == Some(true) {
-                                "Plan · ⋯"
+            .gap(px(4.))
+            .children(
+                [
+                    ("Attach files", "paperclip", true),
+                    ("Voice input unavailable", "dictation", false),
+                ]
+                .into_iter()
+                .map(|(label, glyph, attach)| {
+                    div()
+                        .id(if attach { "task-attach" } else { "task-voice" })
+                        .role(Role::Button)
+                        .aria_label(label)
+                        .focusable()
+                        .tab_stop(true)
+                        .size(px(28.))
+                        .rounded(px(6.))
+                        .cursor_pointer()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .hover(move |s| s.bg(theme.sidebar_hover))
+                        .focus_visible(move |s| s.border_1().border_color(theme.text_secondary))
+                        .child(
+                            crate::components::icons::icon(glyph, theme.text_secondary.into())
+                                .size(px(16.)),
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if attach {
+                                this.attach_files(cx)
                             } else {
-                                "Default · ⋯"
-                            })
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.task_options_open = !this.task_options_open;
-                                cx.notify();
-                            }))
-                            .on_key_down(cx.listener(|this, e: &gpui::KeyDownEvent, _, cx| {
-                                if matches!(e.keystroke.key.as_str(), "enter" | "space") {
-                                    this.task_options_open = !this.task_options_open;
-                                    cx.notify();
-                                    cx.stop_propagation();
+                                this.start_dictation(cx)
+                            }
+                            cx.stop_propagation();
+                        }))
+                        .on_key_down(cx.listener(move |this, e: &gpui::KeyDownEvent, _, cx| {
+                            if matches!(e.keystroke.key.as_str(), "enter" | "space") {
+                                if attach {
+                                    this.attach_files(cx)
+                                } else {
+                                    this.start_dictation(cx)
                                 }
-                            })),
-                    )
-                    .when(self.task_options_open, |s| {
-                        s.child(gpui::deferred(
-                            div()
-                                .id("task-mode-menu")
-                                .role(Role::Menu)
-                                .absolute()
-                                .bottom(px(32.))
-                                .left_0()
-                                .w(px(205.))
-                                .p(px(6.))
-                                .rounded(px(10.))
-                                .bg(theme.surface)
-                                .border_1()
-                                .border_color(theme.border)
-                                .flex()
-                                .flex_col()
-                                .children(
-                                    [
-                                        ("Default", Some(false)),
-                                        ("Plan", Some(true)),
-                                        ("Debug (unavailable)", None),
-                                    ]
-                                    .into_iter()
-                                    .map(|(label, plan)| {
-                                        let enabled =
-                                            plan.is_some_and(|p| !p || self.plan_mode_available());
-                                        div()
-                                            .id(gpui::SharedString::from(format!(
-                                                "task-mode-{label}"
-                                            )))
-                                            .role(Role::MenuItem)
-                                            .aria_label(label)
-                                            .aria_disabled(!enabled)
-                                            .focusable()
-                                            .tab_stop(true)
-                                            .px(px(8.))
-                                            .py(px(6.))
-                                            .rounded(px(6.))
-                                            .text_size(px(13.))
-                                            .text_color(if enabled {
-                                                theme.text
-                                            } else {
-                                                theme.text_tertiary
-                                            })
-                                            .cursor_pointer()
-                                            .hover(move |s| s.bg(theme.sidebar_hover))
-                                            .child(label)
-                                            .on_click(cx.listener(move |this, _, _, cx| {
-                                                this.select_task_mode(plan, cx)
-                                            }))
-                                            .on_key_down(cx.listener(
-                                                move |this, e: &gpui::KeyDownEvent, _, cx| {
-                                                    if matches!(
-                                                        e.keystroke.key.as_str(),
-                                                        "enter" | "space"
-                                                    ) {
-                                                        this.select_task_mode(plan, cx);
-                                                        cx.stop_propagation();
-                                                    }
-                                                },
-                                            ))
-                                    }),
-                                ),
-                        ))
-                    }),
+                                cx.stop_propagation();
+                            }
+                        }))
+                }),
             )
             .into_any_element()
+    }
+    pub(crate) fn render_task_utilities(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        use crate::components::icons::icon;
+        use gpui::{Role, div, prelude::*, px};
+        let theme = crate::theme::Theme::for_mode(self.mode);
+        let mut menu = div()
+            .id("task-options-menu")
+            .role(Role::Menu)
+            .aria_label("Task options")
+            .absolute()
+            .top(px(32.))
+            .left_0()
+            .w(px(150.))
+            .p(px(4.))
+            .rounded(px(10.))
+            .bg(theme.surface)
+            .border_1()
+            .border_color(theme.border)
+            .flex()
+            .flex_col()
+            .on_mouse_down_out(cx.listener(|this, e: &gpui::MouseDownEvent, _, cx| {
+                if !this
+                    .context_catalog
+                    .trigger_bounds
+                    .get()
+                    .is_some_and(|b| b.contains(&e.position))
+                {
+                    this.task_options_open = false;
+                    this.task_mode_menu = false;
+                    cx.notify();
+                }
+            }))
+            .child(
+                div()
+                    .id("task-mode-options")
+                    .role(Role::MenuItem)
+                    .aria_label("Mode")
+                    .focusable()
+                    .tab_stop(true)
+                    .h(px(30.))
+                    .px(px(8.))
+                    .rounded(px(6.))
+                    .flex()
+                    .items_center()
+                    .text_size(px(13.))
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(theme.sidebar_hover))
+                    .child("Mode")
+                    .child(div().flex_1())
+                    .child(icon("pr-chevron-right", theme.text_secondary.into()).size(px(12.)))
+                    .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                        if *hovered {
+                            this.task_mode_menu = true;
+                            cx.notify();
+                        }
+                    }))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.task_mode_menu = true;
+                        cx.notify();
+                        cx.stop_propagation();
+                    }))
+                    .on_key_down(cx.listener(|this, e: &gpui::KeyDownEvent, _, cx| {
+                        if matches!(e.keystroke.key.as_str(), "enter" | "space" | "right") {
+                            this.task_mode_menu = true;
+                            cx.notify();
+                            cx.stop_propagation();
+                        }
+                    })),
+            );
+        for (label, glyph, worktree) in [("Local", "local", false), ("Worktree", "branch", true)] {
+            let enabled = !self.workspace_controls.busy
+                && self.thread_id().is_none()
+                && (!worktree
+                    || self
+                        .workspace
+                        .checkout
+                        .as_ref()
+                        .is_some_and(crate::git_review::Checkout::is_repository));
+            let selected = self.workspace_controls.worktree_mode == worktree;
+            menu = menu.child(
+                div()
+                    .id(if worktree {
+                        "task-run-worktree"
+                    } else {
+                        "task-run-local"
+                    })
+                    .role(Role::MenuItem)
+                    .aria_label(label)
+                    .aria_selected(selected)
+                    .aria_disabled(!enabled)
+                    .focusable()
+                    .tab_stop(enabled)
+                    .h(px(30.))
+                    .px(px(8.))
+                    .rounded(px(6.))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .text_size(px(13.))
+                    .cursor_pointer()
+                    .text_color(if enabled {
+                        theme.text
+                    } else {
+                        theme.text_tertiary
+                    })
+                    .hover(move |s| s.bg(theme.sidebar_hover))
+                    .child(icon(glyph, theme.text_secondary.into()).size(px(14.)))
+                    .child(label)
+                    .child(div().flex_1())
+                    .when(selected, |s| {
+                        s.child(icon("check", theme.text_secondary.into()).size(px(12.)))
+                    })
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if enabled {
+                            this.select_run_location(worktree, cx);
+                            this.task_options_open = false;
+                            cx.notify();
+                        }
+                        cx.stop_propagation();
+                    }))
+                    .on_key_down(cx.listener(move |this, e: &gpui::KeyDownEvent, _, cx| {
+                        if enabled && matches!(e.keystroke.key.as_str(), "enter" | "space") {
+                            this.select_run_location(worktree, cx);
+                            this.task_options_open = false;
+                            cx.notify();
+                            cx.stop_propagation();
+                        }
+                    })),
+            );
+        }
+        if self.workspace_controls.worktree_mode {
+            let branch = self
+                .workspace_controls
+                .base
+                .clone()
+                .unwrap_or_else(|| "HEAD".into());
+            menu = menu.child(self.branch_trigger(branch.into(), theme, cx));
+        }
+        if self.task_mode_menu {
+            let mut modes = div()
+                .id("task-mode-menu")
+                .role(Role::Menu)
+                .aria_label("Mode")
+                .absolute()
+                .top_0()
+                .left(px(148.))
+                .w(px(185.))
+                .p(px(4.))
+                .rounded(px(10.))
+                .bg(theme.surface)
+                .border_1()
+                .border_color(theme.border)
+                .flex()
+                .flex_col();
+            for (label, plan) in [
+                ("Default", Some(false)),
+                ("Plan", Some(true)),
+                ("Debug (unavailable)", None),
+            ] {
+                let enabled = plan.is_some_and(|p| !p || self.plan_mode_available());
+                let selected = plan == self.prompt_context.plan_mode.or(Some(false));
+                modes = modes.child(
+                    div()
+                        .id(gpui::SharedString::from(format!("task-mode-{label}")))
+                        .role(Role::MenuItem)
+                        .aria_label(label)
+                        .aria_disabled(!enabled)
+                        .aria_selected(selected)
+                        .focusable()
+                        .tab_stop(enabled)
+                        .h(px(30.))
+                        .px(px(8.))
+                        .rounded(px(6.))
+                        .flex()
+                        .items_center()
+                        .text_size(px(13.))
+                        .cursor_pointer()
+                        .text_color(if enabled {
+                            theme.text
+                        } else {
+                            theme.text_tertiary
+                        })
+                        .hover(move |s| s.bg(theme.sidebar_hover))
+                        .child(label)
+                        .child(div().flex_1())
+                        .when(selected, |s| {
+                            s.child(icon("check", theme.text_secondary.into()).size(px(12.)))
+                        })
+                        .on_click(
+                            cx.listener(move |this, _, _, cx| this.select_task_mode(plan, cx)),
+                        )
+                        .on_key_down(cx.listener(move |this, e: &gpui::KeyDownEvent, _, cx| {
+                            if matches!(e.keystroke.key.as_str(), "enter" | "space") {
+                                this.select_task_mode(plan, cx);
+                                cx.stop_propagation();
+                            }
+                        })),
+                );
+            }
+            menu = menu.child(modes);
+        }
+        gpui::deferred(menu).into_any_element()
     }
     fn select_task_mode(&mut self, plan: Option<bool>, cx: &mut Context<Self>) {
         if let Some(plan) = plan.filter(|p| !p || self.plan_mode_available()) {
@@ -297,6 +447,7 @@ impl ComposerView {
             );
         }
         self.task_options_open = false;
+        self.task_mode_menu = false;
         cx.notify();
     }
 }
