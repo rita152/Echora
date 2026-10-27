@@ -45,31 +45,24 @@ impl ComposerView {
                         d.max_w(px((composer_width - 202.0).max(42.0))).truncate()
                     })
                     .text_color(theme.text)
-                    .child(if self.menu_open && !self.picker_shows_model_list() {
-                        crate::i18n::text(if self.conversation.model_explicit {
-                            "选择推理强度"
-                        } else {
-                            "选择模型"
-                        })
-                        .to_owned()
-                    } else {
-                        effective_model_label
-                    }),
+                    // Keep the trigger's intrinsic width stable while the
+                    // picker is open. The menu is centered from this bounds;
+                    // swapping to a different label after opening would move
+                    // the trigger center on the next frame and make the menu
+                    // visibly jump when the pointer enters it.
+                    .child(effective_model_label),
             )
-            .when(
-                !compact && (!self.menu_open || self.picker_shows_model_list()),
-                |d| {
-                    d.child(
-                        div()
-                            .text_color(if model_status_active {
-                                theme.effort
-                            } else {
-                                theme.text_tertiary
-                            })
-                            .child(effort_or_status_label),
-                    )
-                },
-            );
+            .when(!compact, |d| {
+                d.child(
+                    div()
+                        .text_color(if model_status_active {
+                            theme.effort
+                        } else {
+                            theme.text_tertiary
+                        })
+                        .child(effort_or_status_label),
+                )
+            });
         let trigger_value = div()
             .min_w(px(0.0))
             .flex()

@@ -3484,15 +3484,27 @@ fn model_picker_trigger_closes_on_a_second_click_and_dismisses_outside(
     visual.simulate_click(trigger, Default::default());
     assert!(entity.read_with(&visual, |composer, _| composer.menu_open));
     visual.update(|window, cx| window.draw(cx).clear(cx));
+    let trigger_after_open = visual
+        .debug_bounds("MODEL_PICKER_TRIGGER")
+        .unwrap()
+        .center();
+    assert_eq!(
+        trigger_after_open, trigger,
+        "opening the picker must not change the trigger center"
+    );
     let menu = visual.debug_bounds("MODEL_PICKER_MENU").unwrap();
     visual.update(|window, cx| {
         let trigger = entity.read(cx).model_trigger_bounds.get().unwrap();
         let margin = px(8.) + window.client_inset().unwrap_or_default();
         let half_width = px(super::MODEL_PICKER_WIDTH / 2.);
-        let expected_center = trigger.center().x.clamp(
-            margin + half_width,
-            window.viewport_size().width - margin - half_width,
-        );
+        let center = trigger.center().x;
+        let expected_center = if center + half_width > window.viewport_size().width {
+            window.viewport_size().width - margin - half_width
+        } else if center - half_width < px(0.) {
+            margin + half_width
+        } else {
+            center
+        };
         assert!(
             (menu.center().x - expected_center).abs() < px(1.),
             "menu: {menu:?}, expected center: {expected_center:?}"
@@ -3504,6 +3516,15 @@ fn model_picker_trigger_closes_on_a_second_click_and_dismisses_outside(
             assert_eq!(menu.bottom(), desired_bottom);
         }
     });
+    for position in [menu.center(), trigger, menu.origin + point(px(8.), px(8.))] {
+        visual.simulate_mouse_move(position, None, Default::default());
+        visual.update(|window, cx| window.draw(cx).clear(cx));
+        assert_eq!(
+            visual.debug_bounds("MODEL_PICKER_MENU").unwrap(),
+            menu,
+            "hover, leave and re-enter must not reposition the menu"
+        );
+    }
     visual.simulate_click(trigger, Default::default());
     assert!(!entity.read_with(&visual, |composer, _| composer.menu_open));
     visual.simulate_click(trigger, Default::default());
@@ -3530,6 +3551,67 @@ fn model_picker_trigger_closes_on_a_second_click_and_dismisses_outside(
         entity.read_with(&visual, |composer, _| composer.request_effort()),
         "medium"
     );
+}
+
+#[gpui::test]
+fn model_picker_hover_position_is_stable_across_composer_layouts(cx: &mut gpui::TestAppContext) {
+    for width in [380., 748., 1440.] {
+        for existing in [false, true] {
+            for attached in [false, true] {
+                for selection in [None, Some((0, 0)), Some((1, 0)), Some((1, 1))] {
+                    let window = cx.open_window(size(px(width), px(600.)), |_, cx| {
+                        let mut composer = ComposerView::new(ThemeMode::Dark, cx);
+                        composer.apply_model_catalog(test_model_catalog());
+                        if let Some((model, effort)) = selection {
+                            composer.select_model_at(model);
+                            composer.select_effort_at(effort);
+                        }
+                        if existing {
+                            composer.conversation.phase = ConversationPhase::Complete;
+                        }
+                        if attached {
+                            composer
+                                .prompt_context
+                                .files
+                                .push(crate::agent::AgentInputFile {
+                                    path: PathBuf::from("/tmp/picker-layout-fixture.txt"),
+                                    image: false,
+                                });
+                        }
+                        composer
+                    });
+                    let entity = cx.update(|cx| window.root(cx).unwrap());
+                    let mut visual = gpui::VisualTestContext::from_window(window.into(), cx);
+                    visual.update(|window, cx| window.draw(cx).clear(cx));
+                    let trigger = visual.debug_bounds("MODEL_PICKER_TRIGGER").unwrap();
+                    visual.simulate_click(trigger.center(), Default::default());
+                    visual.update(|window, cx| window.draw(cx).clear(cx));
+                    assert!(entity.read_with(&visual, |composer, _| composer.menu_open));
+                    assert_eq!(
+                        visual.debug_bounds("MODEL_PICKER_TRIGGER").unwrap(),
+                        trigger
+                    );
+                    let menu = visual.debug_bounds("MODEL_PICKER_MENU").unwrap();
+                    for position in [
+                        menu.center(),
+                        trigger.center(),
+                        menu.origin + point(px(8.), px(8.)),
+                    ] {
+                        visual.simulate_mouse_move(position, None, Default::default());
+                        visual.update(|window, cx| window.draw(cx).clear(cx));
+                        assert_eq!(
+                            visual.debug_bounds("MODEL_PICKER_MENU").unwrap(),
+                            menu,
+                            "width={width}, existing={existing}, attached={attached}, selection={selection:?}"
+                        );
+                    }
+                    visual.simulate_click(point(px(10.), px(590.)), Default::default());
+                    assert!(!entity.read_with(&visual, |composer, _| composer.menu_open));
+                    visual.update(|window, _| window.remove_window());
+                }
+            }
+        }
+    }
 }
 
 #[test]
