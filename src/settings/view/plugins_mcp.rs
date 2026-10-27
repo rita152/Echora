@@ -445,6 +445,7 @@ impl SettingsView {
                 "apps" => PluginSegment::Apps,
                 "mcp" => PluginSegment::Mcp,
                 "skills" => PluginSegment::Skills,
+                "marketplace" => PluginSegment::Marketplaces,
                 _ => PluginSegment::Plugins,
             };
             self.plugins_segment = target;
@@ -524,7 +525,7 @@ impl SettingsView {
                     self.install_skills_capture_fixture();
                     self.install_mcp_capture_fixture(None);
                 }
-                PluginSegment::Plugins | PluginSegment::Apps => {}
+                PluginSegment::Plugins | PluginSegment::Apps | PluginSegment::Marketplaces => {}
             }
         } else {
             self.ensure_plugins_segment_loaded(cx);

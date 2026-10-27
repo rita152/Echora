@@ -341,8 +341,8 @@ Hook 字段范围：eventName 支持 preToolUse、permissionRequest、postToolUs
 | `hooks/list` | 默认 | 已接入 | cwds 为当前项目根与其他已知项目根；按 generation 校验每项 cwd、事件／来源／handler／trustStatus 枚举、绝对 sourcePath 与非负超时；钩子设置页按参考分组显示来源、摘要、问题与逐项信任／启用，写入 `hooks.state."<key>".{trusted_hash,enabled}` 后重新读取。 | `manager/hooks`、`hooks` |
 | `initialize` | 默认 | 已接入 | 每个连接 generation 一次；发送 clientInfo、experimentalApi=true、requestAttestation=false；按完整方法名退订三项通知，列表见运行时能力协商。 | `manager` |
 | `marketplace/add` | 默认 | 已接入 | source（必填）与可选 refName/sparsePaths；来源文本只来自用户在“添加”面板的输入；成功/失败/超时/结果未知四态分离，结果未知不自动重试。 | `manager/plugins`、`plugins_catalog` |
-| `marketplace/remove` | 默认 | 已接入 | marketplaceName；先确认再发送，失败保留意图可显式重试，成功后强制重读目录。 | `manager/plugins`、`plugins_catalog` |
-| `marketplace/upgrade` | 默认 | 已接入 | marketplaceName 可空（空即由服务端选择全部）；逐条保留 selectedMarketplaces、upgradedRoots 与 errors。 | `manager/plugins`、`plugins_catalog` |
+| `marketplace/remove` | 默认 | 已接入 | marketplaceName；设置页“市场”标签仅显示配置中的非内置来源，先确认再发送，失败保留意图可显式重试，成功后强制重读配置与目录。 | `manager/plugins`、`plugins_catalog` |
+| `marketplace/upgrade` | 默认 | 已接入 | marketplaceName 可空（空即由服务端选择全部）；设置页仅对配置中的非内置 Git 来源开放升级，逐条保留 selectedMarketplaces、upgradedRoots 与 errors。 | `manager/plugins`、`plugins_catalog` |
 | `mcpServer/event/stream/start` | 实验 | 未接入 | — | — |
 | `mcpServer/event/stream/stop` | 实验 | 未接入 | — | — |
 | `mcpServer/oauth/login` | 默认 | 已接入 | 只提交 name/threadId/scopes/clientRegistration/timeoutSecs；返回 authorizationUrl 并记录客户端生成的 loginId；取消是本地失效，断连使 pending 登录失效。 | `manager/mcp`、`mcp` |

@@ -11,6 +11,9 @@ mod general;
 mod git;
 mod hooks;
 mod language;
+mod marketplaces;
+#[cfg(test)]
+mod marketplaces_tests;
 mod memories;
 mod navigation;
 mod personalization;
@@ -56,6 +59,7 @@ pub(super) enum PluginSegment {
     Apps,
     Mcp,
     Skills,
+    Marketplaces,
 }
 
 pub struct SettingsView {
@@ -309,6 +313,18 @@ impl SettingsView {
         )
         .detach();
         cx.subscribe(
+            &marketplace_source_input,
+            |this, input, _: &crate::components::prompt_input::PromptChanged, cx| {
+                if let Some(plugins_catalog::PluginConfirmation::MarketplaceAdd { source }) =
+                    &mut this.plugins_catalog.confirmation
+                {
+                    *source = input.read(cx).text().trim().to_owned();
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
+        cx.subscribe(
             &config_input,
             |this, _, event: &crate::components::prompt_input::PromptSubmitted, cx| {
                 if let Some(key) = this.config_custom_key.clone() {
@@ -449,8 +465,10 @@ impl SettingsView {
         self.language_menu_open = false;
         self.selected = slug;
         self.config_menu = None;
-        if matches!(slug, "agent" | "personalization" | "hooks-settings")
-            && self.config_editor.snapshot.is_none()
+        if matches!(
+            slug,
+            "agent" | "personalization" | "hooks-settings" | "plugins-settings"
+        ) && self.config_editor.snapshot.is_none()
         {
             self.set_config_context(self.config_cwd.clone(), cx);
         }
@@ -493,7 +511,7 @@ impl SettingsView {
                     self.refresh_skills(false, cx);
                 }
             }
-            PluginSegment::Plugins => {
+            PluginSegment::Plugins | PluginSegment::Marketplaces => {
                 if self.plugins_catalog.directory.catalog.is_none()
                     && !self.plugins_catalog.directory.loading
                 {
@@ -523,7 +541,7 @@ impl SettingsView {
                     && (self.skills.directory.snapshot.is_some()
                         || self.skills.directory.error.is_some())
             }
-            PluginSegment::Plugins => {
+            PluginSegment::Plugins | PluginSegment::Marketplaces => {
                 let directory = &self.plugins_catalog.directory;
                 if self.directory_presentation
                     && self.directory_scope == plugin_directory::Scope::Installed
@@ -550,6 +568,19 @@ impl SettingsView {
             return;
         }
         self.plugins_segment = segment;
+        self.plugins_catalog.confirmation = None;
+        self.content_scroll.set_offset(point(px(0.), px(0.)));
+        self.plugin_search_input.update(cx, |input, cx| {
+            let placeholder = if segment == PluginSegment::Marketplaces {
+                crate::i18n::text("搜索市场")
+            } else {
+                crate::i18n::text("搜索插件")
+            };
+            input.set_text_silently("", cx);
+            input.set_placeholder(placeholder, cx);
+            input.set_accessible_name(placeholder);
+        });
+        self.plugins_catalog.directory.clear_search();
         // Leaving a segment drops the detail it was showing: the read belongs to
         // the list the user was looking at, not to the new one.
         if segment != PluginSegment::Plugins {

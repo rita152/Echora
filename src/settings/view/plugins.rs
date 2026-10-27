@@ -137,26 +137,52 @@ impl SettingsView {
                             .text_size(px(crate::typography::ui_size(14.0)))
                             .line_height(px(18.0))
                             .text_color(theme.text_tertiary)
-                            .children((0..4).map(|index| {
-                                let (label, count, target) = counts[index];
-                                let selected = segment == target;
-                                div()
-                                    .id(("plugins-segment", index))
-                                    .h(px(28.0))
-                                    .pl(px(9.0))
-                                    .pr(px(7.0))
-                                    .rounded(px(12.5))
-                                    .flex()
-                                    .items_center()
-                                    .cursor_pointer()
-                                    .when(selected, |chip| {
-                                        chip.bg(plugin_hover).text_color(theme.text)
+                            .children(
+                                counts
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|(_, (_, count, target))| {
+                                        *target != PluginSegment::Marketplaces || *count > 0
                                     })
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.select_plugins_segment(target, cx)
-                                    }))
-                                    .child(format!("{label} {count}"))
-                            })),
+                                    .map(|(index, &(label, count, target))| {
+                                        let selected = segment == target;
+                                        div()
+                                            .id(("plugins-segment", index))
+                                            .debug_selector(move || {
+                                                format!("plugins-segment-{index}")
+                                            })
+                                            .role(gpui::Role::Tab)
+                                            .aria_label(label)
+                                            .aria_selected(selected)
+                                            .focusable()
+                                            .tab_stop(true)
+                                            .on_key_down(cx.listener(
+                                                move |this, event: &gpui::KeyDownEvent, _, cx| {
+                                                    if matches!(
+                                                        event.keystroke.key.as_str(),
+                                                        "enter" | "space"
+                                                    ) {
+                                                        this.select_plugins_segment(target, cx);
+                                                        cx.stop_propagation();
+                                                    }
+                                                },
+                                            ))
+                                            .h(px(28.0))
+                                            .pl(px(9.0))
+                                            .pr(px(7.0))
+                                            .rounded(px(12.5))
+                                            .flex()
+                                            .items_center()
+                                            .cursor_pointer()
+                                            .when(selected, |chip| {
+                                                chip.bg(plugin_hover).text_color(theme.text)
+                                            })
+                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                this.select_plugins_segment(target, cx)
+                                            }))
+                                            .child(format!("{label} {count}"))
+                                    }),
+                            ),
                     )
                     .child(
                         div()
@@ -193,7 +219,7 @@ impl SettingsView {
     /// the backend actually returned.
     /// Segment labels, counts and targets. Every count is a live value: the
     /// plugin and app badges report what the directories actually returned.
-    fn plugins_segment_counts(&self) -> [(&'static str, usize, PluginSegment); 4] {
+    fn plugins_segment_counts(&self) -> [(&'static str, usize, PluginSegment); 5] {
         [
             (
                 crate::i18n::text("插件"),
@@ -222,6 +248,11 @@ impl SettingsView {
                 crate::i18n::text("技能"),
                 self.skills.skill_count(),
                 PluginSegment::Skills,
+            ),
+            (
+                crate::i18n::text("市场"),
+                self.configured_marketplace_count(),
+                PluginSegment::Marketplaces,
             ),
         ]
     }

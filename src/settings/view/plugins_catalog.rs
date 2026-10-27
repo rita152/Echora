@@ -427,7 +427,6 @@ impl SettingsView {
                 ));
             }
         }
-        list = list.child(self.marketplace_management_card(theme, cx));
         let rows = directory.visible_plugins();
         if rows.is_empty() && !directory.loading && directory.error.is_none() {
             let message = if directory.search_term.trim().is_empty() {
@@ -639,104 +638,8 @@ impl SettingsView {
             PluginSegment::Apps => self.apps_list(theme, cx),
             PluginSegment::Mcp => self.mcp_segment_content(theme, cx),
             PluginSegment::Skills => self.skills_segment_content(theme, cx),
+            PluginSegment::Marketplaces => self.marketplaces_content(theme, cx),
         }
-    }
-
-    /// The confirmation every state-changing catalog action passes through.
-    /// The marketplaces the server reported, with the two actions the plugin
-    /// protocol offers for them. Names and paths are the server's own.
-    fn marketplace_management_card(
-        &self,
-        theme: &Theme,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        let marketplaces = self
-            .plugins_catalog
-            .directory
-            .catalog
-            .as_ref()
-            .map(|catalog| {
-                catalog
-                    .marketplaces
-                    .iter()
-                    .map(|marketplace| {
-                        (
-                            marketplace.name.clone(),
-                            marketplace.display_name().to_owned(),
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let mut card = div().w_full().flex().flex_col().gap(px(4.0));
-        for (index, (name, display_name)) in marketplaces.into_iter().enumerate() {
-            let upgrade_name = name.clone();
-            let remove = PluginConfirmation::MarketplaceRemove {
-                marketplace_name: name.clone(),
-            };
-            card = card.child(
-                div()
-                    .id(("marketplace-row", index))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap(px(12.0))
-                    .child(
-                        div()
-                            .text_size(px(crate::typography::ui_size(12.0)))
-                            .line_height(px(16.0))
-                            .text_color(theme.settings_description)
-                            .child(display_name),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(8.0))
-                            .child(
-                                div()
-                                    .id(("marketplace-upgrade", index))
-                                    .h(px(24.0))
-                                    .px(px(10.0))
-                                    .rounded(px(12.0))
-                                    .bg(theme.settings_button)
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .text_size(px(crate::typography::ui_size(12.0)))
-                                    .line_height(px(16.0))
-                                    .text_color(theme.text)
-                                    .cursor_pointer()
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        let name = upgrade_name.clone();
-                                        this.confirm_marketplace_upgrade(name, cx);
-                                    }))
-                                    .child(crate::i18n::text("更新")),
-                            )
-                            .child(
-                                div()
-                                    .id(("marketplace-remove", index))
-                                    .h(px(24.0))
-                                    .px(px(10.0))
-                                    .rounded(px(12.0))
-                                    .bg(theme.settings_button)
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .text_size(px(crate::typography::ui_size(12.0)))
-                                    .line_height(px(16.0))
-                                    .text_color(theme.text)
-                                    .cursor_pointer()
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        this.plugins_catalog.confirmation = Some(remove.clone());
-                                        cx.notify();
-                                    }))
-                                    .child(crate::i18n::text("移除")),
-                            ),
-                    ),
-            );
-        }
-        card.into_any_element()
     }
 
     pub(super) fn confirmation_card(
@@ -781,6 +684,7 @@ impl SettingsView {
                     .child(
                         div()
                             .id("catalog-confirm")
+                            .debug_selector(|| "catalog-confirm".into())
                             .role(gpui::Role::Button)
                             .aria_label(confirmation.confirm_label())
                             .focusable()
@@ -804,6 +708,7 @@ impl SettingsView {
                     .child(
                         div()
                             .id("catalog-cancel")
+                            .debug_selector(|| "catalog-cancel".into())
                             .role(gpui::Role::Button)
                             .aria_label(crate::i18n::text("取消"))
                             .focusable()

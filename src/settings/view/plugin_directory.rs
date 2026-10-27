@@ -96,7 +96,7 @@ impl SettingsView {
     }
 
     pub(super) fn directory_search_changed(&mut self, text: String, cx: &mut Context<Self>) {
-        if !self.directory_presentation {
+        if !self.directory_presentation && self.plugins_segment != PluginSegment::Marketplaces {
             return;
         }
         if self.plugins_segment == PluginSegment::Skills {
@@ -148,7 +148,7 @@ impl SettingsView {
             .collect()
     }
 
-    fn directory_operation_blocked(&self) -> bool {
+    pub(super) fn directory_operation_blocked(&self) -> bool {
         self.plugins_catalog.directory.operations().any(|op| {
             op.phase.busy()
                 || matches!(

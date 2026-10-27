@@ -93,6 +93,13 @@ impl SettingsView {
                     this.config_drafts.entry(cwd.clone()).or_default()
                 };
                 editor.accept_read(cycle, result);
+                if this.config_cwd == cwd
+                    && this.plugins_segment == super::PluginSegment::Marketplaces
+                    && this.configured_marketplace_count() == 0
+                    && this.config_editor.snapshot.is_some()
+                {
+                    this.select_plugins_segment(super::PluginSegment::Plugins, cx);
+                }
                 cx.notify();
             });
             let profiles = profiles

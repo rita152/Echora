@@ -596,6 +596,10 @@ pub(super) fn english(source: &str) -> Option<&'static str> {
             "The plugin request connection closed before returning a response"
         }
         "搜索插件" => "Search plugins",
+        "搜索市场" => "Search marketplaces",
+        "市场" => "Marketplace",
+        "未找到任何市场" => "No marketplaces found",
+        "升级" => "Upgrade",
         "搜索文件失败" => "File search failed",
         "搜索聊天" => "Search chats",
         "搜索设置…" => "Search settings…",

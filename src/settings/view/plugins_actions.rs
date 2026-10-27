@@ -21,6 +21,10 @@ impl SettingsView {
     /// Reads the plugin catalog and the installed subset. Both answers belong to
     /// the same cycle, so a superseded read cannot overwrite a newer one.
     pub(super) fn refresh_plugins(&mut self, force_refetch: bool, cx: &mut Context<Self>) {
+        if !self.directory_presentation && (force_refetch || self.config_editor.snapshot.is_none())
+        {
+            self.reload_config(cx);
+        }
         let generation = self.plugins_generation;
         use crate::plugins::PluginCatalogSource as Source;
         let sources: &[Source] = if self.directory_presentation {
@@ -171,7 +175,10 @@ impl SettingsView {
             .wrapping_add(1);
         if self.directory_presentation
             || (self.selected == "plugins-settings"
-                && self.plugins_segment == PluginSegment::Plugins)
+                && matches!(
+                    self.plugins_segment,
+                    PluginSegment::Plugins | PluginSegment::Marketplaces
+                ))
         {
             self.refresh_plugins(false, cx);
         }
@@ -344,6 +351,12 @@ impl SettingsView {
         let Some(confirmation) = self.plugins_catalog.confirmation.take() else {
             return;
         };
+        if matches!(&confirmation, PluginConfirmation::MarketplaceAdd { source } if source.trim().is_empty())
+        {
+            self.plugins_catalog.confirmation = Some(confirmation);
+            cx.notify();
+            return;
+        }
         let generation = self.plugins_generation;
         match confirmation {
             PluginConfirmation::Install {
@@ -728,7 +741,7 @@ impl SettingsView {
     /// Runs a search with the current term. An empty term returns to the full
     /// catalog instead of querying for nothing.
     pub(super) fn submit_plugin_search(&mut self, cx: &mut Context<Self>) {
-        if self.directory_presentation {
+        if self.directory_presentation || self.plugins_segment == PluginSegment::Marketplaces {
             // plugin/list returns complete catalogs (no cursor). Filter their
             // union locally, so search has exactly the displayed source scope
             // and stays usable when global remote search requires login.
@@ -795,6 +808,9 @@ impl SettingsView {
         marketplace_name: String,
         cx: &mut Context<Self>,
     ) {
+        if self.directory_operation_blocked() || !self.can_upgrade_marketplace(&marketplace_name) {
+            return;
+        }
         self.plugins_catalog.confirmation = Some(PluginConfirmation::MarketplaceUpgrade {
             marketplace_name: Some(marketplace_name),
         });
