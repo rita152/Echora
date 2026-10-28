@@ -684,7 +684,6 @@ pub(super) fn current_response_footer(
     turn_scope: &str,
     assistant_message: String,
     metadata: ResponseFooterMetadata,
-    response_feedback: i8,
     home_entity: Entity<HomeView>,
     theme: Theme,
     cx: &mut App,
@@ -695,13 +694,6 @@ pub(super) fn current_response_footer(
         goal_achieved,
         always_visible,
     } = metadata;
-    use std::hash::{Hash, Hasher};
-    let mut hash = std::hash::DefaultHasher::new();
-    turn_scope.hash(&mut hash);
-    assistant_message.hash(&mut hash);
-    let feedback_id = hash.finish();
-    let feedback_open = home_entity.read(cx).response_feedback_menu == Some(feedback_id);
-    let feedback_home = home_entity.clone();
     let hook_home = home_entity.clone();
     div()
         .group("response-footer")
@@ -727,58 +719,9 @@ pub(super) fn current_response_footer(
                     "message-copy",
                     "response-copy",
                     0,
-                    false,
                     assistant_message.clone(),
-                    home_entity.clone(),
                     theme,
                 ))
-                .child(
-                    div()
-                        .id(SharedString::from(format!(
-                            "response-feedback-{feedback_id}"
-                        )))
-                        .size(px(26.0))
-                        .rounded(px(10.0))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .role(Role::Button)
-                        .aria_label(crate::i18n::text("评价回复"))
-                        .cursor_pointer()
-                        .hover(move |button| button.bg(theme.sidebar_hover))
-                        .on_click(move |_, _, cx| {
-                            feedback_home.update(cx, |home, cx| {
-                                home.response_feedback_menu = if feedback_open {
-                                    None
-                                } else {
-                                    Some(feedback_id)
-                                };
-                                cx.notify();
-                            })
-                        })
-                        .child(icon("message-feedback", theme.text_tertiary.into()).size(px(16.0))),
-                )
-                .when(feedback_open, |actions| {
-                    actions
-                        .child(message_action(
-                            "message-thumb-up",
-                            "response-thumb-up",
-                            1,
-                            response_feedback == 1,
-                            assistant_message.clone(),
-                            home_entity.clone(),
-                            theme,
-                        ))
-                        .child(message_action(
-                            "message-thumb-down",
-                            "response-thumb-down",
-                            2,
-                            response_feedback == -1,
-                            assistant_message.clone(),
-                            home_entity.clone(),
-                            theme,
-                        ))
-                })
                 .when(
                     home_entity.read(cx).presentation != super::HomePresentation::SideChat,
                     |actions| {
@@ -786,9 +729,7 @@ pub(super) fn current_response_footer(
                             "message-branch",
                             "response-branch",
                             3,
-                            false,
                             assistant_message,
-                            home_entity,
                             theme,
                         ))
                     },
@@ -848,20 +789,15 @@ pub(super) fn message_action(
     glyph: &'static str,
     id: &'static str,
     action: usize,
-    active: bool,
     assistant_message: String,
-    home_entity: Entity<HomeView>,
     theme: Theme,
 ) -> impl IntoElement {
     let keyboard_message = assistant_message.clone();
-    let keyboard_home = home_entity.clone();
     div()
         .id(id)
         .role(Role::Button)
         .aria_label(match action {
             0 => crate::i18n::text("复制"),
-            1 => crate::i18n::text("赞"),
-            2 => crate::i18n::text("踩"),
             _ => crate::i18n::text("从此处分叉"),
         })
         .focusable()
@@ -869,20 +805,10 @@ pub(super) fn message_action(
         .focus_visible(move |s| s.bg(theme.sidebar_hover))
         .on_key_down(move |e: &gpui::KeyDownEvent, _, cx| {
             if matches!(e.keystroke.key.as_str(), "enter" | "space") {
-                match action {
-                    0 => cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                if action == 0 {
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
                         keyboard_message.clone(),
-                    )),
-                    1 | 2 => keyboard_home.update(cx, |home, cx| {
-                        let value = if action == 1 { 1 } else { -1 };
-                        home.response_feedback = if home.response_feedback == value {
-                            0
-                        } else {
-                            value
-                        };
-                        cx.notify();
-                    }),
-                    _ => {}
+                    ));
                 }
                 cx.stop_propagation();
             }
@@ -893,25 +819,12 @@ pub(super) fn message_action(
         .items_center()
         .justify_center()
         .cursor_pointer()
-        .when(active, |button| {
-            button.bg(theme.sidebar_hover).text_color(theme.text)
-        })
         .hover(move |style| style.bg(theme.sidebar_hover))
         .active(move |style| style.bg(theme.text.alpha(0.12)))
-        .on_click(move |_, _, cx| match action {
-            0 => cx.write_to_clipboard(gpui::ClipboardItem::new_string(assistant_message.clone())),
-            1 | 2 => {
-                let value = if action == 1 { 1 } else { -1 };
-                home_entity.update(cx, |home, cx| {
-                    home.response_feedback = if home.response_feedback == value {
-                        0
-                    } else {
-                        value
-                    };
-                    cx.notify();
-                });
+        .on_click(move |_, _, cx| {
+            if action == 0 {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(assistant_message.clone()));
             }
-            _ => {}
         })
         .child(icon(glyph, theme.text_tertiary.into()).size(px(RESPONSE_ACTION_ICON_SIZE)))
 }

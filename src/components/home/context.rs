@@ -49,7 +49,6 @@ pub(super) struct ConversationRenderContext {
     pub(super) streaming_fade: crate::components::markdown::MarkdownFadeHandle,
     /// The assistant message whose revealed words fade in.
     pub(super) streaming_message_id: Option<String>,
-    pub(super) response_feedback: i8,
     pub(super) user_message_actions_visible_for_capture: bool,
     pub(super) disclosures: Rc<DisclosureRenderState>,
     /// The provider can generate images, so a failed image offers Retry.

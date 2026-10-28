@@ -33,10 +33,8 @@ pub(super) fn subagent_conversation(
     conversation_activity: Vec<ConversationActivity>,
     conversation_scroll: ScrollHandle,
 ) -> Div {
-    let home_entity = render.home_entity.clone();
     let theme = render.theme;
     let thinking_shimmer_progress = render.thinking_shimmer_progress;
-    let response_feedback = render.response_feedback;
     let has_historical_content = transcript
         .iter()
         .any(|turn| !turn.assistant_message.is_empty() || !turn.activities.is_empty());
@@ -133,27 +131,7 @@ pub(super) fn subagent_conversation(
                                 "message-copy",
                                 "subagent-response-copy",
                                 0,
-                                false,
                                 copied_assistant_message.clone(),
-                                home_entity.clone(),
-                                theme,
-                            ))
-                            .child(message_action(
-                                "message-thumb-up",
-                                "subagent-response-thumb-up",
-                                1,
-                                response_feedback == 1,
-                                copied_assistant_message.clone(),
-                                home_entity.clone(),
-                                theme,
-                            ))
-                            .child(message_action(
-                                "message-thumb-down",
-                                "subagent-response-thumb-down",
-                                2,
-                                response_feedback == -1,
-                                copied_assistant_message.clone(),
-                                home_entity.clone(),
                                 theme,
                             )),
                     )
@@ -216,7 +194,6 @@ pub(super) fn conversation(
     let home_entity = render.home_entity.clone();
     let theme = render.theme;
     let thinking_shimmer_progress = render.thinking_shimmer_progress;
-    let response_feedback = render.response_feedback;
     let user_message_actions_visible_for_capture = render.user_message_actions_visible_for_capture;
     sync_list_item_count(&conversation_list, rows.len());
     let conversation_rows = list(conversation_list, move |index, window, _cx| {
@@ -431,7 +408,6 @@ pub(super) fn conversation(
                                     )
                                 }),
                             },
-                            response_feedback,
                             home_entity.clone(),
                             theme,
                             _cx,

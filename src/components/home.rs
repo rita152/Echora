@@ -107,7 +107,6 @@ pub struct HomeView {
     /// Fade timeline of that message; inert while nothing streams.
     streaming_fade: MarkdownFadeHandle,
     response_feedback: i8,
-    response_feedback_menu: Option<u64>,
     hook_tooltip_focus: Option<FocusHandle>,
     dismissed_hook_tooltips: HashSet<String>,
     hook_hover_started: HashMap<String, Instant>,
@@ -423,7 +422,6 @@ impl HomeView {
             streaming_revealed_len: 0,
             streaming_fade: MarkdownFadeHandle::none(),
             response_feedback: 0,
-            response_feedback_menu: None,
             hook_tooltip_focus: None,
             dismissed_hook_tooltips: HashSet::new(),
             hook_hover_started: HashMap::new(),
@@ -1981,7 +1979,6 @@ impl Render for HomeView {
                     thinking_shimmer_progress: self.thinking_shimmer_progress,
                     streaming_fade: self.streaming_fade.clone(),
                     streaming_message_id: self.composer.read(cx).streaming_assistant_message_id(),
-                    response_feedback: self.response_feedback,
                     user_message_actions_visible_for_capture: self
                         .user_message_actions_visible_for_capture,
                     disclosures: Rc::new(DisclosureRenderState {
@@ -2024,7 +2021,6 @@ impl Render for HomeView {
                     thinking_shimmer_progress: self.thinking_shimmer_progress,
                     streaming_fade: self.streaming_fade.clone(),
                     streaming_message_id: self.composer.read(cx).streaming_assistant_message_id(),
-                    response_feedback: self.response_feedback,
                     user_message_actions_visible_for_capture: false,
                     disclosures: Rc::new(DisclosureRenderState {
                         expanded_reasoning: self.expanded_reasoning.clone(),

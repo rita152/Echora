@@ -21,7 +21,7 @@ Echora is an independent application in early development. It currently connects
 
 ## Work with your agent
 
-Start a conversation in a local project, attach context, and follow the agent's replies and tool activity as they arrive. Plans, commands, searches, and file changes appear in the conversation, while approval cards let you inspect actions that need permission.
+Start a conversation in a local project, attach context, and follow the agent's replies and tool activity as they arrive. Plans, commands, searches, and file changes appear in the conversation, while approval cards let you inspect actions that need permission. Reply toolbars keep Copy and Fork from here together in a compact row.
 
 - Add files, folders, images, skills, plugins, local chats, and pages from the in-app browser as context. Drop files or macOS screenshot thumbnails anywhere in the conversation to attach them; unsaved screenshots are received locally and shown as image previews. Image previews fit the available window area without a bottom zoom bar. Open an unsent image attachment and choose **Mark up** to add strokes, shapes, or text, with erasing and undo/redo. Adjust stroke width by clicking or dragging the left slider, scrolling over it, or focusing it and using the arrow keys; saving replaces that draft attachment at its original image size without changing the source file.
 - Choose the permission options exposed by your Codex configuration. New chats remember your last confirmed choice; permission options refresh automatically after a backend reconnect.
