@@ -59,6 +59,7 @@ fn section_threads(layout: &ActivityLayout) -> Vec<(String, Vec<&str>)> {
 
 fn thread(id: &str, activity: ThreadActivity) -> ThreadSummary {
     ThreadSummary {
+        forked_from_id: None,
         thread_id: id.to_owned(),
         title: id.to_owned(),
         preview: String::new(),

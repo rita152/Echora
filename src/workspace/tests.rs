@@ -31,6 +31,7 @@ fn project(id: &str, position: i64) -> Project {
 
 fn thread(id: &str, project_id: Option<&str>) -> ThreadSummary {
     ThreadSummary {
+        forked_from_id: None,
         thread_id: id.to_owned(),
         title: format!("Thread {id}"),
         preview: format!("Preview {id}"),
@@ -1532,5 +1533,26 @@ fn thread_errors_survive_idle_refresh_and_read_until_a_new_run_or_success() {
         store.snapshot().thread("thread-a").unwrap().activity,
         ThreadActivity::Idle
     );
+    let _ = fs::remove_dir_all(path.parent().unwrap());
+}
+
+#[test]
+fn verified_fork_stays_in_history_while_a_stale_list_finishes() {
+    let backend = DelayedThreadListBackend::new();
+    let path = test_preferences_path("fork-index-race");
+    let store = WorkspaceStore::with_preferences_path(backend.clone(), path.clone());
+    store.refresh_all();
+    wait_until(|| backend.recent_requested.load(Ordering::Acquire) == 1);
+    let mut child = thread("child", None);
+    child.forked_from_id = Some("parent".into());
+    child.title = "Source (2)".into();
+    store.register_forked_thread(child);
+    backend.release_recent(Page::single(vec![thread("parent", None)]));
+    wait_until(|| !store.snapshot().loading.recent);
+    let snapshot = store.snapshot();
+    let child = snapshot.thread("child").unwrap();
+    assert_eq!(child.forked_from_id.as_deref(), Some("parent"));
+    assert_eq!(child.title, "Source (2)");
+    assert!(snapshot.thread("parent").is_some());
     let _ = fs::remove_dir_all(path.parent().unwrap());
 }

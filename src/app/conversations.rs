@@ -437,6 +437,7 @@ impl ChatApp {
             });
             let _ = this.update(cx, |this, cx| match result {
                 Ok(history) => {
+                    let fork_source = history.thread.forked_from_id.clone();
                     if let Some(host) = this.conversation_hosts.get_mut(&key)
                         && host.composer == composer
                     {
@@ -446,7 +447,27 @@ impl ChatApp {
                     if this.active_conversation == key {
                         this.sync_summary_panel(cx);
                     }
-                    composer.update(cx, |composer, cx| composer.hydrate_history(history, cx));
+                    composer.update(cx, |composer, cx| {
+                        composer.set_workspace_context(
+                            history.thread.cwd.clone(),
+                            history.thread.project_id.clone(),
+                            Some(history.thread.thread_id.clone()),
+                            cx,
+                        );
+                        composer.hydrate_history(history, cx);
+                    });
+                    if let Some(source) = fork_source {
+                        let receiver = this.workspace_store.load_turn_ids(source.clone());
+                        let composer = composer.clone();
+                        cx.spawn(async move |_, cx| {
+                            if let Ok(Ok(ids)) = receiver.recv().await {
+                                composer.update(cx, |composer, cx| {
+                                    composer.set_fork_source_turns(&source, &ids, cx)
+                                });
+                            }
+                        })
+                        .detach();
+                    }
                     if this.active_conversation == key
                         && this.right_panel.mode == Some(RightPanelMode::Review)
                     {

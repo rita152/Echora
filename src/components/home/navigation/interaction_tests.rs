@@ -69,6 +69,7 @@ fn history_with_steering(steered: Option<usize>) -> ThreadHistory {
     };
     ThreadHistory {
         thread: ThreadSummary {
+            forked_from_id: None,
             thread_id: "rail-thread".to_owned(),
             title: "Rail".to_owned(),
             preview: String::new(),

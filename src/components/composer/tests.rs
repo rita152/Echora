@@ -504,6 +504,7 @@ fn history_restore_normalizes_current_and_prior_user_messages() {
         app.new_entity(|cx| ComposerView::new_with_backend(ThemeMode::Dark, backend, cx));
     let history = ThreadHistory {
         thread: ThreadSummary {
+            forked_from_id: None,
             thread_id: "thread-restore".into(),
             title: "restored".into(),
             preview: String::new(),
@@ -1659,6 +1660,7 @@ fn collaboration_history_hydrates_without_unsupported_warning() {
     let composer = app.new_entity(|cx| ComposerView::new(ThemeMode::Dark, cx));
     let history = ThreadHistory {
         thread: ThreadSummary {
+            forked_from_id: None,
             thread_id: "parent".into(),
             title: "Collaboration history".into(),
             preview: String::new(),
@@ -4511,4 +4513,45 @@ fn task_editor_cannot_bypass_draft_footer_and_acceptance_is_per_attempt() {
         assert!(!c.task_accepted(c.task_marker()));
     });
     assert_eq!(backend.requests.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn response_fork_retains_the_selected_turn_prevents_duplicates_and_retries() {
+    use super::{ForkConversationRequest, dialogs::ComposerDialog};
+    let mut app = TestApp::new();
+    let composer = app.new_entity(|cx| ComposerView::new(ThemeMode::Dark, cx));
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let observed = requests.clone();
+    let emitter = composer.clone();
+    app.update_entity(&composer, |this, cx| {
+        cx.subscribe(
+            &emitter,
+            move |_, _, request: &ForkConversationRequest, _| {
+                observed.lock().unwrap().push(request.clone());
+            },
+        )
+        .detach();
+        this.conversation.thread_id = Some("source".into());
+        this.conversation.turn_id = Some("selected".into());
+        this.conversation.phase = ConversationPhase::Streaming;
+        this.open_response_fork("selected".into(), cx);
+        assert!(this.dialog.is_none());
+        this.conversation.phase = ConversationPhase::Complete;
+        this.open_response_fork("selected".into(), cx);
+        this.submit_response_fork(false, cx);
+        this.submit_response_fork(false, cx);
+        this.dismiss_fork_dialog(cx);
+        assert!(matches!(&this.dialog, Some(ComposerDialog::Fork(_))));
+    });
+    assert_eq!(requests.lock().unwrap().len(), 1);
+    assert_eq!(requests.lock().unwrap()[0].last_turn_id, "selected");
+    app.update_entity(&composer, |this, cx| {
+        this.settle_response_fork(Err("offline".into()), None, cx);
+        this.submit_response_fork(false, cx);
+    });
+    assert_eq!(requests.lock().unwrap().len(), 2);
+    app.update_entity(&composer, |this, cx| {
+        this.settle_response_fork(Ok(()), None, cx);
+        assert!(this.dialog.is_none());
+    });
 }

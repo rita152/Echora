@@ -98,6 +98,8 @@ pub enum ThreadActivity {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ThreadSummary {
     pub thread_id: ThreadId,
+    /// Durable source identity supplied by the backend for a conversation fork.
+    pub forked_from_id: Option<ThreadId>,
     pub title: String,
     pub preview: String,
     pub cwd: PathBuf,

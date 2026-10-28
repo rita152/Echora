@@ -1,6 +1,7 @@
 mod browser;
 mod capture;
 mod conversations;
+mod fork;
 mod goal;
 mod image_preview;
 mod panel_tabs;

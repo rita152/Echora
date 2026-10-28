@@ -82,6 +82,7 @@ fn task_review_filter_tracks_the_attached_open_pr_and_excludes_closed_prs() {
         position: 0,
     }];
     snapshot.recent_threads = vec![ThreadSummary {
+        forked_from_id: None,
         thread_id: "t".into(),
         title: "review".into(),
         preview: String::new(),
@@ -208,6 +209,7 @@ fn merged_and_closed_pull_requests_still_show_when_nothing_open_matches() {
 #[test]
 fn attachments_decide_for_new_threads_and_old_ones_with_a_record() {
     let thread = |created_at: i64| ThreadSummary {
+        forked_from_id: None,
         thread_id: "t".into(),
         title: "t".into(),
         preview: String::new(),

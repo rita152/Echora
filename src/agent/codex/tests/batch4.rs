@@ -360,3 +360,22 @@ mod git_info {
         assert!(parse_thread_summary(&thread(json!({"branch": 3}))).is_err());
     }
 }
+
+#[test]
+fn fork_source_identity_is_optional_nullable_and_strictly_typed() {
+    use crate::agent::codex::workspace_protocol::parse_thread_summary;
+    let mut value = json!({"id":"child", "preview":"", "cwd":"/tmp", "projectId":null, "createdAt":1,"updatedAt":2,"status":{"type":"idle"}});
+    assert_eq!(parse_thread_summary(&value).unwrap().forked_from_id, None);
+    value["forkedFromId"] = json!(null);
+    assert_eq!(parse_thread_summary(&value).unwrap().forked_from_id, None);
+    value["forkedFromId"] = json!("parent");
+    assert_eq!(
+        parse_thread_summary(&value)
+            .unwrap()
+            .forked_from_id
+            .as_deref(),
+        Some("parent")
+    );
+    value["forkedFromId"] = json!(42);
+    assert!(parse_thread_summary(&value).is_err());
+}

@@ -9,6 +9,7 @@ impl ChatApp {
         recent: Vec<crate::workspace::RecentModelConfiguration>,
         cx: &mut Context<Self>,
     ) {
+        Self::wire_response_fork(composer, cx);
         composer.update(cx, |composer, cx| {
             composer.set_recent_command_models(recent, cx)
         });

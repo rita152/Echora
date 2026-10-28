@@ -486,9 +486,14 @@ impl HomeView {
         self.sync_streaming_reveal(&conversation_activity, cx);
         self.apply_streaming_reveal(&mut conversation_activity);
         let current_answer = assistant_message.clone();
-        let rows = conversation_list_rows(
+        let mut rows = conversation_list_rows(
             transcript.clone(),
             CurrentTurnRows {
+                turn_id: self
+                    .composer
+                    .read(cx)
+                    .current_turn_id()
+                    .map(ToOwned::to_owned),
                 phase,
                 user_message: user_message.unwrap_or_default(),
                 message_edit_active: self.composer.read(cx).message_edit_active(),
@@ -502,6 +507,12 @@ impl HomeView {
             },
             &self.expanded_resumed_turns,
         );
+        if let Some((thread_id, boundary)) = self.composer.read(cx).fork_origin() {
+            let position = boundary.and_then(|boundary| rows.iter().position(|row| {
+                matches!(row, ConversationListRow::CurrentResponseFooter { id, .. } if id == &boundary)
+            })).map_or(0, |index| index + 1);
+            rows.insert(position, ConversationListRow::ForkOrigin { thread_id });
+        }
         let items = user_message_navigation_items(
             &rows,
             &transcript,

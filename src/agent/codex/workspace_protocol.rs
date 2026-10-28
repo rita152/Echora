@@ -165,6 +165,7 @@ pub(super) fn parse_thread_summary(value: &Value) -> Result<ThreadSummary> {
     };
     Ok(ThreadSummary {
         thread_id: string_field(value, "id", "thread")?,
+        forked_from_id: optional_nullable_string_field(value, "forkedFromId", "thread")?,
         title,
         preview,
         cwd: PathBuf::from(string_field(value, "cwd", "thread")?),

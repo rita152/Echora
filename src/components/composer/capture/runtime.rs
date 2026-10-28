@@ -42,6 +42,7 @@ impl ComposerView {
         } else if state == "history" {
             self.conversation.hydrate_history(ThreadHistory {
                 thread: ThreadSummary {
+                    forked_from_id: None,
                     thread_id: thread.into(),
                     title: "Runtime compatibility check".into(),
                     preview: String::new(),

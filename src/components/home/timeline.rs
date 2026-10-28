@@ -61,6 +61,9 @@ pub(super) enum ActivityStreamUnit {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum ConversationListRow {
+    ForkOrigin {
+        thread_id: String,
+    },
     FileSummary(DiffReviewPresentation),
     Working {
         label: String,
@@ -793,6 +796,7 @@ pub(super) fn conversation_list_rows(
     expanded_resumed_turns: &HashSet<String>,
 ) -> Vec<ConversationListRow> {
     let CurrentTurnRows {
+        turn_id,
         phase,
         user_message,
         message_edit_active,
@@ -856,28 +860,24 @@ pub(super) fn conversation_list_rows(
                 expanded_resumed_turns,
             );
         }
-        if turn.resumed.is_some()
-            && matches!(
-                turn.phase,
-                ConversationPhase::Complete | ConversationPhase::Stopped
-            )
-            && !turn.assistant_message.is_empty()
+        if matches!(
+            turn.phase,
+            ConversationPhase::Complete | ConversationPhase::Stopped
+        ) && !turn.assistant_message.is_empty()
         {
             if let Some(review) = resumed_file_summary(&turn.activities, turn.resumed.as_ref()) {
                 rows.push(ConversationListRow::FileSummary(review));
-            } else {
-                rows.push(ConversationListRow::CurrentResponseFooter {
-                    id: turn
-                        .resumed
-                        .as_ref()
-                        .map(|t| t.id.clone())
-                        .unwrap_or_else(|| format!("historical-{turn_index}")),
-                    message: turn.assistant_message,
-                    completed_at: turn.assistant_message_time,
-                    hooks: super::runtime::hook_runs(&turn.activities),
-                    goal_achieved: turn.goal.achieved_seconds,
-                });
             }
+            rows.push(ConversationListRow::CurrentResponseFooter {
+                id: turn
+                    .turn_id
+                    .clone()
+                    .unwrap_or_else(|| format!("historical-{turn_index}")),
+                message: turn.assistant_message,
+                completed_at: turn.assistant_message_time,
+                hooks: super::runtime::hook_runs(&turn.activities),
+                goal_achieved: turn.goal.achieved_seconds,
+            });
         }
     }
     if message_edit_active && !user_message.is_empty() {
@@ -925,18 +925,14 @@ pub(super) fn conversation_list_rows(
     {
         if let Some(review) = resumed_file_summary(conversation_activity, resumed_turn.as_ref()) {
             rows.push(ConversationListRow::FileSummary(review));
-        } else {
-            rows.push(ConversationListRow::CurrentResponseFooter {
-                id: resumed_turn
-                    .as_ref()
-                    .map(|t| t.id.clone())
-                    .unwrap_or_else(|| "current".to_owned()),
-                message: assistant_message,
-                completed_at: assistant_message_time,
-                hooks: super::runtime::hook_runs(conversation_activity),
-                goal_achieved: goal.achieved_seconds,
-            });
         }
+        rows.push(ConversationListRow::CurrentResponseFooter {
+            id: turn_id.unwrap_or_else(|| "current".to_owned()),
+            message: assistant_message,
+            completed_at: assistant_message_time,
+            hooks: super::runtime::hook_runs(conversation_activity),
+            goal_achieved: goal.achieved_seconds,
+        });
     }
     rows
 }

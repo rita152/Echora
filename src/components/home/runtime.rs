@@ -720,6 +720,7 @@ mod tests {
             let rows = super::super::timeline::conversation_list_rows(
                 vec![],
                 super::super::context::CurrentTurnRows {
+                    turn_id: None,
                     message_edit_active: false,
                     phase: crate::conversation::ConversationPhase::Complete,
                     user_message: String::new(),

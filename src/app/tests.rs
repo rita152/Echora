@@ -1484,6 +1484,7 @@ fn thread_created_rekeys_the_draft_without_replacing_its_host() {
 fn history_fixture(thread_id: &str, message: &str) -> ThreadHistory {
     ThreadHistory {
         thread: ThreadSummary {
+            forked_from_id: None,
             thread_id: thread_id.to_owned(),
             title: format!("Thread {thread_id}"),
             preview: message.to_owned(),

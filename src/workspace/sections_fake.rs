@@ -57,6 +57,7 @@ pub(crate) fn thread(
     section: Option<ThreadSection>,
 ) -> ThreadSummary {
     ThreadSummary {
+        forked_from_id: None,
         thread_id: id.into(),
         title: format!("Chat {id}"),
         preview: String::new(),

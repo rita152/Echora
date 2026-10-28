@@ -46,7 +46,17 @@ impl AgentBackend for CodexAppServerBackend {
         thread_id: ThreadId,
         cwd: PathBuf,
     ) -> Receiver<WorkspaceResult<ThreadId>> {
-        self.manager.fork_conversation(thread_id, cwd)
+        self.manager.fork_conversation(thread_id, cwd, None)
+    }
+
+    fn fork_conversation_at(
+        &self,
+        thread_id: ThreadId,
+        cwd: PathBuf,
+        last_turn_id: String,
+    ) -> Receiver<WorkspaceResult<ThreadId>> {
+        self.manager
+            .fork_conversation(thread_id, cwd, Some(last_turn_id))
     }
 
     fn upload_feedback(

@@ -4952,6 +4952,7 @@ mod tests {
             if let Some(count) = self.thread_count {
                 let threads = (0..if request.archived { 0 } else { count })
                     .map(|index| ThreadSummary {
+                        forked_from_id: None,
                         thread_id: format!("fixture-{index}"),
                         title: format!("Thread {index}"),
                         preview: String::new(),
@@ -4968,6 +4969,7 @@ mod tests {
                 return response(Ok(Page::single(threads)));
             }
             let threads = (!request.archived).then(|| ThreadSummary {
+                forked_from_id: None,
                 thread_id: "thread-stable-id".to_owned(),
                 title: self.title.to_owned(),
                 preview: self.title.to_owned(),
@@ -5341,6 +5343,7 @@ mod tests {
     fn project_hover_summary_counts_tasks_waiting_and_running() {
         fn thread(activity: ThreadActivity) -> ThreadSummary {
             ThreadSummary {
+                forked_from_id: None,
                 thread_id: "thread".to_owned(),
                 title: "Thread".to_owned(),
                 preview: String::new(),

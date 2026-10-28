@@ -63,6 +63,7 @@ fn progress_history(status: HistoryTurnStatus, items: Vec<ThreadHistoryItem>) ->
     use crate::agent::{HistoryItemDetail, ThreadActivity, ThreadSummary, ThreadTurn};
     ThreadHistory {
         thread: ThreadSummary {
+            forked_from_id: None,
             thread_id: "history".into(),
             title: "test".into(),
             preview: String::new(),
@@ -198,6 +199,7 @@ fn steer_history_preserves_interleaved_messages_and_attachments() {
     state.resolve_submission(&receipt, Ok(()));
     let mut history = ThreadHistory {
         thread: ThreadSummary {
+            forked_from_id: None,
             thread_id: "thread".into(),
             title: "history".into(),
             preview: String::new(),
@@ -603,4 +605,31 @@ fn live_work_duration_stays_frozen_without_changing_historical_timing() {
         state.transcript[0].resumed.as_ref().unwrap().duration_ms,
         Some(10000)
     );
+}
+
+#[test]
+fn fork_origin_uses_only_the_inherited_prefix_and_survives_rehydration() {
+    let mut history = progress_history(HistoryTurnStatus::Completed, vec![message("answer", None)]);
+    history.thread.forked_from_id = Some("parent".into());
+    let first = history.turns[0].clone();
+    history.turns[0].turn_id = "base".into();
+    history.turns.push(crate::agent::ThreadTurn {
+        turn_id: "middle".into(),
+        ..first.clone()
+    });
+    history.turns.push(crate::agent::ThreadTurn {
+        turn_id: "child-only".into(),
+        ..first
+    });
+    let mut state = ConversationState::default();
+    state.hydrate_history(history.clone());
+    state.set_fork_source_turns("wrong-source", &["child-only".into()]);
+    assert_eq!(state.fork_boundary_turn_id, None);
+    state.set_fork_source_turns("parent", &["base".into(), "middle".into(), "future".into()]);
+    assert_eq!(state.fork_boundary_turn_id.as_deref(), Some("middle"));
+    assert_eq!(state.transcript.len(), 2);
+    assert_eq!(state.turn_id.as_deref(), Some("child-only"));
+    state.hydrate_history(history);
+    assert_eq!(state.forked_from_id.as_deref(), Some("parent"));
+    assert_eq!(state.fork_boundary_turn_id.as_deref(), Some("middle"));
 }

@@ -88,6 +88,7 @@ fn history() -> ThreadHistory {
     };
     ThreadHistory {
         thread: ThreadSummary {
+            forked_from_id: None,
             thread_id: "find-thread".to_owned(),
             title: "Find".to_owned(),
             preview: String::new(),

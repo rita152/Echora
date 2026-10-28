@@ -11,6 +11,23 @@ use crate::agent::{
 
 const PAGE_SIZE: u32 = 100;
 
+pub(super) fn load_all_turn_ids(
+    backend: &dyn AgentBackend,
+    thread_id: ThreadId,
+) -> WorkspaceResult<Vec<String>> {
+    load_all_pages(|cursor| {
+        backend.list_thread_turns(
+            thread_id.clone(),
+            PageRequest {
+                cursor,
+                limit: PAGE_SIZE,
+            },
+            HistoryItemDetail::NotLoaded,
+        )
+    })
+    .map(|turns| turns.into_iter().map(|turn| turn.turn_id).collect())
+}
+
 pub(super) fn receive<T>(
     receiver: Receiver<WorkspaceResult<T>>,
     label: &str,
