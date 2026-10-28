@@ -339,14 +339,24 @@ fn permission_recovery_help_supports_mouse_and_keyboard_without_granting_access(
         assert!(host.0.read(cx).capture_help_open)
     });
     visual.update(|window, cx| window.draw(cx).clear(cx));
-    visual.simulate_keystrokes("space");
-    entity.read_with(&visual, |host, cx| {
-        assert!(!host.0.read(cx).capture_help_open)
-    });
-    visual.simulate_keystrokes("enter");
-    entity.read_with(&visual, |host, cx| {
-        assert!(host.0.read(cx).capture_help_open)
-    });
+    for (key, expected) in [("space", false), ("enter", true)] {
+        visual.simulate_keystrokes(key);
+        entity.read_with(&visual, |host, cx| {
+            assert_eq!(host.0.read(cx).capture_help_open, !expected);
+        });
+        visual.update(|window, cx| {
+            window.dispatch_event(
+                gpui::PlatformInput::KeyUp(gpui::KeyUpEvent {
+                    keystroke: gpui::Keystroke::parse(key).unwrap(),
+                }),
+                cx,
+            );
+            window.draw(cx).clear(cx);
+        });
+        entity.read_with(&visual, |host, cx| {
+            assert_eq!(host.0.read(cx).capture_help_open, expected);
+        });
+    }
     visual.simulate_keystrokes("shift-tab");
     assert!(visual.update(|window, cx| {
         entity.read(cx).0.read(cx).recovery_focus["computer-use-permission-retry"]

@@ -78,11 +78,10 @@ impl Preview {
                 this.recover(action, cx);
                 cx.stop_propagation();
             }))
-            .on_key_down(cx.listener(move |this, event: &KeyDownEvent, window, cx| {
-                if matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                    this.recover(action, cx);
-                    cx.stop_propagation();
-                } else if event.keystroke.key == "tab" {
+            // GPUI invokes on_click once on Enter/Space release. Handling
+            // activation again on key down would execute the action twice.
+            .on_key_down(cx.listener(move |_, event: &KeyDownEvent, window, cx| {
+                if event.keystroke.key == "tab" {
                     if event.keystroke.modifiers.shift {
                         window.focus_prev(cx);
                     } else {
