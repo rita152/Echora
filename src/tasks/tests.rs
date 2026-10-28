@@ -35,6 +35,7 @@ fn snapshot() -> WorkspaceSnapshot {
 }
 fn thread(id: &str, activity: ThreadActivity) -> ThreadSummary {
     ThreadSummary {
+        forked_from_id: None,
         thread_id: id.into(),
         title: id.into(),
         preview: "prompt".into(),

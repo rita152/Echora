@@ -60,6 +60,8 @@ pub(crate) struct ConversationState {
     pub(crate) mcp_elicitation_contexts: HashMap<String, AgentMcpElicitationIdentity>,
     pub(crate) server_request_contexts: HashMap<String, AgentServerRequestMetadata>,
     pub(crate) thread_id: Option<String>,
+    pub(crate) forked_from_id: Option<String>,
+    pub(crate) fork_boundary_turn_id: Option<String>,
     pub(crate) turn_id: Option<String>,
     pub(crate) mcp_server_startup_statuses:
         HashMap<(Option<String>, String), AgentMcpServerStartupStatus>,
@@ -141,6 +143,8 @@ impl Default for ConversationState {
             mcp_elicitation_contexts: HashMap::new(),
             server_request_contexts: HashMap::new(),
             thread_id: None,
+            forked_from_id: None,
+            fork_boundary_turn_id: None,
             turn_id: None,
             mcp_server_startup_statuses: HashMap::new(),
             thread_statuses: HashMap::new(),

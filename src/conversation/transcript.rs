@@ -305,6 +305,22 @@ impl ConversationState {
         self.activities = vec![ConversationActivity::Error { message: error }];
         self.phase = ConversationPhase::Failed;
     }
+    /// Locate the inherited prefix using persisted turn identities, without
+    /// importing any source messages into this conversation.
+    pub(crate) fn set_fork_source_turns(&mut self, source_id: &str, ids: &[String]) {
+        if self.forked_from_id.as_deref() != Some(source_id) {
+            return;
+        }
+        self.fork_boundary_turn_id = self
+            .transcript
+            .iter()
+            .filter_map(|turn| turn.turn_id.as_ref())
+            .chain(self.turn_id.iter())
+            .take_while(|id| ids.contains(id))
+            .last()
+            .cloned();
+    }
+
     pub(crate) fn hydrate_history(&mut self, history: ThreadHistory) {
         self.live_timing = Default::default();
         self.change_runtime_scope(Some(&history.thread.thread_id));
@@ -314,6 +330,10 @@ impl ConversationState {
             self.turn_identity = None;
         }
         self.thread_id = Some(history.thread.thread_id.clone());
+        if self.forked_from_id != history.thread.forked_from_id {
+            self.fork_boundary_turn_id = None;
+        }
+        self.forked_from_id = history.thread.forked_from_id.clone();
         if let Some(pending) = self
             .pending_connection_events
             .remove(&history.thread.thread_id)

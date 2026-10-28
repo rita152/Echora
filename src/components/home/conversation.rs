@@ -14,7 +14,7 @@ use super::{
     activity::{activity_stream, render_activity_stream_unit},
     animation::thinking_shimmer,
     context::ConversationRenderContext,
-    messages::{current_response_footer, current_user_message, message_action},
+    messages::{ResponseAction, current_response_footer, current_user_message, message_action},
     timeline::{ActivityStreamUnit, ConversationListRow, conversation_status},
 };
 use crate::{
@@ -130,8 +130,7 @@ pub(super) fn subagent_conversation(
                             .child(message_action(
                                 "message-copy",
                                 "subagent-response-copy",
-                                0,
-                                copied_assistant_message.clone(),
+                                ResponseAction::Copy(copied_assistant_message.clone()),
                                 theme,
                             )),
                     )
@@ -239,6 +238,27 @@ pub(super) fn conversation(
         let find_scope = home_entity.read(_cx).find_scope_for_row(index);
         let (row, top_gap, bottom_gap) =
             crate::components::markdown::find::with_find_scope(find_scope, || match row {
+                ConversationListRow::ForkOrigin { thread_id } => {
+                    let composer = home_entity.read(_cx).composer.clone();
+                    let keyboard_composer = composer.clone();
+                    let keyboard_thread = thread_id.clone();
+                    (div().w_full().flex().items_center().gap(px(8.0)).mt(px(12.0)).mb(px(12.0))
+                        .child(div().flex_1().h(px(1.0)).bg(theme.border))
+                        .child(div().id("fork-source-chat").role(Role::Button)
+                            .aria_label(crate::i18n::format!("从聊天中继续" => "Continued from chat"))
+                            .focusable().tab_stop(true).cursor_pointer().flex().items_center().gap(px(6.0))
+                            .text_size(px(crate::typography::ui_size(14.0))).line_height(px(20.0)).text_color(theme.markdown_link)
+                            .on_click(move |_, _, cx| composer.update(cx, |_, cx| cx.emit(crate::components::composer::OpenForkSource(thread_id.clone()))))
+                            .on_key_down(move |event: &KeyDownEvent, _, cx| {
+                                if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                                    keyboard_composer.update(cx, |_, cx| cx.emit(crate::components::composer::OpenForkSource(keyboard_thread.clone())));
+                                    cx.stop_propagation();
+                                }
+                            })
+                            .child(icon("branch", theme.text_tertiary.into()).size(px(16.0)))
+                            .child(crate::i18n::format!("从聊天中继续" => "Continued from chat")))
+                        .child(div().flex_1().h(px(1.0)).bg(theme.border)).into_any_element(), 0.0, 0.0)
+                },
                 ConversationListRow::FileSummary(review) => (
                     resumed_file_summary_card(review, home_entity.clone(), theme, _cx)
                         .into_any_element(),

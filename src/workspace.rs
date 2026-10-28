@@ -1383,6 +1383,7 @@ impl WorkspaceStore {
     ) {
         let now = chrono::Utc::now().timestamp();
         let thread = ThreadSummary {
+            forked_from_id: None,
             thread_id: thread_id.clone(),
             title: fallback_thread_title(&preview),
             preview,
@@ -1404,6 +1405,14 @@ impl WorkspaceStore {
     #[cfg(test)]
     pub(crate) fn insert_thread_for_test(&self, thread: ThreadSummary) {
         self.update(|snapshot| upsert_thread_everywhere(snapshot, thread));
+    }
+
+    /// Publish a verified durable fork while the server's list index catches up.
+    pub(crate) fn register_forked_thread(&self, thread: ThreadSummary) {
+        self.update_thread_overlay(&thread.thread_id.clone(), |overlay| {
+            overlay.created = Some(thread)
+        });
+        self.update(|_| {});
     }
 
     /// The main area now shows `thread_id` (or no chat). Showing a chat reads
@@ -1659,6 +1668,19 @@ impl WorkspaceStore {
         let preferences = self.snapshot().preferences;
         let result = self.preferences.save(&preferences);
         self.update(|snapshot| snapshot.preference_error = result.err());
+    }
+
+    pub fn load_turn_ids(
+        self: &Arc<Self>,
+        thread_id: ThreadId,
+    ) -> Receiver<WorkspaceResult<Vec<String>>> {
+        let (sender, receiver) = async_channel::bounded(1);
+        let store = Arc::clone(self);
+        std::thread::spawn(move || {
+            let result = loaders::load_all_turn_ids(store.backend.as_ref(), thread_id);
+            let _ = sender.send_blocking(result);
+        });
+        receiver
     }
 
     pub fn load_history(

@@ -97,6 +97,7 @@ pub(super) struct MainConversationSnapshot {
 }
 
 pub(super) struct CurrentTurnRows<'a> {
+    pub(super) turn_id: Option<String>,
     pub(super) phase: ConversationPhase,
     pub(super) user_message: String,
     /// The newest user message is being rewritten in the transcript.

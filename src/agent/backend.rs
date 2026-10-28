@@ -317,6 +317,17 @@ pub trait AgentBackend: Send + Sync {
         unsupported_receiver(AgentCapability::ThreadFork)
     }
 
+    /// Creates a durable fork through the selected completed turn, inclusive.
+    /// An adapter must enforce this boundary rather than copying later turns.
+    fn fork_conversation_at(
+        &self,
+        _thread_id: ThreadId,
+        _cwd: PathBuf,
+        _last_turn_id: String,
+    ) -> Receiver<WorkspaceResult<ThreadId>> {
+        unsupported_receiver(AgentCapability::ThreadFork)
+    }
+
     fn upload_feedback(
         &self,
         _request: AgentFeedbackRequest,

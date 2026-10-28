@@ -1104,6 +1104,7 @@ fn resumed_historical_tool_group_keeps_its_disclosure_state() {
     };
     let history = ThreadHistory {
         thread: ThreadSummary {
+            forked_from_id: None,
             thread_id: "resume-thread".to_owned(),
             title: "Resume disclosure".to_owned(),
             preview: String::new(),
@@ -1194,6 +1195,7 @@ fn dense_resumed_tool_group_preserves_row_height_and_scrolls_instead_of_overlapp
     }));
     let history = ThreadHistory {
         thread: ThreadSummary {
+            forked_from_id: None,
             thread_id: "dense-resume-thread".to_owned(),
             title: "Dense resume disclosure".to_owned(),
             preview: String::new(),

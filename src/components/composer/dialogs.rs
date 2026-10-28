@@ -13,11 +13,17 @@ use crate::{components::icons::icon, theme::Theme};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ComposerDialog {
     /// The user sent a message while the queue is paused.
-    SendWhilePaused { text: String, inverted: bool },
+    SendWhilePaused {
+        text: String,
+        inverted: bool,
+    },
     /// A new objective while a goal is saved.
-    ReplaceGoal { objective: String },
+    ReplaceGoal {
+        objective: String,
+    },
     /// `/memories`: the chat memories switches.
     Memories,
+    Fork(super::fork::ForkDialogState),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,6 +41,14 @@ impl ComposerView {
     }
 
     pub(crate) fn choose_dialog(&mut self, choice: DialogChoice, cx: &mut Context<Self>) {
+        if matches!(self.dialog, Some(ComposerDialog::Fork(_))) {
+            match choice {
+                DialogChoice::Dismiss => self.dismiss_fork_dialog(cx),
+                DialogChoice::Primary => self.submit_response_fork(false, cx),
+                DialogChoice::Secondary => self.submit_response_fork(true, cx),
+            }
+            return;
+        }
         let Some(dialog) = self.dialog.take() else {
             return;
         };
@@ -54,6 +68,7 @@ impl ComposerView {
                 self.set_goal(objective, cx);
             }
             (ComposerDialog::Memories, _) => {}
+            (ComposerDialog::Fork(_), _) => unreachable!("handled above"),
             (ComposerDialog::ReplaceGoal { .. }, DialogChoice::Secondary) => {
                 // Cancel keeps the composer text and the Goal chip.
                 if !self.goal_draft {
@@ -90,6 +105,9 @@ impl ComposerView {
         if dialog == ComposerDialog::Memories {
             return Some(self.render_memories_dialog(cx));
         }
+        if let ComposerDialog::Fork(state) = dialog {
+            return Some(self.render_fork_dialog(state, window, cx));
+        }
         let theme = Theme::for_mode(self.mode);
         let danger = match self.mode {
             crate::theme::ThemeMode::Dark => rgba(0xff6764ff),
@@ -112,6 +130,7 @@ impl ComposerView {
                 )
             }
             ComposerDialog::Memories => unreachable!("rendered above"),
+            ComposerDialog::Fork(_) => unreachable!("rendered above"),
             ComposerDialog::ReplaceGoal { objective } => (
                 crate::i18n::format!("替换当前目标吗？" => "Replace current goal?"),
                 crate::i18n::format!("这会保留聊天，但会用你当前在输入框中的文本替换已保存的目标" => "This will keep the chat but replace the saved goal with your current composer text"),

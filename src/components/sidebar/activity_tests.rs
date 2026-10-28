@@ -70,6 +70,7 @@ impl ActivityBackend {
                 + 12 * 3_600;
         let at = noon - minutes_ago * 60;
         ThreadSummary {
+            forked_from_id: None,
             thread_id: id.to_owned(),
             title: format!("Chat {id}"),
             preview: String::new(),

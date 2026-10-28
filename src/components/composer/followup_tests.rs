@@ -1014,6 +1014,7 @@ fn opening_a_chat_claims_its_running_server_turn_and_rebuilds_it_from_the_stream
         .unwrap();
     let history = crate::agent::ThreadHistory {
         thread: crate::agent::ThreadSummary {
+            forked_from_id: None,
             thread_id: "main".into(),
             title: "main".into(),
             preview: String::new(),
@@ -1067,6 +1068,7 @@ fn a_chat_that_is_already_running_does_not_claim_a_server_turn() {
     *f.backend.server_turn.lock().unwrap() = Some(("live".into(), AgentRun::new(receiver, None)));
     let history = crate::agent::ThreadHistory {
         thread: crate::agent::ThreadSummary {
+            forked_from_id: None,
             thread_id: "main".into(),
             title: "main".into(),
             preview: String::new(),

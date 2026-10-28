@@ -17,6 +17,8 @@ mod dictation;
 mod followup;
 mod followup_edit;
 mod followup_render;
+mod fork;
+pub(crate) use fork::{ForkConversationRequest, OpenForkSource};
 mod git_actions;
 pub use git_actions::{GitActionsDetected, SyncThreadGitBranch};
 mod command_catalog;

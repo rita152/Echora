@@ -695,6 +695,9 @@ pub(super) fn current_response_footer(
         always_visible,
     } = metadata;
     let hook_home = home_entity.clone();
+    let composer = home_entity.read(cx).composer.clone();
+    let fork_turn = turn_scope.to_owned();
+    let fork_available = composer.read(cx).can_fork_reply(&fork_turn);
     div()
         .group("response-footer")
         .relative()
@@ -718,18 +721,16 @@ pub(super) fn current_response_footer(
                 .child(message_action(
                     "message-copy",
                     "response-copy",
-                    0,
-                    assistant_message.clone(),
+                    ResponseAction::Copy(assistant_message),
                     theme,
                 ))
                 .when(
-                    home_entity.read(cx).presentation != super::HomePresentation::SideChat,
+                    home_entity.read(cx).presentation != super::HomePresentation::SideChat && fork_available,
                     |actions| {
                         actions.child(message_action(
                             "message-branch",
                             "response-branch",
-                            3,
-                            assistant_message,
+                            ResponseAction::Fork(composer, fork_turn),
                             theme,
                         ))
                     },
@@ -785,31 +786,54 @@ pub(super) fn current_response_footer(
         })
 }
 
+#[derive(Clone)]
+pub(super) enum ResponseAction {
+    Copy(String),
+    Fork(Entity<crate::components::composer::ComposerView>, String),
+}
+
+impl ResponseAction {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Copy(_) => crate::i18n::text("复制"),
+            Self::Fork(..) => crate::i18n::text("从此处分叉"),
+        }
+    }
+
+    fn activate(&self, cx: &mut App) {
+        match self {
+            Self::Copy(message) => {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(message.clone()))
+            }
+            Self::Fork(composer, turn_id) => composer.update(cx, |composer, cx| {
+                composer.open_response_fork(turn_id.clone(), cx)
+            }),
+        }
+    }
+}
+
 pub(super) fn message_action(
     glyph: &'static str,
     id: &'static str,
-    action: usize,
-    assistant_message: String,
+    action: ResponseAction,
     theme: Theme,
 ) -> impl IntoElement {
-    let keyboard_message = assistant_message.clone();
+    let keyboard_action = action.clone();
+    let label = action.label();
     div()
         .id(id)
         .role(Role::Button)
-        .aria_label(match action {
-            0 => crate::i18n::text("复制"),
-            _ => crate::i18n::text("从此处分叉"),
+        .aria_label(label)
+        .tooltip(move |_, cx| {
+            cx.new(|_| crate::components::composer::TrayTooltip(label.into()))
+                .into()
         })
         .focusable()
         .tab_stop(true)
         .focus_visible(move |s| s.bg(theme.sidebar_hover))
         .on_key_down(move |e: &gpui::KeyDownEvent, _, cx| {
             if matches!(e.keystroke.key.as_str(), "enter" | "space") {
-                if action == 0 {
-                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-                        keyboard_message.clone(),
-                    ));
-                }
+                keyboard_action.activate(cx);
                 cx.stop_propagation();
             }
         })
@@ -822,9 +846,7 @@ pub(super) fn message_action(
         .hover(move |style| style.bg(theme.sidebar_hover))
         .active(move |style| style.bg(theme.text.alpha(0.12)))
         .on_click(move |_, _, cx| {
-            if action == 0 {
-                cx.write_to_clipboard(gpui::ClipboardItem::new_string(assistant_message.clone()));
-            }
+            action.activate(cx);
         })
         .child(icon(glyph, theme.text_tertiary.into()).size(px(RESPONSE_ACTION_ICON_SIZE)))
 }
