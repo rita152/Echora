@@ -284,3 +284,72 @@ fn browser_capture_fits_reference_bounds_without_native_capture_and_clears_after
     visual.update(|window, cx| window.draw(cx).clear(cx));
     assert!(visual.debug_bounds("computer-use-preview").is_none());
 }
+
+#[test]
+fn retry_retires_denied_inventory_and_rejects_its_late_result() {
+    let mut app = TestApp::new();
+    app.update(|cx| {
+        let preview = cx.new(|_| Preview::new(ThemeMode::Dark));
+        preview.update(cx, |preview, cx| {
+            preview.capture_error = Some(CaptureError::PermissionRequired);
+            preview.windows.push(WindowPreview::new(info(1)));
+            let old = preview.generation;
+            preview.retry_capture(cx);
+            assert_eq!(preview.capture_error, None);
+            assert!(preview.windows.is_empty());
+            preview.accept_windows(old, Ok(vec![info(1)]), cx);
+            assert!(preview.windows.is_empty());
+            preview.accept_windows(preview.generation, Ok(vec![info(2)]), cx);
+            assert_eq!(preview.windows[0].info.id.window, 2);
+            preview.windows[0].error = Some(CaptureError::AccessibilityRequired);
+            assert_eq!(
+                preview.permission_error(),
+                Some(CaptureError::AccessibilityRequired)
+            );
+            assert_eq!(
+                preview.permission_error().unwrap().settings_url(),
+                Some(
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+                )
+            );
+        });
+    });
+}
+
+#[gpui::test]
+fn permission_recovery_help_supports_mouse_and_keyboard_without_granting_access(
+    cx: &mut gpui::TestAppContext,
+) {
+    cx.executor().allow_parking();
+    let handle = cx.add_window(|_, cx| {
+        let mut preview = Preview::new(ThemeMode::Dark);
+        preview.snapshot = Some(snapshot());
+        preview.phase = ConversationPhase::Streaming;
+        preview.seen_running = true;
+        preview.capture_error = Some(CaptureError::PermissionRequired);
+        PreviewHost(cx.new(|_| preview))
+    });
+    let entity = cx.update(|cx| handle.root(cx).unwrap());
+    let mut visual = gpui::VisualTestContext::from_window(handle.into(), cx);
+    visual.simulate_resize(size(px(800.), px(600.)));
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    let button = visual.debug_bounds("computer-use-permission-help").unwrap();
+    visual.simulate_click(button.center(), Default::default());
+    entity.read_with(&visual, |host, cx| {
+        assert!(host.0.read(cx).capture_help_open)
+    });
+    visual.update(|window, cx| window.draw(cx).clear(cx));
+    visual.simulate_keystrokes("space");
+    entity.read_with(&visual, |host, cx| {
+        assert!(!host.0.read(cx).capture_help_open)
+    });
+    visual.simulate_keystrokes("enter");
+    entity.read_with(&visual, |host, cx| {
+        assert!(host.0.read(cx).capture_help_open)
+    });
+    visual.simulate_keystrokes("shift-tab");
+    assert!(visual.update(|window, cx| {
+        entity.read(cx).0.read(cx).recovery_focus["computer-use-permission-retry"]
+            .is_focused(window)
+    }));
+}

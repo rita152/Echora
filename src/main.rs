@@ -1069,6 +1069,8 @@ fn print_diagnostics() {
     }
     let _ = writeln!(out, "screenshot feature: {}", cfg!(feature = "screenshot"));
     let _ = writeln!(out, "Codex CLI: {}", agent::codex_executable_diagnostics());
+    #[cfg(target_os = "macos")]
+    let _ = writeln!(out, "{}", computer_use::permission_diagnostics());
     // Diagnostics are routinely piped into `head`/`grep -q`; a closed pipe must
     // not abort the process.
     let _ = std::io::Write::write_all(&mut std::io::stdout(), out.as_bytes());

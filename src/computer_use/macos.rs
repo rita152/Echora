@@ -53,9 +53,38 @@ fn preflight() -> Result<(), CaptureError> {
         return Err(CaptureError::Unsupported);
     }
     if !unsafe { CGPreflightScreenCaptureAccess() } {
+        eprintln!("Computer Use preview: Screen Recording preflight denied (cause unknown)");
         return Err(CaptureError::PermissionRequired);
     }
     Ok(())
+}
+
+pub(super) fn permission_diagnostics() -> String {
+    format!(
+        "screenCapturePreflight: {}\naccessibilityTrusted: {}\nScreen capture preflight does not identify the reason for a denial.",
+        unsafe { CGPreflightScreenCaptureAccess() },
+        unsafe { AXIsProcessTrusted() }
+    )
+}
+
+fn capture_error(domain: &str, code: i64) -> CaptureError {
+    if domain == "com.apple.ScreenCaptureKit.SCStreamErrorDomain" && code == -3801 {
+        CaptureError::PermissionRequired
+    } else {
+        CaptureError::CaptureFailed
+    }
+}
+
+#[allow(unexpected_cfgs)]
+unsafe fn native_error(error: id) -> CaptureError {
+    if error == nil {
+        return CaptureError::CaptureFailed;
+    }
+    let domain: id = unsafe { msg_send![error, domain] };
+    let code: i64 = unsafe { msg_send![error, code] };
+    let domain = unsafe { string(domain) };
+    eprintln!("Computer Use preview: native capture error {domain} ({code})");
+    capture_error(&domain, code)
 }
 
 #[allow(unexpected_cfgs)] // objc 0.2 macros probe the legacy cargo-clippy cfg.
@@ -193,7 +222,7 @@ pub(super) fn windows(
         let handler = ConcreteBlock::new(move |content: id, error: id| {
             let pool = NSAutoreleasePool::new(nil);
             if content == nil || error != nil {
-                let _ = sender.try_send(Err(CaptureError::CaptureFailed));
+                let _ = sender.try_send(Err(native_error(error)));
             } else {
                 let windows: id = msg_send![content, windows];
                 let count: usize = msg_send![windows, count];
@@ -280,7 +309,7 @@ impl Stream {
         unsafe {
             let handler = ConcreteBlock::new(move |content: id, error: id| {
                 let pool = NSAutoreleasePool::new(nil);
-                if content == nil || error != nil { let _ = sender.try_send(Err(CaptureError::CaptureFailed)); pool.drain(); return; }
+                if content == nil || error != nil { let _ = sender.try_send(Err(native_error(error))); pool.drain(); return; }
                 let windows: id = msg_send![content, windows];
                 let count: usize = msg_send![windows, count];
                 let mut selected = nil;
@@ -312,14 +341,14 @@ impl Stream {
                 let added: bool = msg_send![stream, addStreamOutput:output type:0i64 sampleHandlerQueue:std::ptr::null::<c_void>() error:&mut error];
                 if !added || error != nil {
                     let _: () = msg_send![stream, release]; let _: () = msg_send![output, release];
-                    let _ = sender.try_send(Err(CaptureError::CaptureFailed)); pool.drain(); return;
+                    let _ = sender.try_send(Err(native_error(error))); pool.drain(); return;
                 }
                 let sender = sender.clone();
                 let complete = ConcreteBlock::new(move |error: id| {
                     let result = if error == nil { Ok(Stream { stream, output, state:state.clone() }) }
                     else {
                         let _: () = msg_send![stream, release]; let _: () = msg_send![output, release];
-                        Err(CaptureError::CaptureFailed)
+                        Err(native_error(error))
                     };
                     // A cancelled receiver drops the stream, stopping capture immediately.
                     let _ = sender.try_send(result);
@@ -418,10 +447,10 @@ extern "C" fn frame(this: &Object, _: Sel, _: id, sample: *const c_void, kind: i
         state.lock().unwrap().latest = Some(VideoFrame(CVPixelBuffer::wrap_under_get_rule(buffer)));
     }
 }
-extern "C" fn stopped(this: &Object, _: Sel, _: id, _: id) {
+extern "C" fn stopped(this: &Object, _: Sel, _: id, error: id) {
     unsafe {
         let state = &*(*this.get_ivar::<*mut c_void>("state") as *const Arc<Mutex<VideoState>>);
-        state.lock().unwrap().error = Some(CaptureError::WindowUnavailable);
+        state.lock().unwrap().error = Some(native_error(error));
     }
 }
 #[allow(unexpected_cfgs)]
@@ -502,6 +531,24 @@ pub(super) fn focus(window: &WindowInfo) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn capture_permission_errors_are_distinct_from_unrelated_native_failures() {
+        assert_eq!(
+            capture_error("com.apple.ScreenCaptureKit.SCStreamErrorDomain", -3801),
+            CaptureError::PermissionRequired
+        );
+        assert_eq!(
+            capture_error("com.apple.ScreenCaptureKit.SCStreamErrorDomain", -3802),
+            CaptureError::CaptureFailed
+        );
+        assert_eq!(capture_error("other", -3801), CaptureError::CaptureFailed);
+        assert_ne!(
+            CaptureError::PermissionRequired.settings_url(),
+            CaptureError::AccessibilityRequired.settings_url()
+        );
+        assert!(CaptureError::CaptureFailed.settings_url().is_none());
+    }
+
     #[test]
     fn helper_panels_are_excluded_without_size_or_title_heuristics() {
         assert!(previewable_role("AXStandardWindow", false, false));

@@ -48,6 +48,26 @@ pub(crate) enum CaptureError {
 
 pub(crate) const MAX_WINDOWS: usize = 5;
 
+impl CaptureError {
+    pub(crate) fn settings_url(self) -> Option<&'static str> {
+        match self {
+            Self::PermissionRequired => Some(
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+            ),
+            Self::AccessibilityRequired => Some(
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+            ),
+            _ => None,
+        }
+    }
+}
+
+/// Read-only preflight. This never requests or resets a system permission.
+#[cfg(target_os = "macos")]
+pub(crate) fn permission_diagnostics() -> String {
+    macos::permission_diagnostics()
+}
+
 /// Enumerate matching windows, frontmost first. This does not capture images.
 pub(crate) fn windows(
     targets: Vec<Target>,
