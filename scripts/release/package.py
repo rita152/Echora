@@ -11,6 +11,8 @@ import subprocess
 import tempfile
 import time
 
+import macos_signing
+
 
 def run(*command, **kwargs):
     print("+", *map(str, command), flush=True)
@@ -26,6 +28,7 @@ def diagnostics(executable, cwd, expected_assets):
 
 
 def macos(payload, output, version, scratch):
+    signing = macos_signing.signing_configuration()
     volume = scratch / "volume"
     app = volume / "Echora.app"
     contents = app / "Contents"
@@ -47,8 +50,7 @@ def macos(payload, output, version, scratch):
     )
     with (contents / "Info.plist").open("wb") as target:
         plistlib.dump(info, target, sort_keys=False)
-    run("codesign", "--force", "--sign", "-", app)
-    run("codesign", "--verify", "--deep", "--strict", app)
+    macos_signing.sign(app, signing)
     (volume / "Applications").symlink_to("/Applications")
     installer = output / f"Echora-{version}-macos-arm64.dmg"
     run("hdiutil", "create", "-volname", "Echora", "-srcfolder", volume,
@@ -61,7 +63,7 @@ def macos(payload, output, version, scratch):
         assert (mount / "Applications").is_symlink()
         installed = scratch / "installed/Echora.app"
         shutil.copytree(mount / "Echora.app", installed)
-        run("codesign", "--verify", "--deep", "--strict", installed)
+        macos_signing.verify(installed, signing[1])
         diagnostics(installed / "Contents/MacOS/gpui-chat-clone", scratch,
                     installed / "Contents/Resources/assets")
     finally:

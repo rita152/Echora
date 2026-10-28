@@ -25,6 +25,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: '0'
+  PYTHONDONTWRITEBYTECODE: '1'
 
 jobs:
   version:
@@ -108,6 +109,19 @@ jobs:
             scripts/gpui_capture_info.plist
           sparse-checkout-cone-mode: false
 
+      - name: Verify release signing policy
+        run: python -m unittest discover -s .release-tools/scripts/release -p 'test_*.py'
+
+      - name: Import macOS release signing identity
+        if: runner.os == 'macOS' && needs.version.outputs.tag != ''
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.MACOS_SIGNING_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_SIGNING_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          SIGNING_TEAM_ID: ${{ secrets.MACOS_SIGNING_TEAM_ID }}
+        run: |
+          python .release-tools/scripts/release/import_macos_identity.py
+
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: |
@@ -171,11 +185,19 @@ jobs:
         env:
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
           INSTALLER_PLATFORM: ${{ matrix.installer }}
+          ECHORA_REQUIRE_MACOS_SIGNATURE: ${{ runner.os == 'macOS' && needs.version.outputs.tag != '' && '1' || '0' }}
           PACKAGE_NAME: echora-${{ needs.version.outputs.version }}-${{ matrix.target }}
         run: |
           python .release-tools/scripts/release/package.py \
             --payload "dist/$PACKAGE_NAME" --output dist \
             --version "$RELEASE_VERSION" --platform "$INSTALLER_PLATFORM"
+
+      - name: Remove temporary macOS signing keychain
+        if: always() && runner.os == 'macOS'
+        run: |
+          if [[ -n "${ECHORA_SIGNING_KEYCHAIN:-}" ]]; then
+            security delete-keychain "$ECHORA_SIGNING_KEYCHAIN"
+          fi
 
       - name: Upload release packages
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -233,9 +255,9 @@ jobs:
           | Windows x86_64 | [Setup EXE](https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/Echora-${RELEASE_TAG#v}-windows-x86_64-setup.exe) | Run the installer / 双击安装 |
           | Linux x86_64 (Ubuntu 24.04+) | [DEB](https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/Echora-${RELEASE_TAG#v}-linux-amd64.deb) | Open with your package manager, or run sudo apt install ./Echora-*.deb / 使用软件安装器或 apt 安装 |
 
-          Installers are not signed with a trusted code-signing certificate or notarized. Codex CLI must be installed and configured separately. The tar.gz files are portable archives; Source code files are not installers.
+          The macOS installer uses a Developer ID signature and is not yet notarized. Windows and Linux installers do not have trusted code signatures. Codex CLI must be installed and configured separately. The tar.gz files are portable archives; Source code files are not installers.
 
-          安装包尚未经过受信任的代码签名或公证。需要另行安装并配置 Codex CLI。tar.gz 为便携压缩包，Source code 为源码，均不是安装程序。
+          macOS 安装包使用 Developer ID 签名，尚未公证；Windows 与 Linux 安装包尚无受信任的代码签名。需要另行安装并配置 Codex CLI。tar.gz 为便携压缩包，Source code 为源码，均不是安装程序。
           <!-- echora-installers:end -->
           EOF
           latest=true

@@ -6,6 +6,9 @@
 # Node dependencies
 /node_modules/
 
+# Workflow-only nested checkout, outside Cargo's source inputs
+/.release-tools/
+
 # Generated visual regression output
 /artifacts/
 /verification/

@@ -128,7 +128,11 @@ xcrun --sdk macosx metal --version
 | Windows x86_64 | `Echora-<version>-windows-x86_64-setup.exe` | 运行 Setup，安装到当前用户目录，并创建开始菜单入口和卸载程序。 |
 | Linux x86_64，Ubuntu 24.04 或兼容的新发行版 | `Echora-<version>-linux-amd64.deb` | 使用软件安装器打开，或运行 `sudo apt install ./Echora-<version>-linux-amd64.deb`，然后从应用菜单启动。 |
 
-安装包已包含应用资源，Windows 还包含应用私有的 MSVC 运行库。仍需另行安装并配置 Codex CLI。开发版安装包尚未经过受信任的代码签名或 macOS 公证，系统可能要求确认后才能打开。当前仅在 macOS 上进行原生交互验证；CI 在对应平台的 runner 上检查安装、资源发现和卸载，不代表完整的 Windows/Linux GUI 验收。
+安装包已包含应用资源，Windows 还包含应用私有的 MSVC 运行库。仍需另行安装并配置 Codex CLI。旧 alpha 安装包和未打 tag 的开发构建使用 macOS ad-hoc 签名且未公证，系统可能要求确认后才能打开。打 tag 的 macOS 发布现在必须使用具有稳定 Team ID 的 Developer ID Application 签名；缺少签名凭据时在打包前失败。尚未配置公证；Windows 与 Linux 安装包尚无受信任的代码签名。当前仅在 macOS 上进行原生交互验证；CI 在对应平台的 runner 上检查安装、资源发现和卸载，不代表完整的 Windows/Linux GUI 验收。
+
+macOS 原生 Computer Use 预览分别检查屏幕录制和辅助功能权限。拒绝时显示对应的系统设置入口、重试及“已开启仍不可用？”恢复说明。若旧 ad-hoc 构建曾获授权，请在屏幕录制设置中移除旧项目，重新添加当前 `/Applications/Echora.app` 并开启权限，按系统提示重启后再重试。单凭预检失败不能确认旧签名授权不匹配。可运行 `scripts/diagnose_macos_capture.sh /Applications/Echora.app` 检查安装包代码身份与只读预检；运行中的应用另行记录自己的捕获拒绝。两条路径均不请求权限或重置 TCC。
+
+发布维护者需配置 GitHub Actions secrets：`MACOS_SIGNING_CERTIFICATE_BASE64`（Developer ID Application `.p12`）、`MACOS_SIGNING_CERTIFICATE_PASSWORD`、`MACOS_SIGNING_IDENTITY` 和 `MACOS_SIGNING_TEAM_ID`。本地安装包使用 `ECHORA_MACOS_SIGN_IDENTITY`、`ECHORA_MACOS_SIGN_TEAM_ID`；设置 `ECHORA_REQUIRE_MACOS_SIGNATURE=1` 可拒绝退回 ad-hoc。签名保留 Apple 默认绑定证书的 designated requirement，并验证 Apple 信任锚、预期 Team ID 与 bundle ID；续期应保持同一 Team ID。升级验收需从已授权的旧构建升级后，确认可枚举专用目标窗口并收到新视频帧；从 ad-hoc 版本迁移仍需一次手动重新授权。
 
 `.tar.gz` 是可执行文件与资源的便携压缩包，不是安装程序；使用时请让可执行文件与 `assets/` 目录保持相邻。可执行文件目前名为 `gpui-chat-clone`。`SHA256SUMS` 覆盖全部安装包和便携压缩包。GitHub 的 **Source code** 下载项为源码，不是安装后的应用。主分支和拉取请求的构建仍在 [Actions 页面](https://github.com/rita152/Echora/actions/workflows/release.yml)保留 14 天。
 

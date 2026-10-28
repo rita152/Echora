@@ -1,5 +1,6 @@
 //! Native window streams and controlled browser tab snapshots above the conversation.
 mod model;
+mod permissions;
 #[cfg(test)]
 mod tests;
 
@@ -59,6 +60,7 @@ pub(super) struct Preview {
     pub(super) mode: ThemeMode,
     expanded: bool,
     toggle_focus: Option<gpui::FocusHandle>,
+    recovery_focus: std::collections::HashMap<&'static str, gpui::FocusHandle>,
     generation: u64,
     capture_task: Option<gpui::Task<()>>,
     inventory: Option<async_channel::Receiver<Result<Vec<WindowInfo>, CaptureError>>>,
@@ -69,6 +71,7 @@ pub(super) struct Preview {
     tool_frame_key: Option<String>,
     tool_frame_size: Option<(u32, u32)>,
     capture_error: Option<CaptureError>,
+    capture_help_open: bool,
     takeover_pending: Option<WindowInfo>,
     intervention_error: Option<String>,
     seen_running: bool,
@@ -92,6 +95,7 @@ impl Preview {
             mode,
             expanded: true,
             toggle_focus: None,
+            recovery_focus: Default::default(),
             generation: 0,
             capture_task: None,
             inventory: None,
@@ -102,6 +106,7 @@ impl Preview {
             tool_frame_key: None,
             tool_frame_size: None,
             capture_error: None,
+            capture_help_open: false,
             takeover_pending: None,
             intervention_error: None,
             seen_running: false,
@@ -125,6 +130,7 @@ impl Preview {
             self.takeover_pending = None;
             self.intervention_error = None;
             self.seen_running = false;
+            self.capture_help_open = false;
         }
         self.mode = mode;
         self.phase = phase;
@@ -357,6 +363,13 @@ impl Preview {
             if let Some(stream) = &window.stream {
                 match stream.take_frame() {
                     Ok(Some(frame)) => {
+                        if window.frame.is_none() {
+                            eprintln!(
+                                "Computer Use preview received first video frame: {}x{}",
+                                frame.get_width(),
+                                frame.get_height()
+                            );
+                        }
                         window.frame = Some(frame);
                         window.error = None;
                         cx.notify();
@@ -451,9 +464,9 @@ impl Preview {
         }
     }
     fn capture_message(&self) -> String {
-        match self.capture_error {
+        match self.permission_error().or(self.capture_error) {
             Some(CaptureError::PermissionRequired) => {
-                crate::i18n::format!("实时预览需要 macOS 屏幕录制权限。" => "Live preview needs macOS Screen Recording access.")
+                crate::i18n::format!("macOS 尚未允许当前应用录制屏幕。" => "macOS has not granted Screen Recording access to this application.")
             }
             Some(CaptureError::AccessibilityRequired) => {
                 crate::i18n::format!("识别应用窗口需要 macOS 辅助功能权限。" => "Identifying application windows needs macOS Accessibility access.")
@@ -502,7 +515,13 @@ impl Render for Preview {
         let theme = Theme::for_mode(self.mode);
         let status = self.status(snapshot);
         let available = (f32::from(window.viewport_size().width) - 72.).max(96.);
-        let width = 200f32.min(available);
+        let permission_error = self.permission_error();
+        let width = if permission_error.is_some() {
+            300f32
+        } else {
+            200f32
+        }
+        .min(available);
         let available_height = (f32::from(window.viewport_size().height) - 200.).max(80.);
         let indices = self
             .windows
@@ -579,7 +598,9 @@ impl Render for Preview {
                     .child(icon("close-dialog", theme.text_secondary.into()).size(px(14.))),
             )
             .when(
-                !snapshot.browser && (count == 0 || self.capture_error.is_some()),
+                !snapshot.browser
+                    && permission_error.is_none()
+                    && (count == 0 || self.capture_error.is_some()),
                 |view| {
                     view.child(
                         div()
@@ -594,12 +615,7 @@ impl Render for Preview {
                             .text_size(px(11.))
                             .child(crate::i18n::text("重试"))
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.capture_error = None;
-                                this.inventory_started = Instant::now() - Duration::from_secs(10);
-                                for window in &mut this.windows {
-                                    window.error = None;
-                                }
-                                cx.notify();
+                                this.retry_capture(cx);
                             })),
                     )
                 },
@@ -640,6 +656,18 @@ impl Render for Preview {
                                 .object_fit(ObjectFit::Contain),
                         ),
                 )
+                .child(
+                    header
+                        .opacity(0.)
+                        .group_hover("computer-use-stack", |s| s.opacity(1.)),
+                )
+                .into_any_element();
+        }
+        if let Some(error) = permission_error {
+            return root
+                .group("computer-use-stack")
+                .w(px(width))
+                .child(self.render_permission_recovery(error, theme, cx))
                 .child(
                     header
                         .opacity(0.)
