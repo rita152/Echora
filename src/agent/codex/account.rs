@@ -336,12 +336,12 @@ pub(super) fn parse_rate_limits_response(message: &Value) -> Result<AgentRateLim
         }
     }
     Ok(AgentRateLimitsRead {
-        account_id: response.account_id.and_then(|value| value),
-        ordinary_usage_allowed: response.ordinary_usage_allowed.and_then(|value| value),
-        reset_credits: match response.rate_limit_reset_credits {
-            Some(credits) => Some(credits.into_domain()?),
-            None => None,
-        },
+        account_id: response.account_id.flatten(),
+        ordinary_usage_allowed: response.ordinary_usage_allowed.flatten(),
+        reset_credits: response
+            .rate_limit_reset_credits
+            .map(|credits| credits.into_domain())
+            .transpose()?,
         upsell: response.rate_limit_upsell,
         patches,
     })

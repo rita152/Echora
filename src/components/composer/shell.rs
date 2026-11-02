@@ -65,12 +65,12 @@ impl ComposerView {
     /// Runs the composer's `!` command. An empty command is not sent, and the
     /// text stays. A rejected command is reported and its text restored.
     pub(super) fn submit_shell_command(&mut self, text: String, cx: &mut Context<Self>) {
-        let Some(command) = shell_command(&text).map(str::to_owned) else {
+        let Some(command) = shell_command(&text)
+            .filter(|command| !command.is_empty())
+            .map(str::to_owned)
+        else {
             return;
         };
-        if command.is_empty() {
-            return;
-        }
         if self.conversation.thread_id.is_none()
             && (self.permission_catalog_loading || self.permission_catalog_error.is_some())
         {
@@ -99,7 +99,7 @@ impl ComposerView {
         let cycle = self.conversation.cycle;
         cx.spawn(async move |this, cx| {
             let result = receiver.recv().await.unwrap_or_else(|_| {
-                Err(crate::i18n::format!("Shell 命令连接已关闭" => "The shell command connection closed").to_owned())
+                Err(crate::i18n::format!("Shell 命令连接已关闭" => "The shell command connection closed"))
             });
             let _ = this.update(cx, |this, cx| {
                 match result {

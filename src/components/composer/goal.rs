@@ -93,9 +93,9 @@ impl ComposerView {
         true
     }
 
-    /// Submits the composer text as a goal objective.
+    /// Submits the composer text as a goal objective; both callers trim it.
     pub(super) fn submit_goal(&mut self, objective: String, cx: &mut Context<Self>) {
-        if objective.trim().is_empty() {
+        if objective.is_empty() {
             return;
         }
         if self.conversation.goal.goal.is_some() {
@@ -117,12 +117,12 @@ impl ComposerView {
             self.submit_prompt_as(format!("{GOAL_COMMAND} {objective}"), false, cx);
             return;
         };
-        let Some(generation) = self.conversation.goal.generation.or_else(|| {
-            self.conversation
-                .turn_identity
-                .as_ref()
-                .map(|identity| identity.generation)
-        }) else {
+        let Some(generation) = self
+            .conversation
+            .goal
+            .generation
+            .or_else(|| self.conversation.turn_generation())
+        else {
             self.submission_error = Some(
                 crate::i18n::format!("目标状态尚未读取，请稍后重试。输入已保留。" => "The goal has not been read yet. Try again shortly; your input is kept."),
             );
@@ -514,21 +514,16 @@ impl ComposerView {
     /// Called once the first turn of a new chat is accepted: a goal submitted
     /// before the thread existed is set now.
     pub(super) fn apply_goal_after_first_turn(&mut self, cx: &mut Context<Self>) {
-        if self.conversation.thread_id.is_none() || self.conversation.turn_identity.is_none() {
+        let (Some(_), Some(generation)) = (
+            &self.conversation.thread_id,
+            self.conversation.turn_generation(),
+        ) else {
             return;
-        }
+        };
         let Some(objective) = self.goal_after_first_turn.take() else {
             return;
         };
-        let generation = self
-            .conversation
-            .turn_identity
-            .as_ref()
-            .map(|identity| identity.generation);
-        if self.conversation.goal.generation.is_none() {
-            self.conversation.goal.generation = generation;
-        }
-        self.pending_goal_bubble = None;
+        self.conversation.goal.generation.get_or_insert(generation);
         self.set_goal(objective, cx);
         // The first turn already shows `/goal <objective>` as its request.
         self.pending_goal_bubble = None;

@@ -214,7 +214,9 @@ fn theme(mode: ThemeMode) -> &'static Theme {
 
 /// Language name for the syntax highlighter, derived from the file suffix.
 pub(crate) fn language_for(path: &str) -> Option<&'static str> {
-    let extension = path.rsplit('.').next().unwrap_or_default();
+    let extension = path
+        .rsplit_once('.')
+        .map_or(path, |(_, extension)| extension);
     Some(match extension {
         "rs" => "rs",
         "toml" => "toml",

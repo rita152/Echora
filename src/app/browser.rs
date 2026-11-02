@@ -148,13 +148,8 @@ impl ChatApp {
                 .read(cx)
                 .activity_archive_confirmation()
                 .is_some();
-        let active = self.active_conversation.clone();
-        let panels: Vec<_> = self
-            .browser_panels
-            .iter()
-            .map(|(key, panel)| (*key == active, panel.clone()))
-            .collect();
-        for (is_active, panel) in panels {
+        for (key, panel) in &self.browser_panels {
+            let is_active = *key == self.active_conversation;
             if !(shown && is_active) {
                 panel.read(cx).hide_pages();
             }

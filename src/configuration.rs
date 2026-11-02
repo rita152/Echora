@@ -182,20 +182,16 @@ impl ConfigEditor {
     }
 
     pub fn edit(&mut self, key: &str, value: Value) -> Result<(), String> {
-        if !matches!(
+        let ready = matches!(
             self.operation,
             ConfigOperation::Ready | ConfigOperation::Failed(_) | ConfigOperation::ReadFailed(_)
-        ) || self.snapshot.is_none()
-        {
+        );
+        let Some(snapshot) = self.snapshot.as_ref().filter(|_| ready) else {
             return Err(crate::i18n::text("配置尚未就绪").into());
-        }
+        };
         if let Some(reason) = self.restriction(key, &value) {
             return Err(reason);
         }
-        let snapshot = self
-            .snapshot
-            .as_ref()
-            .ok_or(crate::i18n::text("请先读取配置"))?;
         let layer = snapshot
             .layer(
                 self.target

@@ -195,17 +195,14 @@ impl ChatApp {
             return;
         }
         if self.right_panel.subagent.is_some() {
-            match event.keystroke.key.as_str() {
-                "escape" => {
-                    if self.right_panel.subagent_menu_open {
-                        self.right_panel.subagent_menu_open = false;
-                        cx.notify();
-                    } else {
-                        self.close_right_panel(cx);
-                    }
-                    cx.stop_propagation();
+            if event.keystroke.key == "escape" {
+                if self.right_panel.subagent_menu_open {
+                    self.right_panel.subagent_menu_open = false;
+                    cx.notify();
+                } else {
+                    self.close_right_panel(cx);
                 }
-                _ => return,
+                cx.stop_propagation();
             }
             return;
         }
@@ -218,16 +215,8 @@ impl ChatApp {
                 };
                 self.right_panel.keyboard_focus = true;
             }
-            "up" => {
-                self.right_panel.focused_item = if self.right_panel.keyboard_focus {
-                    (self.right_panel.focused_item + RIGHT_PANEL_ITEMS.len() - 1)
-                        % RIGHT_PANEL_ITEMS.len()
-                } else {
-                    RIGHT_PANEL_ITEMS.len() - 1
-                };
-                self.right_panel.keyboard_focus = true;
-            }
-            "tab" => {
+            // Shift-Tab: a plain Tab matched the arm above.
+            "up" | "tab" => {
                 self.right_panel.focused_item = if self.right_panel.keyboard_focus {
                     (self.right_panel.focused_item + RIGHT_PANEL_ITEMS.len() - 1)
                         % RIGHT_PANEL_ITEMS.len()
@@ -249,7 +238,6 @@ impl ChatApp {
             }
             // The docked panel is persistent. Escape belongs to the active
             // conversation/tool and must not hide the panel.
-            "escape" => return,
             _ => return,
         }
         cx.stop_propagation();

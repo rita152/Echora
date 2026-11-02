@@ -188,7 +188,8 @@ impl AgentPullRequestRef {
     /// The canonical web URL: lowercase host, the owner and repository as
     /// written, and nothing after the number.
     pub fn canonical_url(&self) -> String {
-        let host = normalize_host(&self.hostname);
+        // `parse` is the only constructor and already normalizes the host.
+        let host = &self.hostname;
         match self.provider {
             AgentPullRequestProvider::GitHub if host != "gitlab.com" => format!(
                 "https://{host}/{}/{}/pull/{}",
@@ -218,7 +219,7 @@ impl AgentPullRequestRef {
     /// request under one key.
     pub fn identity_key(&self) -> String {
         serde_json::to_string(&serde_json::json!([
-            normalize_host(&self.hostname),
+            self.hostname,
             self.owner.to_lowercase(),
             self.repository.to_lowercase(),
             self.number
@@ -251,14 +252,14 @@ fn github_pull_request(parsed: &url::Url, host: &str) -> Option<AgentPullRequest
     let owner = decode_segment(owner)?;
     let repository = decode_segment(repository)?;
     let has_separator = |text: &str| text.chars().any(|c| c.is_whitespace() || c == '/');
+    // Decoded non-empty segments are never empty, and with no whitespace
+    // inside they need no trimming.
     if has_separator(&owner) || has_separator(&repository) {
         return None;
     }
-    let owner = owner.trim().to_owned();
-    let repository = repository.trim().to_owned();
     let hostname = normalize_host(host);
-    let number = parse_number(number.trim())?;
-    if owner.is_empty() || repository.is_empty() || hostname.is_empty() {
+    let number = parse_number(number)?;
+    if hostname.is_empty() {
         return None;
     }
     Some(AgentPullRequestRef {

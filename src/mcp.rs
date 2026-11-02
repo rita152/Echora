@@ -111,9 +111,10 @@ impl McpDirectory {
             } else {
                 server
             };
+            // Every name in `order` is a key of `servers`, so a new key is
+            // also new to `order`.
             let name = server.name.clone();
-            let is_new = self.servers.insert(name.clone(), server).is_none();
-            if is_new && !self.order.contains(&name) {
+            if self.servers.insert(name.clone(), server).is_none() {
                 self.order.push(name);
             }
         }

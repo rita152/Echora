@@ -747,12 +747,9 @@ impl ReviewPanel {
         self.max_line_width = self.render_cache.max_line_width;
         let anchor = self.scroll_anchor();
         let mut rows = Vec::new();
+        let query = self.query.to_lowercase();
         for (i, file) in self.snapshot.files.iter().enumerate() {
-            if !file
-                .path
-                .to_lowercase()
-                .contains(&self.query.to_lowercase())
-            {
+            if !file.path.to_lowercase().contains(&query) {
                 continue;
             }
             rows.push(Row::Header(i));
@@ -799,32 +796,32 @@ impl ReviewPanel {
                             n += 1;
                         }
                         for j in 0..(added - start).max(n - added) {
-                            let left = (j < added - start).then(|| hunk.lines[start + j].clone());
-                            let right = (j < n - added).then(|| hunk.lines[added + j].clone());
+                            let left = (j < added - start).then(|| &hunk.lines[start + j]);
+                            let right = (j < n - added).then(|| &hunk.lines[added + j]);
                             rows.push(Row::Code {
                                 file: i,
                                 hunk: Some(h),
-                                left: left.clone(),
-                                right: right.clone(),
+                                left: left.cloned(),
+                                right: right.cloned(),
                             });
-                            self.comment_rows(&mut rows, i, left.as_ref(), right.as_ref());
+                            self.comment_rows(&mut rows, i, left, right);
                         }
                     } else {
                         let (left, right) = if self.split {
                             match line.kind {
-                                LineKind::Added => (None, Some(line.clone())),
-                                _ => (Some(line.clone()), Some(line.clone())),
+                                LineKind::Added => (None, Some(line)),
+                                _ => (Some(line), Some(line)),
                             }
                         } else {
-                            (None, Some(line.clone()))
+                            (None, Some(line))
                         };
                         rows.push(Row::Code {
                             file: i,
                             hunk: Some(h),
-                            left: left.clone(),
-                            right: right.clone(),
+                            left: left.cloned(),
+                            right: right.cloned(),
                         });
-                        self.comment_rows(&mut rows, i, left.as_ref(), right.as_ref());
+                        self.comment_rows(&mut rows, i, left, right);
                         n += 1;
                     }
                 }
@@ -1081,8 +1078,13 @@ impl ReviewPanel {
         .detach();
         cx.notify();
     }
+    /// A commit waits for idle git, and a new branch needs a name beyond the
+    /// prefilled `codex/` prefix.
+    fn commit_blocked(&self, cx: &App) -> bool {
+        self.busy || (self.new_branch && self.branch_input.read(cx).text().trim() == "codex/")
+    }
     fn save_commit(&mut self, cx: &mut Context<Self>) {
-        if self.busy || (self.new_branch && self.branch_input.read(cx).text().trim() == "codex/") {
+        if self.commit_blocked(cx) {
             return;
         }
         self.mutate(

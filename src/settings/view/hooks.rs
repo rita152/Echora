@@ -97,7 +97,10 @@ fn source_label(selection: &HookSourceSelection) -> String {
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| root.display().to_string()),
         // Plugin ids are `name@marketplace`; the name is the label.
-        HookSourceSelection::Plugin(Some(id)) => id.split('@').next().unwrap_or(id).to_owned(),
+        HookSourceSelection::Plugin(Some(id)) => id
+            .split_once('@')
+            .map_or(id.as_str(), |(name, _)| name)
+            .to_owned(),
         HookSourceSelection::Plugin(None) => crate::i18n::format!("未知插件" => "Unknown plugin"),
     }
 }

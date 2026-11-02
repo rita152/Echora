@@ -102,18 +102,14 @@ impl ComposerView {
             self.dialog_focus_pending = false;
             self.dialog_focus.focus(window, cx);
         }
-        if dialog == ComposerDialog::Memories {
-            return Some(self.render_memories_dialog(cx));
-        }
-        if let ComposerDialog::Fork(state) = dialog {
-            return Some(self.render_fork_dialog(state, window, cx));
-        }
-        let theme = Theme::for_mode(self.mode);
-        let danger = match self.mode {
-            crate::theme::ThemeMode::Dark => rgba(0xff6764ff),
-            crate::theme::ThemeMode::Light => rgba(0xe02e2aff),
-        };
-        let (title, body, quote, secondary, primary, secondary_danger) = match &dialog {
+        // The reference's two dialogs differ: the queue one is 520 wide with
+        // 36 px pill buttons, the goal one 420 wide with 32 px rounded ones and
+        // its title directly above the body.
+        let replace = matches!(dialog, ComposerDialog::ReplaceGoal { .. });
+        let send_while_paused = matches!(dialog, ComposerDialog::SendWhilePaused { .. });
+        let (title, body, quote, secondary, primary, secondary_danger) = match dialog {
+            ComposerDialog::Memories => return Some(self.render_memories_dialog(cx)),
+            ComposerDialog::Fork(state) => return Some(self.render_fork_dialog(state, window, cx)),
             ComposerDialog::SendWhilePaused { .. } => {
                 let count = self.conversation.queue.rows.len();
                 (
@@ -129,22 +125,21 @@ impl ComposerView {
                     true,
                 )
             }
-            ComposerDialog::Memories => unreachable!("rendered above"),
-            ComposerDialog::Fork(_) => unreachable!("rendered above"),
             ComposerDialog::ReplaceGoal { objective } => (
                 crate::i18n::format!("替换当前目标吗？" => "Replace current goal?"),
                 crate::i18n::format!("这会保留聊天，但会用你当前在输入框中的文本替换已保存的目标" => "This will keep the chat but replace the saved goal with your current composer text"),
-                Some(objective.clone()),
+                Some(objective),
                 crate::i18n::format!("取消" => "Cancel"),
                 crate::i18n::format!("替换目标" => "Replace goal"),
                 false,
             ),
         };
-        let danger_color = danger;
-        // The reference's two dialogs differ: the queue one is 520 wide with
-        // 36 px pill buttons, the goal one 420 wide with 32 px rounded ones and
-        // its title directly above the body.
-        let replace = matches!(dialog, ComposerDialog::ReplaceGoal { .. });
+        let theme = Theme::for_mode(self.mode);
+        // Named apart from the `danger` flag the button closure takes.
+        let danger_color = match self.mode {
+            crate::theme::ThemeMode::Dark => rgba(0xff6764ff),
+            crate::theme::ThemeMode::Light => rgba(0xe02e2aff),
+        };
         let (width, button_height, button_radius, button_padding, title_gap) = if replace {
             (420.0, 32.0, 12.5, 16.0, 4.0)
         } else {
@@ -237,7 +232,7 @@ impl ComposerView {
                                         .font_weight(FontWeight::SEMIBOLD)
                                         .child(title),
                                 )
-                                .when(matches!(dialog, ComposerDialog::SendWhilePaused { .. }), |row| {
+                                .when(send_while_paused, |row| {
                                     row.child(
                                         div()
                                             .id("composer-dialog-close")

@@ -71,10 +71,6 @@ impl McpElicitationStatus {
         matches!(self, Self::Pending | Self::Submitting)
     }
 
-    pub fn should_render(self) -> bool {
-        true
-    }
-
     fn label(self) -> &'static str {
         match self {
             Self::Pending => crate::i18n::text("等待输入"),
@@ -242,21 +238,7 @@ impl McpElicitationFieldPresentation {
                         crate::i18n::format!("{title} 不能为空" => "{title} cannot be empty"),
                     );
                 }
-                let number = text
-                    .parse::<serde_json::Number>()
-                    .or_else(|_| {
-                        text.parse::<f64>()
-                            .ok()
-                            .and_then(serde_json::Number::from_f64)
-                            .ok_or(())
-                    })
-                    .map_err(|_| crate::i18n::format!("{title} 必须是数字" => "{title} must be a number"))?;
-                if *integer && number.as_i64().is_none() && number.as_u64().is_none() {
-                    return Err(
-                        crate::i18n::format!("{title} 必须是整数" => "{title} must be an integer"),
-                    );
-                }
-                Ok(AgentMcpElicitationValue::Number(number))
+                parse_number(text, *integer, &title).map(AgentMcpElicitationValue::Number)
             }
             (
                 McpElicitationFieldControl::Boolean,
@@ -457,25 +439,20 @@ impl McpElicitationPresentation {
         current: Option<McpElicitationFocus>,
         backwards: bool,
     ) -> McpElicitationFocus {
+        // Never empty: the footer's Cancel, Decline and Accept are always targets.
         let targets = self.focus_targets();
+        let count = targets.len();
         let Some(current) = current else {
             return if backwards {
-                targets
-                    .last()
-                    .copied()
-                    .unwrap_or(McpElicitationFocus::Accept)
+                targets[count - 1]
             } else {
-                targets
-                    .first()
-                    .copied()
-                    .unwrap_or(McpElicitationFocus::Accept)
+                targets[0]
             };
         };
         let index = targets
             .iter()
             .position(|target| *target == current)
             .unwrap_or(0);
-        let count = targets.len().max(1);
         let next = if backwards {
             (index + count - 1) % count
         } else {
@@ -531,15 +508,11 @@ impl McpElicitationPresentation {
         self.fields().get(index)
     }
 
-    pub fn field_index(&self, name: &str) -> Option<usize> {
-        self.fields().iter().position(|field| field.name == name)
-    }
-
     pub fn set_field_text(&mut self, name: &str, text: String) -> bool {
-        let Some(index) = self.field_index(name) else {
+        let McpElicitationModePresentation::Form { fields, .. } = &mut self.mode else {
             return false;
         };
-        let Some(field) = self.field_mut(index) else {
+        let Some(field) = fields.iter_mut().find(|field| field.name == name) else {
             return false;
         };
         field.set_text(text);
@@ -709,6 +682,23 @@ impl McpElicitationPresentation {
     }
 }
 
+/// Parses a non-blank number field, enforcing `integer` when the schema asks.
+fn parse_number(text: &str, integer: bool, title: &str) -> Result<serde_json::Number, String> {
+    let number = text
+        .parse::<serde_json::Number>()
+        .or_else(|_| {
+            text.parse::<f64>()
+                .ok()
+                .and_then(serde_json::Number::from_f64)
+                .ok_or(())
+        })
+        .map_err(|_| crate::i18n::format!("{title} 必须是数字" => "{title} must be a number"))?;
+    if integer && number.as_i64().is_none() && number.as_u64().is_none() {
+        return Err(crate::i18n::format!("{title} 必须是整数" => "{title} must be an integer"));
+    }
+    Ok(number)
+}
+
 fn validate_field(
     field: &McpElicitationFieldPresentation,
 ) -> Result<Option<AgentMcpElicitationValue>, String> {
@@ -724,10 +714,8 @@ fn validate_field(
         }
     }
     match (&field.control, &field.value) {
+        // Blank text-like values returned above, so `text` is never blank here.
         (McpElicitationFieldControl::Text { .. }, McpElicitationFieldValueState::Text(text)) => {
-            if text.trim().is_empty() && !field.required {
-                return Ok(None);
-            }
             Ok(Some(AgentMcpElicitationValue::String(text.clone())))
         }
         (
@@ -738,20 +726,7 @@ fn validate_field(
             },
             McpElicitationFieldValueState::Text(text),
         ) => {
-            if text.trim().is_empty() && !field.required {
-                return Ok(None);
-            }
-            let parsed = field.domain_value()?;
-            let AgentMcpElicitationValue::Number(number) = &parsed else {
-                return Err(
-                    crate::i18n::format!("{title} 必须是数字" => "{title} must be a number"),
-                );
-            };
-            if *integer && number.as_i64().is_none() && number.as_u64().is_none() {
-                return Err(
-                    crate::i18n::format!("{title} 必须是整数" => "{title} must be an integer"),
-                );
-            }
+            let number = parse_number(text.trim(), *integer, &title)?;
             let numeric = number.as_f64().ok_or_else(
                 || crate::i18n::format!("{title} 必须是数字" => "{title} must be a number"),
             )?;
@@ -771,7 +746,7 @@ fn validate_field(
                     crate::i18n::format!("{title} 不能大于 {maximum}" => "{title} must be at most {maximum}"),
                 );
             }
-            Ok(Some(parsed))
+            Ok(Some(AgentMcpElicitationValue::Number(number)))
         }
         (McpElicitationFieldControl::Boolean, McpElicitationFieldValueState::Boolean(value)) => {
             Ok(Some(AgentMcpElicitationValue::Boolean(*value)))
@@ -1031,9 +1006,6 @@ pub fn render_mcp_elicitation(
     text_input: Entity<PromptInput>,
     callback: McpElicitationCallback,
 ) -> Option<Stateful<Div>> {
-    if !model.status.should_render() {
-        return None;
-    }
     let palette = McpElicitationPalette::for_theme(theme);
     if !model.status.is_interactive() {
         return Some(render_status_card(model, palette));
@@ -1107,9 +1079,6 @@ pub fn render_mcp_elicitation_url_activity(
     else {
         return None;
     };
-    if !model.status.should_render() {
-        return None;
-    }
     if !model.status.is_interactive() {
         return Some(render_status_card(
             model,

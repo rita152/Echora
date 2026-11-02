@@ -457,9 +457,7 @@ impl Render for ChatApp {
         let summary_available = !review_fullscreen;
         // The same in both states: the open button and the hide button that
         // replaces it sit at one spot, so toggling the panel never moves it.
-        let summary_shown = summary_available
-            && self.summary_panel_visible(cx)
-            && self.summary_panel.read(cx).has_content(cx);
+        let summary_shown = summary_available && self.summary_panel_visible(cx);
         // Reserve the card's column before HomeView measures its transcript
         // and composer, so wrapping and virtual row heights follow the space
         // that remains beside Environment, including after window resizing.

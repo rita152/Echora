@@ -201,7 +201,7 @@ impl PermissionApprovalPresentation {
     }
 
     pub fn should_render(&self) -> bool {
-        (self.status == PermissionApprovalStatus::Pending && !self.actions().is_empty())
+        (self.status == PermissionApprovalStatus::Pending && self.has_actions())
             || matches!(
                 self.status,
                 PermissionApprovalStatus::Cancelled | PermissionApprovalStatus::Failed
@@ -209,7 +209,13 @@ impl PermissionApprovalPresentation {
     }
 
     pub fn is_interactive(&self) -> bool {
-        self.status == PermissionApprovalStatus::Pending && !self.actions().is_empty()
+        self.status == PermissionApprovalStatus::Pending && self.has_actions()
+    }
+
+    /// Whether [`Self::actions`] is non-empty, without building it: network
+    /// access, or any path that is not denied.
+    fn has_actions(&self) -> bool {
+        self.network_enabled || self.has_visible_paths()
     }
 
     pub fn with_cwd(mut self, cwd: impl Into<String>) -> Self {
@@ -218,7 +224,7 @@ impl PermissionApprovalPresentation {
     }
 
     pub fn title(&self) -> &'static str {
-        if self.network_enabled && self.visible_file_paths().is_empty() {
+        if self.network_enabled && !self.has_visible_paths() {
             crate::i18n::text("互联网访问")
         } else {
             crate::i18n::text("权限")
@@ -339,21 +345,15 @@ impl PermissionApprovalPresentation {
         match key {
             "tab" => Some(PermissionApprovalEvent::KeyboardFocusChanged(Some(
                 if self.visual_state.menu_open() {
-                    match (self.keyboard_focus, shift) {
-                        (Some(PermissionApprovalKeyboardFocus::MenuAllowOnce), false) => {
+                    // Two items: Tab and Shift-Tab both toggle.
+                    match self.keyboard_focus {
+                        Some(PermissionApprovalKeyboardFocus::MenuAllowOnce) => {
                             PermissionApprovalKeyboardFocus::MenuAllowForConversation
                         }
-                        (
-                            Some(PermissionApprovalKeyboardFocus::MenuAllowForConversation),
-                            false,
-                        ) => PermissionApprovalKeyboardFocus::MenuAllowOnce,
-                        (Some(PermissionApprovalKeyboardFocus::MenuAllowOnce), true) => {
-                            PermissionApprovalKeyboardFocus::MenuAllowForConversation
-                        }
-                        (Some(PermissionApprovalKeyboardFocus::MenuAllowForConversation), true) => {
+                        Some(PermissionApprovalKeyboardFocus::MenuAllowForConversation) => {
                             PermissionApprovalKeyboardFocus::MenuAllowOnce
                         }
-                        (_, true) => PermissionApprovalKeyboardFocus::MenuAllowForConversation,
+                        _ if shift => PermissionApprovalKeyboardFocus::MenuAllowForConversation,
                         _ => PermissionApprovalKeyboardFocus::MenuAllowOnce,
                     }
                 } else {
@@ -429,12 +429,10 @@ impl PermissionApprovalPresentation {
         }
     }
 
-    fn visible_file_paths(&self) -> Vec<&str> {
+    fn has_visible_paths(&self) -> bool {
         self.file_system
             .iter()
-            .filter(|entry| entry.access != PermissionPathAccess::Deny)
-            .map(|entry| entry.path.as_str())
-            .collect()
+            .any(|entry| entry.access != PermissionPathAccess::Deny)
     }
 }
 

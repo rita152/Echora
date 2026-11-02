@@ -102,7 +102,9 @@ impl ComposerView {
             cx.emit(super::SubmitTaskEditor);
             return;
         }
-        if (!raw_prompt.trim().is_empty() || !self.prompt_context.files.is_empty())
+        let trimmed = raw_prompt.trim();
+        let blank = trimmed.is_empty();
+        if (!blank || !self.prompt_context.files.is_empty())
             && self.prepare_worktree_send(&raw_prompt, inverted, cx)
         {
             return;
@@ -120,7 +122,7 @@ impl ComposerView {
         // Manual context compaction is a composer command, not a chat message:
         // the reference exposes it as the "Compact" slash command and the
         // server answers through the ordinary turn stream.
-        if raw_prompt.trim() == super::COMPACT_COMMAND {
+        if trimmed == super::COMPACT_COMMAND {
             self.start_context_compaction(cx);
             return;
         }
@@ -131,19 +133,15 @@ impl ComposerView {
             return;
         }
         if self.goal_draft {
-            self.submit_goal(raw_prompt.trim().to_owned(), cx);
+            self.submit_goal(trimmed.to_owned(), cx);
             return;
         }
-        let resume = self.conversation.phase == crate::conversation::ConversationPhase::Stopped
-            && self.conversation.thread_id.is_some()
-            && raw_prompt.trim().is_empty()
-            && self.review_comments.is_empty()
-            && self.prompt_context.files.is_empty();
-        if !resume
-            && raw_prompt.trim().is_empty()
-            && self.review_comments.is_empty()
-            && self.prompt_context.files.is_empty()
-        {
+        let empty =
+            blank && self.review_comments.is_empty() && self.prompt_context.files.is_empty();
+        let resume = empty
+            && self.conversation.phase == crate::conversation::ConversationPhase::Stopped
+            && self.conversation.thread_id.is_some();
+        if empty && !resume {
             return;
         }
         self.focus_prompt_pending = true;
@@ -218,7 +216,7 @@ impl ComposerView {
         };
         let prompt = if resume {
             String::new()
-        } else if raw_prompt.trim().is_empty() && !self.prompt_context.files.is_empty() {
+        } else if blank && !self.prompt_context.files.is_empty() {
             crate::i18n::text("请查看附加文件。").to_owned()
         } else {
             raw_prompt
@@ -246,7 +244,6 @@ impl ComposerView {
                 self.draft_revision = self.draft_revision.wrapping_add(1);
                 self.clear_prompt(cx);
                 self.prompt_context.files.clear();
-                self.prompt_context.references.clear();
                 self.context_menu_open = false;
                 self.context_catalog.cancel();
                 if !self.review_comments.is_empty() {
@@ -293,7 +290,6 @@ impl ComposerView {
         self.model_list_open = false;
         self.clear_prompt(cx);
         self.prompt_context.files.clear();
-        self.prompt_context.references.clear();
         self.context_menu_open = false;
         self.context_catalog.cancel();
         if !self.review_comments.is_empty() {
@@ -402,10 +398,7 @@ impl ComposerView {
         draft: crate::conversation::SubmissionDraft,
         cx: &mut Context<Self>,
     ) {
-        self.context_menu_open = false;
-        self.context_catalog.cancel();
-        self.context_catalog.mention_start = None;
-        self.context_catalog.mention_dismissed = None;
+        self.reset_context_menu();
         self.prompt_editor
             .update(cx, |editor, cx| editor.set_text_silently(&draft.text, cx));
         self.prompt_editor.update(cx, |editor, cx| {

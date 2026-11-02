@@ -289,20 +289,15 @@ impl FileApprovalPresentation {
             }
             "tab" => {
                 let next = if self.visual_state.menu_open() {
-                    match (self.keyboard_focus, shift) {
-                        (Some(FileApprovalKeyboardFocus::MenuAllowOnce), false) => {
+                    // Two items: Tab and Shift-Tab both toggle.
+                    match self.keyboard_focus {
+                        Some(FileApprovalKeyboardFocus::MenuAllowOnce) => {
                             FileApprovalKeyboardFocus::MenuAllowAllEdits
                         }
-                        (Some(FileApprovalKeyboardFocus::MenuAllowAllEdits), false) => {
+                        Some(FileApprovalKeyboardFocus::MenuAllowAllEdits) => {
                             FileApprovalKeyboardFocus::MenuAllowOnce
                         }
-                        (Some(FileApprovalKeyboardFocus::MenuAllowOnce), true) => {
-                            FileApprovalKeyboardFocus::MenuAllowAllEdits
-                        }
-                        (Some(FileApprovalKeyboardFocus::MenuAllowAllEdits), true) => {
-                            FileApprovalKeyboardFocus::MenuAllowOnce
-                        }
-                        (_, true) => FileApprovalKeyboardFocus::MenuAllowAllEdits,
+                        _ if shift => FileApprovalKeyboardFocus::MenuAllowAllEdits,
                         _ => FileApprovalKeyboardFocus::MenuAllowOnce,
                     }
                 } else {
@@ -1747,16 +1742,8 @@ impl DiffReviewPresentation {
         let finish_file = |current: &mut Option<DiffFilePresentation>,
                            files: &mut Vec<DiffFilePresentation>| {
             if let Some(mut file) = current.take() {
-                file.additions = file
-                    .lines
-                    .iter()
-                    .filter(|line| line.kind == DiffLineKind::Added)
-                    .count() as u32;
-                file.deletions = file
-                    .lines
-                    .iter()
-                    .filter(|line| line.kind == DiffLineKind::Deleted)
-                    .count() as u32;
+                file.additions = count_lines(&file.lines, DiffLineKind::Added);
+                file.deletions = count_lines(&file.lines, DiffLineKind::Deleted);
                 files.push(file);
             }
         };
@@ -1770,8 +1757,7 @@ impl DiffReviewPresentation {
                     .unwrap_or_default()
                     .trim_start_matches("b/");
                 let resolved_path = resolve_review_path(protocol_path, cwd);
-                let display_path =
-                    review_display_path(protocol_path, resolved_path.as_deref(), cwd);
+                let display_path = review_display_path(protocol_path, cwd);
                 current = Some(DiffFilePresentation {
                     path: display_path,
                     resolved_path,
@@ -1806,29 +1792,21 @@ impl DiffReviewPresentation {
                 if let Some(parsed) =
                     crate::git_review::parse_unified(&format!("+++ {path}\n")).first()
                 {
-                    let resolved = resolve_review_path(&parsed.path, cwd);
-                    file.path = review_display_path(&parsed.path, resolved.as_deref(), cwd);
-                    file.resolved_path = resolved;
+                    file.path = review_display_path(&parsed.path, cwd);
+                    file.resolved_path = resolve_review_path(&parsed.path, cwd);
                 }
                 continue;
             }
             if raw_line.starts_with("--- ") || raw_line.starts_with("+++ ") {
                 continue;
             }
-            if let Some(content) = raw_line.strip_prefix('+') {
-                std::sync::Arc::make_mut(&mut file.lines)
-                    .push(DiffLinePresentation::added(new_line, content));
-                new_line = new_line.saturating_add(1);
-            } else if let Some(content) = raw_line.strip_prefix('-') {
-                std::sync::Arc::make_mut(&mut file.lines)
-                    .push(DiffLinePresentation::deleted(old_line, content));
-                old_line = old_line.saturating_add(1);
-            } else if let Some(content) = raw_line.strip_prefix(' ') {
-                std::sync::Arc::make_mut(&mut file.lines)
-                    .push(DiffLinePresentation::context(old_line, new_line, content));
-                old_line = old_line.saturating_add(1);
-                new_line = new_line.saturating_add(1);
-            }
+            // `lines` is only shared once the file is finished, so this never copies.
+            push_hunk_line(
+                std::sync::Arc::make_mut(&mut file.lines),
+                raw_line,
+                &mut old_line,
+                &mut new_line,
+            );
         }
         finish_file(&mut current, &mut files);
 
@@ -1855,7 +1833,7 @@ impl DiffReviewPresentation {
                     | AgentFileChangeKind::Update { move_path: None } => change.path.as_str(),
                 };
                 let resolved_path = resolve_review_path(protocol_path, cwd);
-                let path = review_display_path(protocol_path, resolved_path.as_deref(), cwd);
+                let path = review_display_path(protocol_path, cwd);
                 let mut lines = Vec::new();
                 match &change.kind {
                     AgentFileChangeKind::Add => {
@@ -1875,35 +1853,17 @@ impl DiffReviewPresentation {
                             if let Some((old_start, new_start)) = parse_hunk_header(raw_line) {
                                 old_line = old_start;
                                 new_line = new_start;
-                            } else if let Some(content) = raw_line.strip_prefix('+') {
-                                lines.push(DiffLinePresentation::added(new_line, content));
-                                new_line = new_line.saturating_add(1);
-                            } else if let Some(content) = raw_line.strip_prefix('-') {
-                                lines.push(DiffLinePresentation::deleted(old_line, content));
-                                old_line = old_line.saturating_add(1);
-                            } else if let Some(content) = raw_line.strip_prefix(' ') {
-                                lines.push(DiffLinePresentation::context(
-                                    old_line, new_line, content,
-                                ));
-                                old_line = old_line.saturating_add(1);
-                                new_line = new_line.saturating_add(1);
+                            } else {
+                                push_hunk_line(&mut lines, raw_line, &mut old_line, &mut new_line);
                             }
                         }
                     }
                 }
-                let additions = lines
-                    .iter()
-                    .filter(|line| line.kind == DiffLineKind::Added)
-                    .count() as u32;
-                let deletions = lines
-                    .iter()
-                    .filter(|line| line.kind == DiffLineKind::Deleted)
-                    .count() as u32;
                 DiffFilePresentation {
                     path,
                     resolved_path,
-                    additions,
-                    deletions,
+                    additions: count_lines(&lines, DiffLineKind::Added),
+                    deletions: count_lines(&lines, DiffLineKind::Deleted),
                     lines: lines.into(),
                     visual_state: DiffFileVisualState::Expanded,
                 }
@@ -1916,15 +1876,9 @@ impl DiffReviewPresentation {
                 patch.push_str(&change.diff);
                 continue;
             }
-            let old = serde_json::to_string(&format!(
-                "a/{}",
-                review_display_path(
-                    &change.path,
-                    resolve_review_path(&change.path, cwd).as_deref(),
-                    cwd
-                )
-            ))
-            .unwrap();
+            let old =
+                serde_json::to_string(&format!("a/{}", review_display_path(&change.path, cwd)))
+                    .unwrap();
             let new = serde_json::to_string(&format!("b/{}", file.path)).unwrap();
             patch.push_str(&format!("diff --git {old} {new}\n"));
             match change.kind {
@@ -1964,20 +1918,40 @@ impl DiffReviewPresentation {
     }
 }
 
-fn review_display_path(path: &str, resolved_path: Option<&str>, cwd: Option<&Path>) -> String {
+/// An absolute protocol path is shown relative to `cwd` when they share a
+/// prefix; anything else is shown as sent.
+fn review_display_path(path: &str, cwd: Option<&Path>) -> String {
     let protocol_path = Path::new(path);
-    if !protocol_path.is_absolute() {
-        return path.to_owned();
+    cwd.filter(|_| protocol_path.is_absolute())
+        .and_then(|cwd| lexical_relative_path(protocol_path, cwd))
+        .map_or_else(
+            || path.to_owned(),
+            |relative| relative.to_string_lossy().into_owned(),
+        )
+}
+
+/// Appends one `+`, `-` or ` ` hunk body line and advances the line counters.
+fn push_hunk_line(
+    lines: &mut Vec<DiffLinePresentation>,
+    raw_line: &str,
+    old_line: &mut u32,
+    new_line: &mut u32,
+) {
+    if let Some(content) = raw_line.strip_prefix('+') {
+        lines.push(DiffLinePresentation::added(*new_line, content));
+        *new_line = new_line.saturating_add(1);
+    } else if let Some(content) = raw_line.strip_prefix('-') {
+        lines.push(DiffLinePresentation::deleted(*old_line, content));
+        *old_line = old_line.saturating_add(1);
+    } else if let Some(content) = raw_line.strip_prefix(' ') {
+        lines.push(DiffLinePresentation::context(*old_line, *new_line, content));
+        *old_line = old_line.saturating_add(1);
+        *new_line = new_line.saturating_add(1);
     }
-    let Some(cwd) = cwd else {
-        return path.to_owned();
-    };
-    let Some(resolved_path) = resolved_path.map(Path::new) else {
-        return path.to_owned();
-    };
-    lexical_relative_path(resolved_path, cwd)
-        .map(|path| path.to_string_lossy().into_owned())
-        .unwrap_or_else(|| path.to_owned())
+}
+
+fn count_lines(lines: &[DiffLinePresentation], kind: DiffLineKind) -> u32 {
+    lines.iter().filter(|line| line.kind == kind).count() as u32
 }
 
 fn lexical_relative_path(target: &Path, base: &Path) -> Option<PathBuf> {
@@ -2623,13 +2597,21 @@ fn render_review_file_tree(model: &DiffReviewPresentation, palette: FilePalette)
     tree
 }
 
+/// Splits a path into its directory (with the trailing separator) and the last
+/// segment. Trailing separators are not part of the name, and a path that is
+/// only separators is all name. Separators are the platform's (`\` too on
+/// Windows), as with `Path::file_name`.
 fn split_directory_and_name(path: &str) -> (&str, &str) {
-    let name = Path::new(path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or(path);
-    let split = path.len().saturating_sub(name.len());
-    path.split_at(split)
+    let trimmed = path.trim_end_matches(std::path::is_separator);
+    if trimmed.is_empty() {
+        return ("", path);
+    }
+    // Separators are ASCII, so the byte after one is always a character
+    // boundary.
+    let start = trimmed
+        .rfind(std::path::is_separator)
+        .map_or(0, |separator| separator + 1);
+    (&path[..start], &trimmed[start..])
 }
 
 #[cfg(test)]
@@ -2811,6 +2793,19 @@ mod tests {
             file.directory_and_name().1,
             "codex-cdp-file-approval-probe.txt"
         );
+    }
+
+    #[test]
+    fn directory_and_name_split_on_the_last_segment() {
+        assert_eq!(split_directory_and_name("a/b/c.rs"), ("a/b/", "c.rs"));
+        assert_eq!(split_directory_and_name("c.rs"), ("", "c.rs"));
+        assert_eq!(split_directory_and_name("/c.rs"), ("/", "c.rs"));
+        // A trailing slash is not part of the name, and a multibyte segment
+        // before it must not be cut in the middle.
+        assert_eq!(split_directory_and_name("a/中/"), ("a/", "中"));
+        assert_eq!(split_directory_and_name("a/bc/"), ("a/", "bc"));
+        assert_eq!(split_directory_and_name("/"), ("", "/"));
+        assert_eq!(split_directory_and_name(""), ("", ""));
     }
 
     #[test]

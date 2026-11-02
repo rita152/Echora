@@ -680,11 +680,7 @@ impl ManagerInner {
             }
             "remoteControl/status/changed" => {
                 validate_remote_control_status_changed(message)?;
-                connection
-                    .state
-                    .lock()
-                    .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?
-                    .remote_control_status = message.get("params").cloned();
+                connection.lock_state()?.remote_control_status = message.get("params").cloned();
                 Ok(())
             }
             method if TURN_SCOPED_SERVER_METHODS.contains(&method) => {
@@ -762,10 +758,7 @@ impl ManagerInner {
         message: &Value,
     ) -> Result<()> {
         let thread_id = thread_started_id(message)?;
-        let mut state = connection
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let mut state = connection.lock_state()?;
         if state.loaded_threads.contains(&thread_id)
             || state.permission_probe_threads.contains(&thread_id)
         {

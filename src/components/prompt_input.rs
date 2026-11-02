@@ -143,7 +143,6 @@ impl PromptInput {
     pub fn number_field(mode: ThemeMode, value: f32, cx: &mut Context<Self>) -> Self {
         let mut input = Self::project_name(mode, "", cx);
         input.numeric = true;
-        input.submit_empty = true;
         input.focus_handle = cx.focus_handle().tab_stop(true);
         input.set_text_silently(value.to_string(), cx);
         input
@@ -948,11 +947,7 @@ impl Element for PromptTextElement {
             fill(
                 Bounds::new(
                     point(
-                        bounds.left()
-                            + line.x_for_index(
-                                input.display_offset_for_content(input.cursor_offset()),
-                            )
-                            - px(horizontal_scroll),
+                        bounds.left() + px(caret_x) - px(horizontal_scroll),
                         bounds.top(),
                     ),
                     size(px(1.0), px(self.line_height)),

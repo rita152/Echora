@@ -369,11 +369,8 @@ mod headless {
         pub fn load_url(&self, url: &str) {
             {
                 let mut state = self.state.borrow_mut();
-                let keep = if state.entries.is_empty() {
-                    0
-                } else {
-                    state.index + 1
-                };
+                // `index` is 0 until the first load, so this keeps nothing then.
+                let keep = state.index + 1;
                 state.entries.truncate(keep);
                 state.entries.push(url.to_owned());
                 state.index = state.entries.len() - 1;

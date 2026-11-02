@@ -18,7 +18,14 @@ pub fn render_approval_card(
     }
     let palette = ApprovalPalette::for_theme(theme);
     let interactive = model.is_interactive();
-    let network = matches!(model.request, ApprovalRequestPresentation::Network { .. });
+    let network = match &model.request {
+        ApprovalRequestPresentation::Network {
+            destination,
+            reason,
+            ..
+        } => Some((destination, reason)),
+        _ => None,
+    };
     let header = div()
         .min_h(px(APPROVAL_CARD_HEADER_HEIGHT))
         .px(px(16.0))
@@ -39,7 +46,7 @@ pub fn render_approval_card(
                 .text_color(palette.secondary)
                 .child(
                     icon(
-                        if network {
+                        if network.is_some() {
                             "approval-internet"
                         } else {
                             "panel-terminal"
@@ -61,16 +68,8 @@ pub fn render_approval_card(
                 .line_height(px(crate::typography::ui_leading(14.0, 20.0)))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(palette.question_text)
-                .when(!network, |title| title.child(model.request.question()))
-                .when(network, |header| {
-                    let ApprovalRequestPresentation::Network {
-                        destination,
-                        reason,
-                        ..
-                    } = &model.request
-                    else {
-                        unreachable!()
-                    };
+                .when(network.is_none(), |title| title.child(model.request.question()))
+                .when_some(network, |header, (destination, reason)| {
                     let host = destination
                         .split_once("://")
                         .map(|(_, host)| host)

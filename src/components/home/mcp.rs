@@ -283,13 +283,9 @@ pub(super) fn mcp_tool_call_activity(
     } else {
         theme.text.alpha(0.60)
     };
-    let label_color = if failed {
-        theme.warning
-    } else {
-        // ChatGPT's inner label declares text/40, but the enclosing
-        // `[&_*:not(button)]:!text-text/60` rule wins in the live DOM.
-        theme.text.alpha(0.60)
-    };
+    // ChatGPT's inner label declares text/40, but the enclosing
+    // `[&_*:not(button)]:!text-text/60` rule wins in the live DOM.
+    let label_color = foreground;
 
     div()
         .id(SharedString::from(format!(

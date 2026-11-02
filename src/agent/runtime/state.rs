@@ -26,20 +26,20 @@ impl AgentRuntimeState {
         if event.generation < self.generation {
             return Ok(None);
         }
-        if matches!(event.observation, Observation::GenerationStarted) {
-            if event.generation == self.generation {
-                return Ok(None);
-            }
-            *self = Self {
-                generation: event.generation,
-                ..Self::default()
-            };
-            return Ok(Some(event));
-        }
-        if event.generation != self.generation {
-            return Err("Runtime observation arrived before generation start".into());
-        }
         match &mut event.observation {
+            Observation::GenerationStarted => {
+                if event.generation == self.generation {
+                    return Ok(None);
+                }
+                *self = Self {
+                    generation: event.generation,
+                    ..Self::default()
+                };
+                return Ok(Some(event));
+            }
+            _ if event.generation != self.generation => {
+                return Err("Runtime observation arrived before generation start".into());
+            }
             Observation::HookPrompt(update) => {
                 if let Some(existing) = self.hook_prompts.iter_mut().find(|v| {
                     v.thread_id == update.thread_id
@@ -162,7 +162,6 @@ impl AgentRuntimeState {
                     }
                 }
             }
-            Observation::GenerationStarted => unreachable!(),
         }
         Ok(Some(event))
     }

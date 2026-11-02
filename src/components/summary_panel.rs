@@ -250,7 +250,13 @@ impl SummaryPanel {
         self.thread_id
             .as_deref()
             .and_then(|thread_id| self.snapshot.thread_attachments(thread_id))
-            .map(|entry| entry.pull_requests_newest_first())
+            .map(|entry| {
+                entry
+                    .pull_requests_newest_first()
+                    .into_iter()
+                    .cloned()
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -319,15 +325,16 @@ impl SummaryPanel {
         };
         let found_key = AgentPullRequestRef::parse(&found.url)?.identity_key();
         let attached = self
-            .pull_requests()
-            .iter()
-            .any(|pull_request| pull_request.identity_key == found_key);
+            .thread_id
+            .as_deref()
+            .and_then(|thread_id| self.snapshot.thread_attachments(thread_id))
+            .is_some_and(|entry| {
+                entry
+                    .pull_requests
+                    .iter()
+                    .any(|pull_request| pull_request.identity_key == found_key)
+            });
         (!attached).then(|| found.url.clone())
-    }
-
-    /// Whether the panel has anything to show for this chat.
-    pub fn has_content(&self, _cx: &gpui::App) -> bool {
-        true
     }
 
     fn expanded(&self, key: &str) -> bool {

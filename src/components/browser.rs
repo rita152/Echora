@@ -404,10 +404,8 @@ impl BrowserPanel {
                 continue;
             }
             let mut tab = BrowserTab::new(0);
-            if !saved.url.is_empty() {
-                tab.pending_url = Some(saved.url.clone());
-                tab.url = saved.url;
-            }
+            tab.pending_url = Some(saved.url.clone());
+            tab.url = saved.url;
             tab.title = saved.title;
             tab.custom_title = saved.custom_title;
             self.push_tab(tab);

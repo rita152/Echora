@@ -177,3 +177,12 @@ impl Default for ConversationState {
         }
     }
 }
+
+impl ConversationState {
+    /// The generation of the running turn, once the server identified it.
+    pub(crate) fn turn_generation(&self) -> Option<u64> {
+        self.turn_identity
+            .as_ref()
+            .map(|identity| identity.generation)
+    }
+}

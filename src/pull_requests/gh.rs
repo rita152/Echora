@@ -88,13 +88,12 @@ fn u64_value(value: &Value, key: &str) -> u64 {
     value.get(key).and_then(Value::as_u64).unwrap_or(0)
 }
 
-fn nodes(value: &Value, pointer: &str) -> Vec<Value> {
+fn nodes<'a>(value: &'a Value, pointer: &str) -> &'a [Value] {
     value
         .pointer(pointer)
         .and_then(|value| value.get("nodes"))
         .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
+        .map_or(&[], Vec::as_slice)
 }
 
 fn now() -> chrono::DateTime<chrono::Utc> {
@@ -603,14 +602,13 @@ query($owner: String!, $name: String!, $number: Int!) {
                 ("number", Value::from(number)),
             ],
         )?;
-        let pull = value
+        let Some(pull) = value
             .pointer("/data/repository/issueOrPullRequest")
-            .cloned()
-            .unwrap_or(Value::Null);
-        if pull.is_null() {
+            .filter(|pull| !pull.is_null())
+        else {
             bail!(crate::i18n::text("找不到该 Pull Request"));
-        }
-        let mut summary = summary_from(&pull);
+        };
+        let mut summary = summary_from(pull);
         summary.repository = repository.to_string();
         let mut author = user_from(pull.get("author").unwrap_or(&Value::Null)).unwrap_or(User {
             login: summary.author.clone(),
@@ -625,30 +623,30 @@ query($owner: String!, $name: String!, $number: Int!) {
             .unwrap_or(false);
 
         let mut requested_reviewers = Vec::new();
-        for node in nodes(&pull, "/reviewRequests") {
+        for node in nodes(pull, "/reviewRequests") {
             if let Some(user) = user_from(node.get("requestedReviewer").unwrap_or(&Value::Null)) {
                 requested_reviewers.push(user);
             }
         }
 
         let mut comments = Vec::new();
-        for node in nodes(&pull, "/comments") {
-            comments.push(comment_from(&node, None));
+        for node in nodes(pull, "/comments") {
+            comments.push(comment_from(node, None));
         }
         // A review with a body is a comment card; without one, an approval or
         // a change request is an event card and a plain `COMMENTED` review is
         // only the container of its threads.
         let mut activity = Vec::new();
-        for node in nodes(&pull, "/reviews") {
-            let body = text(&node, "body").unwrap_or_default();
+        for node in nodes(pull, "/reviews") {
+            let body = text(node, "body").unwrap_or_default();
             if body.trim().is_empty() {
-                let kind = match text(&node, "state").as_deref() {
+                let kind = match text(node, "state").as_deref() {
                     Some("APPROVED") => Some(ActivityEventKind::Approved),
                     Some("CHANGES_REQUESTED") => Some(ActivityEventKind::ChangesRequested),
                     _ => None,
                 };
                 if let Some(kind) = kind {
-                    let at = text(&node, "submittedAt").unwrap_or_default();
+                    let at = text(node, "submittedAt").unwrap_or_default();
                     activity.push(ActivityItem::Event {
                         kind,
                         actor: node
@@ -662,7 +660,7 @@ query($owner: String!, $name: String!, $number: Int!) {
                 }
                 continue;
             }
-            let mut comment = comment_from(&node, None);
+            let mut comment = comment_from(node, None);
             comment.is_review = true;
             comment.can_quote = true;
             comments.push(comment);
@@ -674,9 +672,9 @@ query($owner: String!, $name: String!, $number: Int!) {
         }));
 
         let mut review_threads = Vec::new();
-        for node in nodes(&pull, "/reviewThreads") {
-            let thread_id = text(&node, "id").unwrap_or_default();
-            let path = text(&node, "path").unwrap_or_default();
+        for node in nodes(pull, "/reviewThreads") {
+            let thread_id = text(node, "id").unwrap_or_default();
+            let path = text(node, "path").unwrap_or_default();
             let line = node
                 .get("line")
                 .and_then(Value::as_u64)
@@ -693,7 +691,7 @@ query($owner: String!, $name: String!, $number: Int!) {
                 })
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
-            let thread_comments: Vec<Comment> = nodes(&node, "/comments")
+            let thread_comments: Vec<Comment> = nodes(node, "/comments")
                 .iter()
                 .map(|comment| {
                     let mut comment = comment_from(comment, Some((&thread_id, &path, line)));
@@ -718,8 +716,8 @@ query($owner: String!, $name: String!, $number: Int!) {
         }
 
         let mut commits = Vec::new();
-        for node in nodes(&pull, "/commits") {
-            let commit = node.get("commit").cloned().unwrap_or(Value::Null);
+        for node in nodes(pull, "/commits") {
+            let commit = node.get("commit").unwrap_or(&Value::Null);
             let author_login = commit
                 .pointer("/author/user/login")
                 .and_then(Value::as_str)
@@ -728,10 +726,10 @@ query($owner: String!, $name: String!, $number: Int!) {
                 .clone()
                 .or_else(|| text(commit.get("author").unwrap_or(&Value::Null), "name"))
                 .unwrap_or_default();
-            let at = text(&commit, "committedDate").unwrap_or_default();
+            let at = text(commit, "committedDate").unwrap_or_default();
             commits.push(Commit {
-                sha: text(&commit, "oid").unwrap_or_default(),
-                subject: text(&commit, "messageHeadline").unwrap_or_default(),
+                sha: text(commit, "oid").unwrap_or_default(),
+                subject: text(commit, "messageHeadline").unwrap_or_default(),
                 author,
                 author_login,
                 age: relative_age(&at, now()),
@@ -741,16 +739,16 @@ query($owner: String!, $name: String!, $number: Int!) {
         activity.extend(commits.iter().map(|commit| ActivityItem::Commits {
             commits: vec![commit.clone()],
         }));
-        let created_at = text(&pull, "createdAt").unwrap_or_default();
+        let created_at = text(pull, "createdAt").unwrap_or_default();
         activity.push(ActivityItem::Event {
             kind: ActivityEventKind::Opened,
             actor: author.login.clone(),
             age: relative_age(&created_at, now()),
             at: created_at,
         });
-        for node in nodes(&pull, "/timelineItems") {
-            if text(&node, "__typename").as_deref() == Some("MergedEvent") {
-                let at = text(&node, "createdAt").unwrap_or_default();
+        for node in nodes(pull, "/timelineItems") {
+            if text(node, "__typename").as_deref() == Some("MergedEvent") {
+                let at = text(node, "createdAt").unwrap_or_default();
                 activity.push(ActivityItem::Event {
                     kind: ActivityEventKind::Merged,
                     actor: node
@@ -766,11 +764,11 @@ query($owner: String!, $name: String!, $number: Int!) {
         let activity = build_activity(activity);
 
         let mut checks = Vec::new();
-        for node in nodes(&pull, "/statusCheckRollup/contexts") {
-            let kind = text(&node, "__typename").unwrap_or_default();
+        for node in nodes(pull, "/statusCheckRollup/contexts") {
+            let kind = text(node, "__typename").unwrap_or_default();
             if kind == "CheckRun" {
-                let conclusion = text(&node, "conclusion").unwrap_or_default();
-                let status = text(&node, "status").unwrap_or_default();
+                let conclusion = text(node, "conclusion").unwrap_or_default();
+                let status = text(node, "status").unwrap_or_default();
                 let state = match (status.as_str(), conclusion.as_str()) {
                     (_, "SUCCESS") => CheckState::Passed,
                     (_, "NEUTRAL" | "SKIPPED") => CheckState::Skipped,
@@ -780,21 +778,21 @@ query($owner: String!, $name: String!, $number: Int!) {
                     _ => CheckState::Pending,
                 };
                 checks.push(Check {
-                    name: text(&node, "name").unwrap_or_default(),
+                    name: text(node, "name").unwrap_or_default(),
                     state,
-                    details_url: text(&node, "detailsUrl"),
+                    details_url: text(node, "detailsUrl"),
                 });
             } else {
-                let state = match text(&node, "state").unwrap_or_default().as_str() {
+                let state = match text(node, "state").unwrap_or_default().as_str() {
                     "SUCCESS" => CheckState::Passed,
                     "PENDING" | "EXPECTED" => CheckState::Pending,
                     "FAILURE" | "ERROR" => CheckState::Failed,
                     _ => CheckState::Skipped,
                 };
                 checks.push(Check {
-                    name: text(&node, "context").unwrap_or_default(),
+                    name: text(node, "context").unwrap_or_default(),
                     state,
-                    details_url: text(&node, "targetUrl"),
+                    details_url: text(node, "targetUrl"),
                 });
             }
         }
@@ -803,12 +801,12 @@ query($owner: String!, $name: String!, $number: Int!) {
         Ok(PullRequestDetail {
             viewer,
             summary: summary.clone(),
-            body: text(&pull, "body").unwrap_or_default(),
-            assignees: nodes(&pull, "/assignees")
+            body: text(pull, "body").unwrap_or_default(),
+            assignees: nodes(pull, "/assignees")
                 .iter()
                 .filter_map(user_from)
                 .collect(),
-            labels: nodes(&pull, "/labels")
+            labels: nodes(pull, "/labels")
                 .iter()
                 .filter_map(|n| Some((text(n, "name")?, text(n, "color")?)))
                 .collect(),
@@ -822,10 +820,10 @@ query($owner: String!, $name: String!, $number: Int!) {
             author,
             mergeable: pull.get("mergeable").and_then(Value::as_str) == Some("MERGEABLE"),
             age: summary.age.clone(),
-            created_age: relative_age(&text(&pull, "createdAt").unwrap_or_default(), now()),
+            created_age: relative_age(&text(pull, "createdAt").unwrap_or_default(), now()),
             additions: summary.additions,
             deletions: summary.deletions,
-            head_sha: text(&pull, "headRefOid").unwrap_or_default(),
+            head_sha: text(pull, "headRefOid").unwrap_or_default(),
         })
     }
 

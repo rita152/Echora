@@ -235,30 +235,29 @@ pub(super) fn collaboration_activity(
                                                 .inset(),
                                             ])
                                         })
-                                })
-                                .on_click(move |_, _, cx| {
-                                    if !click_thread_id.is_empty() {
-                                        open_sub_agent_panel(
-                                            &click_home,
-                                            &click_thread_id,
-                                            &click_name,
-                                            cx,
-                                        );
-                                        cx.stop_propagation();
-                                    }
-                                })
-                                .on_key_down(move |event, _, cx| {
-                                    if !key_thread_id.is_empty()
-                                        && matches!(event.keystroke.key.as_str(), "enter" | "space")
-                                    {
-                                        open_sub_agent_panel(
-                                            &key_home,
-                                            &key_thread_id,
-                                            &key_name,
-                                            cx,
-                                        );
-                                        cx.stop_propagation();
-                                    }
+                                        .on_click(move |_, _, cx| {
+                                            open_sub_agent_panel(
+                                                &click_home,
+                                                &click_thread_id,
+                                                &click_name,
+                                                cx,
+                                            );
+                                            cx.stop_propagation();
+                                        })
+                                        .on_key_down(move |event, _, cx| {
+                                            if matches!(
+                                                event.keystroke.key.as_str(),
+                                                "enter" | "space"
+                                            ) {
+                                                open_sub_agent_panel(
+                                                    &key_home,
+                                                    &key_thread_id,
+                                                    &key_name,
+                                                    cx,
+                                                );
+                                                cx.stop_propagation();
+                                            }
+                                        })
                                 })
                                 .child(name),
                         )
@@ -304,9 +303,9 @@ pub(super) fn collaboration_activity(
         } {
             detail = detail.child(metadata);
         }
-        for thread_id in collaboration_thread_ids(&collaboration) {
-            let name = collaboration_display_name(&collaboration, &thread_id);
-            let status = collaboration_status_label(&collaboration, &thread_id);
+        for thread_id in &receiver_thread_ids {
+            let name = collaboration_display_name(&collaboration, thread_id);
+            let status = collaboration_status_label(&collaboration, thread_id);
             let click_home = home_entity.clone();
             let key_home = home_entity.clone();
             let click_thread_id = thread_id.clone();
@@ -317,7 +316,7 @@ pub(super) fn collaboration_activity(
             let receiver_label = crate::i18n::format!("在右侧打开子智能体 {name}，状态{status}" => "Open subagent {name} on the right, status: {status}");
             let message = collaboration
                 .agents_states
-                .get(&thread_id)
+                .get(thread_id)
                 .and_then(|state| state.message.clone());
             detail = detail.child(
                 div()
@@ -338,19 +337,15 @@ pub(super) fn collaboration_activity(
                             .aria_label(receiver_label)
                             .cursor_pointer()
                             .hover(move |row| row.bg(theme.sidebar_hover))
-                    })
-                    .on_click(move |_, _, cx| {
-                        if !click_thread_id.is_empty() {
-                            open_sub_agent_panel(&click_home, &click_thread_id, &click_name, cx)
-                        }
-                    })
-                    .on_key_down(move |event, _, cx| {
-                        if !key_thread_id.is_empty()
-                            && matches!(event.keystroke.key.as_str(), "enter" | "space")
-                        {
-                            open_sub_agent_panel(&key_home, &key_thread_id, &key_name, cx);
-                            cx.stop_propagation();
-                        }
+                            .on_click(move |_, _, cx| {
+                                open_sub_agent_panel(&click_home, &click_thread_id, &click_name, cx)
+                            })
+                            .on_key_down(move |event, _, cx| {
+                                if matches!(event.keystroke.key.as_str(), "enter" | "space") {
+                                    open_sub_agent_panel(&key_home, &key_thread_id, &key_name, cx);
+                                    cx.stop_propagation();
+                                }
+                            })
                     })
                     .child(
                         div()

@@ -123,11 +123,10 @@ pub fn candidates_from(
         candidates.push((AssetOrigin::ExecutableDirectory, directory.join("assets")));
     }
     candidates.push((AssetOrigin::CompiledWorktree, worktree.join("assets")));
+    // A working directory that repeats an earlier path is dropped by
+    // `resolve_from`, which skips every repeated candidate.
     if let Some(directory) = working_directory {
-        let path = directory.join("assets");
-        if !candidates.iter().any(|(_, candidate)| *candidate == path) {
-            candidates.push((AssetOrigin::WorkingDirectory, path));
-        }
+        candidates.push((AssetOrigin::WorkingDirectory, directory.join("assets")));
     }
     candidates
 }

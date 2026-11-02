@@ -273,7 +273,6 @@ fn render_item(
                 is_last_row: row.is_some_and(|row| row + 1 == rows.len()),
                 row_identity,
             },
-            widths.len(),
             widths,
             &MarkdownFadeHandle::none(),
         );

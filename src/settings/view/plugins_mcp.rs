@@ -111,16 +111,8 @@ impl McpPanel {
         self.directory
             .logins
             .values()
-            .filter(|login| login.phase.busy())
+            .filter(|login| login.server_name == server)
             .max_by_key(|login| login.login_id)
-            .filter(|_| false)
-            .or_else(|| {
-                self.directory
-                    .logins
-                    .values()
-                    .filter(|login| login.server_name == server)
-                    .max_by_key(|login| login.login_id)
-            })
     }
 }
 
@@ -235,9 +227,7 @@ impl SettingsView {
                 let _ = this.update(cx, |this, cx| {
                     // A page from a different generation belongs to a rebuilt
                     // connection; the old inventory is abandoned, not merged.
-                    if this.mcp.directory.generation != page.generation {
-                        this.mcp.directory.reset_for_generation(page.generation);
-                    }
+                    this.mcp.directory.reset_for_generation(page.generation);
                     this.mcp_generation = page.generation;
                     let partial = detail != AgentMcpStatusDetail::Full;
                     if this.mcp.directory.accept_page(page, partial) {

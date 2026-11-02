@@ -44,7 +44,7 @@ impl ComposerView {
                 ConversationActivity::FileApproval(model) => model.should_render(),
                 ConversationActivity::PermissionsApproval(model) => model.should_render(),
                 ConversationActivity::UserInput(model) => model.should_render(),
-                ConversationActivity::McpElicitation(model) => model.status.should_render(),
+                ConversationActivity::McpElicitation(_) => true,
                 _ => false,
             })
     }
@@ -102,46 +102,50 @@ impl ComposerView {
         event: ApprovalCardEvent,
         cx: &mut Context<Self>,
     ) {
-        let Some(index) = self.conversation.activities.iter().position(|activity| {
-            matches!(
-                activity,
-                ConversationActivity::Approval(model) if model.request_id == request_id
-            )
-        }) else {
+        // `model` borrows only `conversation.activities`, so the responder and
+        // request maps stay readable while it is held.
+        let Some(model) =
+            self.conversation
+                .activities
+                .iter_mut()
+                .find_map(|activity| match activity {
+                    ConversationActivity::Approval(model) if model.request_id == request_id => {
+                        Some(model)
+                    }
+                    _ => None,
+                })
+        else {
             return;
         };
         if event == ApprovalCardEvent::StopTurn {
-            if matches!(&self.conversation.activities[index],ConversationActivity::Approval(model) if model.status==ApprovalCardStatus::Failed)
-            {
+            if model.status == ApprovalCardStatus::Failed {
                 self.stop_generation(cx);
             }
             return;
         }
-        if matches!(
-            &self.conversation.activities[index],
-            ConversationActivity::Approval(model) if !model.is_interactive() && !(model.status==ApprovalCardStatus::Failed && matches!(event,ApprovalCardEvent::TogglePreview|ApprovalCardEvent::OpenNetworkDestination))
-        ) {
+        if !model.is_interactive()
+            && !(model.status == ApprovalCardStatus::Failed
+                && matches!(
+                    event,
+                    ApprovalCardEvent::TogglePreview | ApprovalCardEvent::OpenNetworkDestination
+                ))
+        {
             return;
         }
 
         match event {
             ApprovalCardEvent::StopTurn => return,
             ApprovalCardEvent::OpenNetworkDestination => {
-                if let ConversationActivity::Approval(model) = &self.conversation.activities[index]
-                    && let crate::components::approval::ApprovalRequestPresentation::Network {
-                        destination,
-                        ..
-                    } = &model.request
+                if let crate::components::approval::ApprovalRequestPresentation::Network {
+                    destination,
+                    ..
+                } = &model.request
                 {
                     cx.open_url(destination);
                 }
             }
             ApprovalCardEvent::TogglePreview => {
-                if let ConversationActivity::Approval(model) =
-                    &mut self.conversation.activities[index]
-                {
-                    model.preview_expanded = !model.preview_expanded;
-                }
+                model.preview_expanded = !model.preview_expanded;
             }
             ApprovalCardEvent::Decision(decision) => {
                 let choice = match decision {
@@ -196,22 +200,13 @@ impl ComposerView {
                         // Keep the activity until serverRequest/resolved so the
                         // server remains authoritative, while immediately
                         // unmounting the card and blocking duplicate clicks.
-                        if let ConversationActivity::Approval(model) =
-                            &mut self.conversation.activities[index]
-                        {
-                            model.status = ApprovalCardStatus::Submitting;
-                        }
+                        model.status = ApprovalCardStatus::Submitting;
                     }
                     Some(Err(error)) => {
-                        if let ConversationActivity::Approval(model) =
-                            &mut self.conversation.activities[index]
-                        {
-                            model.status = ApprovalCardStatus::Failed;
-                            model.failure_message = Some(
-                                crate::i18n::text("无法写入审批响应，请停止此轮次后重试")
-                                    .to_owned(),
-                            );
-                        }
+                        model.status = ApprovalCardStatus::Failed;
+                        model.failure_message = Some(
+                            crate::i18n::text("无法写入审批响应，请停止此轮次后重试").to_owned(),
+                        );
                         self.conversation
                             .activities
                             .push(ConversationActivity::ProtocolError {
@@ -226,13 +221,9 @@ impl ComposerView {
                             .server_request_contexts
                             .contains_key(request_id)
                         {
-                            if let ConversationActivity::Approval(model) =
-                                &mut self.conversation.activities[index]
-                            {
-                                model.status = ApprovalCardStatus::Failed;
-                                model.failure_message =
-                                    Some(crate::i18n::text("命令审批响应连接不存在").to_owned());
-                            }
+                            model.status = ApprovalCardStatus::Failed;
+                            model.failure_message =
+                                Some(crate::i18n::text("命令审批响应连接不存在").to_owned());
                             self.conversation.activities.push(
                                 ConversationActivity::ProtocolError {
                                     message: crate::i18n::text("无法回复命令审批").to_owned(),
@@ -242,20 +233,13 @@ impl ComposerView {
                                     will_retry: false,
                                 },
                             );
-                        } else if let ConversationActivity::Approval(model) =
-                            &mut self.conversation.activities[index]
-                        {
+                        } else {
                             model.status = ApprovalCardStatus::Submitting;
                         }
                     }
                 }
             }
             ApprovalCardEvent::ToggleMenu => {
-                let ConversationActivity::Approval(model) =
-                    &mut self.conversation.activities[index]
-                else {
-                    return;
-                };
                 model.visual_state = if model.visual_state.menu_open() {
                     if matches!(
                         model.keyboard_focus,
@@ -273,22 +257,12 @@ impl ComposerView {
                 };
             }
             ApprovalCardEvent::MenuFocusChanged(focused) => {
-                let ConversationActivity::Approval(model) =
-                    &mut self.conversation.activities[index]
-                else {
-                    return;
-                };
                 model.visual_state = ApprovalVisualState::SplitMenu { focused };
                 if let Some(ApprovalMenuItem::Choice(index)) = focused {
                     model.keyboard_focus = Some(ApprovalKeyboardFocus::MenuChoice(index));
                 }
             }
             ApprovalCardEvent::KeyboardFocusChanged(focused) => {
-                let ConversationActivity::Approval(model) =
-                    &mut self.conversation.activities[index]
-                else {
-                    return;
-                };
                 model.keyboard_focus = focused;
                 match focused {
                     Some(ApprovalKeyboardFocus::MenuAllowOnce) => {
@@ -319,19 +293,22 @@ impl ComposerView {
         event: PermissionApprovalEvent,
         cx: &mut Context<Self>,
     ) {
-        let Some(index) = self.conversation.activities.iter().position(|activity| {
-            matches!(
-                activity,
-                ConversationActivity::PermissionsApproval(model)
-                    if model.request_id == request_id
-            )
-        }) else {
+        let Some(model) =
+            self.conversation
+                .activities
+                .iter_mut()
+                .find_map(|activity| match activity {
+                    ConversationActivity::PermissionsApproval(model)
+                        if model.request_id == request_id =>
+                    {
+                        Some(model)
+                    }
+                    _ => None,
+                })
+        else {
             return;
         };
-        if !matches!(
-            &self.conversation.activities[index],
-            ConversationActivity::PermissionsApproval(model) if model.is_interactive()
-        ) {
+        if !model.is_interactive() {
             return;
         }
 
@@ -353,11 +330,6 @@ impl ComposerView {
                     .map(|responder| responder.respond(choice));
                 match response {
                     Some(Ok(())) => {
-                        let ConversationActivity::PermissionsApproval(model) =
-                            &mut self.conversation.activities[index]
-                        else {
-                            unreachable!("activity kind was checked above")
-                        };
                         model.status = if decision == PermissionApprovalDecision::Decline {
                             PermissionApprovalStatus::Declined
                         } else {
@@ -365,11 +337,6 @@ impl ComposerView {
                         };
                     }
                     Some(Err(error)) => {
-                        let ConversationActivity::PermissionsApproval(model) =
-                            &mut self.conversation.activities[index]
-                        else {
-                            unreachable!("activity kind was checked above")
-                        };
                         model.status = PermissionApprovalStatus::Failed;
                         model.failure_message =
                             Some(crate::i18n::text("无法写入权限审批响应").to_owned());
@@ -382,11 +349,6 @@ impl ComposerView {
                             });
                     }
                     None => {
-                        let ConversationActivity::PermissionsApproval(model) =
-                            &mut self.conversation.activities[index]
-                        else {
-                            unreachable!("activity kind was checked above")
-                        };
                         if self
                             .conversation
                             .server_request_contexts
@@ -415,11 +377,6 @@ impl ComposerView {
                 }
             }
             PermissionApprovalEvent::ToggleMenu => {
-                let ConversationActivity::PermissionsApproval(model) =
-                    &mut self.conversation.activities[index]
-                else {
-                    unreachable!("activity kind was checked above")
-                };
                 model.visual_state = if model.visual_state.menu_open() {
                     if matches!(
                         model.keyboard_focus,
@@ -436,11 +393,6 @@ impl ComposerView {
                 };
             }
             PermissionApprovalEvent::HoverChanged(hovered) => {
-                let ConversationActivity::PermissionsApproval(model) =
-                    &mut self.conversation.activities[index]
-                else {
-                    unreachable!("activity kind was checked above")
-                };
                 if !model.visual_state.menu_open() {
                     model.visual_state = match hovered {
                         Some(PermissionApprovalHover::Allow) => {
@@ -454,19 +406,9 @@ impl ComposerView {
                 }
             }
             PermissionApprovalEvent::MenuFocusChanged(focused) => {
-                let ConversationActivity::PermissionsApproval(model) =
-                    &mut self.conversation.activities[index]
-                else {
-                    unreachable!("activity kind was checked above")
-                };
                 model.visual_state = PermissionApprovalVisualState::Menu { focused };
             }
             PermissionApprovalEvent::KeyboardFocusChanged(focused) => {
-                let ConversationActivity::PermissionsApproval(model) =
-                    &mut self.conversation.activities[index]
-                else {
-                    unreachable!("activity kind was checked above")
-                };
                 model.keyboard_focus = focused;
                 match focused {
                     Some(PermissionApprovalKeyboardFocus::MenuAllowOnce) => {
@@ -529,16 +471,18 @@ impl ComposerView {
         event: FileApprovalEvent,
         cx: &mut Context<Self>,
     ) {
-        let Some(index) = self
-            .conversation
-            .activities
-            .iter()
-            .position(|activity| matches!(activity, ConversationActivity::FileApproval(model) if model.request_id == request_id))
+        let Some(model) =
+            self.conversation
+                .activities
+                .iter_mut()
+                .find_map(|activity| match activity {
+                    ConversationActivity::FileApproval(model) if model.request_id == request_id => {
+                        Some(model)
+                    }
+                    _ => None,
+                })
         else {
             return;
-        };
-        let ConversationActivity::FileApproval(model) = &self.conversation.activities[index] else {
-            unreachable!()
         };
         if event == FileApprovalEvent::StopTurn {
             if model.status == FileApprovalStatus::Failed {
@@ -553,70 +497,58 @@ impl ComposerView {
             return;
         }
 
-        if let FileApprovalEvent::Decision(decision) = event {
-            if matches!(
-                decision,
-                FileApprovalDecision::AllowOnce | FileApprovalDecision::AllowAllEdits
-            ) && !model.changes_ready
-            {
-                return;
-            }
-            let choice = match decision {
-                FileApprovalDecision::AllowOnce => AgentFileApprovalChoice::Accept,
-                FileApprovalDecision::AllowAllEdits => AgentFileApprovalChoice::AcceptForSession,
-                FileApprovalDecision::Decline => AgentFileApprovalChoice::Decline,
-                FileApprovalDecision::Cancel => AgentFileApprovalChoice::Cancel,
-            };
-            let response = self
-                .conversation
-                .file_approval_responders
-                .get(request_id)
-                .map(|responder| responder.respond(choice));
-            let live_request = self
-                .conversation
-                .server_request_contexts
-                .contains_key(request_id);
-            let error = match response {
-                Some(Ok(())) => None,
-                Some(Err(error)) => Some(error),
-                None if live_request => {
-                    Some(crate::i18n::text("文件审批 responder 不存在").to_owned())
-                }
-                None => None,
-            };
-            let ConversationActivity::FileApproval(model) =
-                &mut self.conversation.activities[index]
-            else {
-                unreachable!()
-            };
-            model.status = if error.is_some() {
-                FileApprovalStatus::Failed
-            } else {
-                FileApprovalStatus::Submitting
-            };
-            if let Some(error) = error {
-                model.failure_message =
-                    Some(crate::i18n::text("无法写入文件审批响应，请停止此轮次后重试").to_owned());
-                self.conversation
-                    .activities
-                    .push(ConversationActivity::ProtocolError {
-                        message: crate::i18n::text("无法回复文件审批").to_owned(),
-                        details: Some(error),
-                        will_retry: false,
-                    });
-            }
-            cx.emit(ConversationChanged);
-            cx.notify();
-            return;
-        }
-
-        let ConversationActivity::FileApproval(model) = &mut self.conversation.activities[index]
-        else {
-            unreachable!()
-        };
-
         match event {
-            FileApprovalEvent::Decision(_) => unreachable!(),
+            FileApprovalEvent::Decision(decision) => {
+                if matches!(
+                    decision,
+                    FileApprovalDecision::AllowOnce | FileApprovalDecision::AllowAllEdits
+                ) && !model.changes_ready
+                {
+                    return;
+                }
+                let choice = match decision {
+                    FileApprovalDecision::AllowOnce => AgentFileApprovalChoice::Accept,
+                    FileApprovalDecision::AllowAllEdits => {
+                        AgentFileApprovalChoice::AcceptForSession
+                    }
+                    FileApprovalDecision::Decline => AgentFileApprovalChoice::Decline,
+                    FileApprovalDecision::Cancel => AgentFileApprovalChoice::Cancel,
+                };
+                let response = self
+                    .conversation
+                    .file_approval_responders
+                    .get(request_id)
+                    .map(|responder| responder.respond(choice));
+                let live_request = self
+                    .conversation
+                    .server_request_contexts
+                    .contains_key(request_id);
+                let error = match response {
+                    Some(Ok(())) => None,
+                    Some(Err(error)) => Some(error),
+                    None if live_request => {
+                        Some(crate::i18n::text("文件审批 responder 不存在").to_owned())
+                    }
+                    None => None,
+                };
+                match error {
+                    None => model.status = FileApprovalStatus::Submitting,
+                    Some(error) => {
+                        model.status = FileApprovalStatus::Failed;
+                        model.failure_message = Some(
+                            crate::i18n::text("无法写入文件审批响应，请停止此轮次后重试")
+                                .to_owned(),
+                        );
+                        self.conversation
+                            .activities
+                            .push(ConversationActivity::ProtocolError {
+                                message: crate::i18n::text("无法回复文件审批").to_owned(),
+                                details: Some(error),
+                                will_retry: false,
+                            });
+                    }
+                }
+            }
             FileApprovalEvent::StopTurn => return,
             FileApprovalEvent::ReviewFile(_) => return,
             FileApprovalEvent::ToggleMenu => {
@@ -687,20 +619,13 @@ impl ComposerView {
 
     pub(crate) fn focused_mcp_elicitation_field_is_text(&self) -> bool {
         self.focused_mcp_elicitation()
-            .and_then(|model| model.focused_field().and_then(|index| model.field(index)))
-            .is_some_and(|field| field.is_text_like())
+            .and_then(focused_text_field)
+            .is_some()
     }
 
     /// Push the focused field's value into the shared inline editor.
     pub(crate) fn sync_mcp_elicitation_input(&mut self, cx: &mut Context<Self>) {
-        let Some(model) = self.focused_mcp_elicitation() else {
-            return;
-        };
-        let Some(field) = model
-            .focused_field()
-            .and_then(|index| model.field(index))
-            .filter(|field| field.is_text_like())
-        else {
+        let Some(field) = self.focused_mcp_elicitation().and_then(focused_text_field) else {
             return;
         };
         let placeholder = field.placeholder();
@@ -718,31 +643,22 @@ impl ComposerView {
 
     /// Mirror the shared inline editor into the focused elicitation field.
     pub(crate) fn set_focused_mcp_elicitation_text(&mut self, text: String) -> bool {
-        let Some(index) = self
-            .conversation
-            .activities
-            .iter()
-            .position(|activity| match activity {
-                ConversationActivity::McpElicitation(model) => model.is_interactive(),
-                _ => false,
-            })
+        let Some(model) =
+            self.conversation
+                .activities
+                .iter_mut()
+                .find_map(|activity| match activity {
+                    ConversationActivity::McpElicitation(model) if model.is_interactive() => {
+                        Some(model.as_mut())
+                    }
+                    _ => None,
+                })
         else {
             return false;
         };
-        let ConversationActivity::McpElicitation(model) = &mut self.conversation.activities[index]
-        else {
-            unreachable!("activity index was resolved as an elicitation")
-        };
-        let Some(field_index) = model.focused_field() else {
+        let Some(name) = focused_text_field(model).map(|field| field.name.clone()) else {
             return false;
         };
-        let Some(field) = model.field(field_index) else {
-            return false;
-        };
-        if !field.is_text_like() {
-            return false;
-        }
-        let name = field.name.clone();
         model.set_field_text(&name, text)
     }
 
@@ -752,72 +668,33 @@ impl ComposerView {
         event: McpElicitationEvent,
         cx: &mut Context<Self>,
     ) {
-        let Some(index) = self.conversation.activities.iter().position(|activity| {
-            matches!(activity, ConversationActivity::McpElicitation(model) if model.request_id == request_id)
-        }) else {
+        let Some(model) = elicitation_mut(&mut self.conversation.activities, request_id) else {
             return;
         };
-        let interactive = matches!(
-            &self.conversation.activities[index],
-            ConversationActivity::McpElicitation(model) if model.is_interactive()
-        );
-        if !interactive {
+        if !model.is_interactive() {
             return;
         }
         let mut focus_changed = false;
         match event {
             McpElicitationEvent::Focus(focus) => {
-                let ConversationActivity::McpElicitation(model) =
-                    &mut self.conversation.activities[index]
-                else {
-                    unreachable!("activity index was resolved as an elicitation")
-                };
                 focus_changed = model.set_focus(focus);
             }
             McpElicitationEvent::ToggleBoolean { field } => {
-                let ConversationActivity::McpElicitation(model) =
-                    &mut self.conversation.activities[index]
-                else {
-                    unreachable!("activity index was resolved as an elicitation")
-                };
                 model.toggle_boolean(field);
             }
             McpElicitationEvent::SelectOption { field, option } => {
-                let ConversationActivity::McpElicitation(model) =
-                    &mut self.conversation.activities[index]
-                else {
-                    unreachable!("activity index was resolved as an elicitation")
-                };
                 model.set_focus(McpElicitationFocus::Field(field));
                 model.select_option(field, option);
                 focus_changed = true;
             }
             McpElicitationEvent::ToggleMultiOption { field, option } => {
-                let ConversationActivity::McpElicitation(model) =
-                    &mut self.conversation.activities[index]
-                else {
-                    unreachable!("activity index was resolved as an elicitation")
-                };
                 model.set_focus(McpElicitationFocus::Field(field));
                 model.toggle_multi_option(field, option);
                 focus_changed = true;
             }
             McpElicitationEvent::OpenUrl => {
-                let url = {
-                    let ConversationActivity::McpElicitation(model) =
-                        &mut self.conversation.activities[index]
-                    else {
-                        unreachable!("activity index was resolved as an elicitation")
-                    };
-                    model.url().map(|(_, url, _)| url.to_owned())
-                };
-                if let Some(url) = url {
+                if let Some(url) = model.url().map(|(_, url, _)| url.to_owned()) {
                     cx.open_url(&url);
-                    let ConversationActivity::McpElicitation(model) =
-                        &mut self.conversation.activities[index]
-                    else {
-                        unreachable!("activity index was resolved as an elicitation")
-                    };
                     model.mark_url_opened();
                 }
             }
@@ -846,35 +723,26 @@ impl ComposerView {
         action: AgentMcpElicitationAction,
         cx: &mut Context<Self>,
     ) {
-        let Some(index) = self.conversation.activities.iter().position(|activity| {
-            matches!(activity, ConversationActivity::McpElicitation(model) if model.request_id == request_id)
-        }) else {
+        let Some(model) = elicitation_mut(&mut self.conversation.activities, request_id) else {
             return;
         };
-        let response = {
-            let ConversationActivity::McpElicitation(model) =
-                &mut self.conversation.activities[index]
-            else {
-                unreachable!("activity index was resolved as an elicitation")
-            };
-            match action {
-                // url mode has no structured content: opening the link is a
-                // local action and continuing is the explicit protocol one.
-                AgentMcpElicitationAction::Accept if model.url().is_some() => {
-                    Some(AgentMcpElicitationResponse::accept(
-                        crate::agent::AgentMcpElicitationContent::default(),
-                    ))
-                }
-                AgentMcpElicitationAction::Accept => match model.validate() {
-                    Ok(content) => Some(AgentMcpElicitationResponse::accept(content)),
-                    Err(_) => {
-                        model.focus_first_invalid_field();
-                        None
-                    }
-                },
-                AgentMcpElicitationAction::Decline => Some(AgentMcpElicitationResponse::decline()),
-                AgentMcpElicitationAction::Cancel => Some(AgentMcpElicitationResponse::cancel()),
+        let response = match action {
+            // url mode has no structured content: opening the link is a
+            // local action and continuing is the explicit protocol one.
+            AgentMcpElicitationAction::Accept if model.url().is_some() => {
+                Some(AgentMcpElicitationResponse::accept(
+                    crate::agent::AgentMcpElicitationContent::default(),
+                ))
             }
+            AgentMcpElicitationAction::Accept => match model.validate() {
+                Ok(content) => Some(AgentMcpElicitationResponse::accept(content)),
+                Err(_) => {
+                    model.focus_first_invalid_field();
+                    None
+                }
+            },
+            AgentMcpElicitationAction::Decline => Some(AgentMcpElicitationResponse::decline()),
+            AgentMcpElicitationAction::Cancel => Some(AgentMcpElicitationResponse::cancel()),
         };
         let Some(response) = response else {
             // Recoverable: the request stays pending, the offending fields keep
@@ -892,10 +760,6 @@ impl ComposerView {
         let result = match responder {
             Some(responder) => responder.respond(response),
             None => Err(crate::i18n::text("该 MCP elicitation 的 responder 已经失效").to_owned()),
-        };
-        let ConversationActivity::McpElicitation(model) = &mut self.conversation.activities[index]
-        else {
-            unreachable!("activity index was resolved as an elicitation")
         };
         match result {
             Ok(()) => model.mark_submitted(action),
@@ -957,15 +821,20 @@ impl ComposerView {
         event: UserInputRequestEvent,
         cx: &mut Context<Self>,
     ) {
-        let Some(index) = self.conversation.activities.iter().position(|activity| {
-            matches!(activity, ConversationActivity::UserInput(model) if model.request_id == request_id)
-        }) else {
+        let Some(model) =
+            self.conversation
+                .activities
+                .iter_mut()
+                .find_map(|activity| match activity {
+                    ConversationActivity::UserInput(model) if model.request_id == request_id => {
+                        Some(model)
+                    }
+                    _ => None,
+                })
+        else {
             return;
         };
-        if !matches!(
-            &self.conversation.activities[index],
-            ConversationActivity::UserInput(model) if model.is_interactive()
-        ) {
+        if !model.is_interactive() {
             return;
         }
 
@@ -973,10 +842,6 @@ impl ComposerView {
         let mut dismiss = false;
         let mut mismatch = None;
         let input_configuration = {
-            let ConversationActivity::UserInput(model) = &mut self.conversation.activities[index]
-            else {
-                unreachable!("activity kind was checked above")
-            };
             let current_question_id = model.current_question().map(|question| question.id.clone());
             match event {
                 UserInputRequestEvent::SelectOption {
@@ -1064,10 +929,6 @@ impl ComposerView {
             let answers = if dismiss {
                 Vec::new()
             } else {
-                let ConversationActivity::UserInput(model) = &self.conversation.activities[index]
-                else {
-                    unreachable!("activity kind was checked above")
-                };
                 model
                     .response_answers()
                     .into_iter()
@@ -1084,19 +945,9 @@ impl ComposerView {
                 .map(|responder| responder.respond(AgentUserInputResponse { answers }));
             match response {
                 Some(Ok(())) => {
-                    let ConversationActivity::UserInput(model) =
-                        &mut self.conversation.activities[index]
-                    else {
-                        unreachable!("activity kind was checked above")
-                    };
                     model.status = UserInputRequestStatus::Submitting;
                 }
                 Some(Err(error)) => {
-                    let ConversationActivity::UserInput(model) =
-                        &mut self.conversation.activities[index]
-                    else {
-                        unreachable!("activity kind was checked above")
-                    };
                     model.status = UserInputRequestStatus::Failed;
                     model.failure_message =
                         Some(crate::i18n::text("无法写入用户输入响应").to_owned());
@@ -1109,11 +960,6 @@ impl ComposerView {
                         });
                 }
                 None => {
-                    let ConversationActivity::UserInput(model) =
-                        &mut self.conversation.activities[index]
-                    else {
-                        unreachable!("activity kind was checked above")
-                    };
                     if self
                         .conversation
                         .server_request_contexts
@@ -1233,4 +1079,28 @@ impl ComposerView {
         }
         true
     }
+}
+
+/// The elicitation card for `request_id`. Taking the activity list instead of
+/// `self` leaves the responder maps borrowable while the card is held.
+fn elicitation_mut<'a>(
+    activities: &'a mut [ConversationActivity],
+    request_id: &str,
+) -> Option<&'a mut McpElicitationPresentation> {
+    activities.iter_mut().find_map(|activity| match activity {
+        ConversationActivity::McpElicitation(model) if model.request_id == request_id => {
+            Some(model.as_mut())
+        }
+        _ => None,
+    })
+}
+
+/// The card's focused field, when it takes typed text.
+fn focused_text_field(
+    model: &McpElicitationPresentation,
+) -> Option<&crate::components::mcp_elicitation::McpElicitationFieldPresentation> {
+    model
+        .focused_field()
+        .and_then(|index| model.field(index))
+        .filter(|field| field.is_text_like())
 }

@@ -10,7 +10,7 @@
 
 use std::{collections::HashSet, sync::Arc};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 
 use super::{
     super::loaded_threads::{LOADED_LIST_METHOD, MAX_LOADED_PAGES, list_params, parse_page},
@@ -79,10 +79,7 @@ impl CodexAppServerManager {
         if loaded.contains(thread_id) {
             return Ok(true);
         }
-        let mut state = connection
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let mut state = connection.lock_state()?;
         state.loaded_threads.remove(thread_id);
         state.thread_settings.remove(thread_id);
         Ok(false)

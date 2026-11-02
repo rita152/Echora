@@ -139,8 +139,11 @@ impl ReviewPanel {
         } else {
             (self.snapshot.index_additions, self.snapshot.index_deletions)
         };
-        let disabled = self.busy
-            || (commit && self.new_branch && self.branch_input.read(cx).text().trim() == "codex/");
+        let disabled = if commit {
+            self.commit_blocked(cx)
+        } else {
+            self.busy
+        };
         let mut card = div()
             .id("review-dialog")
             .role(Role::Dialog)
@@ -358,8 +361,7 @@ impl ReviewPanel {
         } else {
             (self.snapshot.index_additions, self.snapshot.index_deletions)
         };
-        let disabled =
-            self.busy || (self.new_branch && self.branch_input.read(cx).text().trim() == "codex/");
+        let disabled = self.commit_blocked(cx);
         let mut card = div()
             .id("review-pr-dialog")
             .role(Role::Dialog)

@@ -14,11 +14,9 @@ pub(super) fn retrying_error_activity(
     details: Option<String>,
     theme: Theme,
 ) -> impl IntoElement {
+    let details = details.filter(|details| !details.trim().is_empty());
     let mut accessible_label = crate::i18n::format!("Codex 错误，正在重试：{message}" => "Codex error, retrying: {message}");
-    if let Some(details) = details
-        .as_deref()
-        .filter(|details| !details.trim().is_empty())
-    {
+    if let Some(details) = &details {
         accessible_label.push_str(&format!("；{details}"));
     }
     div()
@@ -38,18 +36,21 @@ pub(super) fn retrying_error_activity(
                 .mt(px(2.0))
                 .flex_none(),
         )
-        .child(div().min_w(px(0.0)).flex_1().child(message).when_some(
-            details.filter(|details| !details.trim().is_empty()),
-            |text, details| {
-                text.child(
-                    div()
-                        .text_size(px(crate::typography::ui_size(NOTICE_TEXT_SIZE)))
-                        .line_height(px(NOTICE_LINE_HEIGHT))
-                        .text_color(theme.text_tertiary)
-                        .child(details),
-                )
-            },
-        ))
+        .child(
+            div()
+                .min_w(px(0.0))
+                .flex_1()
+                .child(message)
+                .when_some(details, |text, details| {
+                    text.child(
+                        div()
+                            .text_size(px(crate::typography::ui_size(NOTICE_TEXT_SIZE)))
+                            .line_height(px(NOTICE_LINE_HEIGHT))
+                            .text_color(theme.text_tertiary)
+                            .child(details),
+                    )
+                }),
+        )
 }
 
 pub(super) fn notice_activity(
@@ -65,11 +66,9 @@ pub(super) fn notice_activity(
         outer_gap,
         content_gap,
     } = notice;
+    let details = details.filter(|details| !details.trim().is_empty());
     let mut accessible_label = format!("{accessible_kind}：{summary}");
-    if let Some(details) = details
-        .as_deref()
-        .filter(|details| !details.trim().is_empty())
-    {
+    if let Some(details) = &details {
         accessible_label.push_str(&format!("；{details}"));
     }
     let content = div()
@@ -86,10 +85,9 @@ pub(super) fn notice_activity(
         }))
         .text_color(theme.text)
         .child(summary)
-        .when_some(
-            details.filter(|details| !details.trim().is_empty()),
-            |content, details| content.child(div().text_color(theme.text_secondary).child(details)),
-        );
+        .when_some(details, |content, details| {
+            content.child(div().text_color(theme.text_secondary).child(details))
+        });
 
     div()
         .id(("conversation-notice", index))

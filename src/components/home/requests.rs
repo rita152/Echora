@@ -34,7 +34,6 @@ pub(super) fn command_approval_card(
     let request_id = model.request_id.clone();
     let target = home_entity;
     let callback = ApprovalCardCallback::new(move |event, window, cx| {
-        let request_id = request_id.clone();
         target.update(cx, |home, cx| {
             if !owner.matches(home, cx) {
                 return;
@@ -57,7 +56,6 @@ pub(super) fn file_approval_card(
     let request_id = model.request_id.clone();
     let target = home_entity;
     let callback = FileApprovalCallback::new(move |event, window, cx| {
-        let request_id = request_id.clone();
         target.update(cx, |home, cx| {
             if !owner.matches(home, cx) {
                 return;
@@ -80,7 +78,6 @@ pub(super) fn permissions_approval_card(
     let request_id = model.request_id.clone();
     let target = home_entity;
     let callback = PermissionApprovalCallback::new(move |event, _, cx| {
-        let request_id = request_id.clone();
         target.update(cx, |home, cx| {
             if !owner.matches(home, cx) {
                 return;
@@ -106,7 +103,6 @@ pub(super) fn user_input_request_card(
         if !owner.matches(target.read(cx), cx) {
             return;
         }
-        let request_id = request_id.clone();
         if matches!(event, UserInputRequestEvent::BeginOtherAnswer { .. }) {
             let focus = target
                 .read(cx)
@@ -143,14 +139,12 @@ pub(super) fn mcp_elicitation_card(
         if !owner.matches(target.read(cx), cx) {
             return;
         }
-        let request_id = request_id.clone();
         let focus_editor = match &event {
             McpElicitationEvent::Focus(McpElicitationFocus::Field(index)) => fields
                 .get(*index)
                 .is_some_and(
                 crate::components::mcp_elicitation::McpElicitationFieldPresentation::is_text_like,
             ),
-            McpElicitationEvent::Focus(_) => false,
             _ => false,
         };
         target.update(cx, |home, cx| {
@@ -183,9 +177,6 @@ pub(super) fn mcp_elicitation_url_activity_card(
     let request_id = model.request_id.clone();
     let target = home_entity;
     let callback = McpElicitationCallback::new(move |event, _window, cx| {
-        if !owner.matches(target.read(cx), cx) {
-            return;
-        }
         target.update(cx, |home, cx| {
             if !owner.matches(home, cx) {
                 return;

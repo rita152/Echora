@@ -106,6 +106,13 @@ impl ComposerView {
         self.focus_prompt_pending = true;
         cx.notify();
     }
+    /// Closes the context menu and forgets the `@` mention it belonged to.
+    pub(super) fn reset_context_menu(&mut self) {
+        self.context_menu_open = false;
+        self.context_catalog.cancel();
+        self.context_catalog.mention_start = None;
+        self.context_catalog.mention_dismissed = None;
+    }
     pub(super) fn load_context_catalog(&mut self, cx: &mut Context<Self>) {
         self.context_catalog.cancel();
         self.context_catalog.mention_start = None;
@@ -242,19 +249,20 @@ impl ComposerView {
             .backend
             .open_file_search_session(vec![cwd.display().to_string()]);
         cx.spawn(async move |this, cx| {
-            let session = match response.recv().await {
-                Ok(Ok(session)) => session,
-                error => {
+            let session = match response
+                .recv()
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|session| session)
+            {
+                Ok(session) => session,
+                Err(error) => {
                     let _ = this.update(cx, |this, cx| {
                         if this.context_catalog.cycle == cycle
                             && this.context_catalog.search_cycle == search_cycle
                         {
                             this.context_catalog.searching = false;
-                            this.context_catalog.search_error = Some(match error {
-                                Ok(Err(e)) => e,
-                                Err(e) => e.to_string(),
-                                _ => unreachable!(),
-                            });
+                            this.context_catalog.search_error = Some(error);
                             cx.notify();
                         }
                     });
@@ -422,9 +430,9 @@ impl ComposerView {
                 });
             }
         }
+        // `fuzzy` matches everything for an empty query.
         rows.retain(|row| {
-            query.is_empty()
-                || fuzzy(&row.title, query).is_some()
+            fuzzy(&row.title, query).is_some()
                 || fuzzy(&row.description, query).is_some()
                 || match &row.action {
                     ContextAction::Command(command) => fuzzy(command.id(), query).is_some(),

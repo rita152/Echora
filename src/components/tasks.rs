@@ -282,8 +282,9 @@ impl TasksView {
         }
         cx.notify();
     }
+    /// `text` is the trimmed reply this view emitted in `TaskAction::ReplyThread`.
     pub fn reply_sent(&mut self, text: &str, cx: &mut Context<Self>) {
-        if self.todo_reply.read(cx).text().trim() == text.trim() {
+        if self.todo_reply.read(cx).text().trim() == text {
             self.todo_reply
                 .update(cx, |i, cx| i.set_text_silently("", cx));
         }

@@ -649,10 +649,7 @@ impl ComposerView {
     /// Writes text into the composer without sending it; the Pull Requests page
     /// uses this when `Chat` starts a conversation for a pull request.
     pub fn set_draft_text(&mut self, text: &str, cx: &mut Context<Self>) {
-        self.context_menu_open = false;
-        self.context_catalog.cancel();
-        self.context_catalog.mention_start = None;
-        self.context_catalog.mention_dismissed = None;
+        self.reset_context_menu();
         self.prompt_editor
             .update(cx, |editor, cx| editor.set_text_silently(text, cx));
         self.prompt_context.references.clear();
@@ -725,10 +722,7 @@ impl ComposerView {
             || self.conversation.thread_id != thread_id
             || self.conversation.project_id != project_id
         {
-            self.context_menu_open = false;
-            self.context_catalog.cancel();
-            self.context_catalog.mention_start = None;
-            self.context_catalog.mention_dismissed = None;
+            self.reset_context_menu();
             self.permission_update_cycle = self.permission_update_cycle.wrapping_add(1);
             self.conversation.permission_change = None;
             self.permission_confirmation_selection = None;
@@ -826,10 +820,7 @@ impl ComposerView {
                         )) =>
             {
                 self.command_catalog.invalidate();
-                self.context_catalog.cancel();
-                self.context_catalog.mention_start = None;
-                self.context_catalog.mention_dismissed = None;
-                self.context_menu_open = false;
+                self.reset_context_menu();
                 self.slash_menu = None;
             }
             AgentConnectionEvent::SkillsChanged { generation }

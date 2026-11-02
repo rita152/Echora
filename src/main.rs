@@ -136,6 +136,17 @@ fn configure_native_blur_sampling(_window: &mut gpui::Window) {}
 
 #[cfg(feature = "screenshot")]
 fn save_screenshot(window: &gpui::Window, path: &str) -> anyhow::Result<()> {
+    save_screenshot_with(window, path, |_| Vec::new())
+}
+
+/// Saves the frame and its `.render.json`. `extra` adds fields after `source`;
+/// it runs once the frame is saved.
+#[cfg(feature = "screenshot")]
+fn save_screenshot_with(
+    window: &gpui::Window,
+    path: &str,
+    extra: impl FnOnce(&gpui::Window) -> Vec<(&'static str, serde_json::Value)>,
+) -> anyhow::Result<()> {
     if let Some(parent) = Path::new(path).parent()
         && !parent.as_os_str().is_empty()
     {
@@ -155,16 +166,61 @@ fn save_screenshot(window: &gpui::Window, path: &str) -> anyhow::Result<()> {
     frame.save(path)?;
     // Every capture describes itself: without the DPR and the resolved assets a
     // 1x frame or an iconless build can pass as a valid comparison input.
-    let metadata = serde_json::json!({
-        "viewportWidth": f32::from(window.viewport_size().width),
-        "viewportHeight": f32::from(window.viewport_size().height),
-        "dpr": window.scale_factor(),
-        "source": "GPUI render_to_image; no resizing or alignment",
-        "executable": std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default(),
-        "bundleIdentifier": bundle_plist_value("CFBundleIdentifier").unwrap_or_default(),
-        "assetsBase": assets::status().base.clone().map(|p| p.display().to_string()).unwrap_or_default(),
-        "assetsOrigin": assets::status().origin.map(|o| o.label()).unwrap_or_default(),
-    });
+    // `serde_json` keeps insertion order, so the fields are inserted in the
+    // order the file lists them.
+    let mut metadata = serde_json::Map::new();
+    for (key, value) in [
+        (
+            "viewportWidth",
+            serde_json::json!(f32::from(window.viewport_size().width)),
+        ),
+        (
+            "viewportHeight",
+            serde_json::json!(f32::from(window.viewport_size().height)),
+        ),
+        ("dpr", serde_json::json!(window.scale_factor())),
+        (
+            "source",
+            serde_json::json!("GPUI render_to_image; no resizing or alignment"),
+        ),
+    ]
+    .into_iter()
+    .chain(extra(window))
+    .chain([
+        (
+            "executable",
+            serde_json::json!(
+                std::env::current_exe()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default()
+            ),
+        ),
+        (
+            "bundleIdentifier",
+            serde_json::json!(bundle_plist_value("CFBundleIdentifier").unwrap_or_default()),
+        ),
+        (
+            "assetsBase",
+            serde_json::json!(
+                assets::status()
+                    .base
+                    .clone()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default()
+            ),
+        ),
+        (
+            "assetsOrigin",
+            serde_json::json!(
+                assets::status()
+                    .origin
+                    .map(|o| o.label())
+                    .unwrap_or_default()
+            ),
+        ),
+    ]) {
+        metadata.insert(key.to_owned(), value);
+    }
     let _ = fs::write(
         format!("{path}.render.json"),
         serde_json::to_vec_pretty(&metadata).unwrap(),
@@ -188,14 +244,35 @@ fn capture_frame(window: &mut gpui::Window, path: String, frames: usize) {
                 cx,
             );
         }
-        if frames>1 {window.refresh();capture_frame(window,path,frames-1);} else {
-            match save_screenshot(window,&path) {
-                Ok(())=>{
-                    let metadata=serde_json::json!({"viewportWidth":f32::from(window.viewport_size().width),"viewportHeight":f32::from(window.viewport_size().height),"dpr":window.scale_factor(),"source":"GPUI render_to_image; no resizing or alignment","mousePosition":[f32::from(window.mouse_position().x),f32::from(window.mouse_position().y)],"keyContexts":format!("{:?}",window.context_stack()),"approvalActionAvailable":window.is_action_available(&components::approval::ApprovalShortcut("escape"),cx),"executable":std::env::current_exe().map(|p|p.display().to_string()).unwrap_or_default(),"bundleIdentifier":bundle_plist_value("CFBundleIdentifier").unwrap_or_default(),"assetsBase":assets::status().base.clone().map(|p|p.display().to_string()).unwrap_or_default(),"assetsOrigin":assets::status().origin.map(|o|o.label()).unwrap_or_default()});
-                    let _=std::fs::write(format!("{path}.render.json"),serde_json::to_vec_pretty(&metadata).unwrap());
-                    println!("capture-frame: {path}");
-                }
-                Err(error)=>eprintln!("capture-frame failed: {error:#}"),
+        if frames > 1 {
+            window.refresh();
+            capture_frame(window, path, frames - 1);
+        } else {
+            let extra = |window: &gpui::Window| {
+                vec![
+                    (
+                        "mousePosition",
+                        serde_json::json!([
+                            f32::from(window.mouse_position().x),
+                            f32::from(window.mouse_position().y)
+                        ]),
+                    ),
+                    (
+                        "keyContexts",
+                        serde_json::json!(format!("{:?}", window.context_stack())),
+                    ),
+                    (
+                        "approvalActionAvailable",
+                        serde_json::json!(window.is_action_available(
+                            &components::approval::ApprovalShortcut("escape"),
+                            cx
+                        )),
+                    ),
+                ]
+            };
+            match save_screenshot_with(window, &path, extra) {
+                Ok(()) => println!("capture-frame: {path}"),
+                Err(error) => eprintln!("capture-frame failed: {error:#}"),
             }
         }
     });

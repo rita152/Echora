@@ -21,10 +21,9 @@ impl ChatApp {
             let recommended = RECOMMENDED_EMOJIS
                 .iter()
                 .filter_map(|symbol| emojis().iter().find(|e| e.emoji == *symbol));
-            let catalog = emojis().iter().filter(|e| {
-                category.is_none()
-                    || category.is_some_and(|n| n > 0 && e.group == EMOJI_CATEGORIES[n].1)
-            });
+            let catalog = emojis()
+                .iter()
+                .filter(|e| category.is_none_or(|n| n > 0 && e.group == EMOJI_CATEGORIES[n].1));
             recommended
                 .filter(|_| query.is_empty() && (category.is_none() || category == Some(0)))
                 .chain(catalog.filter(|_| category != Some(0)))
@@ -86,11 +85,11 @@ impl ChatApp {
             return false;
         }
         let current = self.project_creation.marker_focused;
-        let index = match key {
-            "down" => current.map_or(0, |n| (n + 8).min(count - 1)),
-            "up" => current.map_or(count - 1, |n| n.saturating_sub(8)),
-            "left" if current.is_some() => current.unwrap().saturating_sub(1),
-            "right" if current.is_some() => (current.unwrap() + 1).min(count - 1),
+        let index = match (key, current) {
+            ("down", _) => current.map_or(0, |n| (n + 8).min(count - 1)),
+            ("up", _) => current.map_or(count - 1, |n| n.saturating_sub(8)),
+            ("left", Some(n)) => n.saturating_sub(1),
+            ("right", Some(n)) => (n + 1).min(count - 1),
             _ => return false,
         };
         self.project_creation.marker_focused = Some(index);

@@ -103,10 +103,16 @@ impl FeatureDirectory {
             .map_or(served, |write| write.intended)
     }
 
-    pub fn failure_for(&self, target: &str) -> Option<&SwitchWrite> {
-        self.write
-            .as_ref()
-            .filter(|write| write.target == target && (write.failure.is_some() || write.overridden))
+    /// The message under a switch whose last write failed or was overridden.
+    pub fn failure_message(&self, target: &str) -> Option<String> {
+        let write = self.write.as_ref().filter(|write| write.target == target)?;
+        if write.overridden {
+            Some(
+                crate::i18n::format!("已写入，但被更高优先级配置覆盖" => "Saved, but a higher-priority config layer overrides it"),
+            )
+        } else {
+            write.failure.clone()
+        }
     }
 }
 
@@ -172,6 +178,9 @@ mod tests {
         write.in_flight = false;
         write.failure = Some("conflict".into());
         assert!(!directory.displayed("network_proxy", false));
-        assert!(directory.failure_for("network_proxy").is_some());
+        assert_eq!(
+            directory.failure_message("network_proxy").as_deref(),
+            Some("conflict")
+        );
     }
 }

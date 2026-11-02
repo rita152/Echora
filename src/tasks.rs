@@ -70,11 +70,10 @@ pub struct TaskDraft {
 }
 impl TaskDraft {
     pub fn title(&self) -> String {
-        let text = self.input.text.trim();
-        if text.is_empty() {
+        // Trimmed text has a first line exactly when it is not empty.
+        let Some(first) = self.input.text.trim().lines().next() else {
             return "Attached references".into();
-        }
-        let first = text.lines().next().unwrap_or(text);
+        };
         let title: String = first.chars().take(80).collect();
         if first.chars().count() > 80 {
             format!("{title}…")

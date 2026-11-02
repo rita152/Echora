@@ -224,7 +224,7 @@ impl Render for SideChatPanel {
                     .child(tab.home.clone()),
             );
             if tab.error.is_none()
-                && tab.composer.read(cx).conversation_render_snapshot().0
+                && tab.composer.read(cx).conversation_phase()
                     == crate::conversation::ConversationPhase::Failed
             {
                 let composer = tab.composer.clone();

@@ -151,8 +151,37 @@ impl ApprovalRequestPresentation {
     }
 }
 
-fn non_empty(value: &str) -> Option<&str> {
+pub(super) fn non_empty(value: &str) -> Option<&str> {
     (!value.trim().is_empty()).then_some(value)
+}
+
+/// The choice the primary button sends: allow once, else the first other
+/// approval, else a network deny.
+fn primary_index(choices: &[ApprovalChoicePresentation]) -> Option<usize> {
+    choices
+        .iter()
+        .position(|choice| choice.kind == ApprovalChoiceKind::Once)
+        .or_else(|| {
+            choices.iter().position(|choice| {
+                !choice.is_rejection && choice.kind != ApprovalChoiceKind::NetworkAllow
+            })
+        })
+        .or_else(|| {
+            choices
+                .iter()
+                .position(|choice| matches!(choice.kind, ApprovalChoiceKind::NetworkDeny))
+        })
+}
+
+fn reject_index(choices: &[ApprovalChoicePresentation]) -> Option<usize> {
+    choices
+        .iter()
+        .position(|choice| choice.kind == ApprovalChoiceKind::Decline)
+        .or_else(|| {
+            choices
+                .iter()
+                .position(|choice| choice.kind == ApprovalChoiceKind::Cancel)
+        })
 }
 
 fn approval_element_id(prefix: &str, request_id: &str) -> SharedString {
@@ -282,10 +311,8 @@ pub enum ApprovalChoiceKind {
 impl ApprovalCardViewModel {
     pub fn pending(request_id: impl Into<String>, request: ApprovalRequestPresentation) -> Self {
         let scoped_approval = Some(request.default_scope());
-        let preview_line_count = request
-            .preview()
-            .map(|text| text.lines().count().max(1))
-            .unwrap_or(0);
+        // `preview()` is never blank, so it has at least one line.
+        let preview_line_count = request.preview().map_or(0, |text| text.lines().count());
         Self {
             request_id: request_id.into(),
             request,
@@ -372,9 +399,9 @@ impl ApprovalCardViewModel {
         .min(320.0)
     }
 
-    fn choices(&self) -> Vec<ApprovalChoicePresentation> {
+    fn choices(&self) -> std::borrow::Cow<'_, [ApprovalChoicePresentation]> {
         if !self.server_choices.is_empty() {
-            return self.server_choices.clone();
+            return std::borrow::Cow::Borrowed(&self.server_choices);
         }
         let mut choices = Vec::new();
         if self.allow_once {
@@ -408,48 +435,29 @@ impl ApprovalCardViewModel {
                 },
             });
         }
-        choices
+        std::borrow::Cow::Owned(choices)
     }
 
     fn primary_choice(&self) -> Option<(usize, ApprovalChoicePresentation)> {
         let choices = self.choices();
-        choices
-            .iter()
-            .position(|choice| choice.kind == ApprovalChoiceKind::Once)
-            .or_else(|| {
-                choices.iter().position(|choice| {
-                    !choice.is_rejection && choice.kind != ApprovalChoiceKind::NetworkAllow
-                })
-            })
-            .or_else(|| {
-                choices
-                    .iter()
-                    .position(|choice| matches!(choice.kind, ApprovalChoiceKind::NetworkDeny))
-            })
-            .map(|i| (i, choices[i].clone()))
+        primary_index(&choices).map(|i| (i, choices[i].clone()))
     }
 
     fn reject_choice(&self) -> Option<(usize, ApprovalChoicePresentation)> {
         let choices = self.choices();
-        choices
-            .iter()
-            .position(|choice| choice.kind == ApprovalChoiceKind::Decline)
-            .or_else(|| {
-                choices
-                    .iter()
-                    .position(|choice| choice.kind == ApprovalChoiceKind::Cancel)
-            })
-            .map(|i| (i, choices[i].clone()))
+        reject_index(&choices).map(|i| (i, choices[i].clone()))
     }
 
     fn menu_choices(&self) -> Vec<(usize, ApprovalChoicePresentation)> {
-        let reject = self.reject_choice().map(|(i, _)| i);
-        self.choices()
-            .into_iter()
+        let choices = self.choices();
+        let reject = reject_index(&choices);
+        choices
+            .iter()
             .enumerate()
             .filter(|(i, choice)| {
                 Some(*i) != reject && choice.kind != ApprovalChoiceKind::NetworkAllow
             })
+            .map(|(i, choice)| (i, choice.clone()))
             .collect()
     }
 
@@ -466,25 +474,17 @@ impl ApprovalCardViewModel {
         match key {
             "tab" => {
                 let next = if self.visual_state.menu_open() {
-                    match (self.keyboard_focus, shift) {
-                        (Some(ApprovalKeyboardFocus::MenuAllowOnce), false) => self
-                            .scoped_approval
-                            .map(ApprovalKeyboardFocus::MenuScoped)
-                            .unwrap_or(ApprovalKeyboardFocus::MenuAllowOnce),
-                        (Some(ApprovalKeyboardFocus::MenuScoped(_)), false) => {
+                    // Two items: Tab and Shift-Tab both toggle.
+                    let scoped = self
+                        .scoped_approval
+                        .map(ApprovalKeyboardFocus::MenuScoped)
+                        .unwrap_or(ApprovalKeyboardFocus::MenuAllowOnce);
+                    match self.keyboard_focus {
+                        Some(ApprovalKeyboardFocus::MenuAllowOnce) => scoped,
+                        Some(ApprovalKeyboardFocus::MenuScoped(_)) => {
                             ApprovalKeyboardFocus::MenuAllowOnce
                         }
-                        (Some(ApprovalKeyboardFocus::MenuAllowOnce), true) => self
-                            .scoped_approval
-                            .map(ApprovalKeyboardFocus::MenuScoped)
-                            .unwrap_or(ApprovalKeyboardFocus::MenuAllowOnce),
-                        (Some(ApprovalKeyboardFocus::MenuScoped(_)), true) => {
-                            ApprovalKeyboardFocus::MenuAllowOnce
-                        }
-                        (_, true) => self
-                            .scoped_approval
-                            .map(ApprovalKeyboardFocus::MenuScoped)
-                            .unwrap_or(ApprovalKeyboardFocus::MenuAllowOnce),
+                        _ if shift => scoped,
                         _ => ApprovalKeyboardFocus::MenuAllowOnce,
                     }
                 } else {

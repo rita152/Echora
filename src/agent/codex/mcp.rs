@@ -1,8 +1,9 @@
 //! `mcpServer/*`, `mcpServerStatus/list` and `config/mcpServer/reload` codecs.
 
-use anyhow::{Context as _, Result, bail};
+use anyhow::{Context as _, Result};
 use serde_json::{Map, Value};
 
+use super::json::{object, optional_string, optional_value, required_string, unknown_fields};
 use crate::agent::{
     AgentMcpAuthStatus, AgentMcpResource, AgentMcpResourceTemplate, AgentMcpServerConnectionStatus,
     AgentMcpServerInfo, AgentMcpServerPage, AgentMcpServerStatus, AgentMcpServerStatusRequest,
@@ -60,47 +61,6 @@ pub(super) fn oauth_login_params(
     Value::Object(params)
 }
 
-fn unknown_fields(object: &Map<String, Value>, known: &[&str]) -> Map<String, Value> {
-    object
-        .iter()
-        .filter(|(key, _)| !known.contains(&key.as_str()))
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect()
-}
-
-fn object<'a>(value: &'a Value, context: &str) -> Result<&'a Map<String, Value>> {
-    value
-        .as_object()
-        .with_context(|| format!("{context} 必须是 JSON 对象"))
-}
-
-fn required_string(object: &Map<String, Value>, field: &str, context: &str) -> Result<String> {
-    object
-        .get(field)
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .with_context(|| format!("{context} 缺少字符串字段 {field}"))
-}
-
-fn optional_string(
-    object: &Map<String, Value>,
-    field: &str,
-    context: &str,
-) -> Result<Option<String>> {
-    match object.get(field) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(_) => bail!("{context} 的 {field} 必须是字符串或 null"),
-    }
-}
-
-fn optional_value(object: &Map<String, Value>, field: &str) -> Option<Value> {
-    match object.get(field) {
-        None | Some(Value::Null) => None,
-        Some(value) => Some(value.clone()),
-    }
-}
-
 fn server_info(value: &Value) -> Result<AgentMcpServerInfo> {
     const KNOWN: &[&str] = &[
         "name",
@@ -118,7 +78,7 @@ fn server_info(value: &Value) -> Result<AgentMcpServerInfo> {
         description: optional_string(object, "description", "serverInfo")?,
         website_url: optional_string(object, "websiteUrl", "serverInfo")?,
         icons: optional_value(object, "icons"),
-        extra: unknown_fields(object, KNOWN).into_iter().collect(),
+        extra: unknown_fields(object, KNOWN),
     })
 }
 
@@ -146,7 +106,7 @@ fn tool(value: &Value) -> Result<AgentMcpTool> {
         annotations: optional_value(object, "annotations"),
         icons: optional_value(object, "icons"),
         meta: optional_value(object, "_meta"),
-        extra: unknown_fields(object, KNOWN).into_iter().collect(),
+        extra: unknown_fields(object, KNOWN),
     })
 }
 
@@ -177,7 +137,7 @@ fn resource(value: &Value) -> Result<AgentMcpResource> {
         annotations: optional_value(object, "annotations"),
         meta: optional_value(object, "_meta"),
         icons: optional_value(object, "icons"),
-        extra: unknown_fields(object, KNOWN).into_iter().collect(),
+        extra: unknown_fields(object, KNOWN),
     })
 }
 
@@ -198,7 +158,7 @@ fn resource_template(value: &Value) -> Result<AgentMcpResourceTemplate> {
         description: optional_string(object, "description", "resourceTemplate")?,
         mime_type: optional_string(object, "mimeType", "resourceTemplate")?,
         annotations: optional_value(object, "annotations"),
-        extra: unknown_fields(object, KNOWN).into_iter().collect(),
+        extra: unknown_fields(object, KNOWN),
     })
 }
 
@@ -270,7 +230,7 @@ fn server(value: &Value) -> Result<AgentMcpServerStatus> {
             .map(resource_template)
             .collect::<Result<Vec<_>>>()?,
         tools_error: optional_string(object, "toolsError", "server")?,
-        extra: unknown_fields(object, KNOWN).into_iter().collect(),
+        extra: unknown_fields(object, KNOWN),
     })
 }
 
@@ -291,7 +251,7 @@ pub(super) fn decode_page(
         cursor,
         servers: data.iter().map(server).collect::<Result<Vec<_>>>()?,
         next_cursor: optional_string(object, "nextCursor", METHOD_STATUS)?,
-        extra: unknown_fields(object, KNOWN).into_iter().collect(),
+        extra: unknown_fields(object, KNOWN),
     })
 }
 

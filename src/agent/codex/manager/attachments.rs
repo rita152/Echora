@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 use async_channel::Receiver;
 
 use super::{CodexAppServerManager, connection::Connection};
@@ -108,10 +108,7 @@ impl CodexAppServerManager {
         connection: &Connection,
         read: impl FnOnce(&mut AttachmentCache) -> T,
     ) -> Result<T> {
-        let mut state = connection
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let mut state = connection.lock_state()?;
         Ok(read(&mut state.attachments))
     }
 

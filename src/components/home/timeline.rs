@@ -359,12 +359,13 @@ pub(super) struct CommandActivitySummary {
 }
 
 pub(super) fn command_activity_summary(command: &CommandExecution) -> CommandActivitySummary {
-    command_activity_summaries(command)
-        .into_iter()
-        .next()
-        .expect("every command execution has at least one presentation row")
+    match command.actions.first() {
+        Some(action) => command_action_summary(command, action),
+        None => generic_command_activity_summary(command, &command.command),
+    }
 }
 
+#[cfg(any(test, feature = "screenshot"))]
 pub(super) fn command_activity_summaries(
     command: &CommandExecution,
 ) -> Vec<CommandActivitySummary> {
@@ -761,11 +762,11 @@ pub(super) fn user_message_navigation_items(
                 .iter()
                 .find(|next| next.turn != items[position].turn)
                 .map(|next| next.row_index - 1)
-                .unwrap_or_else(|| rows.len().saturating_sub(1))
+                .unwrap_or(rows.len() - 1)
         } else {
             start
         };
-        items[position].turn_end_row = end.max(start);
+        items[position].turn_end_row = end;
     }
     items
 }

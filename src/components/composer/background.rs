@@ -51,10 +51,7 @@ impl ComposerView {
     ) {
         let (Some(thread_id), Some(generation)) = (
             self.conversation.thread_id.clone(),
-            self.conversation
-                .turn_identity
-                .as_ref()
-                .map(|identity| identity.generation),
+            self.conversation.turn_generation(),
         ) else {
             return;
         };

@@ -46,7 +46,7 @@ impl SettingsView {
             let reader = self.backend.load_plugin_catalog(AgentPluginCatalogRequest {
                 cwds: self.plugins_cwd.clone().map(|cwd| vec![cwd]),
                 force_refetch,
-                marketplace_kinds: source.marketplace_kinds(),
+                marketplace_kinds: Some(vec![source.marketplace_kind()]),
             });
             cx.spawn(async move |this, cx| {
                 let result = reader
@@ -69,7 +69,7 @@ impl SettingsView {
                     this.plugins_generation = this.plugins_catalog.directory.generation;
                     if !this.plugins_catalog.directory.loading {
                         this.plugins_catalog.directory.clear_settled_operations();
-                        this.plugin_catalog_read_finished(cycle, cx);
+                        this.plugin_catalog_read_finished(cx);
                     }
                     cx.notify();
                 });
@@ -108,7 +108,7 @@ impl SettingsView {
                 }
                 this.plugins_generation = this.plugins_catalog.directory.generation;
                 if !this.plugins_catalog.directory.loading {
-                    this.plugin_catalog_read_finished(cycle, cx);
+                    this.plugin_catalog_read_finished(cx);
                 }
                 cx.notify();
             });
@@ -137,10 +137,9 @@ impl SettingsView {
         }
     }
 
-    fn plugin_catalog_read_finished(&mut self, cycle: u64, cx: &mut Context<Self>) {
-        if self.plugins_catalog.directory.cycle != cycle {
-            return;
-        }
+    /// Runs after a read of the current cycle settled: the callers only reach
+    /// it once `apply_source` or `apply_installed*` accepted that cycle.
+    fn plugin_catalog_read_finished(&mut self, cx: &mut Context<Self>) {
         if self.directory_presentation
             && let Some(id) = self.plugins_catalog.open_plugin.clone()
         {

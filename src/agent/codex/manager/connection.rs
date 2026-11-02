@@ -3,7 +3,7 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     sync::{
-        Arc, Mutex, Weak,
+        Arc, Mutex, MutexGuard, Weak,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
@@ -125,7 +125,7 @@ pub(super) struct ConnectionState {
     /// Server requests answered with a controlled reply that has no interactive
     /// responder. Retained so a late or duplicate `serverRequest/resolved` stays
     /// idempotent instead of failing the generation.
-    controlled_server_requests: HashMap<AgentServerRequestId, ()>,
+    controlled_server_requests: HashSet<AgentServerRequestId>,
     controlled_server_request_order: VecDeque<AgentServerRequestId>,
     /// Capped record of every controlled reply this generation wrote. This
     /// replaces the old "disconnect to raise attention" guardrail: nothing is
@@ -165,7 +165,7 @@ pub(super) struct ConnectionState {
     pub(super) pending_reverts: HashMap<String, bool>,
     /// Thread attachments read in this generation, with their revisions.
     pub(super) attachments: super::attachments::AttachmentCache,
-    settled_reverts: HashMap<String, ()>,
+    settled_reverts: HashSet<String>,
     settled_revert_order: VecDeque<String>,
 }
 
@@ -220,10 +220,7 @@ impl ConnectionState {
             || self.resolved_server_requests.contains_key(&request_id)
             || self.pending_mcp_elicitations.contains_key(&request_id)
             || self.resolved_mcp_elicitations.contains_key(&request_id)
-            || self
-                .controlled_server_requests
-                .insert(request_id.clone(), ())
-                .is_some()
+            || !self.controlled_server_requests.insert(request_id.clone())
         {
             bail!("收到重复的 Codex server request id {request_id:?}");
         }
@@ -301,6 +298,13 @@ pub(super) struct Connection {
 }
 
 impl Connection {
+    /// The connection-scoped state; a poisoned lock is a fatal error.
+    pub(super) fn lock_state(&self) -> Result<MutexGuard<'_, ConnectionState>> {
+        self.state
+            .lock()
+            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))
+    }
+
     /// Registers a login this client is about to start. Returns the id of a
     /// previously outstanding login for the same server and scope, which the
     /// caller reports as superseded.
@@ -309,10 +313,7 @@ impl Connection {
         scope: (Option<String>, String),
         login_id: u64,
     ) -> Result<Option<u64>> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let mut state = self.lock_state()?;
         let superseded = state.oauth_logins.insert(scope, login_id);
         if let Some(superseded) = superseded {
             state.retired_oauth_logins.insert(superseded);
@@ -551,10 +552,7 @@ impl Connection {
     }
 
     pub(super) fn reserve_thread(&self, thread_id: &str) -> Result<()> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let mut state = self.lock_state()?;
         if state.reserved_threads.contains(thread_id)
             || state.starting_turns.contains_key(thread_id)
             || state.turns.keys().any(|key| key.thread_id == thread_id)
@@ -572,10 +570,7 @@ impl Connection {
     }
 
     pub(super) fn register_starting_turn(&self, turn: Arc<ManagedTurn>) -> Result<()> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let mut state = self.lock_state()?;
         state.reserved_threads.remove(&turn.thread_id);
         if state.starting_turns.contains_key(&turn.thread_id)
             || state
@@ -601,10 +596,7 @@ impl Connection {
         turn_id: &str,
         message: &Value,
     ) -> Result<TurnRoute> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let mut state = self.lock_state()?;
         if let Some(turn) = state.turns.get(&TurnKey {
             thread_id: thread_id.to_owned(),
             turn_id: turn_id.to_owned(),
@@ -624,12 +616,7 @@ impl Connection {
 
     /// Whether a thread's `turn/start` is still unanswered.
     pub(super) fn has_pending_start(&self, thread_id: &str) -> Result<bool> {
-        Ok(self
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?
-            .starting_turns
-            .contains_key(thread_id))
+        Ok(self.lock_state()?.starting_turns.contains_key(thread_id))
     }
 
     /// Replays early messages that did not belong to the thread's own turn,
@@ -675,10 +662,7 @@ impl Connection {
             }
         }
         if !aliases.is_empty() {
-            let mut state = self
-                .state
-                .lock()
-                .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+            let mut state = self.lock_state()?;
             for alias in aliases {
                 state.finished_turns.insert(TurnKey {
                     thread_id: thread_id.to_owned(),
@@ -709,10 +693,7 @@ impl Connection {
             turn_id: turn_id.to_owned(),
         };
         let turn = {
-            let state = self
-                .state
-                .lock()
-                .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+            let state = self.lock_state()?;
             if let Some(turn) = state.turns.get(&key) {
                 return Ok((turn.clone(), Vec::new()));
             }
@@ -725,10 +706,7 @@ impl Connection {
                 })?
         };
         turn.bind_turn_id(turn_id)?;
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let mut state = self.lock_state()?;
         if let Some(existing) = state.turns.get(&key) {
             if Arc::ptr_eq(existing, &turn) {
                 return Ok((turn, Vec::new()));
@@ -753,10 +731,7 @@ impl Connection {
     /// retired at once so any later message for it is ignored, never adopted
     /// as a server turn that would never complete.
     pub(super) fn claim_review_alias(&self, thread_id: &str, turn_id: &str) -> Result<bool> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let mut state = self.lock_state()?;
         let live_review = state.turns.iter().any(|(key, turn)| {
             key.thread_id == thread_id
                 && turn.review.load(Ordering::Acquire)
@@ -773,18 +748,12 @@ impl Connection {
     }
 
     pub(super) fn turn_for_key(&self, key: &TurnKey) -> Result<Arc<ManagedTurn>> {
-        self.state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?
-            .turns
-            .get(key)
-            .cloned()
-            .with_context(|| {
-                format!(
-                    "serverRequest/resolved 指向未知 turn：threadId=`{}`，turnId=`{}`",
-                    key.thread_id, key.turn_id
-                )
-            })
+        self.lock_state()?.turns.get(key).cloned().with_context(|| {
+            format!(
+                "serverRequest/resolved 指向未知 turn：threadId=`{}`，turnId=`{}`",
+                key.thread_id, key.turn_id
+            )
+        })
     }
 
     pub(super) fn record_server_request_owner(
@@ -793,14 +762,11 @@ impl Connection {
         key: TurnKey,
         responder: ServerRequestResponder,
     ) -> Result<()> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let mut state = self.lock_state()?;
         if state.resolved_server_requests.contains_key(&request_id) {
             bail!("Codex server request id {request_id:?} 已经 resolved，拒绝重复请求");
         }
-        if state.controlled_server_requests.contains_key(&request_id) {
+        if state.controlled_server_requests.contains(&request_id) {
             bail!("Codex server request id {request_id:?} 已经收到受控回执，拒绝重复请求");
         }
         if let Some(existing) = state.server_request_owners.get(&request_id)
@@ -823,10 +789,7 @@ impl Connection {
         request_id: &AgentServerRequestId,
         thread_id: &str,
     ) -> Result<Option<ServerRequestOwner>> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let mut state = self.lock_state()?;
         let owner = state.server_request_owners.get(request_id).cloned();
         let expected_thread = owner
             .as_ref()
@@ -853,11 +816,9 @@ impl Connection {
         request_id: &AgentServerRequestId,
     ) -> Result<bool> {
         Ok(self
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?
+            .lock_state()?
             .controlled_server_requests
-            .contains_key(request_id))
+            .contains(request_id))
     }
 
     /// Records a server request this connection answered itself, under its
@@ -866,9 +827,7 @@ impl Connection {
         &self,
         request_id: &AgentServerRequestId,
     ) -> Result<()> {
-        self.state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?
+        self.lock_state()?
             .remember_controlled_server_request(request_id.clone())
     }
 
@@ -1002,16 +961,13 @@ impl Connection {
         &self,
         request: AgentMcpElicitationRequest,
     ) -> Result<()> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let mut state = self.lock_state()?;
         let request_id = request.request_id.clone();
         if state.pending_mcp_elicitations.contains_key(&request_id)
             || state.resolved_mcp_elicitations.contains_key(&request_id)
             || state.server_request_owners.contains_key(&request_id)
             || state.resolved_server_requests.contains_key(&request_id)
-            || state.controlled_server_requests.contains_key(&request_id)
+            || state.controlled_server_requests.contains(&request_id)
         {
             bail!("收到重复的 Codex server request id {request_id:?}");
         }
@@ -1028,10 +984,7 @@ impl Connection {
     /// Whether serverRequest/resolved belongs to an MCP elicitation, including
     /// already resolved or invalidated ids whose tombstone must stay idempotent.
     pub(super) fn knows_mcp_elicitation(&self, request_id: &AgentServerRequestId) -> Result<bool> {
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let state = self.lock_state()?;
         Ok(state.pending_mcp_elicitations.contains_key(request_id)
             || state.resolved_mcp_elicitations.contains_key(request_id))
     }
@@ -1041,10 +994,7 @@ impl Connection {
         request_id: &AgentServerRequestId,
         thread_id: &str,
     ) -> Result<Option<AgentMcpElicitationIdentity>> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let mut state = self.lock_state()?;
         if let Some(pending) = state.pending_mcp_elicitations.get(request_id) {
             if pending.request.thread_id != thread_id {
                 bail!(
@@ -1096,10 +1046,7 @@ impl Connection {
             bail!("Codex app-server connection 已断开，MCP elicitation 不再可回复");
         }
         let result = {
-            let mut state = self
-                .state
-                .lock()
-                .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+            let mut state = self.lock_state()?;
             let pending = state
                 .pending_mcp_elicitations
                 .get_mut(&identity.request_id)
@@ -1258,10 +1205,7 @@ impl Connection {
         session_id: &str,
         events: Sender<AgentFileSearchSessionEvent>,
     ) -> Result<()> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let mut state = self.lock_state()?;
         if state.file_search_sessions.contains_key(session_id) {
             bail!("文件搜索会话 id 重复：{session_id}");
         }
@@ -1298,10 +1242,7 @@ impl Connection {
         &self,
         session_id: &str,
     ) -> Result<Option<Sender<AgentFileSearchSessionEvent>>> {
-        let state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let state = self.lock_state()?;
         if let Some(sender) = state.file_search_sessions.get(session_id) {
             return Ok(Some(sender.clone()));
         }
@@ -1318,14 +1259,9 @@ impl Connection {
     /// Marks one thread as having a revert request in flight. A second revert
     /// for the same thread while one is pending is a protocol error.
     pub(super) fn begin_revert(&self, thread_id: &str) -> Result<()> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
-        if state.settled_reverts.contains_key(thread_id) {
-            // A new revert after a settled one starts a fresh expectation.
-            state.settled_reverts.remove(thread_id);
-        }
+        let mut state = self.lock_state()?;
+        // A new revert after a settled one starts a fresh expectation.
+        state.settled_reverts.remove(thread_id);
         if state
             .pending_reverts
             .insert(thread_id.to_owned(), false)
@@ -1340,10 +1276,7 @@ impl Connection {
     /// belongs to a pending or settled revert (and is therefore consumed as
     /// that operation's confirmation), false when it is unsolicited.
     pub(super) fn observe_reverted(&self, thread_id: &str) -> Result<bool> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let mut state = self.lock_state()?;
         if let Some(observed) = state.pending_reverts.get_mut(thread_id) {
             if *observed {
                 bail!("线程 {thread_id} 收到重复的 thread/reverted 通知");
@@ -1351,7 +1284,7 @@ impl Connection {
             *observed = true;
             return Ok(true);
         }
-        Ok(state.settled_reverts.contains_key(thread_id))
+        Ok(state.settled_reverts.contains(thread_id))
     }
 
     /// Whether the pending revert for one thread was already confirmed by its
@@ -1374,11 +1307,7 @@ impl Connection {
         if !settle {
             return;
         }
-        if state
-            .settled_reverts
-            .insert(thread_id.to_owned(), ())
-            .is_none()
-        {
+        if state.settled_reverts.insert(thread_id.to_owned()) {
             state.settled_revert_order.push_back(thread_id.to_owned());
         }
         while state.settled_revert_order.len() > SETTLED_REVERT_LIMIT {

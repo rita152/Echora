@@ -618,17 +618,15 @@ impl FilePanel {
         let Some(d) = self.documents.iter_mut().find(|d| d.id == id) else {
             return;
         };
-        if d.saving || !d.dirty(cx) {
-            return;
-        }
-        let Some(editor) = &d.editor else {
+        // The same test as `Document::dirty`, keeping the editor and saved file.
+        let (Some(editor), Some(saved)) = (&d.editor, &d.saved) else {
             return;
         };
-        if editor.read(cx).composing() {
+        if d.saving || editor.read(cx).buffer.text == saved.text || editor.read(cx).composing() {
             return;
         }
         let text = editor.read(cx).buffer.text.clone();
-        let saved = d.saved.clone().unwrap();
+        let saved = saved.clone();
         d.saving = true;
         let task = cx
             .background_executor()
@@ -771,7 +769,8 @@ impl FilePanel {
         cx.notify();
     }
     fn tree_key(&mut self, e: &KeyDownEvent, w: &mut Window, cx: &mut Context<Self>) {
-        let count = self.rows().len();
+        let rows = self.rows();
+        let count = rows.len();
         if count == 0 {
             return;
         }
@@ -794,13 +793,13 @@ impl FilePanel {
             "end" => self.selected_row = count - 1,
             "enter" | "space" => self.activate_row(self.selected_row, cx),
             "right" => {
-                let row = self.rows()[self.selected_row.min(count - 1)].clone();
+                let row = &rows[self.selected_row.min(count - 1)];
                 if row.entry.directory && !self.expanded.contains(&row.entry.path) {
                     self.activate_row(self.selected_row, cx);
                 }
             }
             "left" => {
-                let row = self.rows()[self.selected_row.min(count - 1)].clone();
+                let row = &rows[self.selected_row.min(count - 1)];
                 if !self.expanded.remove(&row.entry.path)
                     && let Some(parent) = row.entry.path.parent()
                 {

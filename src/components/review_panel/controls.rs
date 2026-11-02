@@ -284,9 +284,8 @@ impl ReviewPanel {
             }
             Action::CommitAll => self.commit_all = !self.commit_all,
             Action::CommitAndPush => {
-                if self.busy
-                    || (self.new_branch && self.branch_input.read(cx).text().trim() == "codex/")
-                {
+                // Checked here too, so a blocked commit never arms the push.
+                if self.commit_blocked(cx) {
                     return;
                 }
                 self.push_after_commit = true;
@@ -303,9 +302,7 @@ impl ReviewPanel {
             }
             Action::OpenPr(url) => cx.open_url(&url),
             Action::CreatePullRequest(draft) => {
-                if self.busy
-                    || (self.new_branch && self.branch_input.read(cx).text().trim() == "codex/")
-                {
+                if self.commit_blocked(cx) {
                     return;
                 }
                 if let Some(url) = self.existing_pr_for_head() {

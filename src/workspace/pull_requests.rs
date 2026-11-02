@@ -102,8 +102,8 @@ impl ThreadAttachmentEntry {
     }
 
     /// Newest first, the order every consumer uses.
-    pub fn pull_requests_newest_first(&self) -> Vec<ThreadPullRequest> {
-        let mut pull_requests = self.pull_requests.clone();
+    pub fn pull_requests_newest_first(&self) -> Vec<&ThreadPullRequest> {
+        let mut pull_requests: Vec<_> = self.pull_requests.iter().collect();
         pull_requests.sort_by_key(|pull_request| std::cmp::Reverse(pull_request.touched_at));
         pull_requests
     }
@@ -239,6 +239,16 @@ pub fn remote_repository(remote: &str) -> Option<String> {
     Some(format!("{}/{}", owner.to_lowercase(), name.to_lowercase()))
 }
 
+/// The thread's recorded Git branch, trimmed; a blank branch is no branch.
+fn thread_branch(thread: &ThreadSummary) -> Option<&str> {
+    thread
+        .git
+        .branch
+        .as_deref()
+        .map(str::trim)
+        .filter(|branch| !branch.is_empty())
+}
+
 impl ThreadPullRequestsState {
     fn status(&self, pull_request: &ThreadPullRequest) -> Option<&PullRequestStatusEntry> {
         self.statuses.get(&pull_request.identity_key)
@@ -278,6 +288,7 @@ impl ThreadPullRequestsState {
     /// The reference's `F1i`: which attached pull request the chip shows, and
     /// which one to fetch next. Attachments are tried newest first; an open,
     /// ready pull request on the thread's branch and repository wins.
+    /// `thread_branch` is already trimmed and non-empty (see `thread_branch`).
     pub fn chip_selection(
         &self,
         thread_id: &str,
@@ -292,9 +303,6 @@ impl ThreadPullRequestsState {
             return (ChipPullRequest::None, None);
         }
         let origin = origin.and_then(remote_repository);
-        let thread_branch = thread_branch
-            .map(str::trim)
-            .filter(|branch| !branch.is_empty());
         let data = |pull_request: &ThreadPullRequest| {
             self.status(pull_request)
                 .and_then(PullRequestStatusEntry::state)
@@ -309,6 +317,7 @@ impl ThreadPullRequestsState {
         };
         let strict: Vec<&ThreadPullRequest> = candidates
             .iter()
+            .copied()
             .filter(|pull_request| {
                 data(pull_request).is_some_and(|state| {
                     is_open(state)
@@ -320,11 +329,12 @@ impl ThreadPullRequestsState {
             .collect();
         let any_open = candidates
             .iter()
+            .copied()
             .find(|pull_request| data(pull_request).is_some_and(is_open));
         let strict_ready = strict.iter().copied().find(|pull_request| {
             data(pull_request).is_some_and(|state| state.summary.status != PullRequestStatus::Draft)
         });
-        let open_ready = candidates.iter().find(|pull_request| {
+        let open_ready = candidates.iter().copied().find(|pull_request| {
             data(pull_request).is_some_and(|state| {
                 is_open(state) && state.summary.status != PullRequestStatus::Draft
             })
@@ -336,6 +346,7 @@ impl ThreadPullRequestsState {
             .or_else(|| {
                 candidates
                     .iter()
+                    .copied()
                     .find(|pull_request| data(pull_request).is_some())
             });
         let decided = strict_ready.or(if origin.is_none() || thread_branch.is_none() {
@@ -344,15 +355,17 @@ impl ThreadPullRequestsState {
             None
         });
         let search_end = decided
-            .and_then(|decided| candidates.iter().position(|candidate| candidate == decided))
+            .and_then(|decided| {
+                candidates
+                    .iter()
+                    .position(|candidate| *candidate == decided)
+            })
             .unwrap_or(candidates.len());
         let next_fetch = candidates[..search_end]
             .iter()
+            .copied()
             .find(|pull_request| !fetched(pull_request) && !failed(pull_request));
-        let shown = decided
-            .or(next_fetch)
-            .or(fallback)
-            .unwrap_or(&candidates[0]);
+        let shown = decided.or(next_fetch).or(fallback).unwrap_or(candidates[0]);
         let chip = match data(shown) {
             Some(state) => ChipPullRequest::Show {
                 url: shown.url.clone(),
@@ -801,12 +814,7 @@ impl WorkspaceStore {
         let Some(entry) = state.threads.get(&thread.thread_id) else {
             return;
         };
-        let branch = thread
-            .git
-            .branch
-            .as_deref()
-            .map(str::trim)
-            .filter(|b| !b.is_empty());
+        let branch = thread_branch(thread);
         if state.attachments_authoritative(thread, &completed) {
             let (_, fetch) =
                 state.chip_selection(&thread.thread_id, branch, thread.git.origin_url.as_deref());
@@ -1574,12 +1582,7 @@ impl WorkspaceSnapshot {
     pub fn thread_pull_request_chip(&self, thread: &ThreadSummary) -> ChipPullRequest {
         let state = &self.pull_requests;
         let completed = WorkspaceStore::completed_threads(self);
-        let branch = thread
-            .git
-            .branch
-            .as_deref()
-            .map(str::trim)
-            .filter(|b| !b.is_empty());
+        let branch = thread_branch(thread);
         if state.attachments_authoritative(thread, &completed) {
             return state
                 .chip_selection(&thread.thread_id, branch, thread.git.origin_url.as_deref())

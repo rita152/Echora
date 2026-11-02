@@ -1355,14 +1355,13 @@ impl SidebarView {
     /// The project a task row's card belongs to. The reference only prints a
     /// task card when it can name the project, which is why projectless tasks
     /// in the Recents section show no card at all.
-    fn project_for_thread(&self, thread_id: &str) -> Option<Project> {
+    fn project_for_thread(&self, thread_id: &str) -> Option<&Project> {
         let thread = self.snapshot.thread(thread_id)?;
         let project_id = self.thread_project_id(thread)?;
         self.snapshot
             .projects
             .iter()
             .find(|project| project.project_id == project_id)
-            .cloned()
     }
 
     /// The pointer entered or left a project row. The card opens after the
@@ -1577,17 +1576,8 @@ impl SidebarView {
     /// Starts a chat in the selected project: the header's `New chat` row,
     /// and the titlebar's `New chat` button while the sidebar is closed.
     pub fn start_new_conversation(&mut self, cx: &mut Context<Self>) {
-        let project = self
-            .selected_project_id
-            .as_deref()
-            .and_then(|project_id| {
-                self.snapshot
-                    .projects
-                    .iter()
-                    .find(|project| project.project_id == project_id)
-            })
-            .cloned();
-        self.new_conversation(project.as_ref(), cx);
+        let target = self.new_conversation_target();
+        self.begin_conversation(target, cx);
     }
 
     pub fn set_draft_project(&mut self, project_id: Option<ProjectId>, cx: &mut Context<Self>) {
@@ -1610,7 +1600,14 @@ impl SidebarView {
     }
 
     fn new_conversation(&mut self, project: Option<&Project>, cx: &mut Context<Self>) {
-        let (project_id, cwd) = new_conversation_target(project);
+        self.begin_conversation(new_conversation_target(project), cx);
+    }
+
+    fn begin_conversation(
+        &mut self,
+        (project_id, cwd): (Option<ProjectId>, PathBuf),
+        cx: &mut Context<Self>,
+    ) {
         self.selected_project_id = project_id.clone();
         self.selected_thread_id = None;
         self.close_transient_menus(cx);
@@ -4739,7 +4736,7 @@ impl Render for SidebarView {
                 .map(|bounds| (thread_id.to_owned(), bounds))
         });
         if let Some((thread_id, bounds)) = thread_card_anchor
-            && let Some(thread) = self.snapshot.thread(&thread_id).cloned()
+            && let Some(thread) = self.snapshot.thread(&thread_id)
             && let project = self.project_for_thread(&thread_id)
             && (project.is_some() || self.activity.is_some())
         {
@@ -4753,7 +4750,7 @@ impl Render for SidebarView {
                 gpui::anchored()
                     .position(gpui::point(px(left), px(top)))
                     .snap_to_window_with_margin(px(8.))
-                    .child(self.thread_hover_card(&thread, project.as_ref(), theme, cx)),
+                    .child(self.thread_hover_card(thread, project, theme, cx)),
             ));
         }
         // Overlay anchors above read the last frame; prepaint now replaces them

@@ -18,6 +18,12 @@ enum Menu {
     CreateBranch,
 }
 
+/// A trimmed new-branch name is usable once it is more than the prefilled
+/// `codex/` prefix.
+fn branch_name_ready(name: &str) -> bool {
+    !name.is_empty() && name != "codex/"
+}
+
 pub(super) struct EnvironmentUi {
     data: Option<Environment>,
     cwd: Option<PathBuf>,
@@ -53,7 +59,7 @@ impl EnvironmentUi {
             match this.environment.menu {
                 Some(Menu::CreateBranch) => {
                     let name = event.0.trim();
-                    if !name.is_empty() && name != "codex/" {
+                    if branch_name_ready(name) {
                         this.switch_environment_branch(name.to_owned(), true, cx);
                     }
                 }
@@ -659,7 +665,7 @@ impl SummaryPanel {
     fn environment_branch_dialog(&mut self, w: &Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = Theme::for_mode(self.mode);
         let name = self.environment.input.read(cx).text().trim();
-        let enabled = !self.environment.busy && !name.is_empty() && name != "codex/";
+        let enabled = !self.environment.busy && branch_name_ready(name);
         let branch = self
             .environment
             .data
@@ -901,7 +907,7 @@ impl SummaryPanel {
                     {
                         if this.environment.menu == Some(Menu::CreateBranch) {
                             let name = this.environment.input.read(cx).text().trim().to_owned();
-                            if !name.is_empty() && name != "codex/" {
+                            if branch_name_ready(&name) {
                                 this.switch_environment_branch(name, true, cx);
                             }
                         } else if let Some((_, choice, true)) =

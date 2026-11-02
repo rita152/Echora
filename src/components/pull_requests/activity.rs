@@ -367,10 +367,11 @@ impl PullRequestsView {
         let theme = self.theme();
         let id = comment.id.clone();
         let collapsed = self.comment_collapsed(comment, thread);
-        let editing = self
+        let editor = self
             .comment_edit
             .as_ref()
-            .is_some_and(|(editing_id, _)| editing_id == &id);
+            .filter(|(editing_id, _)| editing_id == &id)
+            .map(|(_, editor)| editor.clone());
         let mut card = Self::card(theme)
             .id(SharedString::from(format!("pr-comment-{id}")))
             .group("pr-comment")
@@ -384,8 +385,7 @@ impl PullRequestsView {
         if let Some(thread) = thread {
             card = card.child(self.thread_preview(thread, comment, cx));
         }
-        if editing {
-            let (_, editor) = self.comment_edit.clone().unwrap();
+        if let Some(editor) = editor {
             card = card.child(
                 div()
                     .px(px(12.0))

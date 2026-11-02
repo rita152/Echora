@@ -3,14 +3,14 @@
 use std::time::Instant;
 
 use gpui::{
-    App, BoxShadow, Div, Entity, FontWeight, IntoElement, Role, ScrollHandle, SharedString,
-    Transformation, div, prelude::*, px, radians, rgba,
+    App, BoxShadow, Div, Entity, FontWeight, Role, ScrollHandle, SharedString, Transformation, div,
+    prelude::*, px, radians, rgba,
 };
 
 use super::{
     DISCLOSURE_FOCUS_PADDING, HomeView, REASONING_BODY_MAX_HEIGHT, REASONING_BODY_TOP_GAP,
     REASONING_CHEVRON_SIZE, REASONING_HEADER_HEIGHT, REASONING_LINE_HEIGHT, REASONING_TEXT_SIZE,
-    animation::thinking_shimmer, conversation::nested_scroll_consumed,
+    conversation::nested_scroll_consumed,
 };
 use crate::{components::icons::icon, conversation::ReasoningActivityPresentation, theme::Theme};
 
@@ -148,15 +148,15 @@ pub(super) fn reasoning_activity(
     expanded: bool,
     disclosure_progress: f32,
     scroll_handle: ScrollHandle,
-    thinking_shimmer_progress: f32,
     theme: Theme,
 ) -> Div {
+    // Only completed reasoning reaches this row; the active one renders as a
+    // shimmer label in `render_activity_stream_unit`.
     let item_id = reasoning.item_id.clone();
     let hover_group: SharedString = format!("reasoning-activity-{item_id}").into();
-    let active = reasoning.is_active();
     let body_text = reasoning_body_text(&reasoning);
     let has_content = !body_text.trim().is_empty();
-    let can_toggle = !active && has_content;
+    let can_toggle = has_content;
     let header_label = reasoning_header_label(&reasoning);
     let accessible_label = if expanded {
         crate::i18n::format!("{header_label}，折叠推理内容" => "{header_label}, collapse reasoning")
@@ -222,11 +222,7 @@ pub(super) fn reasoning_activity(
                             }
                         })
                 })
-                .child(if active {
-                    div()
-                        .child(thinking_shimmer(theme, thinking_shimmer_progress))
-                        .into_any_element()
-                } else {
+                .child(
                     div()
                         .min_w(px(0.0))
                         .max_w(px(718.0))
@@ -242,9 +238,8 @@ pub(super) fn reasoning_activity(
                         .group_hover(hover_group.clone(), move |label| {
                             label.text_color(theme.text)
                         })
-                        .child(header_label)
-                        .into_any_element()
-                })
+                        .child(header_label),
+                )
                 .when(can_toggle, |header| {
                     header.child(
                         icon("settings-chevron-right", theme.text.alpha(0.60).into())
@@ -293,11 +288,7 @@ pub(super) fn reasoning_activity(
                                 .font_family(".SystemUIFont")
                                 .font_weight(FontWeight::NORMAL)
                                 .text_color(theme.text.alpha(0.50))
-                                .child(if active {
-                                    div().child(body_text)
-                                } else {
-                                    completed_reasoning_body_element(body_text)
-                                }),
+                                .child(completed_reasoning_body_element(body_text)),
                         ),
                     ),
             )

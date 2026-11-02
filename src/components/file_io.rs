@@ -67,7 +67,8 @@ impl TextFile {
         if raw.lines().any(|line| line.len() > 65_536) {
             return Err(crate::i18n::text("单行超过 64 KB，请在外部编辑器中打开").into());
         }
-        let crlf = raw.contains("\r\n") && !raw.replace("\r\n", "").contains('\n');
+        // Every `\n` belongs to a `\r\n`; counting avoids copying the file.
+        let crlf = raw.contains("\r\n") && raw.matches("\r\n").count() == raw.matches('\n').count();
         // Only normalize consistent CRLF files; mixed endings are kept verbatim.
         let text = if crlf {
             raw.replace("\r\n", "\n")

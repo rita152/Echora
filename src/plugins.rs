@@ -28,14 +28,14 @@ impl PluginCatalogSource {
         Self::CreatedByMeRemote,
     ];
 
-    pub fn marketplace_kinds(self) -> Option<Vec<AgentPluginMarketplaceKind>> {
+    pub fn marketplace_kind(self) -> AgentPluginMarketplaceKind {
         use AgentPluginMarketplaceKind as Kind;
         match self {
-            Self::Local => Some(vec![Kind::Local]),
-            Self::Vertical => Some(vec![Kind::Vertical]),
-            Self::WorkspaceDirectory => Some(vec![Kind::WorkspaceDirectory]),
-            Self::SharedWithMe => Some(vec![Kind::SharedWithMe]),
-            Self::CreatedByMeRemote => Some(vec![Kind::CreatedByMeRemote]),
+            Self::Local => Kind::Local,
+            Self::Vertical => Kind::Vertical,
+            Self::WorkspaceDirectory => Kind::WorkspaceDirectory,
+            Self::SharedWithMe => Kind::SharedWithMe,
+            Self::CreatedByMeRemote => Kind::CreatedByMeRemote,
         }
     }
 }
@@ -479,17 +479,15 @@ impl PluginsDirectory {
         self.shares_error = None;
     }
 
-    pub fn apply_shares(&mut self, shares: crate::agent::AgentPluginShareList) -> bool {
+    pub fn apply_shares(&mut self, shares: crate::agent::AgentPluginShareList) {
         self.shares_loading = false;
         self.shares_error = None;
         self.shares = Some(shares);
-        true
     }
 
-    pub fn apply_shares_error(&mut self, error: AgentPluginsError) -> bool {
+    pub fn apply_shares_error(&mut self, error: AgentPluginsError) {
         self.shares_loading = false;
         self.shares_error = Some(error);
-        true
     }
 
     /// The rows the directory shows: the search answer while a search is

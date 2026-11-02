@@ -265,7 +265,8 @@ impl ChatApp {
             codex_app_server.clone(),
         ));
         let workspace_store = WorkspaceStore::new(agent_backend.clone());
-        crate::typography::set_sizes(workspace_store.snapshot().preferences.font_sizes);
+        let preferences = workspace_store.snapshot().preferences;
+        crate::typography::set_sizes(preferences.font_sizes);
         let sidebar = cx.new(|cx| {
             SidebarView::new(mode, scroll_sidebar_to_bottom, workspace_store.clone(), cx)
         });
@@ -306,24 +307,16 @@ impl ChatApp {
         let home = cx.new(|cx| HomeView::new_with_backend(mode, agent_backend.clone(), cx));
         let initial_composer = home.read(cx).composer_entity();
         let initial_cwd = crate::components::composer::projectless_cwd();
-        let follow_up_mode = workspace_store.snapshot().preferences.follow_up_mode;
-        let review_delivery = workspace_store.snapshot().preferences.review_delivery;
-        let branch_prefix = workspace_store
-            .snapshot()
-            .preferences
-            .branch_prefix
-            .unwrap_or_else(|| "codex/".into());
+        let follow_up_mode = preferences.follow_up_mode;
+        let review_delivery = preferences.review_delivery;
+        let branch_prefix = preferences.branch_prefix.unwrap_or_else(|| "codex/".into());
         initial_composer.update(cx, |composer, cx| {
             composer.set_workspace_context(initial_cwd.clone(), None, None, cx);
             composer.set_follow_up_mode(follow_up_mode, cx);
             composer.set_review_delivery(review_delivery, cx);
             composer.set_branch_prefix(branch_prefix.clone());
         });
-        if let Some(selection) = workspace_store
-            .snapshot()
-            .preferences
-            .new_chat_permission_mode
-        {
+        if let Some(selection) = preferences.new_chat_permission_mode {
             initial_composer.update(cx, |composer, _| {
                 composer.set_permission_selection(selection)
             });
@@ -333,10 +326,7 @@ impl ChatApp {
         Self::wire_project_selection(&initial_composer, cx);
         Self::wire_slash_commands(
             &initial_composer,
-            workspace_store
-                .snapshot()
-                .preferences
-                .recent_model_configurations,
+            preferences.recent_model_configurations,
             cx,
         );
         cx.subscribe(
@@ -550,11 +540,8 @@ impl ChatApp {
         )
         .detach();
         settings.update(cx, |settings, cx| {
-            settings.set_keep_running_on_close(
-                workspace_store.snapshot().preferences.keep_running_on_close,
-                cx,
-            );
-            settings.set_follow_up_mode(workspace_store.snapshot().preferences.follow_up_mode, cx)
+            settings.set_keep_running_on_close(preferences.keep_running_on_close, cx);
+            settings.set_follow_up_mode(follow_up_mode, cx)
         });
         cx.subscribe(
             &settings,
@@ -571,7 +558,7 @@ impl ChatApp {
         )
         .detach();
         settings.update(cx, |settings, cx| {
-            settings.set_review_delivery(workspace_store.snapshot().preferences.review_delivery, cx)
+            settings.set_review_delivery(review_delivery, cx)
         });
         settings.update(cx, |settings, cx| {
             settings.set_branch_prefix(&branch_prefix, cx)
@@ -863,19 +850,11 @@ impl ChatApp {
     /// follow-up default and wired to the queue menu's toggle.
     pub(crate) fn new_host_composer(&mut self, cx: &mut Context<Self>) -> Entity<ComposerView> {
         let backend = self.agent_backend.clone();
-        let mode = self.workspace_store.snapshot().preferences.follow_up_mode;
-        let delivery = self.workspace_store.snapshot().preferences.review_delivery;
-        let branch_prefix = self
-            .workspace_store
-            .snapshot()
-            .preferences
-            .branch_prefix
-            .unwrap_or_else(|| "codex/".into());
-        let permission = self
-            .workspace_store
-            .snapshot()
-            .preferences
-            .new_chat_permission_mode;
+        let preferences = self.workspace_store.snapshot().preferences;
+        let mode = preferences.follow_up_mode;
+        let delivery = preferences.review_delivery;
+        let branch_prefix = preferences.branch_prefix.unwrap_or_else(|| "codex/".into());
+        let permission = preferences.new_chat_permission_mode;
         let composer = cx.new(|cx| {
             let mut composer = ComposerView::new_with_backend(self.mode, backend, cx);
             if let Some(selection) = permission {
@@ -889,14 +868,7 @@ impl ChatApp {
         Self::wire_permission_preference(&composer, cx);
         Self::wire_code_review(&composer, cx);
         Self::wire_project_selection(&composer, cx);
-        Self::wire_slash_commands(
-            &composer,
-            self.workspace_store
-                .snapshot()
-                .preferences
-                .recent_model_configurations,
-            cx,
-        );
+        Self::wire_slash_commands(&composer, preferences.recent_model_configurations, cx);
         cx.subscribe(
             &composer,
             |this, _, event: &crate::components::composer::FollowUpModeToggled, cx| {
@@ -1081,16 +1053,16 @@ impl ChatApp {
             let account_result = account_reader.recv().await;
             let limits_reader = backend.read_rate_limits();
             let limits_result = limits_reader.recv().await;
-            let status = match (&account_result, &limits_result) {
+            let status = match (account_result, limits_result) {
                 (Ok(Ok(_)), Ok(Ok(_))) => AccountLoadStatus::Loaded,
-                (Ok(Err(error)), _) => AccountLoadStatus::Failed(error.clone()),
+                (Ok(Err(error)), _) => AccountLoadStatus::Failed(error),
                 (Err(_), _) => AccountLoadStatus::Failed(
                     crate::i18n::text("账户连接在返回结果前关闭").to_owned(),
                 ),
                 (_, Err(_)) => AccountLoadStatus::Failed(
                     crate::i18n::text("配额连接在返回结果前关闭").to_owned(),
                 ),
-                (_, Ok(Err(error))) => AccountLoadStatus::Failed(error.clone()),
+                (_, Ok(Err(error))) => AccountLoadStatus::Failed(error),
             };
             let _ = this.update(cx, |this, cx| {
                 this.account.status = status;
@@ -1278,24 +1250,15 @@ impl ChatApp {
         self.sync_right_panel_page(cx);
         self.sidebar
             .update(cx, |sidebar, cx| sidebar.set_pull_requests_open(true, cx));
-        let ratio = self
-            .workspace_store
-            .snapshot()
-            .preferences
-            .pull_requests_detail_ratio
-            .map(|ratio| ratio.0);
+        let preferences = self.workspace_store.snapshot().preferences;
+        let ratio = preferences.pull_requests_detail_ratio.map(|ratio| ratio.0);
         let directory = self
             .conversation_hosts
             .get(&self.active_conversation)
             .filter(|host| host.project_id.is_some())
             .map(|host| host.cwd.clone())
             .or_else(|| std::env::current_dir().ok());
-        let pins = self
-            .workspace_store
-            .snapshot()
-            .preferences
-            .code_review_pins
-            .clone();
+        let pins = preferences.code_review_pins;
         self.pull_requests.update(cx, |view, cx| {
             view.set_directory(directory);
             view.set_pins(pins, cx);

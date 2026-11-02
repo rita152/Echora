@@ -21,8 +21,7 @@ impl ReviewPanel {
 
     pub(super) fn environment_commit_dialog(&self, cx: &Context<Self>) -> Stateful<Div> {
         let theme = Theme::for_mode(self.mode);
-        let disabled =
-            self.busy || (self.new_branch && self.branch_input.read(cx).text().trim() == "codex/");
+        let disabled = self.commit_blocked(cx);
         let mut files = div()
             .id("environment-commit-files")
             .max_h(px(128.))

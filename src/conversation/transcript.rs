@@ -129,8 +129,9 @@ pub(crate) fn history_time_label(timestamp: Option<i64>) -> Option<String> {
 }
 
 impl ConversationState {
-    pub(crate) fn refresh_assistant_answer(&mut self) {
-        let ids = final_message_ids(self.activities.iter().filter_map(|activity| {
+    /// The final answer among the live assistant messages, by their phases.
+    fn live_final_message_ids(&self) -> Vec<String> {
+        final_message_ids(self.activities.iter().filter_map(|activity| {
             match activity {
                 ConversationActivity::AssistantMessage { item_id, .. } => Some((
                     item_id.as_str(),
@@ -140,7 +141,11 @@ impl ConversationState {
                 )),
                 _ => None,
             }
-        }));
+        }))
+    }
+
+    pub(crate) fn refresh_assistant_answer(&mut self) {
+        let ids = self.live_final_message_ids();
         if let Some(turn) = &mut self.resumed_turn {
             turn.final_message_ids = ids.clone();
         }
@@ -667,19 +672,7 @@ impl ConversationState {
             .work_duration_ms(None, std::time::Instant::now())
             .is_some()
         {
-            turn.final_message_ids =
-                final_message_ids(self.activities.iter().filter_map(|activity| {
-                    if let ConversationActivity::AssistantMessage { item_id, .. } = activity {
-                        Some((
-                            item_id.as_str(),
-                            self.assistant_message_phases
-                                .get(item_id)
-                                .and_then(|p| p.as_deref()),
-                        ))
-                    } else {
-                        None
-                    }
-                }));
+            turn.final_message_ids = self.live_final_message_ids();
             let answer = turn.final_message_ids.last().map(String::as_str);
             turn.duration_ms = self
                 .live_timing

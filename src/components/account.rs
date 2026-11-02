@@ -121,7 +121,7 @@ impl AccountView {
     /// It is derived from the backend answer, never from a stored profile.
     pub fn account_label(&self) -> Option<String> {
         let email = self.state.account.email()?;
-        let local = email.split('@').next().unwrap_or(email);
+        let local = email.split_once('@').map_or(email, |(local, _)| local);
         (!local.is_empty()).then(|| local.to_owned())
     }
 

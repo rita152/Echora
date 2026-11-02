@@ -26,8 +26,8 @@ use super::{
     notices::{activity_group_icon, web_search_activity},
     timeline::{
         CommandActivitySummary, ToolActivityGroupPresentation, command_action_summary,
-        command_activity_row_count, command_activity_summaries, command_activity_summary,
-        completed_tool_group_summary, strip_terminal_line_ending, tool_group_reasoning_title,
+        command_activity_row_count, command_activity_summary, completed_tool_group_summary,
+        generic_command_activity_summary, strip_terminal_line_ending, tool_group_reasoning_title,
         tool_group_row_count,
     },
 };
@@ -98,6 +98,21 @@ impl ToolGroupDisclosureTransition {
     }
 }
 
+/// Whether a tool group (or image view) with `id` shows its body: an active
+/// group is open unless collapsed, a completed one only once expanded.
+pub(super) fn tool_group_expanded(
+    active: bool,
+    id: &str,
+    expanded_tool_groups: &HashSet<String>,
+    collapsed_active_tool_groups: &HashSet<String>,
+) -> bool {
+    if active {
+        !collapsed_active_tool_groups.contains(id)
+    } else {
+        expanded_tool_groups.contains(id)
+    }
+}
+
 pub(super) fn toggle_tool_activity_group(
     home_entity: &Entity<HomeView>,
     group_id: &str,
@@ -131,7 +146,7 @@ pub(super) fn toggle_tool_activity_group(
 pub(super) fn tool_activity_group(
     home_entity: Entity<HomeView>,
     group: ToolActivityGroupPresentation,
-    disclosure: ToolGroupDisclosure,
+    disclosure: ToolGroupDisclosure<'_>,
     expanded_commands: &HashSet<String>,
     command_scroll_handles: &HashMap<String, ScrollHandle>,
     theme: Theme,
@@ -185,7 +200,10 @@ pub(super) fn tool_activity_group(
                 .rev()
                 .find(|command| command.status == CommandExecutionStatus::InProgress)
                 .or_else(|| group.commands.last())
-                .and_then(|command| command_activity_summaries(command).into_iter().last())
+                .map(|command| match command.actions.last() {
+                    Some(action) => command_action_summary(command, action),
+                    None => generic_command_activity_summary(command, &command.command),
+                })
                 .unwrap_or_else(|| CommandActivitySummary {
                     icon: "panel-terminal",
                     text: crate::i18n::text("正在工作").to_owned(),

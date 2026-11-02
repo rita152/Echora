@@ -47,11 +47,11 @@ impl Language {
     pub fn resolve(self, system_locale: &str) -> Self {
         match self {
             Self::Auto => {
-                let language = system_locale
+                let chinese = system_locale
                     .split(['-', '_', '.', '@'])
                     .next()
-                    .unwrap_or("");
-                if language.eq_ignore_ascii_case("zh") {
+                    .is_some_and(|language| language.eq_ignore_ascii_case("zh"));
+                if chinese {
                     Self::SimplifiedChinese
                 } else {
                     Self::English

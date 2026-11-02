@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use async_channel::Receiver;
 use serde_json::json;
 
@@ -17,21 +17,12 @@ impl CodexAppServerManager {
         &self,
         connection: &Arc<Connection>,
     ) -> Result<Vec<AgentCollaborationModePreset>> {
-        if let Some(presets) = connection
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?
-            .collaboration_modes
-            .clone()
-        {
+        if let Some(presets) = connection.lock_state()?.collaboration_modes.clone() {
             return Ok(presets);
         }
         let response = connection.request(super::super::collaboration::METHOD, json!({}))?;
         let presets = super::super::collaboration::parse_list_response(&response)?;
-        let mut state = connection
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let mut state = connection.lock_state()?;
         Ok(state.collaboration_modes.get_or_insert(presets).clone())
     }
 

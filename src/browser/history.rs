@@ -253,9 +253,12 @@ impl BrowserHistory {
             }
             rows.push(history_row(entry));
         }
+        // `trimmed` is not empty (checked above), so the text is a search
+        // exactly when its navigation URL is the search URL.
         let trimmed = query.trim();
         let url = address::navigation_url(trimmed);
-        if address::is_search(trimmed) {
+        let search = address::search_url(trimmed);
+        if url == search {
             rows.push(Suggestion::Search {
                 query: trimmed.to_owned(),
                 url,
@@ -267,9 +270,10 @@ impl BrowserHistory {
             });
             rows.push(Suggestion::Search {
                 query: trimmed.to_owned(),
-                url: address::search_url(trimmed),
+                url: search,
             });
         }
+        // At most three rows precede this loop, which stops at the limit.
         for entry in prefix.iter().chain(contains.iter()) {
             if rows.len() >= SUGGESTION_LIMIT {
                 break;
@@ -279,7 +283,6 @@ impl BrowserHistory {
             }
             rows.push(history_row(entry));
         }
-        rows.truncate(SUGGESTION_LIMIT);
         Suggestions {
             inline_completion,
             rows,

@@ -687,9 +687,11 @@ impl PullRequestsView {
                                     .size(px(10.0)),
                             )
                             .child(
-                                div().min_w(px(0.0)).max_w(px(96.0)).truncate().child(
-                                    row.repository.rsplit('/').next().unwrap_or("").to_owned(),
-                                ),
+                                div()
+                                    .min_w(px(0.0))
+                                    .max_w(px(96.0))
+                                    .truncate()
+                                    .child(super::diff::file_name(&row.repository)),
                             )
                             .child(self.avatar(row.author_avatar_url.as_deref(), 14.0))
                             .child(div().truncate().child(row.author.clone()))

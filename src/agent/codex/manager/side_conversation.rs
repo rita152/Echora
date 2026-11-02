@@ -40,10 +40,7 @@ impl CodexAppServerManager {
             .lock()
             .map_err(|_| anyhow!("Codex thread lifecycle 锁已损坏"))?;
         {
-            let mut state = connection
-                .state
-                .lock()
-                .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+            let mut state = connection.lock_state()?;
             if state.pending_thread_lifecycle.is_some() {
                 bail!("Codex thread lifecycle registry 已被占用");
             }
@@ -94,10 +91,7 @@ impl CodexAppServerManager {
             {
                 bail!("thread/fork 未创建临时聊天");
             }
-            let mut state = connection
-                .state
-                .lock()
-                .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+            let mut state = connection.lock_state()?;
             let pending = state
                 .pending_thread_lifecycle
                 .take()
@@ -163,12 +157,7 @@ impl CodexAppServerManager {
             .lock()
             .map_err(|_| anyhow!("临时聊天状态锁已损坏"))?;
         if let Some(thread) = threads.get(id) {
-            let loaded = connection
-                .state
-                .lock()
-                .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?
-                .loaded_threads
-                .contains(id);
+            let loaded = connection.lock_state()?.loaded_threads.contains(id);
             if thread.closed || thread.generation != connection.generation || !loaded {
                 bail!("侧边聊天的连接已结束。消息仍可查看和复制，请新建侧边聊天继续。");
             }
@@ -215,10 +204,7 @@ impl CodexAppServerManager {
             return Ok(());
         };
         let turns = {
-            let mut state = connection
-                .state
-                .lock()
-                .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+            let mut state = connection.lock_state()?;
             if let Some(waiter) = state.settings_waiters.remove(id) {
                 let _ = waiter
                     .sender

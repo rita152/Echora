@@ -194,16 +194,13 @@ pub fn group_sources(entries: &[AgentHookListEntry]) -> HookSourceGroups {
                 .push(hook.clone());
         }
     }
-    // Named plugins in id order, the unnamed bucket last.
-    let mut plugins = by_plugin
+    // Named plugins in id order (the map's order), the unnamed bucket last.
+    let unnamed = by_plugin.remove(&None);
+    let plugins = by_plugin
         .into_iter()
+        .chain(unnamed.map(|hooks| (None, hooks)))
         .map(|(plugin, hooks)| merged(entries, HookSourceSelection::Plugin(plugin), hooks, &[]))
         .collect::<Vec<_>>();
-    plugins.sort_by_key(|source| match &source.selection {
-        HookSourceSelection::Plugin(None) => (1, String::new()),
-        HookSourceSelection::Plugin(Some(id)) => (0, id.clone()),
-        _ => (2, String::new()),
-    });
     HookSourceGroups {
         config: [AgentHookSourceGroup::User, AgentHookSourceGroup::Admin]
             .into_iter()

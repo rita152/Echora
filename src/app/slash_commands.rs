@@ -73,7 +73,7 @@ impl ChatApp {
                             .0
                             .path
                             .strip_prefix("thread://")
-                            .and_then(|s| s.split('?').next())
+                            .map(|s| s.split_once('?').map_or(s, |(id, _)| id))
                         {
                             this.select_conversation(id.to_owned(), cx);
                         }
@@ -117,14 +117,8 @@ impl ChatApp {
                 let mut async_cx = cx.to_async();
                 panel.read(cx).collect_context(event.0, move |result| {
                     let result = result.and_then(|text| {
-                        let root = std::env::var_os("CODEX_HOME")
-                            .map(std::path::PathBuf::from)
-                            .unwrap_or_else(|| {
-                                std::path::PathBuf::from(
-                                    std::env::var_os("HOME").unwrap_or_default(),
-                                )
-                                .join(".codex")
-                            })
+                        let root = crate::agent::codex_home()
+                            .unwrap_or_else(|| std::path::PathBuf::from(".codex"))
                             .join("attachments");
                         std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
                         let path = root.join(format!(
@@ -216,14 +210,8 @@ impl ChatApp {
                         let origin = this.active_conversation.clone();
                         let backend = this.agent_backend.clone();
                         let worktree = event.0 == SlashCommand::ForkWorktree;
-                        let root = std::env::var_os("CODEX_HOME")
-                            .map(std::path::PathBuf::from)
-                            .unwrap_or_else(|| {
-                                std::env::var_os("HOME")
-                                    .map(std::path::PathBuf::from)
-                                    .unwrap_or_default()
-                                    .join(".codex")
-                            })
+                        let root = crate::agent::codex_home()
+                            .unwrap_or_else(|| std::path::PathBuf::from(".codex"))
                             .join("worktrees");
                         cx.spawn(async move |this, cx| {
                             let result = if worktree {
@@ -249,31 +237,20 @@ impl ChatApp {
                             let _ = this.update(cx, |this, cx| {
                                 composer
                                     .update(cx, |composer, cx| composer.settle_command_fork(cx));
-                                match result {
+                                let message = match result {
                                     Ok(Ok(id)) => {
                                         this.workspace_store.refresh_all();
                                         if this.active_conversation == origin {
                                             this.select_conversation(id, cx);
                                         }
+                                        return;
                                     }
-                                    error => {
-                                        let message = match error {
-                                            Ok(Err(e)) => {
-                                                e.user_message(crate::i18n::text("创建聊天分支"))
-                                            }
-                                            Err(e) => e.to_string(),
-                                            _ => unreachable!(),
-                                        };
-                                        composer.update(cx, |composer, cx| {
-                                            composer.show_panel_toast(
-                                                ToastKind::Danger,
-                                                message,
-                                                None,
-                                                cx,
-                                            )
-                                        });
-                                    }
-                                }
+                                    Ok(Err(e)) => e.user_message(crate::i18n::text("创建聊天分支")),
+                                    Err(e) => e.to_string(),
+                                };
+                                composer.update(cx, |composer, cx| {
+                                    composer.show_panel_toast(ToastKind::Danger, message, None, cx)
+                                });
                             });
                         })
                         .detach();

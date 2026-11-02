@@ -70,11 +70,7 @@ pub(super) fn dynamic_tool_call_activity(
     } else {
         theme.text.alpha(0.60)
     };
-    let label_color = if failed {
-        theme.warning
-    } else {
-        theme.text.alpha(0.60)
-    };
+    let label_color = foreground;
 
     let id = call.id.clone();
     let hover: SharedString = format!("dynamic-tool-call-{id}").into();

@@ -792,8 +792,11 @@ impl ReviewPanel {
                                 .unwrap_or_else(|i| i)
                                 .min(code.len());
                             let cursor = TextCursor { row: index, byte };
-                            if e.modifiers.shift && s.selection.is_some_and(|v| v.old == old) {
-                                s.selection.as_mut().unwrap().head = cursor;
+                            if e.modifiers.shift
+                                && let Some(selection) =
+                                    s.selection.as_mut().filter(|v| v.old == old)
+                            {
+                                selection.head = cursor;
                             } else {
                                 s.selection = Some(Selection {
                                     anchor: cursor,

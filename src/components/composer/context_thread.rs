@@ -38,7 +38,7 @@ impl ComposerView {
                         }
                     }
                     let Some(next)=page.next_cursor else {
-                        let root=std::env::var_os("CODEX_HOME").map(std::path::PathBuf::from).unwrap_or_else(||std::path::PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".codex")).join("attachments");
+                        let root=crate::agent::codex_home().unwrap_or_else(||std::path::PathBuf::from(".codex")).join("attachments");
                         std::fs::create_dir_all(&root).map_err(|e|e.to_string())?;
                         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
                         let path=root.join(format!("chat-snapshot-{stamp}.txt"));

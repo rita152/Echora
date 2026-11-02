@@ -14,7 +14,7 @@ use super::{
     },
     reasoning::reasoning_activity,
     timeline::{ActivityStreamUnit, activity_stream_units},
-    tools::{command_execution_activity, tool_activity_group},
+    tools::{command_execution_activity, tool_activity_group, tool_group_expanded},
 };
 use crate::{
     components::{
@@ -45,12 +45,12 @@ pub(super) fn render_activity_stream_unit(
     let expanded_collaborations = &render.disclosures.expanded_collaborations;
     match unit {
         ActivityStreamUnit::ToolGroup(group) => {
-            let active = group.is_active();
-            let expanded = if active {
-                !collapsed_active_tool_groups.contains(&group.id)
-            } else {
-                expanded_tool_groups.contains(&group.id)
-            };
+            let expanded = tool_group_expanded(
+                group.is_active(),
+                &group.id,
+                expanded_tool_groups,
+                collapsed_active_tool_groups,
+            );
             let settled_progress = if expanded { 1.0 } else { 0.0 };
             let (disclosure_progress, chevron_progress) = tool_group_disclosure_progress
                 .get(&group.id)
@@ -64,7 +64,7 @@ pub(super) fn render_activity_stream_unit(
                 home_entity,
                 group,
                 ToolGroupDisclosure {
-                    review_views: render.disclosures.auto_review_views.clone(),
+                    review_views: &render.disclosures.auto_review_views,
                     expanded,
                     disclosure_progress,
                     chevron_progress,
@@ -140,8 +140,7 @@ pub(super) fn render_activity_stream_unit(
                     )
                     .into_any_element();
                 }
-                let expanded =
-                    reasoning.is_active() || expanded_reasoning.contains(&reasoning.item_id);
+                let expanded = expanded_reasoning.contains(&reasoning.item_id);
                 let disclosure_progress = reasoning_disclosure_progress
                     .get(&reasoning.item_id)
                     .copied()
@@ -156,17 +155,17 @@ pub(super) fn render_activity_stream_unit(
                     expanded,
                     disclosure_progress,
                     scroll_handle,
-                    thinking_shimmer_progress,
                     theme,
                 )
                 .into_any_element()
             }
             ConversationActivity::ImageView(image) => {
-                let expanded = if show_thinking_tail {
-                    !collapsed_active_tool_groups.contains(&image.id)
-                } else {
-                    expanded_tool_groups.contains(&image.id)
-                };
+                let expanded = tool_group_expanded(
+                    show_thinking_tail,
+                    &image.id,
+                    expanded_tool_groups,
+                    collapsed_active_tool_groups,
+                );
                 image_view_activity(
                     home_entity,
                     vec![image],
@@ -177,12 +176,12 @@ pub(super) fn render_activity_stream_unit(
                 .into_any_element()
             }
             ConversationActivity::ImageViews(images) => {
-                let id = &images[0].id;
-                let expanded = if show_thinking_tail {
-                    !collapsed_active_tool_groups.contains(id)
-                } else {
-                    expanded_tool_groups.contains(id)
-                };
+                let expanded = tool_group_expanded(
+                    show_thinking_tail,
+                    &images[0].id,
+                    expanded_tool_groups,
+                    collapsed_active_tool_groups,
+                );
                 image_view_activity(home_entity, images, expanded, show_thinking_tail, theme)
                     .into_any_element()
             }

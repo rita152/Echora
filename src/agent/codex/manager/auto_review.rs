@@ -4,7 +4,7 @@
 //! generation is never sent again. The request only records the approval; the
 //! agent's retry still goes through auto-review.
 
-use anyhow::{Context as _, Result, anyhow, bail};
+use anyhow::{Context as _, Result, bail};
 use async_channel::Receiver;
 use serde_json::json;
 
@@ -26,10 +26,7 @@ impl CodexAppServerManager {
             let thread_id = review.key.thread_id.clone();
             manager.validate_temporary_thread(&connection, &thread_id)?;
             {
-                let mut state = connection
-                    .state
-                    .lock()
-                    .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+                let mut state = connection.lock_state()?;
                 if state.approved_reviews.contains(&review.key.review_id) {
                     bail!("这条自动审核拒绝已记录批准");
                 }
@@ -49,10 +46,7 @@ impl CodexAppServerManager {
                         .map(|_| ())
                         .context("thread/approveGuardianDeniedAction 响应缺少 result 对象")
                 });
-            let mut state = connection
-                .state
-                .lock()
-                .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+            let mut state = connection.lock_state()?;
             state.approving_review_threads.remove(&thread_id);
             if result.is_ok() {
                 state.approved_reviews.insert(review.key.review_id.clone());

@@ -326,15 +326,22 @@ impl WorkspaceStore {
     }
 
     pub fn snapshot(&self) -> WorkspaceSnapshot {
-        self.snapshot
-            .lock()
-            .map(|snapshot| snapshot.clone())
-            .unwrap_or_else(|_| {
+        self.read_snapshot(WorkspaceSnapshot::clone)
+    }
+
+    /// Reads part of the snapshot without cloning all of it. A poisoned lock
+    /// reads the same error snapshot `snapshot()` returns. `read` must not
+    /// lock the store again.
+    fn read_snapshot<T>(&self, read: impl FnOnce(&WorkspaceSnapshot) -> T) -> T {
+        match self.snapshot.lock() {
+            Ok(snapshot) => read(&snapshot),
+            Err(_) => {
                 let mut snapshot =
                     WorkspaceSnapshot::new(self.backend.capabilities(), UiPreferences::current());
                 snapshot.error = Some(crate::i18n::text("WorkspaceStore 状态锁已损坏").to_owned());
-                snapshot
-            })
+                read(&snapshot)
+            }
+        }
     }
 
     pub fn subscribe(&self) -> Receiver<WorkspaceSnapshot> {
@@ -466,10 +473,7 @@ impl WorkspaceStore {
                 self.update_thread_overlay(&thread_id, |overlay| overlay.name = Some(name.clone()));
                 self.update(|snapshot| {
                     visit_thread_mut(snapshot, &thread_id, |thread| {
-                        thread.title = name
-                            .clone()
-                            .filter(|name| !name.trim().is_empty())
-                            .unwrap_or_else(|| fallback_thread_title(&thread.preview));
+                        thread.title = thread_title(name.as_deref(), &thread.preview);
                     });
                 });
             }
@@ -516,9 +520,11 @@ impl WorkspaceStore {
                     .get(&status.thread_id)
                     .and_then(|overlay| overlay.activity.clone())
                     .or_else(|| {
-                        self.snapshot()
-                            .thread(&status.thread_id)
-                            .map(|thread| thread.activity.clone())
+                        self.read_snapshot(|snapshot| {
+                            snapshot
+                                .thread(&status.thread_id)
+                                .map(|thread| thread.activity.clone())
+                        })
                     });
                 // An idle notification can follow a failed turn. Keep its
                 // error until a new run starts or a successful close arrives.
@@ -589,7 +595,7 @@ impl WorkspaceStore {
             snapshot.loading.pinned = true;
             snapshot.error = None;
         });
-        let capabilities = self.snapshot().capabilities;
+        let capabilities = self.read_snapshot(|snapshot| snapshot.capabilities.clone());
         let supports_projects = capabilities.supports(AgentCapability::ProjectList);
         let supports_threads = capabilities.supports(AgentCapability::ThreadList);
         let supports_sections = capabilities.supports(AgentCapability::ThreadSectionList);
@@ -695,12 +701,11 @@ impl WorkspaceStore {
             } else {
                 Ok(Vec::new())
             };
-            let previous_pinned_section_id = store.snapshot().preferences.pinned_section_id.clone();
+            let previous_pinned_section_id =
+                store.read_snapshot(|snapshot| snapshot.preferences.pinned_section_id.clone());
             let pinned_section = sections.as_ref().ok().and_then(|sections| {
                 let preferred = store
-                    .snapshot()
-                    .preferences
-                    .pinned_section_id
+                    .read_snapshot(|snapshot| snapshot.preferences.pinned_section_id.clone())
                     .and_then(|id| sections.iter().find(|section| section.section_id == id));
                 preferred
                     .or_else(|| {
@@ -843,7 +848,8 @@ impl WorkspaceStore {
         let store = Arc::clone(self);
         std::thread::spawn(move || {
             let mut recent = load_all_threads(store.backend.as_ref(), ThreadListRequest::default());
-            let pinned_id = store.snapshot().preferences.pinned_section_id;
+            let pinned_id =
+                store.read_snapshot(|snapshot| snapshot.preferences.pinned_section_id.clone());
             let mut pinned = match pinned_id {
                 Some(section_id) => load_all_threads(
                     store.backend.as_ref(),
@@ -1103,11 +1109,7 @@ impl WorkspaceStore {
                     });
                     store.update(|snapshot| {
                         visit_thread_mut(snapshot, &thread_id, |thread| {
-                            thread.title = if name.trim().is_empty() {
-                                fallback_thread_title(&thread.preview)
-                            } else {
-                                name.clone()
-                            };
+                            thread.title = thread_title(Some(&name), &thread.preview);
                         });
                     });
                     store.finish(&operation, None);
@@ -1337,7 +1339,9 @@ impl WorkspaceStore {
             .pin_section_lock
             .lock()
             .map_err(|_| WorkspaceError::backend(crate::i18n::text("pinned section 锁已损坏")))?;
-        if let Some(section_id) = self.snapshot().preferences.pinned_section_id {
+        if let Some(section_id) =
+            self.read_snapshot(|snapshot| snapshot.preferences.pinned_section_id.clone())
+        {
             return Ok(section_id);
         }
         let sections = load_all_sections(self.backend.as_ref())?;
@@ -1438,11 +1442,9 @@ impl WorkspaceStore {
             .map(|viewed| viewed.as_deref() == Some(thread_id))
             .unwrap_or(false);
         if viewed
-            || self
-                .snapshot()
-                .preferences
-                .unread_thread_ids
-                .contains(thread_id)
+            || self.read_snapshot(|snapshot| {
+                snapshot.preferences.unread_thread_ids.contains(thread_id)
+            })
         {
             return;
         }
@@ -1457,11 +1459,11 @@ impl WorkspaceStore {
 
     /// `Mark all as read` in the activity view, and chats that were opened.
     pub fn mark_threads_read(&self, thread_ids: &[ThreadId]) {
-        let unread = &self.snapshot().preferences.unread_thread_ids;
-        if !thread_ids
-            .iter()
-            .any(|thread_id| unread.contains(thread_id))
-        {
+        if !self.read_snapshot(|snapshot| {
+            thread_ids
+                .iter()
+                .any(|thread_id| snapshot.preferences.unread_thread_ids.contains(thread_id))
+        }) {
             return;
         }
         self.update(|snapshot| {
@@ -1589,13 +1591,9 @@ impl WorkspaceStore {
     }
 
     pub fn record_model_configuration(&self, configuration: RecentModelConfiguration) -> bool {
-        if self
-            .snapshot()
-            .preferences
-            .recent_model_configurations
-            .first()
-            == Some(&configuration)
-        {
+        if self.read_snapshot(|snapshot| {
+            snapshot.preferences.recent_model_configurations.first() == Some(&configuration)
+        }) {
             return false;
         }
         self.update(|snapshot| {
@@ -1665,7 +1663,7 @@ impl WorkspaceStore {
         };
         // Capture after serializing writers, so a delayed older save cannot
         // overwrite a preference update that completed later.
-        let preferences = self.snapshot().preferences;
+        let preferences = self.read_snapshot(|snapshot| snapshot.preferences.clone());
         let result = self.preferences.save(&preferences);
         self.update(|snapshot| snapshot.preference_error = result.err());
     }
@@ -1724,6 +1722,13 @@ fn append_error(target: &mut Option<String>, message: String) {
         }
         None => *target = Some(message),
     }
+}
+
+/// A thread's sidebar title: its name unless blank, else the preview's
+/// fallback.
+fn thread_title(name: Option<&str>, preview: &str) -> String {
+    name.filter(|name| !name.trim().is_empty())
+        .map_or_else(|| fallback_thread_title(preview), str::to_owned)
 }
 
 fn fallback_thread_title(preview: &str) -> String {
@@ -1894,10 +1899,7 @@ fn apply_thread_overlay(
         return false;
     }
     if let Some(name) = &overlay.name {
-        thread.title = name
-            .clone()
-            .filter(|name| !name.trim().is_empty())
-            .unwrap_or_else(|| fallback_thread_title(&thread.preview));
+        thread.title = thread_title(name.as_deref(), &thread.preview);
     }
     if let Some(project_id) = &overlay.project_id {
         thread.project_id = project_id.clone();

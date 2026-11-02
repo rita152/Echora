@@ -4,6 +4,9 @@
 use anyhow::{Context as _, Result, bail};
 use serde_json::{Map, Value};
 
+use super::json::{
+    object, optional_path, optional_string, required_bool, required_string, unknown_fields,
+};
 use crate::agent::{
     AgentSkill, AgentSkillDependency, AgentSkillInterface, AgentSkillLoadError, AgentSkillScope,
     AgentSkillSelector, AgentSkillWriteReceipt, AgentSkillsEntry, AgentSkillsSnapshot,
@@ -45,55 +48,6 @@ pub(super) fn write_params(selector: &AgentSkillSelector, enabled: bool) -> Valu
     Value::Object(params)
 }
 
-fn unknown_fields(object: &Map<String, Value>, known: &[&str]) -> Map<String, Value> {
-    object
-        .iter()
-        .filter(|(key, _)| !known.contains(&key.as_str()))
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect()
-}
-
-fn required_string(object: &Map<String, Value>, field: &str, context: &str) -> Result<String> {
-    object
-        .get(field)
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .with_context(|| format!("{context} 缺少字符串字段 {field}"))
-}
-
-fn required_bool(object: &Map<String, Value>, field: &str, context: &str) -> Result<bool> {
-    object
-        .get(field)
-        .and_then(Value::as_bool)
-        .with_context(|| format!("{context} 缺少布尔字段 {field}"))
-}
-
-fn optional_string(
-    object: &Map<String, Value>,
-    field: &str,
-    context: &str,
-) -> Result<Option<String>> {
-    match object.get(field) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(_) => bail!("{context} 的 {field} 必须是字符串或 null"),
-    }
-}
-
-fn optional_path(
-    object: &Map<String, Value>,
-    field: &str,
-    context: &str,
-) -> Result<Option<std::path::PathBuf>> {
-    Ok(optional_string(object, field, context)?.map(std::path::PathBuf::from))
-}
-
-fn object<'a>(value: &'a Value, context: &str) -> Result<&'a Map<String, Value>> {
-    value
-        .as_object()
-        .with_context(|| format!("{context} 必须是 JSON 对象"))
-}
-
 fn interface(value: &Value) -> Result<AgentSkillInterface> {
     const KNOWN: &[&str] = &[
         "displayName",
@@ -115,7 +69,7 @@ fn interface(value: &Value) -> Result<AgentSkillInterface> {
         icon_large: optional_path(fields, "iconLarge", "interface")?,
         icon_small_url: optional_string(fields, "iconSmallUrl", "interface")?,
         icon_large_url: optional_string(fields, "iconLargeUrl", "interface")?,
-        extra: unknown_fields(fields, KNOWN).into_iter().collect(),
+        extra: unknown_fields(fields, KNOWN),
     })
 }
 
@@ -136,7 +90,7 @@ fn dependency(value: &Value) -> Result<AgentSkillDependency> {
         description: optional_string(fields, "description", "skill dependency")?,
         transport: optional_string(fields, "transport", "skill dependency")?,
         url: optional_string(fields, "url", "skill dependency")?,
-        extra: unknown_fields(fields, KNOWN).into_iter().collect(),
+        extra: unknown_fields(fields, KNOWN),
     })
 }
 
@@ -181,7 +135,7 @@ fn skill(value: &Value) -> Result<AgentSkill> {
             Some(value) => Some(interface(value)?),
         },
         dependencies,
-        extra: unknown_fields(fields, KNOWN).into_iter().collect(),
+        extra: unknown_fields(fields, KNOWN),
     })
 }
 
@@ -191,7 +145,7 @@ fn load_error(value: &Value) -> Result<AgentSkillLoadError> {
     Ok(AgentSkillLoadError {
         path: std::path::PathBuf::from(required_string(fields, "path", "skill error")?),
         message: required_string(fields, "message", "skill error")?,
-        extra: unknown_fields(fields, KNOWN).into_iter().collect(),
+        extra: unknown_fields(fields, KNOWN),
     })
 }
 
@@ -220,16 +174,14 @@ pub(super) fn decode_snapshot(generation: u64, value: &Value) -> Result<AgentSki
             cwd: std::path::PathBuf::from(required_string(entry, "cwd", "skills/list entry")?),
             skills: skills.iter().map(skill).collect::<Result<Vec<_>>>()?,
             errors: errors.iter().map(load_error).collect::<Result<Vec<_>>>()?,
-            extra: unknown_fields(entry, &["cwd", "skills", "errors"])
-                .into_iter()
-                .collect(),
+            extra: unknown_fields(entry, &["cwd", "skills", "errors"]),
         });
     }
     Ok(AgentSkillsSnapshot {
         generation,
         entries,
         next_cursor: optional_string(fields, "nextCursor", METHOD_LIST)?,
-        extra: unknown_fields(fields, KNOWN).into_iter().collect(),
+        extra: unknown_fields(fields, KNOWN),
     })
 }
 
@@ -238,7 +190,7 @@ pub(super) fn decode_write_receipt(value: &Value) -> Result<AgentSkillWriteRecei
     let fields = object(value, &format!("{METHOD_WRITE} 响应"))?;
     Ok(AgentSkillWriteReceipt {
         effective_enabled: required_bool(fields, "effectiveEnabled", METHOD_WRITE)?,
-        extra: unknown_fields(fields, KNOWN).into_iter().collect(),
+        extra: unknown_fields(fields, KNOWN),
     })
 }
 

@@ -155,16 +155,18 @@ impl AgentConfigSnapshot {
     }
 
     pub fn layer(&self, path: &std::path::Path) -> Option<&AgentConfigLayer> {
-        self.layers.as_ref()?.iter().find(|layer| {
-            layer.source.writable() && layer.source.file_path().as_deref() == Some(path)
-        })
+        self.layers
+            .as_ref()?
+            .iter()
+            .find(|layer| layer.source.writable() && layer.source.path.as_deref() == Some(path))
     }
 
+    /// `writable()` only holds for the `user` layer.
     pub fn user_layer(&self) -> Option<&AgentConfigLayer> {
         self.layers
             .as_ref()?
             .iter()
-            .find(|layer| layer.source.kind() == "user" && layer.source.writable())
+            .find(|layer| layer.source.writable())
     }
 
     pub fn equivalent(&self, key: &str, left: &Value, right: &Value) -> bool {

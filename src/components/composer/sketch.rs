@@ -521,11 +521,11 @@ impl ComposerView {
         if !self.sketch.open {
             return None;
         }
+        // `open_sketch` creates `focus`, `width_focus` and `text_input`
+        // before it first sets `open`, and nothing clears them.
         if self.sketch.focus_pending {
             self.sketch.focus_pending = false;
-            if let Some(focus) = &self.sketch.focus {
-                focus.focus(window, cx);
-            }
+            self.sketch.focus.as_ref().unwrap().focus(window, cx);
         }
         let theme = Theme::for_mode(self.mode);
         let background = if self.mode == ThemeMode::Dark {
@@ -806,13 +806,15 @@ impl ComposerView {
                                             if let Some(p) = this.sketch.position(event.position) {
                                                 this.sketch.down(p);
                                             }
-                                            if this.sketch.text_position.is_some()
-                                                && let Some(input) = &this.sketch.text_input {
-                                                    input
-                                                        .read(cx)
-                                                        .focus_handle(cx)
-                                                        .focus(window, cx);
-                                                }
+                                            if this.sketch.text_position.is_some() {
+                                                this.sketch
+                                                    .text_input
+                                                    .as_ref()
+                                                    .unwrap()
+                                                    .read(cx)
+                                                    .focus_handle(cx)
+                                                    .focus(window, cx);
+                                            }
                                             cx.stop_propagation();
                                             cx.notify();
                                         },
@@ -1003,16 +1005,17 @@ impl ComposerView {
                                 .child(super::super::icons::icon("sketch-save",theme.button_text.into()).size(px(16.))),
                         )
                         .when_some(self.sketch.text_position, |d, p| {
+                            let input = self.sketch.text_input.as_ref().unwrap();
                             d.child(
                                 div()
                                     .absolute()
                                     .left(px(canvas_left + p.0 * side / SIDE))
                                     .top(px(canvas_top + p.1 * side / SIDE))
                                     .w(px((SIDE-p.0).min(224.)*side/SIDE))
-                                    .h(px(self.sketch.text_input.as_ref().map_or(30., |input| (input.read(cx).text().lines().count().max(1) as f32 * 30.).max(30.))))
+                                    .h(px(input.read(cx).text().lines().count().max(1) as f32 * 30.))
                                     .border_1()
                                     .border_color(rgb(0x339cff))
-                                    .child(self.sketch.text_input.as_ref().unwrap().clone()),
+                                    .child(input.clone()),
                             )
                         }),
                 )

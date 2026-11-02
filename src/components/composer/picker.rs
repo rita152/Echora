@@ -251,7 +251,7 @@ impl ComposerView {
     /// With fewer than two power steps there is nothing to slide, so the
     /// popup opens on the model list, as ChatGPT does.
     pub(super) fn picker_shows_model_list(&self) -> bool {
-        self.model_list_open || self.conversation.effort_ids().len() < 2
+        self.model_list_open || self.conversation.effort_count() < 2
     }
     pub(super) fn picker_controls(&self) -> Vec<PickerControl> {
         let mut controls = vec![PickerControl::ViewToggle];
@@ -291,7 +291,7 @@ impl ComposerView {
     }
     fn finish_model_choice(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.show_model_list(false);
-        if self.conversation.effort_ids().len() < 2 {
+        if self.conversation.effort_count() < 2 {
             self.close_picker(cx);
             self.model_trigger_focus.focus(window, cx);
         } else {
@@ -299,12 +299,12 @@ impl ComposerView {
         }
     }
     pub(super) fn step_slider(&mut self, delta: isize) {
-        let count = self.conversation.effort_ids().len();
-        if count == 0 {
+        if self.conversation.effort_count() == 0 {
             return;
         }
         let index = self.effective_slider_index() as isize + delta;
-        self.set_slider_index(index.clamp(0, count as isize - 1) as usize);
+        // `set_slider_index` caps the index at the last step.
+        self.set_slider_index(index.max(0) as usize);
     }
     pub(super) fn effective_slider_index(&self) -> usize {
         let effort = self.request_effort();
@@ -353,7 +353,7 @@ impl ComposerView {
             "left" | "right" if !self.picker_shows_model_list() => {
                 self.step_slider(if key == "left" { -1 } else { 1 });
             }
-            "left" if self.model_list_open && self.conversation.effort_ids().len() >= 2 => {
+            "left" if self.model_list_open && self.conversation.effort_count() >= 2 => {
                 self.show_model_list(false);
             }
             "enter" | "space" if self.model_menu_keyboard_focus => {
@@ -439,7 +439,7 @@ impl ComposerView {
         cx.notify();
     }
     pub(super) fn set_slider_index(&mut self, index: usize) {
-        let effort_count = self.conversation.effort_ids().len();
+        let effort_count = self.conversation.effort_count();
         if effort_count == 0 {
             self.conversation.slider_index = 0;
             return;
@@ -469,7 +469,7 @@ impl ComposerView {
         // inside its ends.
         const TRACK_WIDTH: f32 = 230.0;
         const TRACK_INSET: f32 = 13.0;
-        let effort_count = self.conversation.effort_ids().len().max(1);
+        let effort_count = self.conversation.effort_count().max(1);
         let step = if effort_count > 1 {
             (TRACK_WIDTH - TRACK_INSET * 2.0) / (effort_count - 1) as f32
         } else {
@@ -482,7 +482,8 @@ impl ComposerView {
                 TRACK_WIDTH * 0.5
             }
         };
-        let slider_index = self.effective_slider_index().min(effort_count - 1);
+        // A position in `effort_ids()`, or 0: always a valid step.
+        let slider_index = self.effective_slider_index();
         let thumb_center = step_center(slider_index);
         let ultra_mode = self.request_effort() == "ultra";
         let thumb_size = if self.slider_dragging { 32.0 } else { 28.0 };

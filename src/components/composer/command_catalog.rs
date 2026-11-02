@@ -172,10 +172,9 @@ impl ComposerView {
                     .map_or_else(String::new, |p| p.display().to_string()),
             )
         }));
+        // `fuzzy` matches everything for an empty query.
         rows.retain(|(_, title, path)| {
-            query.is_empty()
-                || fuzzy(title, &query).is_some()
-                || fuzzy(&path.to_lowercase(), &query).is_some()
+            fuzzy(title, &query).is_some() || fuzzy(&path.to_lowercase(), &query).is_some()
         });
         rows
     }

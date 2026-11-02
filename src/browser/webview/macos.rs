@@ -1291,13 +1291,13 @@ extern "C" fn did_become_download(_: &Object, _: Sel, web_view: id, _: id, downl
             let string: id = msg_send![url, absoluteString];
             rust_string(string)
         };
-        let filename = url
+        let last = url
             .rsplit('/')
             .find(|part| !part.is_empty())
-            .unwrap_or("download")
-            .split(['?', '#'])
-            .next()
-            .unwrap_or("download")
+            .unwrap_or("download");
+        let filename = last
+            .split_once(['?', '#'])
+            .map_or(last, |(name, _)| name)
             .to_owned();
         state.emit(WebViewEvent::Download(DownloadEvent::Started {
             id,
@@ -1355,11 +1355,11 @@ extern "C" fn download_destination(
 }
 
 fn unique_download_path(suggested: &str) -> PathBuf {
-    let name = std::path::Path::new(suggested)
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "download".to_owned());
+    // `file_name` is never empty: it is `None` for "", "/" and "..".
+    let name = std::path::Path::new(suggested).file_name().map_or_else(
+        || "download".to_owned(),
+        |name| name.to_string_lossy().into_owned(),
+    );
     let directory = std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_default()

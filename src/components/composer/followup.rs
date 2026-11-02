@@ -73,12 +73,10 @@ impl ComposerView {
     /// The generation queue writes are bound to: the one the tray was listed
     /// in, else the running turn's.
     pub(super) fn queue_generation(&self) -> Option<u64> {
-        self.conversation.queue.generation.or_else(|| {
-            self.conversation
-                .turn_identity
-                .as_ref()
-                .map(|identity| identity.generation)
-        })
+        self.conversation
+            .queue
+            .generation
+            .or_else(|| self.conversation.turn_generation())
     }
 
     /// The tray shows the queue as paused after the user stopped a turn: the

@@ -45,18 +45,16 @@ impl ComposerView {
                 {
                     return;
                 }
-                match result {
-                    Ok(Ok(Some(paths))) => this.attach_paths(paths, cx),
-                    Ok(Ok(None)) => {
+                match result
+                    .map_err(|e| e.to_string())
+                    .and_then(|paths| paths.map_err(|e| e.to_string()))
+                {
+                    Ok(Some(paths)) => this.attach_paths(paths, cx),
+                    Ok(None) => {
                         this.focus_prompt_pending = true;
                         cx.notify();
                     }
-                    error => {
-                        let message = match error {
-                            Ok(Err(e)) => e.to_string(),
-                            Err(e) => e.to_string(),
-                            _ => unreachable!(),
-                        };
+                    Err(message) => {
                         this.show_toast(super::ToastKind::Danger, message, cx);
                         this.focus_prompt_pending = true;
                     }

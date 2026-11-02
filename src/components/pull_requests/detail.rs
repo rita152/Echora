@@ -105,9 +105,7 @@ impl PullRequestsView {
                             .child(
                                 self.selected
                                     .as_ref()
-                                    .map(|s| {
-                                        s.repository.rsplit('/').next().unwrap_or("").to_owned()
-                                    })
+                                    .map(|s| super::diff::file_name(&s.repository))
                                     .unwrap_or_default(),
                             )
                             .child(

@@ -157,8 +157,7 @@ impl SideChatPanel {
             crate::i18n::format!("侧边聊天 {}" => "Side chat {}", self.tabs.len() + 1)
         };
         let backend = self.backend.clone();
-        let composer =
-            cx.new(|cx| ComposerView::new_side_chat(self.mode, backend, config.clone(), cx));
+        let composer = cx.new(|cx| ComposerView::new_side_chat(self.mode, backend, config, cx));
         let home = cx.new(|cx| HomeView::new_side_chat(self.mode, composer.clone(), cx));
         cx.subscribe(
             &composer,

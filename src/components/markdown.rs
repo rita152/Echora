@@ -235,15 +235,12 @@ fn raw_nodes_to_blocks(nodes: Vec<RawNode>) -> Vec<MarkdownBlock> {
 }
 
 fn flush_pending_paragraph(pending: &mut Vec<RawNode>, blocks: &mut Vec<MarkdownBlock>) {
-    if !pending.is_empty() {
-        let content = raw_nodes_to_inlines(std::mem::take(pending));
-        if !content.is_empty()
-            && content
-                .iter()
-                .any(|part| !matches!(part, MarkdownInline::Text(text) if text.trim().is_empty()))
-        {
-            blocks.push(MarkdownBlock::Paragraph(content));
-        }
+    let content = raw_nodes_to_inlines(std::mem::take(pending));
+    if content
+        .iter()
+        .any(|part| !matches!(part, MarkdownInline::Text(text) if text.trim().is_empty()))
+    {
+        blocks.push(MarkdownBlock::Paragraph(content));
     }
 }
 
@@ -316,12 +313,9 @@ fn append_block(node: RawNode, blocks: &mut Vec<MarkdownBlock>) {
             Tag::CodeBlock(kind) => {
                 let (language, fenced) = match kind {
                     CodeBlockKind::Indented => (None, false),
-                    CodeBlockKind::Fenced(info) => (
-                        info.split_whitespace().next().and_then(|language| {
-                            (!language.is_empty()).then(|| language.to_owned())
-                        }),
-                        true,
-                    ),
+                    CodeBlockKind::Fenced(info) => {
+                        (info.split_whitespace().next().map(str::to_owned), true)
+                    }
                 };
                 blocks.push(MarkdownBlock::CodeBlock {
                     language,
@@ -432,9 +426,8 @@ fn table_cells(nodes: Vec<RawNode>) -> Vec<MarkdownTableCell> {
 fn take_task_marker(nodes: &mut Vec<RawNode>) -> Option<bool> {
     let mut index = 0;
     while index < nodes.len() {
-        if matches!(nodes[index], RawNode::TaskListMarker(_))
-            && let RawNode::TaskListMarker(checked) = nodes.remove(index)
-        {
+        if let RawNode::TaskListMarker(checked) = nodes[index] {
+            nodes.remove(index);
             return Some(checked);
         }
         if let RawNode::Element { tag, children } = &mut nodes[index]
@@ -507,12 +500,8 @@ fn raw_nodes_to_inlines(nodes: Vec<RawNode>) -> Vec<MarkdownInline> {
                 )),
                 Tag::Link {
                     dest_url, title, ..
-                } => inlines.push(MarkdownInline::Link {
-                    destination: dest_url.into_string(),
-                    title: title.into_string(),
-                    content: raw_nodes_to_inlines(children),
-                }),
-                Tag::Image {
+                }
+                | Tag::Image {
                     dest_url, title, ..
                 } => inlines.push(MarkdownInline::Link {
                     destination: dest_url.into_string(),
@@ -850,7 +839,6 @@ pub fn render_pull_request_markdown(source: &str, theme: Theme, scope: &str) -> 
     // summaries embed machine-readable `<!-- ... -->` blocks that must not
     // reach the rendered body.
     let source = strip_html_comments(source);
-    let document = parse_markdown(&source);
     let mut style = MarkdownRenderStyle::new(theme);
     style.selectable = true;
     style.layout.base_line_height = crate::typography::prose_size(PULL_REQUEST_BODY_LINE_HEIGHT);
@@ -859,22 +847,7 @@ pub fn render_pull_request_markdown(source: &str, theme: Theme, scope: &str) -> 
     style.centered_measure = false;
     style.body_weight = PULL_REQUEST_BODY_WEIGHT;
     style.layout.quote_line_height = crate::typography::prose_size(PULL_REQUEST_BODY_LINE_HEIGHT);
-    render_block_sequence(
-        &document.blocks,
-        style,
-        0,
-        SequenceContext::Root,
-        markdown_hash(scope),
-        &MarkdownFadeHandle::none(),
-        None,
-    )
-    .w_full()
-    .min_w(px(0.0))
-    .text_size(px(style.layout.base_size))
-    .line_height(px(style.layout.base_line_height))
-    .font(pull_request_font())
-    .font_weight(PULL_REQUEST_BODY_WEIGHT)
-    .text_color(style.palette.text)
+    render_small_markdown(&source, style, scope)
 }
 
 /// Pull request comment bodies (`textStyle: {kind: "small"}`): 13px type on a
@@ -1876,13 +1849,13 @@ fn render_inline_boxes(
                 ),
             }
         } else {
-            let label = if file_reference.is_some() {
-                markdown_file_reference_label(
-                    &fragment.text,
-                    fragment.link_destination.as_deref().unwrap_or_default(),
-                )
-            } else {
-                fragment.text.clone()
+            let label = match fragment
+                .link_destination
+                .as_deref()
+                .filter(|_| file_reference.is_some())
+            {
+                Some(destination) => markdown_file_reference_label(&fragment.text, destination),
+                None => fragment.text.clone(),
             };
             if fade.is_active() && !is_decoration {
                 fading_fragment_text(label, fragment.state, weight, color, fade)
@@ -1944,10 +1917,10 @@ fn render_inline_boxes(
                     }),
             )
         };
+        let file_reference = file_reference.map(str::to_owned);
         if let Some(destination) = fragment.link_destination {
             let link_key = markdown_hash(&(inline_identity, index, destination.as_str()));
             let link_id: SharedString = format!("markdown-link-{link_key:016x}").into();
-            let file_reference = markdown_file_reference_path(&destination).map(str::to_owned);
             let previews = file_reference.is_none() && link_preview::previews(&destination);
             // The card hangs from the link's text box, which sits centred in
             // the line box: `font-size` 14px draws a 17px box.
@@ -2148,7 +2121,7 @@ fn append_inline_fragments(
                     let segment = &text[start..end];
                     start = end;
                     let word = segment.trim_end_matches(char::is_whitespace);
-                    if word.chars().all(char::is_whitespace) {
+                    if word.is_empty() {
                         if let Some(previous) = fragments.last_mut() {
                             previous.trailing_space = true;
                         }
@@ -2877,7 +2850,6 @@ impl gpui::RenderOnce for MarkdownTable {
                     is_last_row: false,
                     row_identity: markdown_hash(&(block_identity, "header")),
                 },
-                column_count,
                 &widths,
                 &fade,
             );
@@ -2892,7 +2864,6 @@ impl gpui::RenderOnce for MarkdownTable {
                     is_last_row: index + 1 == rows.len(),
                     row_identity: markdown_hash(&(block_identity, index)),
                 },
-                column_count,
                 &widths,
                 &fade,
             );
@@ -2993,7 +2964,6 @@ fn append_table_row(
     cells: &[MarkdownTableCell],
     style: MarkdownRenderStyle,
     presentation: TableRowPresentation,
-    column_count: usize,
     widths: &[f32],
     fade: &MarkdownFadeHandle,
 ) -> Div {
@@ -3002,10 +2972,11 @@ fn append_table_row(
         is_last_row,
         row_identity,
     } = presentation;
+    let column_count = widths.len();
     // The grid has no row element; every cell of a streaming row fades with
     // the row's own start time.
     let row_alpha = fade.block_alpha(row_identity, STREAMING_BLOCK_FADE_DURATION);
-    for (index, width) in widths[..column_count].iter().copied().enumerate() {
+    for (index, width) in widths.iter().copied().enumerate() {
         let cell = cells.get(index);
         let mut element = div()
             .debug_selector(move || format!("markdown-table-cell-{row_identity}-{index}"))

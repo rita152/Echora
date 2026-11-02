@@ -202,8 +202,8 @@ pub struct ProjectRepo {
 /// is not inside a repository returns `None`, which is what hides the card's
 /// repository row.
 pub fn project_repo(root: &Path) -> Option<ProjectRepo> {
-    let top = git_output(root, &["rev-parse", "--show-toplevel"])?;
-    let top = PathBuf::from(top.trim());
+    // `git_output` already trims and drops empty output.
+    let top = PathBuf::from(git_output(root, &["rev-parse", "--show-toplevel"])?);
     let label = git_output(root, &["config", "--get", "remote.origin.url"])
         .and_then(|url| origin_owner_repo(&url))
         .or_else(|| {
@@ -354,12 +354,10 @@ pub fn origin_owner_repo(url: &str) -> Option<String> {
         segments.next()?;
     }
     let segments = segments.collect::<Vec<_>>();
-    let repo_name = segments.last().copied()?;
-    let owner = segments
-        .get(segments.len().checked_sub(2)?)
-        .copied()
-        .unwrap_or_default();
-    (!owner.is_empty() && !repo_name.is_empty()).then(|| format!("{owner}/{repo_name}"))
+    let [.., owner, repo_name] = segments.as_slice() else {
+        return None;
+    };
+    Some(format!("{owner}/{repo_name}"))
 }
 
 fn git_output(root: &Path, args: &[&str]) -> Option<String> {

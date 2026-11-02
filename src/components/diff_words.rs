@@ -38,8 +38,9 @@ fn tokenize(text: &str) -> Vec<Range<usize>> {
     let mut chars = text.char_indices().peekable();
     while let Some((start, c)) = chars.next() {
         let mut end = start + c.len_utf8();
-        if c == '\r' && chars.peek().is_some_and(|&(_, next)| next == '\n') {
-            let (index, next) = chars.next().unwrap_or((end, '\n'));
+        if c == '\r'
+            && let Some((index, next)) = chars.next_if(|&(_, next)| next == '\n')
+        {
             end = index + next.len_utf8();
         } else if is_word_char(c) || is_inline_space(c) {
             let same = if is_word_char(c) {
@@ -158,30 +159,22 @@ fn myers(old: &[&str], new: &[&str]) -> Vec<(Change, usize)> {
         while diagonal <= max_diagonal.min(edit_length) {
             let remove_path = best[slot(diagonal - 1)].take();
             let add_path = best[slot(diagonal + 1)].clone();
-            let can_add = add_path.as_ref().is_some_and(|path| {
+            // jsdiff's `canAdd` / `canRemove`.
+            let add = add_path.as_ref().filter(|path| {
                 let new_pos = path.old_pos - diagonal;
                 0 <= new_pos && new_pos < new_len
             });
-            let can_remove = remove_path
+            let remove = remove_path
                 .as_ref()
-                .is_some_and(|path| path.old_pos + 1 < old_len);
-            if !can_add && !can_remove {
-                best[slot(diagonal)] = None;
-                diagonal += 2;
-                continue;
-            }
+                .filter(|path| path.old_pos + 1 < old_len);
             // `!canRemove || (canAdd && removePath.oldPos < addPath.oldPos)`.
-            let use_add = match (&remove_path, &add_path) {
-                (Some(remove), Some(add)) => {
-                    !can_remove || (can_add && remove.old_pos < add.old_pos)
+            let mut path = match (remove, add) {
+                (Some(remove), Some(add)) if remove.old_pos < add.old_pos => {
+                    add_to_path(add, Change::Added, 0)
                 }
-                (None, _) => true,
-                (Some(_), None) => false,
-            };
-            let mut path = match (use_add, &remove_path, &add_path) {
-                (true, _, Some(add)) => add_to_path(add, Change::Added, 0),
-                (false, Some(remove), _) => add_to_path(remove, Change::Removed, 1),
-                _ => {
+                (Some(remove), _) => add_to_path(remove, Change::Removed, 1),
+                (None, Some(add)) => add_to_path(add, Change::Added, 0),
+                (None, None) => {
                     best[slot(diagonal)] = None;
                     diagonal += 2;
                     continue;

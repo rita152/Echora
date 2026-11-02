@@ -9,7 +9,7 @@
 
 use std::sync::{Arc, Weak};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 
 use super::{
     ManagerInner,
@@ -59,10 +59,7 @@ impl ManagerInner {
             control.clone(),
         );
         {
-            let mut state = connection
-                .state
-                .lock()
-                .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+            let mut state = connection.lock_state()?;
             let key = TurnKey {
                 thread_id: thread_id.to_owned(),
                 turn_id: turn_id.to_owned(),
@@ -90,9 +87,7 @@ impl ManagerInner {
         }));
         let run = AgentExternalTurn::new(AgentRun::new(receiver, Some(interrupt)));
         connection
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?
+            .lock_state()?
             .server_turns
             .insert(thread_id.to_owned(), (turn_id.to_owned(), run.clone()));
         self.publish_connection_event(AgentConnectionEvent::TurnStarted {

@@ -548,6 +548,12 @@ impl SettingsView {
         cx: &Context<Self>,
     ) -> gpui::AnyElement {
         let busy = self.config_editor.busy() || self.config_editor.snapshot.is_none();
+        let enforced = self
+            .config_editor
+            .snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.requirements.as_ref())
+            .and_then(|requirements| requirements.enforced.get(key));
         let label = match &self.config_editor.operation {
             ConfigOperation::Loading if self.config_editor.snapshot.is_none() => {
                 crate::i18n::text("读取中…").into()
@@ -572,22 +578,7 @@ impl SettingsView {
                 })
                 .unwrap_or(crate::i18n::text("无可写配置"))
                 .into(),
-            _ if self
-                .config_editor
-                .snapshot
-                .as_ref()
-                .and_then(|snapshot| snapshot.requirements.as_ref())
-                .is_some_and(|requirements| requirements.enforced.contains_key(key)) =>
-            {
-                let value = &self
-                    .config_editor
-                    .snapshot
-                    .as_ref()
-                    .unwrap()
-                    .requirements
-                    .as_ref()
-                    .unwrap()
-                    .enforced[key];
+            _ if let Some(value) = enforced => {
                 crate::i18n::format!("{} · 受管" => "{} · Managed", config_label(key, value))
             }
             _ => {

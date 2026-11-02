@@ -49,7 +49,9 @@ pub fn navigation_url(input: &str) -> String {
 }
 
 /// True when the address bar would search the web for this text rather than
-/// open it as an address.
+/// open it as an address. The suggestion list compares the two URLs itself,
+/// since it needs both anyway.
+#[cfg(test)]
 pub fn is_search(input: &str) -> bool {
     let text = input.trim();
     !text.is_empty() && navigation_url(input) == search_url(text)
@@ -236,11 +238,9 @@ fn is_ip_address(hostname: &str) -> bool {
     }
     let parts: Vec<&str> = hostname.split('.').collect();
     parts.len() == 4
-        && parts.iter().all(|part| {
-            !part.is_empty()
-                && part.chars().all(|c| c.is_ascii_digit())
-                && part.parse::<u16>().is_ok_and(|value| value <= 255)
-        })
+        && parts
+            .iter()
+            .all(|part| part.bytes().all(|b| b.is_ascii_digit()) && part.parse::<u8>().is_ok())
 }
 
 /// A host under a top-level domain from the IANA root zone, with at least one

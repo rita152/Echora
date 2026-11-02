@@ -67,7 +67,6 @@ pub struct SkillsDirectory {
     pub stale: bool,
     writes: BTreeMap<String, SkillWrite>,
     sequence: u64,
-    applied: BTreeMap<String, u64>,
 }
 
 impl SkillsDirectory {
@@ -98,7 +97,8 @@ impl SkillsDirectory {
         let confirmed = snapshot
             .skills()
             .filter_map(|skill| {
-                let key = skill_key(skill);
+                // Writes are keyed by the selector they were sent with.
+                let key = selector_key(&skill.selector());
                 let write = self.writes.get(&key)?;
                 match write.phase {
                     SkillWritePhase::Saved { effective_enabled }
@@ -154,7 +154,6 @@ impl SkillsDirectory {
         write.phase = SkillWritePhase::Saved {
             effective_enabled: receipt.effective_enabled,
         };
-        self.applied.insert(write.key.clone(), sequence);
     }
 
     pub fn fail_write(&mut self, sequence: u64, error: AgentSkillsError, intended_enabled: bool) {
@@ -194,12 +193,8 @@ impl SkillsDirectory {
     }
 
     pub fn retry_target(&self, selector: &AgentSkillSelector) -> Option<bool> {
-        match self.write_for(selector)?.phase {
-            SkillWritePhase::Failed { .. } => {
-                Some(self.write_for(selector).unwrap().intended_enabled)
-            }
-            _ => None,
-        }
+        let write = self.write_for(selector)?;
+        matches!(write.phase, SkillWritePhase::Failed { .. }).then_some(write.intended_enabled)
     }
 
     pub fn skill_count(&self) -> usize {
@@ -267,6 +262,31 @@ mod tests {
             },
         );
         assert!(!directory.display_enabled(&current));
+    }
+
+    #[test]
+    fn served_value_retires_its_saved_write() {
+        let mut directory = SkillsDirectory::for_cwd("/project".into());
+        let cycle = directory.begin_refresh();
+        directory.accept_snapshot(cycle, snapshot(1, vec![skill("alpha", true)]));
+        let selector = skill("alpha", true).selector();
+        let sequence = directory.begin_write(selector.clone(), false);
+        directory.accept_receipt(
+            sequence,
+            AgentSkillWriteReceipt {
+                effective_enabled: false,
+                extra: Default::default(),
+            },
+        );
+        // A read that still serves the old value keeps the saved write.
+        let stale = directory.begin_refresh();
+        directory.accept_snapshot(stale, snapshot(1, vec![skill("alpha", true)]));
+        assert!(directory.write_for(&selector).is_some());
+        // The read that serves the saved value retires it.
+        let confirmed = directory.begin_refresh();
+        directory.accept_snapshot(confirmed, snapshot(1, vec![skill("alpha", false)]));
+        assert!(directory.write_for(&selector).is_none());
+        assert!(!directory.display_enabled(&skill("alpha", false)));
     }
 
     #[test]

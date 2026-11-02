@@ -136,7 +136,9 @@ fn unwrap_shell(command: &str) -> String {
     let Some(program) = tokens.get(index) else {
         return command.to_owned();
     };
-    let name = program.rsplit('/').next().unwrap_or(program);
+    let name = program
+        .rsplit_once('/')
+        .map_or(program.as_str(), |(_, name)| name);
     let name = name.strip_suffix(".exe").unwrap_or(name);
     if !SHELLS.contains(&name) {
         return command.to_owned();

@@ -43,7 +43,7 @@ fn hex(color: &str) -> Rgba {
 /// The icon token for `path` (`markdown`, `rust`, …, or `default`).
 pub(crate) fn file_icon_token(path: &str) -> &'static str {
     let map = map();
-    let name = path.rsplit('/').next().unwrap_or(path);
+    let name = path.rsplit_once('/').map_or(path, |(_, name)| name);
     let lower = name.to_lowercase();
     let known = |token: &String| map.icons.iter().any(|icon| icon == token);
     if let Some(token) = map.by_file_name.get(&lower).filter(|token| known(token)) {

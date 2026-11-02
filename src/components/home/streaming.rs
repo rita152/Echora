@@ -91,8 +91,10 @@ impl StreamingReveal {
             return;
         }
         if source.len() > self.source.len() {
-            self.source_chars += source[self.source.len()..].chars().count();
-            self.source = source.to_owned();
+            // `source` extends `self.source` (checked above), so append the tail.
+            let added = &source[self.source.len()..];
+            self.source_chars += added.chars().count();
+            self.source.push_str(added);
         }
         self.actively_streaming = actively_streaming;
         if actively_streaming {
@@ -120,7 +122,7 @@ impl StreamingReveal {
     }
 
     fn drain(&mut self, now: Instant) {
-        let arrived = self.source_chars.saturating_sub(self.last_target_chars);
+        let arrived = self.source_chars - self.last_target_chars;
         self.last_target_chars = self.source_chars;
         if arrived > 0 {
             match self.last_arrival {

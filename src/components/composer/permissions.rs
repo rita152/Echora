@@ -151,7 +151,10 @@ impl ComposerView {
             .backend
             .load_thread_settings(thread_id.clone(), generation);
         cx.spawn(async move |this, cx| {
-            let result = result.recv().await;
+            let result = result
+                .recv()
+                .await
+                .unwrap_or_else(|_| Err(crate::i18n::text("线程设置连接在返回前关闭").into()));
             let _ = this.update(cx, |this, cx| {
                 if this.permission_read_cycle != read_cycle
                     || this.conversation.thread_id.as_ref() != Some(&thread_id)
@@ -162,7 +165,7 @@ impl ComposerView {
                 }
                 this.permission_effective_loading = false;
                 match result {
-                    Ok(Ok(snapshot)) => {
+                    Ok(snapshot) => {
                         if snapshot.generation != generation
                             || snapshot.generation < this.conversation.runtime.generation
                             || this
@@ -181,11 +184,7 @@ impl ComposerView {
                         cx.emit(ConversationChanged);
                         cx.notify();
                     }
-                    failure => {
-                        let message = match failure {
-                            Ok(Err(error)) => error,
-                            _ => crate::i18n::text("线程设置连接在返回前关闭").into(),
-                        };
+                    Err(message) => {
                         if let Some(failure) = crate::agent::config_load_failure(&message) {
                             // The thread cannot be resumed until the user fixes
                             // the configuration; say so once, as a toast, not as a

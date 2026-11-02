@@ -491,23 +491,13 @@ impl AgentAccountRateLimitsState {
         if self.account_id.as_deref() == account_id {
             return false;
         }
-        let changed = self.account_id.is_some() || !self.buckets.is_empty();
-        self.account_id = account_id.map(str::to_owned);
-        self.buckets.clear();
-        self.reset_credits = None;
-        self.upsell = None;
-        self.ordinary_usage_allowed = None;
-        changed
-    }
-
-    fn clear(&mut self) -> bool {
-        let changed = self.account_id.is_some()
-            || !self.buckets.is_empty()
-            || self.reset_credits.is_some()
-            || self.upsell.is_some()
-            || self.ordinary_usage_allowed.is_some();
-        *self = Self::default();
-        changed
+        // The account association itself changes, so this is always a change,
+        // and nothing of the previous account is kept.
+        *self = Self {
+            account_id: account_id.map(str::to_owned),
+            ..Self::default()
+        };
+        true
     }
 }
 
@@ -703,13 +693,12 @@ impl AgentAccountState {
     /// account/logout clears account, login, and quota state. The next
     /// account/read is what confirms the server's post-logout answer.
     pub fn clear_for_logout(&mut self) -> bool {
-        let changed = self.account != AgentAccountSnapshot::default()
-            || self.login != AgentAccountLoginState::default()
-            || self.rate_limits.clear();
-        self.account = AgentAccountSnapshot::default();
-        self.login = AgentAccountLoginState::default();
-        self.rate_limits = AgentAccountRateLimitsState::default();
-        changed
+        let cleared = Self {
+            generation: self.generation,
+            ..Self::default()
+        };
+        let previous = std::mem::replace(self, cleared);
+        previous != *self
     }
 }
 
@@ -950,6 +939,20 @@ mod tests {
         assert_eq!(state.rate_limits.account_id.as_deref(), Some("acct_2"));
         assert!(!state.rate_limits.buckets.contains_key("codex"));
         assert!(state.rate_limits.buckets.contains_key("spark"));
+        assert!(state.rate_limits.ordinary_usage_allowed.is_none());
+    }
+
+    #[test]
+    fn a_new_account_association_is_reported_as_a_change() {
+        let mut state = AgentAccountState::default();
+        state.rate_limits.ordinary_usage_allowed = Some(true);
+        // No previous account and no buckets: only the association and the
+        // dropped flag differ, which is still a change.
+        assert!(state.apply_rate_limits_read(AgentRateLimitsRead {
+            account_id: Some("acct_1".into()),
+            ..AgentRateLimitsRead::default()
+        }));
+        assert_eq!(state.rate_limits.account_id.as_deref(), Some("acct_1"));
         assert!(state.rate_limits.ordinary_usage_allowed.is_none());
     }
 

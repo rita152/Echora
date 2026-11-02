@@ -108,7 +108,7 @@ impl WorkspaceSnapshot {
 
     /// Rebuilds the sections' project lists from the preferences.
     fn sync_section_projects(&mut self) {
-        let projects = self.preferences.section_projects.clone();
+        let projects = &self.preferences.section_projects;
         for section in &mut self.custom_sections {
             section.projects = projects
                 .get(&section.section.section_id)
@@ -136,14 +136,15 @@ impl WorkspaceStore {
     /// Lists the sections and each custom section's chats. A read that a
     /// newer one superseded is dropped.
     pub(super) fn refresh_custom_sections(self: &Arc<Self>) {
-        if !self.snapshot().supports_custom_sections() {
+        if !self.read_snapshot(WorkspaceSnapshot::supports_custom_sections) {
             return;
         }
         let generation = self.sections_generation.fetch_add(1, Ordering::AcqRel) + 1;
         self.update(|snapshot| snapshot.loading.sections = true);
         let store = Arc::clone(self);
         std::thread::spawn(move || {
-            let pinned_id = store.snapshot().preferences.pinned_section_id;
+            let pinned_id =
+                store.read_snapshot(|snapshot| snapshot.preferences.pinned_section_id.clone());
             let result = load_all_sections(store.backend.as_ref()).and_then(|sections| {
                 let customs = sections
                     .iter()
@@ -440,7 +441,6 @@ impl WorkspaceStore {
                 .and_then(|before| order.iter().position(|id| id == before))
                 .unwrap_or(order.len());
             order.insert(at, moved);
-            let order = order.clone();
             snapshot.custom_sections.sort_by_key(|section| {
                 order
                     .iter()

@@ -79,7 +79,7 @@ use timeline::{
     ActivityStreamUnit, ConversationListRow, activity_stream_units, conversation_list_rows,
     conversation_status, user_message_navigation_items,
 };
-use tools::ToolGroupDisclosureTransition;
+use tools::{ToolGroupDisclosureTransition, tool_group_expanded};
 
 pub struct HomeView {
     computer_preview: Entity<computer_use::Preview>,
@@ -295,10 +295,10 @@ impl HomeView {
         };
         self.has_visible_request(cx)
             || self.conversation_activity.iter().any(|activity| {
-                matches!(activity,
-                ConversationActivity::McpToolCall(call) if mcp::is_computer_use_call(call))
+                interactive(activity)
+                    || matches!(activity,
+                    ConversationActivity::McpToolCall(call) if mcp::is_computer_use_call(call))
             })
-            || self.conversation_activity.iter().any(interactive)
             || self.conversation_rows.iter().any(|row| match row {
                 ConversationListRow::Activity {
                     unit: ActivityStreamUnit::Standalone(activity),
@@ -665,11 +665,7 @@ impl HomeView {
                         };
                         if reveal.tick(now) {
                             this.refresh_conversation_cache(cx);
-                            let item_count = this.conversation_list.item_count();
-                            if item_count > 0 {
-                                this.conversation_list
-                                    .remeasure_items(item_count.saturating_sub(2)..item_count);
-                            }
+                            this.remeasure_list_tail();
                             cx.notify();
                         }
                         if this
@@ -736,16 +732,8 @@ impl HomeView {
         cx.subscribe(&composer, |this, composer, _: &ConversationChanged, cx| {
             if *this.composer == *composer {
                 this.refresh_conversation_cache(cx);
-                let composer = composer.read(cx);
-                let item_count = this.conversation_list.item_count();
-                if item_count > 0 {
-                    this.conversation_list
-                        .remeasure_items(item_count.saturating_sub(2)..item_count);
-                }
-                let needs_shimmer = composer.is_running()
-                    || composer.has_active_context_compaction()
-                    || composer.has_active_image_generation()
-                    || composer.has_active_plan();
+                this.remeasure_list_tail();
+                let needs_shimmer = Self::composer_needs_thinking_shimmer(composer.read(cx));
                 this.sync_thinking_shimmer(needs_shimmer, cx);
                 cx.notify();
             }
@@ -781,12 +769,26 @@ impl HomeView {
         self.hook_tooltip_focus = None;
         self.command_scroll_handles.clear();
         self.expanded_collaborations.clear();
-        let needs_shimmer = composer.is_running()
-            || composer.has_active_context_compaction()
-            || composer.has_active_image_generation()
-            || composer.has_active_plan();
+        let needs_shimmer = Self::composer_needs_thinking_shimmer(composer);
         self.sync_thinking_shimmer(needs_shimmer, cx);
         cx.notify();
+    }
+
+    /// Whether the composer's conversation shows an animated thinking state.
+    fn composer_needs_thinking_shimmer(composer: &ComposerView) -> bool {
+        composer.is_running()
+            || composer.has_active_context_compaction()
+            || composer.has_active_image_generation()
+            || composer.has_active_plan()
+    }
+
+    /// Re-measures the last two list rows, where a streaming reply grows.
+    fn remeasure_list_tail(&self) {
+        let item_count = self.conversation_list.item_count();
+        if item_count > 0 {
+            self.conversation_list
+                .remeasure_items(item_count.saturating_sub(2)..item_count);
+        }
     }
 
     fn handle_approval_key(
@@ -1626,11 +1628,12 @@ impl HomeView {
             self.tool_group_scroll_handles
                 .entry(group.id.clone())
                 .or_default();
-            let expanded = if group.is_active() {
-                !self.collapsed_active_tool_groups.contains(&group.id)
-            } else {
-                self.expanded_tool_groups.contains(&group.id)
-            };
+            let expanded = tool_group_expanded(
+                group.is_active(),
+                &group.id,
+                &self.expanded_tool_groups,
+                &self.collapsed_active_tool_groups,
+            );
             let target = if expanded { 1.0 } else { 0.0 };
             let transition = self
                 .tool_group_disclosure_transitions
@@ -1755,11 +1758,11 @@ impl Render for HomeView {
         self.approval_previews
             .retain(|id, _| preview_requests.iter().any(|(request, _, _)| request == id));
         for (id, text, expanded) in preview_requests {
-            if !self.approval_previews.contains_key(&id) {
+            let preview = self.approval_previews.entry(id.clone()).or_insert_with(|| {
                 let preview =
                     cx.new(|cx| FileEditor::approval_preview(text.clone(), self.mode, cx));
                 let owner = self.composer.clone();
-                let request_id = id.clone();
+                let request_id = id;
                 cx.observe(&preview, move |_, preview, cx| {
                     let lines = preview.read(cx).visual_line_count();
                     owner.update(cx, |composer, cx| {
@@ -1767,9 +1770,9 @@ impl Render for HomeView {
                     });
                 })
                 .detach();
-                self.approval_previews.insert(id.clone(), preview);
-            }
-            self.approval_previews[&id].update(cx, |preview, cx| {
+                preview
+            });
+            preview.update(cx, |preview, cx| {
                 if preview.text() != text {
                     preview.reload(text, cx);
                 }
@@ -1840,11 +1843,12 @@ impl Render for HomeView {
                         })
                 }
                 ActivityStreamUnit::ToolGroup(group) => {
-                    let expanded = if group.is_active() {
-                        !self.collapsed_active_tool_groups.contains(&group.id)
-                    } else {
-                        self.expanded_tool_groups.contains(&group.id)
-                    };
+                    let expanded = tool_group_expanded(
+                        group.is_active(),
+                        &group.id,
+                        &self.expanded_tool_groups,
+                        &self.collapsed_active_tool_groups,
+                    );
                     self.tool_group_disclosure_transitions
                         .get(&group.id)
                         .is_some_and(|transition| {
@@ -1924,11 +1928,12 @@ impl Render for HomeView {
                 let ActivityStreamUnit::ToolGroup(group) = unit else {
                     continue;
                 };
-                let expanded = if group.is_active() {
-                    !self.collapsed_active_tool_groups.contains(&group.id)
-                } else {
-                    self.expanded_tool_groups.contains(&group.id)
-                };
+                let expanded = tool_group_expanded(
+                    group.is_active(),
+                    &group.id,
+                    &self.expanded_tool_groups,
+                    &self.collapsed_active_tool_groups,
+                );
                 let scroll_handle = self
                     .tool_group_scroll_handles
                     .entry(group.id.clone())

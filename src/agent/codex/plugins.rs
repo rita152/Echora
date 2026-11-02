@@ -615,13 +615,12 @@ fn app_template_summary(value: &Value) -> Result<AgentPluginAppTemplateSummary> 
         "reason",
     ];
     let object = as_object(value, "plugin appTemplate")?;
-    let reason = match optional_string(object, "reason", "appTemplate")? {
-        None => None,
-        Some(raw) => Some(
+    let reason = optional_string(object, "reason", "appTemplate")?
+        .map(|raw| {
             AgentAppTemplateUnavailableReason::parse(&raw)
-                .with_context(|| format!("appTemplate 的 reason 为未知值 `{raw}`"))?,
-        ),
-    };
+                .with_context(|| format!("appTemplate 的 reason 为未知值 `{raw}`"))
+        })
+        .transpose()?;
     Ok(AgentPluginAppTemplateSummary {
         template_id: required_string(object, "templateId", "appTemplate")?,
         name: required_string(object, "name", "appTemplate")?,

@@ -241,9 +241,7 @@ pub(crate) fn local_occurrences(
     term: &str,
     texts: &[(String, String, String)],
 ) -> Vec<AgentThreadOccurrence> {
-    if term.is_empty() {
-        return Vec::new();
-    }
+    // `case_insensitive_matches` yields nothing for an empty term.
     texts
         .iter()
         .flat_map(|(turn_id, item_id, text)| {
@@ -277,8 +275,9 @@ pub(crate) fn case_insensitive_matches(text: &str, term: &str) -> Vec<std::ops::
             from += step;
             continue;
         };
+        // A match of the non-empty needle spans at least one character.
         matches.push(from..from + end);
-        from += end.max(1);
+        from += end;
     }
     matches
 }

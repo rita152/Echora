@@ -285,8 +285,8 @@ impl ChatApp {
         window: &Window,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
-        if self.project_creation.confirmation.is_some() {
-            return self.project_confirmation_overlay(theme, cx);
+        if let Some(confirmation) = &self.project_creation.confirmation {
+            return self.project_confirmation_overlay(confirmation, theme, cx);
         }
         let editing = self.project_creation.editing.is_some();
         let creating = self.project_creation.creating;
@@ -792,19 +792,28 @@ fn prepare_project(name: String, roots: Vec<PathBuf>) -> Result<CreateProject, S
     prepare_project_in(name, roots, home.join("Documents/Echora"))
 }
 
-fn prepare_project_in(
-    name: String,
-    mut roots: Vec<PathBuf>,
-    parent: PathBuf,
-) -> Result<CreateProject, String> {
-    for root in &mut roots {
-        *root = std::fs::canonicalize(&*root).map_err(|error| error.to_string())?;
+/// The source folders as canonical paths, each once, in the given order. The
+/// first folder that cannot be resolved, or is not a directory, fails.
+fn canonical_roots(roots: Vec<PathBuf>) -> Result<Vec<PathBuf>, String> {
+    let mut canonical = Vec::with_capacity(roots.len());
+    for root in roots {
+        let root = std::fs::canonicalize(root).map_err(|error| error.to_string())?;
         if !root.is_dir() {
             return Err(crate::i18n::format!("源文件夹不存在" => "Source folder does not exist"));
         }
+        if !canonical.contains(&root) {
+            canonical.push(root);
+        }
     }
-    let mut seen = std::collections::HashSet::new();
-    roots.retain(|root| seen.insert(root.clone()));
+    Ok(canonical)
+}
+
+fn prepare_project_in(
+    name: String,
+    roots: Vec<PathBuf>,
+    parent: PathBuf,
+) -> Result<CreateProject, String> {
+    let mut roots = canonical_roots(roots)?;
     let name = if name.is_empty() {
         roots
             .first()

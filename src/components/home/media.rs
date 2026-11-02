@@ -210,22 +210,23 @@ pub(super) fn image_generation_activity(
     }
 
     let path_missing = image.path.as_ref().is_some_and(|path| !path.is_file());
-    if image.status == AgentImageGenerationStatus::Failed
-        || image.load_error.is_some()
-        || image.path.is_none()
-        || path_missing
-    {
-        let mut failed = image;
-        if path_missing && failed.load_error.is_none() {
-            failed.load_error = Some(crate::i18n::text("生成的图像文件已移动或删除。").to_owned());
+    let path = match image.path.clone() {
+        Some(path)
+            if image.status != AgentImageGenerationStatus::Failed
+                && image.load_error.is_none()
+                && !path_missing =>
+        {
+            path
         }
-        return image_generation_error_activity(home_entity, failed, retry_available, theme);
-    }
-
-    let path = image
-        .path
-        .clone()
-        .expect("completed image path checked above");
+        _ => {
+            let mut failed = image;
+            if path_missing && failed.load_error.is_none() {
+                failed.load_error =
+                    Some(crate::i18n::text("生成的图像文件已移动或删除。").to_owned());
+            }
+            return image_generation_error_activity(home_entity, failed, retry_available, theme);
+        }
+    };
     let preview_path = path.clone();
     let keyboard_path = path.clone();
     let click_home = home_entity.clone();

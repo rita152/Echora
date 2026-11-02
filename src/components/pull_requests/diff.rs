@@ -1937,8 +1937,11 @@ fn hunk_new_end(header: &str) -> Option<u32> {
     }
 }
 
+/// The last `/` segment: a file's name, or a repository's name without its owner.
 pub(super) fn file_name(path: &str) -> String {
-    path.rsplit('/').next().unwrap_or(path).to_string()
+    path.rsplit_once('/')
+        .map_or(path, |(_, name)| name)
+        .to_string()
 }
 
 impl PullRequestsView {
@@ -1993,7 +1996,10 @@ impl PullRequestsView {
                 }
                 let next = subfolders[0].clone();
                 label.push('/');
-                label.push_str(next.rsplit('/').next().unwrap_or(&next));
+                label.push_str(
+                    next.rsplit_once('/')
+                        .map_or(next.as_str(), |(_, name)| name),
+                );
                 deepest = format!("{next}/");
             }
             let children: Vec<&FileDiff> = files

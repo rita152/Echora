@@ -111,8 +111,8 @@ pub(super) struct CurrentTurnRows<'a> {
     pub(super) goal: crate::conversation::TurnGoalMarks,
 }
 
-pub(super) struct ToolGroupDisclosure {
-    pub(super) review_views: HashMap<
+pub(super) struct ToolGroupDisclosure<'a> {
+    pub(super) review_views: &'a HashMap<
         crate::agent::AgentAutoApprovalReviewKey,
         Entity<crate::components::auto_approval::AutoApprovalReviewView>,
     >,

@@ -129,23 +129,27 @@ impl ConversationState {
             }
             return false;
         }
-        // Elicitations have their own connection-owned identity and responder,
-        // so they are reduced directly instead of being projected as turn
-        // events. They must not create, restart, or finish a turn.
-        match &event {
+        let event = match event {
+            AgentConnectionEvent::Runtime(_)
+            | AgentConnectionEvent::DeprecationNotice(_)
+            | AgentConnectionEvent::ThreadReverted { .. } => {
+                unreachable!()
+            }
             AgentConnectionEvent::ThreadGoalUpdated {
                 generation,
                 goal,
                 turn_id,
                 ..
             } => {
-                let changed = self.goal.observe(*generation, goal.clone());
+                let complete = goal.status == crate::agent::AgentThreadGoalStatus::Complete;
+                let time_used_seconds = goal.time_used_seconds;
+                let changed = self.goal.observe(generation, goal);
                 if changed {
                     // The reference keeps only the last completed goal: a
                     // goal that is not complete withdraws "Goal achieved".
                     self.clear_goal_achieved_marks();
-                    if goal.status == crate::agent::AgentThreadGoalStatus::Complete {
-                        self.mark_goal_achieved(turn_id.as_deref(), goal.time_used_seconds);
+                    if complete {
+                        self.mark_goal_achieved(turn_id.as_deref(), time_used_seconds);
                     }
                 }
                 return changed;
@@ -153,33 +157,26 @@ impl ConversationState {
             AgentConnectionEvent::ThreadGoalCleared {
                 generation,
                 thread_id,
-            } => return self.goal.observe_cleared(*generation, thread_id),
-            _ => {}
-        }
-        if let AgentConnectionEvent::BackgroundCommandUpdated { turn_id, event, .. } = event {
-            return self.apply_background_command_event(&turn_id, event);
-        }
-        if let AgentConnectionEvent::McpElicitationRequested { request, responder } = event {
-            return self.mcp_elicitation_requested(request, responder);
-        }
-        if let AgentConnectionEvent::McpElicitationResolved { identity, .. } = &event {
-            return self.mcp_elicitation_resolved(identity);
-        }
-        if let AgentConnectionEvent::McpElicitationFailed {
-            identity,
-            kind,
-            message,
-            ..
-        } = &event
-        {
-            return self.mcp_elicitation_failed(identity, *kind, message.clone());
-        }
-        let event = match event {
-            AgentConnectionEvent::Runtime(_)
-            | AgentConnectionEvent::DeprecationNotice(_)
-            | AgentConnectionEvent::ThreadReverted { .. } => {
-                unreachable!()
+            } => return self.goal.observe_cleared(generation, &thread_id),
+            AgentConnectionEvent::BackgroundCommandUpdated { turn_id, event, .. } => {
+                return self.apply_background_command_event(&turn_id, event);
             }
+            // Elicitations have their own connection-owned identity and
+            // responder, so they are reduced directly instead of being
+            // projected as turn events. They must not create, restart, or
+            // finish a turn.
+            AgentConnectionEvent::McpElicitationRequested { request, responder } => {
+                return self.mcp_elicitation_requested(request, responder);
+            }
+            AgentConnectionEvent::McpElicitationResolved { identity, .. } => {
+                return self.mcp_elicitation_resolved(&identity);
+            }
+            AgentConnectionEvent::McpElicitationFailed {
+                identity,
+                kind,
+                message,
+                ..
+            } => return self.mcp_elicitation_failed(&identity, kind, message),
             AgentConnectionEvent::AutoApprovalReviewUpdated(review) => {
                 AgentEvent::AutoApprovalReviewUpdated(review)
             }
@@ -217,18 +214,12 @@ impl ConversationState {
             | AgentConnectionEvent::McpOauthLoginCompleted(_)
             | AgentConnectionEvent::ThreadReadStateChanged { .. }
             | AgentConnectionEvent::ThreadProjectUpdated { .. }
-            | AgentConnectionEvent::ConfigWarning(_) => return false,
-            AgentConnectionEvent::McpElicitationRequested { .. }
-            | AgentConnectionEvent::McpElicitationResolved { .. }
-            | AgentConnectionEvent::McpElicitationFailed { .. }
-            | AgentConnectionEvent::ThreadGoalUpdated { .. }
-            | AgentConnectionEvent::ThreadGoalCleared { .. }
+            | AgentConnectionEvent::ConfigWarning(_)
+            // Server-started turns, queue invalidations and attachments are
+            // taken by the composer and the workspace, never by a timeline.
             | AgentConnectionEvent::TurnStarted { .. }
             | AgentConnectionEvent::ThreadQueueChanged { .. }
-            | AgentConnectionEvent::ThreadAttachmentUpdated(_)
-            | AgentConnectionEvent::BackgroundCommandUpdated { .. } => {
-                unreachable!("reduced before turn projection")
-            }
+            | AgentConnectionEvent::ThreadAttachmentUpdated(_) => return false,
         };
         self.apply_agent_event_batch(vec![event]);
         true

@@ -182,7 +182,8 @@ impl ConversationQueue {
     /// server requires, or None when nothing moved.
     pub(crate) fn move_row(&mut self, id: &str, to: usize) -> Option<Vec<String>> {
         let from = self.rows.iter().position(|row| row.submission.id == id)?;
-        let to = to.min(self.rows.len().saturating_sub(1));
+        // `from` was found, so the list is not empty.
+        let to = to.min(self.rows.len() - 1);
         if from == to {
             return None;
         }

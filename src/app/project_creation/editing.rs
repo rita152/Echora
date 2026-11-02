@@ -201,10 +201,10 @@ impl ChatApp {
 
     pub(super) fn project_confirmation_overlay(
         &self,
+        confirmation: &ProjectConfirmation,
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<Div> {
-        let confirmation = self.project_creation.confirmation.as_ref().unwrap();
         let (title, description, action) = match confirmation {
             ProjectConfirmation::Remove { name, .. } => (
                 crate::i18n::format!("移除 {name}？" => "Remove {name}?"),
@@ -358,19 +358,9 @@ impl ChatApp {
 }
 
 fn prepare_project_update(name: String, roots: Vec<PathBuf>) -> Result<UpdateProject, String> {
-    let mut prepared = Vec::new();
-    for root in roots {
-        let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
-        if !root.is_dir() {
-            return Err(crate::i18n::format!("源文件夹不存在" => "Source folder does not exist"));
-        }
-        if !prepared.contains(&root) {
-            prepared.push(root);
-        }
-    }
     Ok(UpdateProject {
         name: Some(name),
-        roots: Some(prepared),
+        roots: Some(canonical_roots(roots)?),
     })
 }
 

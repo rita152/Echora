@@ -31,14 +31,8 @@ impl ChatApp {
                             if let Some(cwd) = &worktree_cwd {
                                 cwd.clone()
                             } else {
-                                let root = std::env::var_os("CODEX_HOME")
-                                    .map(std::path::PathBuf::from)
-                                    .unwrap_or_else(|| {
-                                        std::env::var_os("HOME")
-                                            .map(std::path::PathBuf::from)
-                                            .unwrap_or_default()
-                                            .join(".codex")
-                                    })
+                                let root = crate::agent::codex_home()
+                                    .unwrap_or_else(|| std::path::PathBuf::from(".codex"))
                                     .join("worktrees");
                                 let cwd = request.cwd.clone();
                                 let worktree = cx

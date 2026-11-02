@@ -12,6 +12,7 @@ use gpui::{HighlightStyle, Rgba, TextRun};
 
 #[derive(Clone, Debug)]
 pub(crate) struct FindScope {
+    /// The trimmed search term (`FindState::search_term`).
     pub(crate) query: String,
     /// The row's match to mark as active, by position.
     pub(crate) active: Option<usize>,
@@ -44,7 +45,7 @@ fn take_matches(text: &str) -> Vec<(Range<usize>, Rgba)> {
         let Some(state) = state.as_mut() else {
             return Vec::new();
         };
-        crate::conversation::case_insensitive_matches(text, state.scope.query.trim())
+        crate::conversation::case_insensitive_matches(text, &state.scope.query)
             .into_iter()
             .map(|range| {
                 let active = state.scope.active == Some(state.seen);

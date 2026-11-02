@@ -105,7 +105,6 @@ impl SettingsView {
         let config = self.memory_config();
         let read_failed = matches!(self.config_editor.operation, ConfigOperation::ReadFailed(_))
             || (self.features.list.is_none() && self.features.error.is_some());
-        let loading = !read_failed && (config.is_none() || self.features.list.is_none());
         if read_failed {
             let retry = div()
                 .id("memory-retry")
@@ -133,7 +132,7 @@ impl SettingsView {
                 ))
                 .into_any_element();
         }
-        if loading {
+        let (Some(config), Some(_)) = (config, &self.features.list) else {
             return card(theme)
                 .child(row(
                     crate::i18n::format!("正在加载…" => "Loading…"),
@@ -143,7 +142,7 @@ impl SettingsView {
                     theme,
                 ))
                 .into_any_element();
-        }
+        };
         let Some(feature) = self.features.memories() else {
             return card(theme)
                 .child(row(
@@ -155,7 +154,6 @@ impl SettingsView {
                 ))
                 .into_any_element();
         };
-        let config = config.expect("loaded above");
         let writing = self.features.writing() || self.memory_reset == MemoryReset::Resetting;
         let enabled = self.features.displayed(
             ENABLE_SWITCH,
@@ -164,15 +162,7 @@ impl SettingsView {
         let tool_assisted = self
             .features
             .displayed(TOOL_ASSISTED_SWITCH, !config.disable_on_external_context);
-        let failure = |target: &str| {
-            self.features.failure_for(target).map(|write| {
-                if write.overridden {
-                    crate::i18n::format!("已写入，但被更高优先级配置覆盖" => "Saved, but a higher-priority config layer overrides it")
-                } else {
-                    write.failure.clone().unwrap_or_default()
-                }
-            })
-        };
+        let failure = |target: &str| self.features.failure_message(target);
         let enable_switch = switch("memory-enable", enabled, writing, theme)
             .aria_label(crate::i18n::format!("启用 Codex 记忆" => "Enable Codex memories"))
             .when(!writing, |toggle| {

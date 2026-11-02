@@ -673,12 +673,7 @@ impl CodexAppServerManager {
             self.validate_temporary_thread(connection, thread_id)?;
         }
         if let Some(thread_id) = thread_id
-            && connection
-                .state
-                .lock()
-                .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?
-                .loaded_threads
-                .contains(thread_id)
+            && connection.lock_state()?.loaded_threads.contains(thread_id)
             && (!confirm
                 || self.is_temporary_thread(thread_id)
                 || self.confirm_loaded_thread(connection, thread_id)?)
@@ -725,10 +720,7 @@ impl CodexAppServerManager {
             }
         };
         {
-            let mut state = connection
-                .state
-                .lock()
-                .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+            let mut state = connection.lock_state()?;
             if state.pending_thread_lifecycle.is_some() {
                 bail!("Codex thread lifecycle registry 已被占用");
             }
@@ -770,10 +762,7 @@ impl CodexAppServerManager {
             connection.fail_protocol(message.clone());
             bail!(message);
         }
-        let mut state = connection
-            .state
-            .lock()
-            .map_err(|_| anyhow!("Codex connection state 锁已损坏"))?;
+        let mut state = connection.lock_state()?;
         let pending = state
             .pending_thread_lifecycle
             .take()

@@ -20,7 +20,9 @@ use gpui::{
 };
 
 use crate::{
-    components::{callback::UiCallback, icons::icon, prompt_input::PromptInput},
+    components::{
+        approval::non_empty, callback::UiCallback, icons::icon, prompt_input::PromptInput,
+    },
     theme::{Theme, ThemeMode},
 };
 
@@ -124,10 +126,13 @@ impl UserInputQuestionPresentation {
     pub fn recommended_option_index(&self) -> Option<usize> {
         self.options.iter().position(|option| option.recommended)
     }
-}
 
-fn non_empty(value: &str) -> Option<&str> {
-    (!value.trim().is_empty()).then_some(value)
+    /// The option checked when a question opens: the recommended one, else the
+    /// first.
+    fn default_option_index(&self) -> Option<usize> {
+        self.recommended_option_index()
+            .or((!self.options.is_empty()).then_some(0))
+    }
 }
 
 /// Visual navigation state is independent from the submitted/checked answer.
@@ -257,13 +262,7 @@ impl UserInputRequestPresentation {
         let question_count = questions.len();
         let selected_option_index = questions
             .first()
-            .and_then(UserInputQuestionPresentation::recommended_option_index)
-            .or_else(|| {
-                questions
-                    .first()
-                    .filter(|question| !question.options.is_empty())
-                    .map(|_| 0)
-            });
+            .and_then(UserInputQuestionPresentation::default_option_index);
         Self {
             request_id: request_id.into(),
             questions,
@@ -449,12 +448,7 @@ impl UserInputRequestPresentation {
             .unwrap_or_default();
         let default_option = self
             .current_question()
-            .and_then(UserInputQuestionPresentation::recommended_option_index)
-            .or_else(|| {
-                self.current_question()
-                    .filter(|question| !question.options.is_empty())
-                    .map(|_| 0)
-            });
+            .and_then(UserInputQuestionPresentation::default_option_index);
         // A skipped question is intentionally unanswered. Returning to it must
         // not resurrect the recommended/default option as a checked answer;
         // otherwise pressing Next would silently submit the value the user
@@ -518,7 +512,8 @@ impl UserInputRequestPresentation {
                 {
                     Some(index) if shift => order[(index + order.len() - 1) % order.len()],
                     Some(index) => order[(index + 1) % order.len()],
-                    None if shift => *order.last()?,
+                    // Never empty: Dismiss is always a target.
+                    None if shift => order[order.len() - 1],
                     None => order[0],
                 };
                 self.keyboard_focus = Some(next);

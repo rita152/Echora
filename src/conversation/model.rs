@@ -100,6 +100,15 @@ impl ConversationState {
         }
     }
 
+    /// `effort_ids().len()` without building the list.
+    pub(crate) fn effort_count(&self) -> usize {
+        match self.selected_model_entry() {
+            Some(model) => model.supported_reasoning_efforts.len(),
+            None if !self.selected_model.is_empty() => FALLBACK_REASONING_EFFORTS.len(),
+            None => 0,
+        }
+    }
+
     pub(crate) fn sync_slider_index(&mut self) {
         self.slider_index = self
             .effort_ids()

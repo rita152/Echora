@@ -225,10 +225,10 @@ impl ChatSearchView {
             );
         let mut body = div().flex().flex_col();
         if self.files.is_empty() {
-            body = body.child(self.files_status_row(theme, cx));
+            body = body.child(self.files_status_row(&query, theme));
         } else {
-            for index in 0..self.files.len() {
-                body = body.child(self.file_row(index, theme, cx));
+            for (index, file) in self.files.iter().enumerate() {
+                body = body.child(self.file_row(index, file, theme, cx));
             }
         }
         group.child(body)
@@ -236,19 +236,13 @@ impl ChatSearchView {
 
     /// Mirrors the reference's placeholder, loading, and error rows: an empty
     /// query asks for input, a running search shows its progress, and a failed
-    /// one reports the reason instead of an empty list.
-    fn files_status_row(&self, theme: Theme, cx: &mut Context<Self>) -> gpui::Stateful<gpui::Div> {
-        let query = self.input.read(cx).text().trim().to_owned();
-        let message = if let Some(error) = &self.files_error {
-            error.clone()
-        } else if query.is_empty() {
-            "Type to search for files".to_owned()
-        } else if self.files_loading {
-            "Loading…".to_owned()
-        } else {
-            // The reference renders nothing at all when a query has no hits;
-            // the list simply collapses back to the input row.
-            return div().id("chat-search-files-status").h(px(0.0));
+    /// one reports the reason instead of an empty list. A finished query with
+    /// no hits never reaches here; `files_group` collapses it first.
+    fn files_status_row(&self, query: &str, theme: Theme) -> gpui::Stateful<gpui::Div> {
+        let message = match &self.files_error {
+            Some(error) => error.clone(),
+            None if query.is_empty() => "Type to search for files".to_owned(),
+            None => "Loading…".to_owned(),
         };
         div()
             .id("chat-search-files-status")
@@ -268,12 +262,10 @@ impl ChatSearchView {
     fn file_row(
         &self,
         index: usize,
+        file: &AgentFileSearchResult,
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
-        let Some(file) = self.files.get(index) else {
-            return div().id("chat-search-file-missing");
-        };
         let selected = self.selected == index;
         let is_directory = file.match_type == AgentFileMatchType::Directory;
         let directory = relative_directory(&file.path);
@@ -304,19 +296,7 @@ impl ChatSearchView {
             )))
             .cursor_pointer()
             .when(selected, |row| row.bg(theme.chat_search_row_hover))
-            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                #[cfg(feature = "screenshot")]
-                if !this.hover_enabled {
-                    return;
-                }
-                if *hovered {
-                    this.hovered = Some(index);
-                    this.selected = index;
-                } else if this.hovered == Some(index) {
-                    this.hovered = None;
-                }
-                cx.notify();
-            }))
+            .on_hover(cx.listener(Self::row_hover(index)))
             .on_click(cx.listener({
                 move |this, _, _, cx| {
                     this.selected = index;
@@ -363,12 +343,9 @@ fn relative_directory(path: &str) -> String {
 /// Splits a file name into runs using the server's match indices, which are
 /// the authoritative highlight for fuzzy results.
 fn highlighted_runs(name: &str, indices: Option<&[u32]>) -> Vec<(String, bool)> {
-    let Some(indices) = indices else {
+    let Some(indices) = indices.filter(|indices| !indices.is_empty()) else {
         return vec![(name.to_owned(), false)];
     };
-    if indices.is_empty() {
-        return vec![(name.to_owned(), false)];
-    }
     let mut runs: Vec<(String, bool)> = Vec::new();
     for (position, character) in name.chars().enumerate() {
         let matched = indices.binary_search(&(position as u32)).is_ok();
@@ -730,35 +707,30 @@ impl ChatSearchView {
             }
             return (top, FILE_ROW_HEIGHT);
         }
-        let mut top = 0.0;
-        let mut index = 0;
-        let entries = self.snapshot.chat_search_entries(MAX_CHAT_ROWS);
+        // Same groups as `render`: the Chats header shows for a query or any
+        // chat, the Quick actions header before the first action.
+        let rows = self.rows();
         let query = self.snapshot.search_query.trim().to_lowercase();
-        if !entries.is_empty() || !query.is_empty() {
+        let mut top = 0.0;
+        if !query.is_empty() || matches!(rows.first(), Some(Row::Chat { .. })) {
             top += HEADER_HEIGHT + ROW_GAP;
         }
-        for entry in &entries {
-            let height = row_height(&chat_title(entry), entry.snippet.as_deref(), &query);
+        let mut quick_header = false;
+        for (index, row) in rows.iter().enumerate() {
+            let height = match row {
+                Row::Chat { title, snippet, .. } => row_height(title, snippet.as_deref(), &query),
+                _ => {
+                    if !quick_header {
+                        quick_header = true;
+                        top += HEADER_HEIGHT + ROW_GAP;
+                    }
+                    ROW_HEIGHT
+                }
+            };
             if index == self.selected {
                 return (top, height);
             }
             top += height;
-            index += 1;
-        }
-        let quick_actions: Vec<QuickAction> = QuickAction::all()
-            .into_iter()
-            .filter(|action| query.is_empty() || fuzzy_match(action.label(), &query).is_some())
-            .collect();
-        if !quick_actions.is_empty() {
-            top += HEADER_HEIGHT + ROW_GAP;
-        }
-        for action in quick_actions {
-            if index == self.selected {
-                return (top, ROW_HEIGHT);
-            }
-            let _ = action;
-            top += ROW_HEIGHT;
-            index += 1;
         }
         (top, ROW_HEIGHT)
     }
@@ -945,11 +917,15 @@ fn chat_title(entry: &ChatSearchEntry) -> String {
     if !title.is_empty() {
         return title.to_owned();
     }
-    let preview = entry.thread.preview.trim();
-    if !preview.is_empty() {
-        return preview.lines().next().unwrap_or_default().trim().to_owned();
-    }
-    String::new()
+    entry
+        .thread
+        .preview
+        .trim()
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_owned()
 }
 
 /// The reference labels each chat with its workspace folder name.
@@ -973,9 +949,10 @@ fn row_height(title: &str, snippet: Option<&str>, query: &str) -> f32 {
 /// The reference renders the backend snippet on a second line unless it only
 /// repeats text the title already shows. The app-server always returns a
 /// snippet, so the decision is the client's: a snapshot whose match is the same
-/// message the title came from stays a single line.
+/// message the title came from stays a single line. `title` comes from
+/// [`chat_title`] and `query` is the trimmed search query.
 fn snippet_shown(title: &str, snippet: Option<&str>, query: &str) -> bool {
-    if query.trim().is_empty() {
+    if query.is_empty() {
         return false;
     }
     let Some(snippet) = snippet else {
@@ -989,7 +966,6 @@ fn snippet_shown(title: &str, snippet: Option<&str>, query: &str) -> bool {
     if snippet.is_empty() {
         return false;
     }
-    let title = title.trim();
     !title.contains(snippet) && !snippet.contains(title)
 }
 
@@ -1036,15 +1012,34 @@ impl Render for ChatSearchView {
         let top = ((f32::from(viewport.height) - PANEL_MAX_HEIGHT) / 2.0).max(MIN_PANEL_TOP);
         let left = ((f32::from(viewport.width) - PANEL_WIDTH) / 2.0).max(0.0);
 
-        let chat_rows: Vec<(usize, &Row)> = rows
+        let chat_rows: Vec<(usize, ChatRow<'_>)> = rows
             .iter()
             .enumerate()
-            .filter(|(_, row)| matches!(row, Row::Chat { .. }))
+            .filter_map(|(index, row)| match row {
+                Row::Chat {
+                    thread_id,
+                    title,
+                    project,
+                    snippet,
+                } => Some((
+                    index,
+                    ChatRow {
+                        thread_id,
+                        title,
+                        project: project.as_deref(),
+                        snippet: snippet.as_deref(),
+                    },
+                )),
+                _ => None,
+            })
             .collect();
-        let quick_rows: Vec<(usize, &Row)> = rows
+        let quick_rows: Vec<(usize, QuickAction)> = rows
             .iter()
             .enumerate()
-            .filter(|(_, row)| matches!(row, Row::Quick(_)))
+            .filter_map(|(index, row)| match row {
+                Row::Quick(action) => Some((index, *action)),
+                _ => None,
+            })
             .collect();
         let chats_empty = chat_rows.is_empty() && !query.is_empty() && !loading;
         let show_chats_group = !query.is_empty() || !chat_rows.is_empty();
@@ -1159,8 +1154,8 @@ impl Render for ChatSearchView {
                         .child("Quick actions"),
                 );
                 let mut body = div().flex().flex_col();
-                for (index, row) in &quick_rows {
-                    body = body.child(self.quick_row(*index, row, theme, cx));
+                for (index, action) in &quick_rows {
+                    body = body.child(self.quick_row(*index, *action, theme, cx));
                 }
                 group = group.child(body);
                 list = list.child(group);
@@ -1213,25 +1208,50 @@ impl Render for ChatSearchView {
     }
 }
 
+/// The fields of a [`Row::Chat`], borrowed for rendering.
+#[derive(Clone, Copy)]
+struct ChatRow<'a> {
+    thread_id: &'a ThreadId,
+    title: &'a str,
+    project: Option<&'a str>,
+    snippet: Option<&'a str>,
+}
+
 impl ChatSearchView {
+    /// Hovering a row selects it, unless a capture pins the state.
+    fn row_hover(
+        index: usize,
+    ) -> impl Fn(&mut Self, &bool, &mut Window, &mut Context<Self>) + 'static {
+        move |this: &mut Self, hovered: &bool, _: &mut Window, cx: &mut Context<Self>| {
+            #[cfg(feature = "screenshot")]
+            if !this.hover_enabled {
+                return;
+            }
+            if *hovered {
+                this.hovered = Some(index);
+                this.selected = index;
+            } else if this.hovered == Some(index) {
+                this.hovered = None;
+            }
+            cx.notify();
+        }
+    }
+
     fn chat_row(
         &self,
         index: usize,
-        row: &Row,
+        row: &ChatRow<'_>,
         query: &str,
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
-        let Row::Chat {
+        let ChatRow {
             thread_id,
             title,
             project,
             snippet,
-        } = row
-        else {
-            unreachable!("chat_row called with a non-chat row")
-        };
-        let with_snippet = snippet_shown(title, snippet.as_deref(), query);
+        } = *row;
+        let with_snippet = snippet_shown(title, snippet, query);
         let height = if with_snippet {
             ROW_HEIGHT_WITH_SNIPPET
         } else {
@@ -1256,19 +1276,7 @@ impl ChatSearchView {
                 row.bg(theme.chat_search_row_hover).opacity(1.0)
             })
             .when(!selected, |row| row.opacity(0.75))
-            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                #[cfg(feature = "screenshot")]
-                if !this.hover_enabled {
-                    return;
-                }
-                if *hovered {
-                    this.hovered = Some(index);
-                    this.selected = index;
-                } else if this.hovered == Some(index) {
-                    this.hovered = None;
-                }
-                cx.notify();
-            }))
+            .on_hover(cx.listener(Self::row_hover(index)))
             .on_click(cx.listener({
                 let thread_id = thread_id.clone();
                 move |this, _, _, cx| {
@@ -1307,7 +1315,7 @@ impl ChatSearchView {
                         .truncate()
                         .child(title_element(title, query, theme)),
                 )
-                .when_some(project.clone(), |row, project| {
+                .when_some(project, |row, project| {
                     row.child(
                         div()
                             .w(px(PROJECT_LABEL_WIDTH))
@@ -1320,12 +1328,12 @@ impl ChatSearchView {
                             )))
                             .text_right()
                             .text_color(theme.chat_search_description)
-                            .child(project),
+                            .child(project.to_owned()),
                     )
                 })
                 .child(shortcut_hint(format!("⌘{}", index + 1), theme)),
         );
-        if with_snippet && let Some(snippet) = snippet.clone() {
+        if with_snippet && let Some(snippet) = snippet {
             body = body.child(
                 div()
                     .w_full()
@@ -1337,7 +1345,7 @@ impl ChatSearchView {
                         SNIPPET_LINE_HEIGHT,
                     )))
                     .text_color(theme.chat_search_description)
-                    .child(snippet),
+                    .child(snippet.to_owned()),
             );
         }
         element.child(body)
@@ -1346,15 +1354,11 @@ impl ChatSearchView {
     fn quick_row(
         &self,
         index: usize,
-        row: &Row,
+        action: QuickAction,
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
-        let Row::Quick(action) = row else {
-            unreachable!("quick_row called with a non-quick row")
-        };
         let selected = self.selected == index;
-        let action = *action;
         div()
             .id(SharedString::from(format!("chat-search-action-{index}")))
             .h(px(ROW_HEIGHT))
@@ -1374,19 +1378,7 @@ impl ChatSearchView {
                 row.bg(theme.chat_search_row_hover).opacity(1.0)
             })
             .when(!selected, |row| row.opacity(0.75))
-            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                #[cfg(feature = "screenshot")]
-                if !this.hover_enabled {
-                    return;
-                }
-                if *hovered {
-                    this.hovered = Some(index);
-                    this.selected = index;
-                } else if this.hovered == Some(index) {
-                    this.hovered = None;
-                }
-                cx.notify();
-            }))
+            .on_hover(cx.listener(Self::row_hover(index)))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.activate(Row::Quick(action), cx);
             }))
@@ -1419,12 +1411,9 @@ impl ChatSearchView {
 /// The reference dims every title character that the query did not match, and
 /// renders the title undimmed when the query never matched it at all.
 fn title_element(title: &str, query: &str, theme: Theme) -> gpui::AnyElement {
-    let Some(ranges) = fuzzy_match(title, query) else {
+    let Some(ranges) = fuzzy_match(title, query).filter(|ranges| !ranges.is_empty()) else {
         return div().child(title.to_owned()).into_any_element();
     };
-    if ranges.is_empty() {
-        return div().child(title.to_owned()).into_any_element();
-    }
     let mut runs = Vec::new();
     let mut cursor = 0;
     for range in ranges {

@@ -168,13 +168,7 @@ impl SettingsView {
                     this.write_switch(name.clone(), !checked, vec![edit.clone()], true, cx)
                 }))
             });
-            let failure = directory.failure_for(&feature.name).map(|write| {
-                if write.overridden {
-                    crate::i18n::format!("已写入，但被更高优先级配置覆盖" => "Saved, but a higher-priority config layer overrides it")
-                } else {
-                    write.failure.clone().unwrap_or_default()
-                }
-            });
+            let failure = directory.failure_message(&feature.name);
             let description = match (&feature.description, failure) {
                 (_, Some(failure)) => Some(failure),
                 (Some(description), None) => Some(description.clone()),

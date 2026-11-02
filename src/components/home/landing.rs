@@ -243,35 +243,29 @@ pub(super) fn home(
     let visible_request = conversation_activity
         .iter()
         .find(|activity| activity.shows_request());
-    let pending_command_approval =
-        if let Some(ConversationActivity::Approval(model)) = visible_request {
-            Some(model.clone())
-        } else {
-            None
-        };
-    let pending_user_input = if let Some(ConversationActivity::UserInput(model)) = visible_request {
-        Some(model.clone())
-    } else {
-        None
+    // `shows_request` holds only for the five request kinds below, so exactly
+    // one of them is `Some` whenever a request is visible.
+    let blocking_request_pending = visible_request.is_some();
+    let pending_command_approval = match visible_request {
+        Some(ConversationActivity::Approval(model)) => Some(model.clone()),
+        _ => None,
     };
-    let pending_file_approval =
-        if let Some(ConversationActivity::FileApproval(model)) = visible_request {
-            Some(model.clone())
-        } else {
-            None
-        };
-    let pending_permissions_approval =
-        if let Some(ConversationActivity::PermissionsApproval(model)) = visible_request {
-            Some(model.clone())
-        } else {
-            None
-        };
-    let pending_mcp_elicitation =
-        if let Some(ConversationActivity::McpElicitation(model)) = visible_request {
-            Some(model.as_ref().clone())
-        } else {
-            None
-        };
+    let pending_user_input = match visible_request {
+        Some(ConversationActivity::UserInput(model)) => Some(model.clone()),
+        _ => None,
+    };
+    let pending_file_approval = match visible_request {
+        Some(ConversationActivity::FileApproval(model)) => Some(model.clone()),
+        _ => None,
+    };
+    let pending_permissions_approval = match visible_request {
+        Some(ConversationActivity::PermissionsApproval(model)) => Some(model.clone()),
+        _ => None,
+    };
+    let pending_mcp_elicitation = match visible_request {
+        Some(ConversationActivity::McpElicitation(model)) => Some(model.as_ref().clone()),
+        _ => None,
+    };
     let turn_plan = conversation_activity
         .iter()
         .rev()
@@ -279,11 +273,6 @@ pub(super) fn home(
             ConversationActivity::TurnPlan(plan) if !plan.steps.is_empty() => Some(plan.clone()),
             _ => None,
         });
-    let blocking_request_pending = pending_command_approval.is_some()
-        || pending_user_input.is_some()
-        || pending_file_approval.is_some()
-        || pending_permissions_approval.is_some()
-        || pending_mcp_elicitation.is_some();
 
     div()
         .size_full()

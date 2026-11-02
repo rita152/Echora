@@ -107,17 +107,15 @@ impl ChatApp {
         cx.subscribe(
             composer,
             |this, composer, event: &crate::components::composer::DraftWorkspaceChanged, cx| {
-                let key = this
+                let Some((key, host)) = this
                     .conversation_hosts
-                    .iter()
-                    .find_map(|(key, host)| (host.composer == composer).then(|| key.clone()));
-                let Some(key) = key else {
-                    return;
-                };
-                let Some(host) = this.conversation_hosts.get_mut(&key) else {
+                    .iter_mut()
+                    .find(|(_, host)| host.composer == composer)
+                else {
                     return;
                 };
                 host.cwd = event.0.clone();
+                let key = key.clone();
                 if let Some(panel) = this.file_panels.get(&key) {
                     panel.update(cx, |panel, cx| {
                         panel.set_workspace_root(event.0.clone(), cx)
@@ -486,12 +484,9 @@ impl ChatApp {
     }
     pub(super) fn rekey_created_thread(&mut self, thread_id: ThreadId, cx: &mut Context<Self>) {
         let draft_key = self.conversation_hosts.iter().find_map(|(key, host)| {
-            matches!(key, ConversationKey::Draft(_))
-                .then(|| {
-                    (host.composer.read(cx).thread_id() == Some(thread_id.as_str()))
-                        .then(|| key.clone())
-                })
-                .flatten()
+            (matches!(key, ConversationKey::Draft(_))
+                && host.composer.read(cx).thread_id() == Some(thread_id.as_str()))
+            .then(|| key.clone())
         });
         let Some(draft_key) = draft_key else {
             return;
